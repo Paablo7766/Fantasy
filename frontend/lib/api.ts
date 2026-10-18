@@ -1,11 +1,13 @@
 import type { ApiError } from "@/lib/types";
 import { errorMessage } from "@/lib/format";
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
+// El navegador siempre llama al mismo origen (/api/...). Así se oculta la URL
+// del backend. El proxy en app/api/[...path]/route.ts reenvía a Render (o a
+// uvicorn en local) leyendo NEXT_PUBLIC_API_URL.
 
 export function apiUrl(path: string, search?: URLSearchParams): string {
   const suffix = search && search.toString() ? `?${search.toString()}` : "";
-  return `${API_URL}${path}${suffix}`;
+  return `${path}${suffix}`;
 }
 
 export function endpoint(path: string, fresh: boolean, league: string | null): string {
