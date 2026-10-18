@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <title>LALIGA Fantasy · Tablero</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Outfit:wght@340;420;520;640&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Outfit", "Segoe UI", "sans-serif"],
+            mono: ["JetBrains Mono", "ui-monospace", "monospace"],
+          },
+          colors: {
+            ink: "#061018",
+            gold: "#e3c27a",
+            mint: "#8ee0c2",
+            coral: "#ffb0a1",
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    .pitch {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 68 / 100;
+      border-radius: 1.6rem;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.05), transparent 14% 86%, rgba(0,0,0,0.22)),
+        repeating-linear-gradient(to bottom, #154838 0 8.333%, #103d30 8.333% 16.666%);
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,0.28), 0 24px 50px rgba(0,0,0,0.28);
+    }
+    .pitch svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .pitch-xi { position: absolute; inset: 5% 2% 4%; }
+    .token {
+      position: absolute;
+      width: clamp(68px, 18%, 118px);
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+    .token .avatar {
+      width: 42px; height: 42px; margin: 0 auto 4px;
+      border-radius: 999px; display: grid; place-items: center;
+      font-size: 12px; font-weight: 640; letter-spacing: 0.04em;
+      color: #f7f3ea; background: rgba(6, 16, 24, 0.78);
+      border: 1px solid rgba(255,255,255,0.28);
+    }
+    .token[data-position="POR"] .avatar { box-shadow: 0 0 0 2px #e3c27a; }
+    .token[data-position="DEF"] .avatar { box-shadow: 0 0 0 2px #9eb7e6; }
+    .token[data-position="MC"] .avatar { box-shadow: 0 0 0 2px #8ee0c2; }
+    .token[data-position="DEL"] .avatar { box-shadow: 0 0 0 2px #ffb0a1; }
+    .token .name {
+      font-size: 11px; line-height: 1.2; font-weight: 560;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.65);
+    }
+    .token .meta { font-family: "JetBrains Mono", monospace; font-size: 10px; color: #f3e2bc; }
+    .token-gap .avatar {
+      background: rgba(120, 24, 24, 0.92);
+      border-color: #ff5d5d;
+      box-shadow: 0 0 0 2px #ff5d5d;
+      color: #ffd4d4;
+    }
+    .token-gap .name { color: #ff8f8f; }
+    .token-gap .meta { color: #ffb4b4; }
+    .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+    .scroll-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 99px; }
+  </style>
+</head>
+<body class="min-h-screen bg-ink text-slate-100 font-sans antialiased">
+  <div class="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,rgba(227,194,122,0.14),transparent_42%),radial-gradient(ellipse_at_bottom_left,rgba(16,120,90,0.24),transparent_48%)]"></div>
+  <main class="relative mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-8">
+    <header class="flex flex-wrap items-end justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="grid h-11 w-11 place-items-center rounded-2xl border border-gold/40 bg-gold/10 font-mono text-sm text-gold">LF</div>
+        <div>
+          <p class="text-[11px] uppercase tracking-[0.22em] text-white/45">LALIGA Fantasy</p>
+          <h1 class="text-2xl font-medium tracking-tight">Caja de herramientas</h1>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="text-right">
+          <p id="league-label" class="text-sm text-white/80">Leyendo liga…</p>
+          <p id="updated" class="font-mono text-[11px] text-white/40"></p>
+        </div>
+        <span id="partial-pill" class="hidden rounded-full border border-gold/30 bg-gold/10 px-3 py-1 text-[11px] text-gold">Lectura parcial</span>
+        <button id="connect" type="button" class="inline-flex items-center gap-2 rounded-full border border-gold/40 bg-gold/15 px-4 py-2 text-sm text-gold backdrop-blur transition hover:bg-gold/25 disabled:opacity-50">
+          Conectar cuenta con 1 clic
+        </button>
+        <button id="refresh" type="button" class="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm backdrop-blur transition hover:bg-white/10 disabled:opacity-50">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-2.2-5.5"/><path d="M20 4v6h-6"/></svg>
+          Actualizar
+        </button>
+      </div>
+    </header>
+
+    <section id="banner" class="mt-6" role="status"></section>
+
+    <div class="mt-5 grid min-w-0 items-start gap-5 lg:grid-cols-12">
+      <section id="lineup" class="min-w-0 lg:col-span-7"></section>
+      <section id="market" class="min-w-0 lg:col-span-5"></section>
+      <section id="rivals" class="min-w-0 lg:col-span-12"></section>
+    </div>
+    <footer class="mt-8 text-xs leading-5 text-white/35">
+      Solo lectura. Las horas de cláusula salen de la API en Europe/Madrid, con hora y minuto. Si la marca no viene, el tablero no inventa una hora.
+    </footer>
+  </main>
+  <noscript class="block p-6 text-center">Este tablero necesita JavaScript en el navegador.</noscript>
+
+  <script>
+    const ROW_Y = { DEL: 22, MC: 36, DEF: 66, POR: 86 };
+    const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+    const params = new URLSearchParams(location.search);
+    const leagueQuery = params.get("league");
+    const state = { optimize: null, trends: null, squads: null, needs: null };
+
+    const bannerEl = document.getElementById("banner");
+    const lineupEl = document.getElementById("lineup");
+    const marketEl = document.getElementById("market");
+    const rivalsEl = document.getElementById("rivals");
+    const refreshBtn = document.getElementById("refresh");
+    const connectBtn = document.getElementById("connect");
+
+    function endpoint(path, fresh) {
+      const query = new URLSearchParams();
+      if (leagueQuery) query.set("league", leagueQuery);
+      if (fresh) query.set("fresh", "true");
+      const suffix = query.toString();
+      return suffix ? `${path}?${suffix}` : path;
+    }
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      }[char]));
+    }
+
+    function eur(value) {
+      if (typeof value !== "number") return "s/d";
+      return new Intl.NumberFormat("es-ES", {
+        style: "currency", currency: "EUR", maximumFractionDigits: 0,
+      }).format(value);
+    }
+
+    function points(value) {
+      if (typeof value !== "number" || Number.isNaN(value)) return "s/d";
+      return value.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    }
+
+    function pct(value) {
+      if (typeof value !== "number") return "s/d";
+      return `${Math.round(value * 100)}%`;
+    }
+
+    function playerName(player) {
+      return player?.nickname || player?.name || "Jugador";
+    }
+
+    function initials(name) {
+      const parts = String(name || "?").split(/\s+/).filter(Boolean);
+      if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+
+    function stamp(iso) {
+      if (!iso) return "";
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return String(iso);
+      return new Intl.DateTimeFormat("es-ES", {
+        timeZone: "Europe/Madrid",
+        day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+      }).format(date);
+    }
+
+    function clockLabel(lock) {
+      if (!lock || lock.present !== true || !lock.local_date || !lock.local_time) {
+        return "Sin marca de la API";
+      }
+      const [year, month, day] = String(lock.local_date).split("-");
+      const monthName = MONTHS[Number(month) - 1] || month;
+      const time = lock.local_clock || lock.local_time;
+      return `${Number(day)} ${monthName} ${year} · ${time}`;
+    }
+
+    function glass(extra) {
+      return `rounded-3xl border border-white/10 bg-white/[0.045] shadow-[0_20px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl ${extra || ""}`;
+    }
+
+    function errorMessage(payload) {
+      return payload?.error?.message || payload?.message || "No se pudo cargar este bloque.";
+    }
+
+    function errorCard(title, payload, brief) {
+      const code = payload?.error?.code || "";
+      const auth = code === "auth_required" || code === "unauthorized";
+      const message = auth && brief
+        ? "Inicia sesión para cargar este bloque."
+        : errorMessage(payload);
+      const hint = auth
+        ? "Pulsa <span class=\"text-gold\">Conectar cuenta con 1 clic</span> y elige tu cuenta de Google."
+        : "Prueba a actualizar. Si la API limita las peticiones, espera un momento.";
+      return `
+        <article class="${glass("p-6")}">
+          <p class="text-[11px] uppercase tracking-[0.18em] text-white/40">${esc(title)}</p>
+          <h2 class="mt-2 text-lg text-coral">${esc(message)}</h2>
+          ${brief && auth ? "" : `<p class="mt-2 text-sm text-white/55">${hint}</p>`}
+        </article>`;
+    }
+
+    function skeleton(title) {
+      return `
+        <article class="${glass("p-6")}">
+          <p class="text-[11px] uppercase tracking-[0.18em] text-white/40">${esc(title)}</p>
+          <div class="mt-4 h-28 animate-pulse rounded-2xl bg-white/5"></div>
+          <div class="mt-3 h-4 w-2/3 animate-pulse rounded bg-white/5"></div>
+        </article>`;
+    }
+
+    async function getJson(path) {
+      let response;
+      try {
+        response = await fetch(path);
+      } catch {
+        const error = new Error("No se pudo contactar con el servidor local.");
+        error.payload = { ok: false, error: { code: "network", message: error.message } };
+        throw error;
+      }
+      const data = await response.json().catch(() => ({
+        ok: false,
+        error: { code: "invalid_json", message: `HTTP ${response.status}` },
+      }));
+      if (!response.ok || data.ok === false) {
+        const error = new Error(errorMessage(data));
+        error.payload = data;
+        throw error;
+      }
+      return data;
+    }
+
+    function setBusy(busy) {
+      refreshBtn.disabled = busy;
+      refreshBtn.classList.toggle("opacity-60", busy);
+    }
+
+    function renderLoading() {
+      bannerEl.innerHTML = skeleton("Estado de caja");
+      lineupEl.innerHTML = skeleton("Alineación");
+      marketEl.innerHTML = skeleton("Mercado y flips");
+      rivalsEl.innerHTML = skeleton("Auditoría de rivales");
+    }
+
+    function renderMeta() {
+      const trends = state.trends?.ok ? state.trends : null;
+      const squads = state.squads?.ok ? state.squads : null;
+      const optimize = state.optimize?.ok ? state.optimize : null;
+      const name = trends?.league_name || squads?.league_name || optimize?.manager_name || "Liga activa";
+      document.getElementById("league-label").textContent = name;
+      const when = trends?.dashboard_at || squads?.dashboard_at || optimize?.dashboard_at || trends?.fetched_at;
+      document.getElementById("updated").textContent = when ? `Actualizado ${stamp(when)}` : "";
+      document.getElementById("partial-pill").classList.toggle("hidden", !(trends && trends.partial));
+    }
+
+    function renderBanner() {
+      const needs = state.needs;
+      if (!needs || needs.ok === false) {
+        bannerEl.innerHTML = errorCard("Estado de caja", needs || { error: { message: "Sin datos de caja." } });
+        return;
+      }
+      const liquidity = needs.liquidity || {};
+      const tone = liquidity.status === "penalty_risk"
+        ? "border-coral/40 bg-coral/10"
+        : liquidity.status === "safe"
+          ? "border-mint/30 bg-mint/10"
+          : "border-gold/30 bg-gold/10";
+      const alerts = Number(needs.alert_count || 0);
+      const alertLine = alerts > 0
+        ? `<p class="mt-3 text-sm text-gold">${alerts} clausulazo${alerts === 1 ? "" : "s"} con hora de desbloqueo.</p>`
+        : "";
+      bannerEl.innerHTML = `
+        <article class="${glass(`border ${tone} p-5 md:p-6`)}">
+          <div class="flex flex-wrap items-end justify-between gap-6">
+            <div class="max-w-xl">
+              <p class="text-[11px] uppercase tracking-[0.18em] text-white/45">Estado de caja</p>
+              <h2 class="mt-1 text-2xl font-medium tracking-tight">${esc(liquidity.headline || "Caja")}</h2>
+              <p class="mt-2 text-sm leading-6 text-white/70">${esc(liquidity.detail || "")}</p>
+              ${alertLine}
+            </div>
+            <dl class="grid grid-cols-3 gap-6">
+              <div>
+                <dt class="text-[11px] uppercase tracking-[0.16em] text-white/40">Saldo</dt>
+                <dd class="mt-1 font-mono text-xl text-gold md:text-2xl">${esc(eur(liquidity.cash_eur))}</dd>
+              </div>
+              <div>
+                <dt class="text-[11px] uppercase tracking-[0.16em] text-white/40">Formación</dt>
+                <dd class="mt-1 font-mono text-xl md:text-2xl">${esc(liquidity.formation || "s/d")}</dd>
+              </div>
+              <div>
+                <dt class="text-[11px] uppercase tracking-[0.16em] text-white/40">Proyección</dt>
+                <dd class="mt-1 font-mono text-xl md:text-2xl">${esc(points(liquidity.expected_points))}</dd>
+              </div>
+            </dl>
+          </div>
+        </article>`;
+    }
+
+    function xFor(index, count) {
+      if (count <= 1) return 50;
+      const margin = count >= 5 ? 10 : 16;
+      return margin + (index * (100 - margin * 2)) / (count - 1);
+    }
+
+    function layoutXi(players, gaps) {
+      const groups = { POR: [], DEF: [], MC: [], DEL: [] };
+      for (const player of players || []) {
+        if (groups[player.position]) groups[player.position].push(player);
+      }
+      for (const gap of gaps || []) {
+        const count = Number(gap.missing) || 0;
+        for (let index = 0; index < count; index += 1) {
+          if (!groups[gap.position]) continue;
+          groups[gap.position].push({
+            gap: true,
+            position: gap.position,
+            label: `Falta 1 ${gap.position}`,
+          });
+        }
+      }
+      const placed = [];
+      for (const position of ["DEL", "MC", "DEF", "POR"]) {
+        const line = groups[position].slice().sort((a, b) => {
+          if (a.gap !== b.gap) return a.gap ? 1 : -1;
+          return playerName(a).localeCompare(playerName(b), "es");
+        });
+        line.forEach((player, index) => {
+          placed.push({ ...player, x: xFor(index, line.length), y: ROW_Y[position] });
+        });
+      }
+      return placed;
+    }
+
+    function tokenHtml(player) {
+      if (player.gap) {
+        const label = player.label || `Falta 1 ${player.position}`;
+        return `
+          <div class="token token-gap" data-token data-gap="true" data-position="${esc(player.position)}" data-name="${esc(label)}" style="left:${player.x}%;top:${player.y}%" title="${esc(label)}">
+            <div class="avatar">+</div>
+            <div class="name">${esc(label)}</div>
+            <div class="meta">hueco</div>
+          </div>`;
+      }
+      const name = playerName(player);
+      const status = player.player_status === "doubtful" ? " · duda" : "";
+      return `
+        <div class="token" data-token data-position="${esc(player.position)}" data-name="${esc(name)}" style="left:${player.x}%;top:${player.y}%" title="${esc(name)} · ${esc(player.position)} · ${esc(points(player.expected_points))} pts">
+          <div class="avatar">${esc(initials(name))}</div>
+          <div class="name">${esc(name)}</div>
+          <div class="meta">${esc(player.position || "")} · ${esc(points(player.expected_points))}${esc(status)}</div>
+        </div>`;
+    }
+
+    function chip(player) {
+      return `<span class="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs">${esc(player.position || "")} ${esc(playerName(player))} · ${esc(points(player.expected_points))}</span>`;
+    }
+
+    function renderLineup() {
+      const optimize = state.optimize;
+      if (!optimize || optimize.ok === false) {
+        lineupEl.innerHTML = errorCard("Alineación", optimize || { error: { message: "Sin once calculado." } }, true);
+        return;
+      }
+      const xi = Array.isArray(optimize.xi) ? optimize.xi : [];
+      const gaps = Array.isArray(optimize.gaps) ? optimize.gaps : [];
+      const placed = layoutXi(xi, gaps);
+      const counts = optimize.partial ? (optimize.eligible_counts || optimize.counts || {}) : (optimize.counts || {});
+      const countLine = ["POR", "DEF", "MC", "DEL"].map((pos) => `${pos} ${counts[pos] ?? 0}`).join(" · ");
+      const title = optimize.partial ? "Mejor once posible" : "Once óptimo recomendado";
+      const voidNote = optimize.matchday_void
+        ? `<p class="mb-3 rounded-2xl border border-coral/40 bg-coral/10 px-3 py-2 text-sm text-coral">Jornada a 0 · ${esc((optimize.void_reasons || []).join(", ") || "sin once completo")}. Los huecos en rojo son lo que falta fichar.</p>`
+        : "";
+      const bench = Array.isArray(optimize.benched) ? optimize.benched : [];
+      const excluded = Array.isArray(optimize.excluded) ? optimize.excluded : [];
+      const fills = Array.isArray(optimize.market_fills) ? optimize.market_fills : [];
+      const fillHtml = fills.map((gap) => {
+        const options = Array.isArray(gap.options) ? gap.options : [];
+        const rows = options.length
+          ? options.map((option) => `<li class="flex items-center justify-between gap-3 py-1 text-sm"><span class="truncate">${esc(playerName(option))}</span><span class="font-mono text-xs text-coral">${esc(eur(option.sale_price))}</span></li>`).join("")
+          : `<li class="py-1 text-sm text-white/45">Nadie de esa posición tiene precio en el mercado.</li>`;
+        return `<div class="rounded-2xl border border-coral/30 bg-coral/5 p-3"><p class="text-sm text-coral">${esc(gap.label || `Falta ${gap.missing} ${gap.position}`)}</p><ul class="mt-1">${rows}</ul></div>`;
+      }).join("");
+      const saved = optimize.saved_lineup && optimize.saved_lineup.ok ? optimize.saved_lineup : null;
+      const savedIds = new Set((saved?.xi || []).map((player) => String(player.player_id)));
+      const recommendedIds = new Set(xi.filter((player) => player.player_id).map((player) => String(player.player_id)));
+      const sameXi = saved && savedIds.size > 0 && savedIds.size === recommendedIds.size && [...savedIds].every((id) => recommendedIds.has(id));
+      const savedNames = saved ? (saved.xi || []).map((player) => playerName(player)).join(", ") : "";
+      const savedHtml = saved
+        ? `<div class="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <p class="text-[11px] uppercase tracking-[0.16em] text-white/40">Alineación guardada en la App</p>
+            <p class="mt-1 text-sm">${esc(saved.formation || "sin formación")} · ${esc(savedNames)}</p>
+            <p class="mt-1 text-xs text-white/45">${sameXi ? "Coincide con el once recomendado." : "Distinta del once recomendado por la IA."}</p>
+          </div>`
+        : `<p class="mt-4 text-xs text-white/40">La API no devolvió la alineación guardada en la app.</p>`;
+      lineupEl.innerHTML = `
+        <article class="${glass("p-4 md:p-5")}">
+          <div class="mb-4 flex items-end justify-between gap-3 px-1">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.18em] text-white/40">Alineación</p>
+              <h2 class="text-xl font-medium">${esc(title)} ${esc(optimize.formation || "")}</h2>
+              <p class="mt-1 text-xs text-white/45">${esc(optimize.manager_name || "Tu plantilla")} · ${esc(countLine)}</p>
+            </div>
+            <p class="text-right font-mono text-sm text-gold">${esc(points(optimize.expected_points))}<span class="block text-[10px] uppercase tracking-[0.14em] text-white/40">pts proyectados</span></p>
+          </div>
+          ${voidNote}
+          <div class="pitch">
+            <svg viewBox="0 0 68 105" preserveAspectRatio="none" aria-hidden="true">
+              <g fill="none" stroke="rgba(255,255,255,0.72)" stroke-width="0.45">
+                <rect x="1.2" y="1.2" width="65.6" height="102.6" rx="0.4"></rect>
+                <line x1="1.2" y1="52.5" x2="66.8" y2="52.5"></line>
+                <circle cx="34" cy="52.5" r="9.15"></circle>
+                <circle cx="34" cy="52.5" r="0.6" fill="rgba(255,255,255,0.72)" stroke="none"></circle>
+                <rect x="13.84" y="1.2" width="40.32" height="16.5"></rect>
+                <rect x="24.84" y="1.2" width="18.32" height="5.5"></rect>
+                <rect x="13.84" y="87.3" width="40.32" height="16.5"></rect>
+                <rect x="24.84" y="98.3" width="18.32" height="5.5"></rect>
+                <circle cx="34" cy="12.5" r="0.55" fill="rgba(255,255,255,0.72)" stroke="none"></circle>
+                <circle cx="34" cy="93.5" r="0.55" fill="rgba(255,255,255,0.72)" stroke="none"></circle>
+              </g>
+            </svg>
+            <div class="pitch-xi">${placed.map(tokenHtml).join("")}</div>
+          </div>
+          ${fillHtml ? `<div class="mt-4 space-y-2"><p class="text-[11px] uppercase tracking-[0.16em] text-white/40">Qué fichar para cerrar el once</p>${fillHtml}</div>` : ""}
+          ${savedHtml}
+          ${bench.length ? `<div class="mt-4"><p class="mb-2 text-[11px] uppercase tracking-[0.16em] text-white/40">Banquillo</p><div class="flex flex-wrap gap-2">${bench.map(chip).join("")}</div></div>` : ""}
+          ${excluded.length ? `<p class="mt-3 text-xs text-white/45">Fuera del once: ${excluded.slice(0, 8).map((player) => `${esc(playerName(player))} (${esc(player.excluded_reason || "fuera")})`).join(" · ")}</p>` : ""}
+          ${optimize.calibration_note ? `<details class="mt-4 text-xs text-white/45"><summary class="cursor-pointer text-white/55">Cómo se calculan los puntos</summary><p class="mt-2 leading-5">${esc(optimize.calibration_note)}</p></details>` : ""}
+        </article>`;
+    }
+
+    function accel(value) {
+      if (typeof value !== "number") return "s/d";
+      const sign = value > 0 ? "+" : "";
+      return sign + value.toLocaleString("es-ES");
+    }
+
+    function flipCard(signing) {
+      const snipe = signing.snipe || {};
+      const when = snipe.fire_local_clock || snipe.fire_local_time || "sin cierre";
+      return `
+        <article class="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.16em] text-mint">${esc(signing.position || "Jugador")}</p>
+              <h3 class="text-base font-medium">${esc(playerName(signing))}</h3>
+            </div>
+            <span class="rounded-full bg-mint/15 px-2 py-1 font-mono text-xs text-mint">${esc(accel(signing.acceleration))}</span>
+          </div>
+          <dl class="mt-3 grid grid-cols-2 gap-2 text-xs text-white/65">
+            <div><dt class="text-white/35">Puja</dt><dd class="font-mono text-sm text-white">${esc(eur(signing.bid_eur))}</dd></div>
+            <div><dt class="text-white/35">Revelar</dt><dd class="font-mono text-sm text-white">${esc(when)}</dd></div>
+            <div><dt class="text-white/35">Puntos</dt><dd class="font-mono text-white">${esc(points(signing.expected_points))}</dd></div>
+            <div><dt class="text-white/35">Titular</dt><dd class="font-mono text-white">${esc(pct(signing.p_titular))}</dd></div>
+          </dl>
+        </article>`;
+    }
+
+    function risingRow(player) {
+      return `
+        <li class="flex items-center justify-between gap-3 border-b border-white/5 py-2 last:border-0">
+          <span class="truncate text-sm">${esc(player.position || "")} ${esc(playerName(player))}</span>
+          <span class="font-mono text-xs text-mint">${esc(accel(player.acceleration))}</span>
+        </li>`;
+    }
+
+    function renderMarket() {
+      const trends = state.trends;
+      if (!trends || trends.ok === false) {
+        marketEl.innerHTML = errorCard("Mercado y flips", trends || { error: { message: "Sin lectura de mercado." } }, true);
+        return;
+      }
+      const flips = Array.isArray(trends.flips) ? trends.flips : [];
+      const rising = Array.isArray(trends.rising) ? trends.rising : [];
+      const undervalued = (trends.undervalued || []).slice(0, 4);
+      const availability = (trends.availability || []).slice(0, 4);
+      const flipIds = new Set(flips.map((item) => item.player_id));
+      const radar = rising.filter((item) => !flipIds.has(item.player_id)).slice(0, 6);
+      const emptyFlips = flips.length
+        ? flips.slice(0, 8).map(flipCard).join("")
+        : `<p class="rounded-2xl border border-dashed border-white/15 p-4 text-sm text-white/55">No hay pujas elegibles con la caja de hoy.</p>`;
+      const valueRows = undervalued.map((player) => `
+        <li class="flex items-center justify-between gap-3 py-1.5 text-sm">
+          <span class="truncate">${esc(playerName(player))}</span>
+          <span class="font-mono text-xs text-gold">${esc(player.value_ratio)} · ${esc(eur(player.gap_eur))}</span>
+        </li>`).join("");
+      const alertRows = availability.map((player) => {
+        const sanction = player.sanction || {};
+        const flags = [player.fitness, sanction.suspended ? "sancionado" : "", sanction.on_verge ? "4 amarillas" : ""].filter(Boolean).join(" · ");
+        return `<li class="py-1.5 text-sm text-white/75">${esc(playerName(player))} <span class="text-coral">${esc(flags || "alerta")}</span></li>`;
+      }).join("");
+      marketEl.innerHTML = `
+        <article class="${glass("flex max-h-[920px] flex-col p-4 md:p-5")}">
+          <div class="mb-3 flex items-end justify-between gap-3">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.18em] text-white/40">Mercado y flips</p>
+              <h2 class="text-xl font-medium">${esc(trends.flip_count || 0)} para especular</h2>
+            </div>
+            <p class="text-right text-xs text-white/45">${esc(trends.market?.count ?? 0)} fichajes<br>${esc(trends.catalog_count ?? 0)} en catálogo</p>
+          </div>
+          <div class="scroll-thin space-y-3 overflow-y-auto pr-1">
+            ${emptyFlips}
+            ${radar.length ? `<div class="pt-2"><p class="mb-1 text-[11px] uppercase tracking-[0.16em] text-white/40">Aceleración alcista</p><ul>${radar.map(risingRow).join("")}</ul></div>` : ""}
+            ${valueRows ? `<div class="pt-2"><p class="mb-1 text-[11px] uppercase tracking-[0.16em] text-white/40">Infravalorados</p><ul>${valueRows}</ul></div>` : ""}
+            ${alertRows ? `<div class="pt-2"><p class="mb-1 text-[11px] uppercase tracking-[0.16em] text-white/40">Alertas de la jornada</p><ul>${alertRows}</ul></div>` : ""}
+          </div>
+        </article>`;
+    }
+
+    function needsByTeam() {
+      const map = new Map();
+      const rivals = state.needs?.ok ? state.needs.rivals || [] : [];
+      for (const rival of rivals) map.set(String(rival.team_id), rival);
+      return map;
+    }
+
+    function statusChips(rival) {
+      if (!rival) return "";
+      const chips = [];
+      if (rival.direct === true) chips.push("Directo");
+      if (rival.lacks_liquidity === true) chips.push("Sin liquidez");
+      if (rival.lacks_replacements === true) chips.push("Sin recambio");
+      for (const position of rival.thin_positions || []) chips.push(`Hueco ${position}`);
+      return chips.map((label) => `<span class="mr-1 mt-1 inline-flex rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-white/70">${esc(label)}</span>`).join("");
+    }
+
+    function cashClass(value) {
+      if (typeof value !== "number") return "text-white/50";
+      return value < 0 ? "text-coral" : "text-mint";
+    }
+
+    function renderRivals() {
+      const squads = state.squads;
+      if (!squads || squads.ok === false) {
+        rivalsEl.innerHTML = errorCard("Auditoría de rivales", squads || { error: { message: "Sin plantillas." } }, true);
+        return;
+      }
+      const risk = needsByTeam();
+      const zone = squads.clause_lock_timezone || "Europe/Madrid";
+      const rivalRows = (squads.rivals || []).map((rival) => `
+        <tr class="border-b border-white/5 align-top">
+          <td class="px-3 py-3">
+            <div class="font-medium">${esc(rival.manager_name || rival.fantasy_team_name || rival.team_id || "Rival")}</div>
+            <div class="text-xs text-white/40">${esc(rival.fantasy_team_name || "")}</div>
+            <div>${statusChips(risk.get(String(rival.team_id)))}</div>
+          </td>
+          <td class="px-3 py-3 font-mono text-sm">${rival.rank ?? "s/d"}</td>
+          <td class="px-3 py-3 font-mono text-sm ${cashClass(rival.cash_eur)}">${esc(eur(rival.cash_eur))}</td>
+          <td class="px-3 py-3 text-sm text-white/70">${esc(rival.player_count)} jug.</td>
+          <td class="px-3 py-3 font-mono text-sm">${esc(rival.locked_clauses)}</td>
+        </tr>`).join("");
+      const clauseRows = (squads.clauses || []).map((row) => {
+        const lock = row.clause_lock || {};
+        const badge = row.is_shielded ? "Blindado" : row.is_locked ? "Bloqueada" : "Abierta";
+        const badgeClass = row.at_risk ? "text-coral" : "text-white/55";
+        return `
+          <tr class="border-b border-white/5">
+            <td class="px-3 py-3 font-medium">${esc(playerName(row))}</td>
+            <td class="px-3 py-3 text-sm text-white/70">${esc(row.manager_name || row.fantasy_team_name || "")}</td>
+            <td class="px-3 py-3 font-mono text-xs">${esc(row.position || "")}</td>
+            <td class="px-3 py-3 font-mono text-sm">${esc(eur(row.buyout_clause_eur))}</td>
+            <td class="px-3 py-3 text-xs ${badgeClass}">${esc(badge)}</td>
+            <td class="px-3 py-3 font-mono text-sm">${esc(clockLabel(lock))}</td>
+          </tr>`;
+      }).join("");
+      rivalsEl.innerHTML = `
+        <article class="${glass("p-4 md:p-5")}">
+          <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.18em] text-white/40">Auditoría de rivales</p>
+              <h2 class="text-xl font-medium">${esc(squads.rival_count || 0)} plantillas</h2>
+            </div>
+            <p class="max-w-md text-xs leading-5 text-white/40">${esc(squads.clause_lock_note || `Hora y minuto en ${zone}.`)}</p>
+          </div>
+          <div class="scroll-thin overflow-x-auto">
+            <table class="w-full min-w-[640px] text-left text-sm">
+              <thead class="text-[11px] uppercase tracking-[0.14em] text-white/40">
+                <tr>
+                  <th class="px-3 py-2 font-medium">Rival</th>
+                  <th class="px-3 py-2 font-medium">Puesto</th>
+                  <th class="px-3 py-2 font-medium">Caja</th>
+                  <th class="px-3 py-2 font-medium">Plantilla</th>
+                  <th class="px-3 py-2 font-medium">Bloqueadas</th>
+                </tr>
+              </thead>
+              <tbody>${rivalRows || `<tr><td class="px-3 py-6 text-white/50" colspan="5">La liga no devolvió rivales.</td></tr>`}</tbody>
+            </table>
+          </div>
+          <h3 class="mb-2 mt-6 text-[11px] uppercase tracking-[0.16em] text-white/40">Cláusulas · expira en ${esc(zone)}</h3>
+          <div class="scroll-thin max-h-[420px] overflow-auto">
+            <table class="w-full min-w-[720px] text-left text-sm">
+              <thead class="sticky top-0 bg-[#0c1824] text-[11px] uppercase tracking-[0.14em] text-white/40">
+                <tr>
+                  <th class="px-3 py-2 font-medium">Jugador</th>
+                  <th class="px-3 py-2 font-medium">Rival</th>
+                  <th class="px-3 py-2 font-medium">Pos</th>
+                  <th class="px-3 py-2 font-medium">Cláusula</th>
+                  <th class="px-3 py-2 font-medium">Estado</th>
+                  <th class="px-3 py-2 font-medium">Hora exacta</th>
+                </tr>
+              </thead>
+              <tbody>${clauseRows || `<tr><td class="px-3 py-6 text-white/50" colspan="6">Ninguna cláusula trae marca de desbloqueo.</td></tr>`}</tbody>
+            </table>
+          </div>
+        </article>`;
+    }
+
+    function render() {
+      renderMeta();
+      renderBanner();
+      renderLineup();
+      renderMarket();
+      renderRivals();
+    }
+
+    async function load(fresh) {
+      setBusy(true);
+      if (!state.optimize && !state.needs) renderLoading();
+      const names = ["optimize", "trends", "squads", "needs"];
+      const results = await Promise.allSettled(names.map((name) => getJson(endpoint(`/api/${name}`, fresh))));
+      results.forEach((result, index) => {
+        const name = names[index];
+        if (result.status === "fulfilled") {
+          state[name] = result.value;
+          return;
+        }
+        const payload = result.reason?.payload;
+        state[name] = payload && payload.ok === false
+          ? payload
+          : { ok: false, error: { code: "network", message: result.reason?.message || "Error de red." } };
+      });
+      render();
+      setBusy(false);
+    }
+
+    function show(data) {
+      state.optimize = data.optimize || null;
+      state.trends = data.trends || null;
+      state.squads = data.squads || null;
+      state.needs = data.needs || null;
+      render();
+    }
+
+    async function connectAccount() {
+      connectBtn.disabled = true;
+      refreshBtn.disabled = true;
+      connectBtn.textContent = "Elige tu cuenta en la ventana de Chrome…";
+      bannerEl.innerHTML = `
+        <article class="${glass("p-6")}">
+          <p class="text-[11px] uppercase tracking-[0.18em] text-white/40">Cuenta</p>
+          <h2 class="mt-2 text-lg">Se abre Chrome. Elige tu cuenta de Google.</h2>
+          <p class="mt-2 text-sm text-white/55">Cuando la app intente volver, la ventana se cierra sola y el tablero guarda la sesión.</p>
+        </article>`;
+      try {
+        const response = await fetch("/api/auth/browser", { method: "POST" });
+        const data = await response.json().catch(() => ({
+          ok: false,
+          error: { message: `HTTP ${response.status}` },
+        }));
+        if (!response.ok || data.ok === false) {
+          throw new Error(errorMessage(data));
+        }
+        if (data.league_saved && data.league_id) {
+          const label = data.league_name ? `${data.league_name}` : `Liga ${data.league_id}`;
+          document.getElementById("league-label").textContent = label;
+          await load(true);
+          return;
+        }
+        const lines = (data.leagues || [])
+          .map((league) => `${esc(league.league_id)} ${esc(league.name || "")}`.trim())
+          .join("<br>");
+        bannerEl.innerHTML = `
+          <article class="${glass("p-6")}">
+            <p class="text-[11px] uppercase tracking-[0.18em] text-white/40">Cuenta</p>
+            <h2 class="mt-2 text-lg">Tokens guardados. Falta elegir LEAGUE_ID.</h2>
+            <p class="mt-2 text-sm text-white/55">${lines || "La cuenta no devolvió una sola liga."}</p>
+          </article>`;
+      } catch (error) {
+        bannerEl.innerHTML = errorCard("Cuenta", { error: { message: error.message || "No se pudo conectar." } });
+      } finally {
+        connectBtn.disabled = false;
+        connectBtn.textContent = "Conectar cuenta con 1 clic";
+        refreshBtn.disabled = false;
+      }
+    }
+
+    connectBtn.addEventListener("click", () => connectAccount());
+    refreshBtn.addEventListener("click", () => load(true));
+    window.Dashboard = { load, show, layoutXi, render };
+    load(params.get("fresh") === "1");
+  </script>
+</body>
+</html>

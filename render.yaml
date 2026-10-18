@@ -1,0 +1,31 @@
+# Blueprint: Render construye el Dockerfile de la raíz y publica el API.
+services:
+  - type: web
+    name: fantasy-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: frankfurt
+    # Chromium no cabe en el plan de 512 MB. 1 CPU / 2 GB.
+    plan: 1c-2g
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: FANTASY_SCRAPER_BROWSER
+        value: "1"
+      - key: LALIGA_ACCESS_TOKEN
+        sync: false
+      - key: LALIGA_REFRESH_TOKEN
+        sync: false
+      - key: LEAGUE_ID
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
