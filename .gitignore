@@ -8,3 +8,5 @@ __pycache__/
 *.sqlite3
 .pkce.json
 .pytest_cache/
+.vercel
+.env*

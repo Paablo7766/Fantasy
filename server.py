@@ -564,10 +564,16 @@ app = FastAPI(
     version="0.1.0",
     description="Tablero local de solo lectura sobre la caja de herramientas.",
 )
+# Orígenes explícitos + regex para previews de Vercel y URLs temporales de
+# Cloudflare Tunnel (*.trycloudflare.com). FRONTEND_ORIGIN / CORS_ORIGINS
+# cubren el dominio de producción en Vercel.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
-    allow_origin_regex=r"https://([a-z0-9-]+\.)*vercel\.app|https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origin_regex=(
+        r"https://([a-z0-9-]+\.)*(vercel\.app|trycloudflare\.com)"
+        r"|https?://(localhost|127\.0\.0\.1)(:\d+)?"
+    ),
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
