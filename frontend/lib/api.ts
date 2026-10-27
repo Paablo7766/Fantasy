@@ -1,13 +1,13 @@
 import type { ApiError } from "@/lib/types";
 import { errorMessage } from "@/lib/format";
+import { clientApiPath } from "@/lib/backendUrl";
 
 // El navegador siempre llama al mismo origen (/api/...). Así se oculta la URL
 // del backend. El proxy en app/api/[...path]/route.ts reenvía a Render (o a
 // uvicorn en local) leyendo NEXT_PUBLIC_API_URL.
 
 export function apiUrl(path: string, search?: URLSearchParams): string {
-  const suffix = search && search.toString() ? `?${search.toString()}` : "";
-  return `${path}${suffix}`;
+  return clientApiPath(path, search);
 }
 
 /**

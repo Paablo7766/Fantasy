@@ -462,6 +462,11 @@ class DashboardApiTests(unittest.TestCase):
         response = self.client.get("/api/optimize", headers={"Origin": origin})
         self.assertEqual(response.headers.get("access-control-allow-origin"), origin)
 
+    def test_cors_allows_production_vercel(self) -> None:
+        origin = "https://fantasy-45mn.vercel.app"
+        response = self.client.get("/api/plan", headers={"Origin": origin})
+        self.assertEqual(response.headers.get("access-control-allow-origin"), origin)
+
     def test_plan_uses_core_snapshot(self) -> None:
         payload = self.client.get("/api/plan").json()
         self.assertTrue(payload["ok"])

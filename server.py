@@ -2386,6 +2386,7 @@ def _cors_origins() -> list[str]:
         "http://127.0.0.1:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
+        "https://fantasy-45mn.vercel.app",
     ]
     extra = os.getenv("FRONTEND_ORIGIN", "").strip().rstrip("/")
     if extra:

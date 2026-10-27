@@ -1,10 +1,11 @@
+import { backendProxyTarget, normalizeBackendOrigin } from "@/lib/backendUrl";
 import { connection, NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 300;
 
 async function proxy(request: NextRequest): Promise<NextResponse> {
   await connection();
-  const base = process.env.NEXT_PUBLIC_API_URL?.trim();
+  const base = normalizeBackendOrigin(process.env.NEXT_PUBLIC_API_URL);
   if (!base) {
     return NextResponse.json(
       {
@@ -19,10 +20,22 @@ async function proxy(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const target = new URL(
-    `${request.nextUrl.pathname}${request.nextUrl.search}`,
-    base.endsWith("/") ? base : `${base}/`,
-  );
+  let target: URL;
+  try {
+    target = backendProxyTarget(base, request.nextUrl.pathname, request.nextUrl.search);
+  } catch {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: {
+          code: "network",
+          message:
+            "NEXT_PUBLIC_API_URL no es válida. Usa solo el origen de Render (p. ej. https://tu-servicio.onrender.com), sin /api al final.",
+        },
+      },
+      { status: 503 },
+    );
+  }
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("content-length");
