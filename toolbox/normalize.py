@@ -123,6 +123,25 @@ def _as_int(value: Any) -> int | None:
     return None
 
 
+_MARKET_VALUE_CHANGE_KEYS = (
+    "marketValueChange",
+    "marketValueChange1",
+    "dailyMarketValueChange",
+    "marketChange",
+)
+
+
+def _market_value_change(*sources: Any) -> int | None:
+    """Subida oficial del día en la API. Acepta enteros negativos."""
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        value = _as_int(_first(source, *_MARKET_VALUE_CHANGE_KEYS))
+        if value is not None:
+            return value
+    return None
+
+
 def _as_str(value: Any) -> str | None:
     if value is None or isinstance(value, (dict, list)):
         return None
@@ -175,6 +194,88 @@ def exclusion_from_status(status: str | None) -> str | None:
     if not isinstance(status, str):
         return None
     return _EXCLUDED_STATUS.get(status.strip().lower())
+
+
+LINEUP_TRUST_TITULAR = 0.70
+_LINEUP_TITULAR_SOURCES = frozenset({"scraper", "analiticafantasy_market"})
+
+
+def titularity_overrides_injury(
+    p_titular: Any,
+    *,
+    source: str | None = None,
+    lineup_status: str | None = None,
+) -> bool:
+    """El % del once probable (≥70) manda sobre listados de lesionados desactualizados."""
+    if isinstance(p_titular, bool) or not isinstance(p_titular, (int, float)):
+        return False
+    share = float(p_titular)
+    if share > 1.0:
+        if share > 100.0:
+            return False
+        share /= 100.0
+    if share < LINEUP_TRUST_TITULAR or share > 1.0:
+        return False
+    if isinstance(source, str) and source.strip() in _LINEUP_TITULAR_SOURCES:
+        return True
+    if isinstance(lineup_status, str) and lineup_status.strip().lower() in {"titular", "duda"}:
+        return True
+    return False
+
+
+def stale_injury_overridden(
+    *,
+    p_titular: Any = None,
+    p_titular_source: str | None = None,
+    lineup_status: str | None = None,
+) -> bool:
+    """``True`` si el once probable desautoriza una baja scrapeada o API atrasada."""
+    return titularity_overrides_injury(
+        p_titular,
+        source=p_titular_source,
+        lineup_status=lineup_status,
+    )
+
+
+def display_player_status(
+    player_status: str | None,
+    *,
+    p_titular: Any = None,
+    p_titular_source: str | None = None,
+    lineup_status: str | None = None,
+) -> str | None:
+    """Estado mostrable en UI; no deja ``injured`` si el once probable lo contradice."""
+    if not isinstance(player_status, str) or not player_status.strip():
+        player_status = None
+    if player_status and exclusion_from_status(player_status) != "lesionado":
+        return player_status.strip().lower()
+    if stale_injury_overridden(
+        p_titular=p_titular,
+        p_titular_source=p_titular_source,
+        lineup_status=lineup_status,
+    ):
+        if isinstance(lineup_status, str) and lineup_status.strip().lower() == "duda":
+            return "doubtful"
+        return "ok"
+    return player_status.strip().lower() if isinstance(player_status, str) else None
+
+
+def reconcile_fitness(
+    fitness: str | None,
+    *,
+    p_titular: Any = None,
+    p_titular_source: str | None = None,
+    lineup_status: str | None = None,
+) -> str | None:
+    if fitness == "lesionado" and stale_injury_overridden(
+        p_titular=p_titular,
+        p_titular_source=p_titular_source,
+        lineup_status=lineup_status,
+    ):
+        if isinstance(lineup_status, str) and lineup_status.strip().lower() == "duda":
+            return "duda"
+        return None
+    return fitness
 
 
 def _position(value: Any) -> tuple[int | None, str | None]:
@@ -392,6 +493,50 @@ def _listing_expiry(item: dict[str, Any]) -> tuple[str | None, str | None]:
     return clock["expires_at"], clock["local_time"]
 
 
+def _image_url(master: dict[str, Any], item: dict[str, Any] | None = None) -> str | None:
+    sources = (master, item or {})
+    for source in sources:
+        found = _as_str(_first(source, "image", "imageUrl", "photo", "avatar"))
+        if found and found.startswith(("http://", "https://")):
+            return found
+    return None
+
+
+def image_index_from_players(payload: Any) -> dict[str, str]:
+    """Construye ``player_id`` → URL de foto a partir del catálogo de competición."""
+    rows: list[Any]
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        rows = unwrap_collection(payload, ("players", "elements", "items", "data", "content"))
+    else:
+        rows = []
+    index: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        player_id = _as_str(_first(row, "id", "playerId", "player_id"))
+        image = _image_url(row)
+        if player_id and image:
+            index[player_id] = image
+    return index
+
+
+def attach_image_urls(rows: Any, index: dict[str, str] | None) -> None:
+    """Rellena ``image_url`` en filas que ya tienen ``player_id`` cuando falta la foto."""
+    if not isinstance(rows, list) or not index:
+        return
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        existing = row.get("image_url")
+        if isinstance(existing, str) and existing.startswith(("http://", "https://")):
+            continue
+        player_id = row.get("player_id")
+        if isinstance(player_id, str) and player_id in index:
+            row["image_url"] = index[player_id]
+
+
 def normalize_listing(item: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
     master = _player_master(item)
     position_id, position = _position(_first(master, "positionId", "position", "role"))
@@ -410,7 +555,9 @@ def normalize_listing(item: dict[str, Any], *, now: datetime | None = None) -> d
         "position_id": position_id,
         "position": position,
         "club": _club_name(master),
+        "image_url": _image_url(master, item),
         "market_value": _as_int(_first(master, "marketValue", "value")),
+        "market_value_change": _market_value_change(master, item),
         "sale_price": _as_int(_first(item, "salePrice", "price", "money")),
         "seller_team_id": _as_str(_coalesce(_first(seller, "id", "teamId"), _first(seller_team, "id", "teamId"))),
         "seller_manager": _coalesce(_manager_name(seller), _manager_name(seller_team)),
@@ -446,6 +593,33 @@ def build_market_document(
         "count": len(listings),
         "listings": listings,
     }
+
+
+def daily_market_is_past(market: dict[str, Any] | None, *, now: datetime | None = None) -> bool:
+    """True si la oferta de la liga de esta foto ya cerró.
+
+    Un listing sin ``seller_team_id`` es de la liga. Si todos esos cierres
+    están en el pasado, la foto es el mercado anterior aunque queden ventas
+    de rivales abiertas. Sin fecha de cierre, una foto de más de 12 h
+    tampoco se trata como el mercado del día.
+    """
+    if not isinstance(market, dict):
+        return False
+    listings = [row for row in market.get("listings") or [] if isinstance(row, dict)]
+    league = [row for row in listings if not (isinstance(row.get("seller_team_id"), str) and row.get("seller_team_id"))]
+    pool = league or listings
+    current = now or datetime.now(timezone.utc)
+    expiries: list[datetime] = []
+    for row in pool:
+        moment = _parse_datetime(row.get("listing_expires_at"))
+        if moment is not None:
+            expiries.append(moment)
+    if expiries:
+        return all(moment <= current for moment in expiries)
+    fetched = _parse_datetime(market.get("fetched_at"))
+    if fetched is None:
+        return False
+    return (current - fetched).total_seconds() > 12 * 3600
 
 
 def _parse_week_series(raw: Any) -> list[float]:
@@ -508,6 +682,116 @@ def official_week_points(player: dict[str, Any]) -> list[float]:
     return []
 
 
+# ---------------------------------------------------------------------------
+# Catálogo global de la competición (``/competition/1/players``)
+# ---------------------------------------------------------------------------
+# Mapa estático ``teamId`` → club. No se deduce del payload: el catálogo solo
+# trae ``teamId`` (``"3"``), y las plantillas rivales a veces llegan sin el
+# nombre del club. Con este mapa el catálogo y las plantillas hablan del mismo
+# club aunque la API cambie de dónde lo escribe. Los 20 ids son los de la
+# temporada 2026/27; ``teamId`` es estable entre temporadas, el nombre no.
+LALIGA_CLUBS: dict[str, dict[str, str]] = {
+    "2": {"name": "Atlético de Madrid", "short": "ATM"},
+    "3": {"name": "Athletic Club", "short": "ATH"},
+    "4": {"name": "FC Barcelona", "short": "FCB"},
+    "5": {"name": "Real Betis", "short": "BET"},
+    "6": {"name": "Celta de Vigo", "short": "CEL"},
+    "7": {"name": "Elche CF", "short": "ELC"},
+    "8": {"name": "RCD Espanyol", "short": "ESP"},
+    "9": {"name": "Getafe CF", "short": "GET"},
+    "11": {"name": "Levante UD", "short": "LEV"},
+    "12": {"name": "Málaga CF", "short": "MAL"},
+    "13": {"name": "CA Osasuna", "short": "OSA"},
+    "14": {"name": "Rayo Vallecano", "short": "RAY"},
+    "15": {"name": "Real Madrid", "short": "RMA"},
+    "16": {"name": "Real Sociedad", "short": "RSO"},
+    "17": {"name": "Sevilla FC", "short": "SEV"},
+    "18": {"name": "Valencia CF", "short": "VAL"},
+    "20": {"name": "Villarreal CF", "short": "VIL"},
+    "21": {"name": "Deportivo Alavés", "short": "ALA"},
+    "26": {"name": "RC Deportivo", "short": "DEP"},
+    "49": {"name": "Racing de Santander", "short": "RAC"},
+}
+
+# Fuera de la liga: no puntúa, no se puede fichar y ensuciaría cualquier
+# mediana del mercado. Se descarta en la puerta de entrada.
+OUT_OF_LEAGUE_STATUS = "out_of_league"
+
+
+def club_for_team(team_id: Any) -> dict[str, str] | None:
+    """Ficha del club para un ``teamId`` del catálogo, o ``None`` si no está."""
+    key = _as_str(team_id)
+    return LALIGA_CLUBS.get(key) if key else None
+
+
+def _catalog_week_series(row: dict[str, Any]) -> list[float]:
+    """Serie completa de jornadas, ordenada por ``weekNumber`` y sin recortar.
+
+    ``official_week_points`` devuelve las últimas 5 porque el modelo del once
+    solo mira el presente. El analizador de volatilidad necesita la temporada
+    entera: recortar a 5 convertiría un jugador irregular en uno estable.
+    """
+    raw = row.get("weekPoints")
+    if raw is None:
+        raw = _player_master(row).get("weekPoints")
+    return _parse_week_series(raw)
+
+
+def normalize_catalog_player(row: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any] | None:
+    """Una fila del catálogo global → jugador normalizado, o ``None`` si se descarta.
+
+    El contrato del catálogo es plano (``id``, ``teamId``, ``weekPoints`` a
+    nivel raíz), a diferencia del mercado, que anida en ``playerMaster``. Se
+    aceptan las dos formas para que la misma función sirva si la API cambia.
+
+    Devuelve ``None`` para ``out_of_league``: quien llama filtra con
+    ``filter(None, ...)`` y no tiene que recordar la regla.
+    """
+    if not isinstance(row, dict):
+        return None
+    master = _player_master(row)
+    status = _as_str(_first(master, "playerStatus", "status"))
+    status = status.strip().lower() if status else None
+    if status == OUT_OF_LEAGUE_STATUS:
+        return None
+
+    team_id = _as_str(_coalesce(_first(master, "teamId"), _first(row, "teamId")))
+    club = club_for_team(team_id)
+    position_id, position = _position(_first(master, "positionId", "position", "role"))
+
+    return {
+        "player_id": _as_str(_first(master, "id", "playerId")),
+        "name": _as_str(_first(master, "name", "fullname")),
+        "nickname": _as_str(_first(master, "nickname", "shortName")),
+        "team_id": team_id,
+        "club": club["name"] if club else _club_name(master),
+        "club_short": club["short"] if club else None,
+        "position_id": position_id,
+        "position": position,
+        "player_status": status,
+        "fitness": fitness_from_status(status),
+        "image_url": _image_url(master, row),
+        # ``marketValue`` llega como string ("38074199"): el cast a int es
+        # obligatorio antes de cualquier suma o comparación.
+        "market_value": _as_int(_first(master, "marketValue", "value")) or 0,
+        "market_value_change": _market_value_change(master, row),
+        "average_points": _as_real(_first(master, "averagePoints", "average_points")),
+        "week_points": _catalog_week_series(row),
+    }
+
+
+def normalize_catalog(payload: Any, *, now: datetime | None = None) -> list[dict[str, Any]]:
+    """Catálogo completo normalizado, sin los ``out_of_league`` ni los sin id."""
+    rows = unwrap_collection(payload, ("players", "elements", "items", "data", "content"))
+    players: list[dict[str, Any]] = []
+    for row in rows:
+        player = normalize_catalog_player(row, now=now)
+        if player is None or not player.get("player_id"):
+            continue
+        players.append(player)
+    return players
+
+
 def normalize_player(item: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
     master = _player_master(item)
     position_id, position = _position(_first(master, "positionId", "position", "role"))
@@ -525,7 +809,9 @@ def normalize_player(item: dict[str, Any], *, now: datetime | None = None) -> di
         "player_status": player_status,
         "fitness": fitness_from_status(player_status),
         "club": _club_name(master),
+        "image_url": _image_url(master, item),
         "market_value": _as_int(_first(master, "marketValue", "value")),
+        "market_value_change": _market_value_change(master, item),
         "average_points": _as_real(_first(master, "averagePoints", "average_points")),
         "week_points": official_week_points(item),
         "buyout_clause": _as_int(_first(item, "buyoutClause", "clause", "buyout")),
@@ -563,9 +849,11 @@ def team_seeds(payload: Any) -> list[dict[str, Any]]:
             continue
         seen.add(team_id)
         team = row.get("team") if isinstance(row.get("team"), dict) else {}
+        standing_manager = team.get("manager") if isinstance(team.get("manager"), dict) else {}
         seeds.append(
             {
                 "team_id": team_id,
+                "manager_id": _as_str(_first(standing_manager, "id", "managerId")),
                 "manager_name": _manager_name(row) or _manager_name(team),
                 "fantasy_team_name": _as_str(_first(team, "name", "teamName") or _first(row, "teamName", "name")),
                 "rank": _as_int(_first(row, "position", "rank", "ranking")),
@@ -588,9 +876,11 @@ def normalize_squad(
     team = payload.get("team") if isinstance(payload.get("team"), dict) else {}
     cash = _as_int(_coalesce(_first(payload, "teamMoney", "money", "cash"), _first(team, "teamMoney", "money", "cash")))
     team_id = seed["team_id"]
+    manager = payload.get("manager") if isinstance(payload.get("manager"), dict) else {}
     return {
         "team_id": team_id,
         "is_self": own_team_id is not None and team_id == own_team_id,
+        "manager_id": _as_str(_coalesce(_first(manager, "id", "managerId"), _first(payload, "managerId"), seed.get("manager_id"))),
         "manager_name": _manager_name(payload) or seed.get("manager_name"),
         "fantasy_team_name": _as_str(_first(team, "name", "teamName")) or seed.get("fantasy_team_name"),
         "rank": seed.get("rank"),
@@ -666,6 +956,7 @@ def empty_squad(seed: dict[str, Any], *, own_team_id: str | None, message: str) 
     return {
         "team_id": team_id,
         "is_self": own_team_id is not None and team_id == own_team_id,
+        "manager_id": seed.get("manager_id") if isinstance(seed.get("manager_id"), str) else None,
         "manager_name": seed.get("manager_name"),
         "fantasy_team_name": seed.get("fantasy_team_name"),
         "rank": seed.get("rank"),

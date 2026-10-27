@@ -1,0 +1,501 @@
+[browser] ./components/RivalsDashboard.tsx:22:10
+Error: the name `eurShort` is defined multiple times
+  20 |   stamp,
+  21 | } from "@/lib/format";
+> 22 | import { eurShort } from "@/lib/format";
+     |          ^^^^^^^^
+  23 | import {
+  24 |   financialIndex,
+  25 |   liquidityRead,
+
+Ecmascript file had an error
+
+Import traces:
+  Client Component Browser:
+    ./components/RivalsDashboard.tsx [Client Component Browser]
+    ./app/(panel)/rivales/page.tsx [Client Component Browser]
+    ./app/(panel)/rivales/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/RivalsDashboard.tsx [Client Component SSR]
+    ./app/(panel)/rivales/page.tsx [Client Component SSR]
+    ./app/(panel)/rivales/page.tsx [Server Component] 
+[browser] ./components/RivalsDashboard.tsx:22:10
+Error: the name `eurShort` is defined multiple times
+  20 |   stamp,
+  21 | } from "@/lib/format";
+> 22 | import { eurShort } from "@/lib/format";
+     |          ^^^^^^^^
+  23 | import {
+  24 |   financialIndex,
+  25 |   liquidityRead,
+
+Ecmascript file had an error
+
+Import traces:
+  Client Component Browser:
+    ./components/RivalsDashboard.tsx [Client Component Browser]
+    ./app/(panel)/rivales/page.tsx [Client Component Browser]
+    ./app/(panel)/rivales/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/RivalsDashboard.tsx [Client Component SSR]
+    ./app/(panel)/rivales/page.tsx [Client Component SSR]
+    ./app/(panel)/rivales/page.tsx [Server Component] 
+⚠ Blocked cross-origin request to Next.js dev resource /_next/hmr from "127.0.0.1".
+Cross-origin access to Next.js dev resources is blocked by default for safety.
+
+To allow this host in development, add it to "allowedDevOrigins" in next.config.js and restart the dev server:
+
+// next.config.js
+module.exports = {
+  allowedDevOrigins: ['127.0.0.1'],
+}
+
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+Route /rivales is rendering with server caches disabled. For this navigation, Component Metadata in React DevTools will not accurately reflect what is statically prerenderable and runtime prefetchable. See more info here: https://nextjs.org/docs/messages/cache-bypass-in-dev
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <HTTPAccessFallbackErrorBoundary pathname="/rivales" notFound={{...}} forbidden={undefined} unauthorized={undefined} ...>
+      <RedirectBoundary>
+        <RedirectErrorBoundary router={{...}}>
+          <InnerLayoutRouter url="/rivales?l..." tree={[...]} params={{}} renderTree={{...}} segmentPath={[...]} ...>
+            <SegmentViewNode type="layout" pagePath="(panel)/la...">
+              <SegmentTrieNode>
+              <script>
+              <script>
+              <PanelLayout>
+                <DashboardProvider>
+                  <Suspense fallback={null}>
+                    <AppShell>
+                      <div className="app-shell">
+                        <aside className="app-sidebar">
+                          <div className="flex items...">
+                            <span>
+                            <div className="min-w-0">
+                              <p
+                                className="text-[0.95rem] font-semibold leading-none tracking-[-0.03em] text-white"
+-                               data-cursor-ref="e15"
+                              >
++                               LALIGA Fantasy
+                              <p
+                                className="mt-1 text-[11px] text-[color:var(--sidebar-muted)]"
+-                               data-cursor-ref="e16"
+                              >
++                               Panel de acción
+                          <nav
+                            className="flex flex-1 flex-col gap-4"
+                            aria-label="Secciones"
+-                           data-cursor-ref="e17"
+                          >
+                            <div className="flex flex-...">
+                              <div className="flex items...">
+                                <p
+                                  className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--s..."
+-                                 data-cursor-ref="e18"
+                                >
++                                 Hoy
+                                ...
+                              ...
+                            <div className="flex flex-...">
+                              <div className="flex items...">
+                                <p
+                                  className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--s..."
+-                                 data-cursor-ref="e19"
+                                >
++                                 Mi Equipo
+                                ...
+                              ...
+                            <div className="flex flex-...">
+                              <div className="flex items...">
+                                <p
+                                  className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--s..."
+-                                 data-cursor-ref="e20"
+                                >
++                                 Contexto
+                                ...
+                              ...
+                          <div className="mt-4 borde...">
+                            <p
+                              className="truncate text-sm font-medium text-white"
+-                             data-cursor-ref="e21"
+                            >
++                             Liga activa
+                            <p
+                              className="mt-1 font-mono text-[11px] text-[color:var(--sidebar-muted)]"
+-                             data-cursor-ref="e22"
+                            >
++                             Sin foto guardada
+                            ...
+                        <div className="app-frame">
+                          <header className="app-topbar">
+                            <div className="flex items...">
+                              <div className="flex min-w...">
+                                <span>
+                                <div className="min-w-0">
+                                  <p>
+                                  <h1
+                                    className="truncate text-lg font-semibold tracking-[-0.03em] text-ink md:text-xl"
+-                                   data-cursor-ref="e23"
+                                  >
++                                   Rivales
+                                  ...
+                              <div className="flex shrin...">
+                                <span>
+                                <ApiUsagePanel>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary inline-flex"
+                                    onClick={function onClick}
+                                    title="Llamadas que está haciendo el panel ahora mismo, por fuente"
+                                    aria-haspopup="dialog"
+-                                   data-cursor-ref="e0"
+                                  >
+                                  <dialog ref={{current:null}} className="bid-dialog..." onClose={function onClose} ...>
+                                    <div className="bid-dialog...">
+                                      <div className="flex flex-...">
+                                        <div>
+                                          <p
+                                            className="eyebrow"
+-                                           data-cursor-ref="e24"
+                                          >
++                                           Ritmo de llamadas
+                                          <h2
+                                            className="section-title mt-1"
+-                                           data-cursor-ref="e25"
+                                          >
++                                           ¿Cuántas peticiones estoy haciendo?
+                                          <p
+                                            className="section-support mt-1"
+-                                           data-cursor-ref="e26"
+                                          >
++                                           Cuenta real de este proceso, por fuente. Los aciertos de caché no gastan pe...
+                                        ...
+                                      <p
+                                        className="mt-6 text-sm text-muted"
+-                                       data-cursor-ref="e27"
+                                      >
++                                       Leyendo contadores…
+                                <DataHealthPanel>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary inline-flex"
+                                    onClick={function onClick}
+                                    disabled={true}
+                                    title="Carga el mercado para ver fuentes"
+                                    aria-haspopup="dialog"
+-                                   data-cursor-ref="e1"
+                                  >
+                                  <dialog ref={{current:null}} className="bid-dialog..." onClose={function onClose} ...>
+                                    <div className="bid-dialog...">
+                                      <div className="flex flex-...">
+                                        <div>
+                                          <p
+                                            className="eyebrow"
+-                                           data-cursor-ref="e28"
+                                          >
++                                           Salud de datos
+                                          <h2
+                                            className="section-title mt-1"
+-                                           data-cursor-ref="e29"
+                                          >
++                                           ¿Confiar en las tesis ahora?
+                                          <p
+                                            className="section-support mt-1"
+-                                           data-cursor-ref="e30"
+                                          >
++                                           APIs, scrapers y bloques del tablero. Si algo falla, el motor no inventa: f...
+                                        ...
+                                      <p
+                                        className="mt-6 text-sm text-muted"
+-                                       data-cursor-ref="e31"
+                                      >
++                                       Sin lectura de mercado. Pulsa Actualizar para cargar fuentes.
+                                <button>
+                                <button
+                                  type="button"
+                                  onClick={function onClick}
+                                  disabled={false}
+                                  className="btn btn-primary"
+                                  title="Descarga una foto nueva de LALIGA y los scrapers"
+-                                 data-cursor-ref="e2"
+                                >
++                                 Actualizar
+                          <nav
+                            className="app-tabs scroll-thin"
+                            aria-label="Secciones"
+-                           data-cursor-ref="e32"
+                          >
+                            <div className="flex items...">
+                              <span>
+                              <LinkComponent href="/?league=u..." className="tab-link" aria-current={undefined}>
+                                <a
+                                  className="tab-link"
+                                  aria-current={undefined}
+                                  ref={function}
+                                  onClick={function onClick}
+                                  onMouseEnter={function onMouseEnter}
+                                  onTouchStart={function onTouchStart}
+                                  href="/?league=uitest"
+-                                 data-cursor-ref="e3"
+                                >
++                                 Hoy
+                            <div className="flex items...">
+                              <span>
+                              <LinkComponent href="/once?leag..." className="tab-link" aria-current={undefined}>
+                                <a
+                                  className="tab-link"
+                                  aria-current={undefined}
+                                  ref={function}
+                                  onClick={function onClick}
+                                  onMouseEnter={function onMouseEnter}
+                                  onTouchStart={function onTouchStart}
+                                  href="/once?league=uitest"
+-                                 data-cursor-ref="e4"
+                                >
++                                 Once
+                              <LinkComponent href="/cartera?l..." className="tab-link" aria-current={undefined}>
+                                <a
+                                  className="tab-link"
+                                  aria-current={undefined}
+                                  ref={function}
+                                  onClick={function onClick}
+                                  onMouseEnter={function onMouseEnter}
+                                  onTouchStart={function onTouchStart}
+                                  href="/cartera?league=uitest"
+-                                 data-cursor-ref="e5"
+                                >
++                                 Cartera
+                              <LinkComponent href="/clausulaz..." className="tab-link" aria-current={undefined}>
+                                <a
+                                  className="tab-link"
+                                  aria-current={undefined}
+                                  ref={function}
+                                  onClick={function onClick}
+                                  onMouseEnter={function onMouseEnter}
+                                  onTouchStart={function onTouchStart}
+                                  href="/clausulazos?league=uitest"
+-                                 data-cursor-ref="e6"
+                                >
++                                 Cláusulas
+                            <div className="flex items...">
+                              <span>
+                              <LinkComponent href="/mercado?l..." className="tab-link" aria-current={undefined}>
+                                <a
+                                  className="tab-link"
+                                  aria-current={undefined}
+                                  ref={function}
+                                  onClick={function onClick}
+                                  onMouseEnter={function onMouseEnter}
+                                  onTouchStart={function onTouchStart}
+                                  href="/mercado?league=uitest"
+-                                 data-cursor-ref="e7"
+                                >
++                                 Mercado
+                              <LinkComponent href="/rivales?l..." className="tab-link t..." aria-current="page">
+                                <a
+                                  className="tab-link tab-link--active"
+                                  aria-current="page"
+                                  ref={function}
+                                  onClick={function onClick}
+                                  onMouseEnter={function onMouseEnter}
+                                  onTouchStart={function onTouchStart}
+                                  href="/rivales?league=uitest"
+-                                 data-cursor-ref="e8"
+                                >
++                                 Rivales
+                              <LinkComponent href="/intel?lea..." className="tab-link" aria-current={undefined}>
+                                <a
+                                  className="tab-link"
+                                  aria-current={undefined}
+                                  ref={function}
+                                  onClick={function onClick}
+                                  onMouseEnter={function onMouseEnter}
+                                  onTouchStart={function onTouchStart}
+                                  href="/intel?league=uitest"
+-                                 data-cursor-ref="e9"
+                                >
++                                 Intel
+                              <LinkComponent href="/calibraci..." className="tab-link" aria-current={undefined}>
+                                <a
+                                  className="tab-link"
+                                  aria-current={undefined}
+                                  ref={function}
+                                  onClick={function onClick}
+                                  onMouseEnter={function onMouseEnter}
+                                  onTouchStart={function onTouchStart}
+                                  href="/calibracion?league=uitest"
+-                                 data-cursor-ref="e10"
+                                >
++                                 Calibración
+                          ...
+          ...
+ 
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <InnerScrollHandler scrollRef={{scrollRef:null, ...}} renderTree={{...}}>
+      <ErrorBoundary errorComponent={undefined} errorStyles={undefined} errorScripts={undefined}>
+        <LoadingBoundary name="rivales/" loading={null}>
+          <HTTPAccessFallbackBoundary notFound={undefined} forbidden={undefined} unauthorized={undefined}>
+            <RedirectBoundary>
+              <RedirectErrorBoundary router={{...}}>
+                <InnerLayoutRouter url="/rivales?l..." tree={[...]} params={{}} renderTree={{...}} segmentPath={[...]} ...>
+                  <SegmentViewNode type="page" pagePath="(panel)/ri...">
+                    <SegmentTrieNode>
+                    <ClientPageRoot Component={function RivalesPage} serverProvidedParams={null}>
+                      <RivalesPage params={Promise} searchParams={Promise}>
+                        <div className="reveal fle...">
+                          <div className="flex flex-...">
+                            <div className="seg">
+                              <button
+                                type="button"
+                                onClick={function onClick}
+                                className="seg__btn seg__btn--active"
+                                aria-pressed={true}
+-                               data-cursor-ref="e11"
+                              >
++                               Liga y plantillas
+                              <button
+                                type="button"
+                                onClick={function onClick}
+                                className="seg__btn"
+                                aria-pressed={false}
+-                               data-cursor-ref="e12"
+                              >
++                               Todas las cláusulas
+                              <button
+                                type="button"
+                                onClick={function onClick}
+                                className="seg__btn"
+                                aria-pressed={false}
+-                               data-cursor-ref="e13"
+                              >
++                               Caja forense
+                            <p
+                              className="text-[11px] leading-4 text-faint"
+-                             data-cursor-ref="e33"
+                            >
++                             Carrera de liga, plantillas y cláusulas a la vista.
+                          <LeagueRacePanel>
+                            <section className="rounded-2x...">
+                              <p
+                                className="eyebrow"
+-                               data-cursor-ref="e34"
+                              >
++                               Carrera de liga
+                              ...
+                          <section className="min-w-0">
+                            <RivalsDashboard squads={null} needs={null} trends={null} clauseIntel={null} ...>
+                              <Skeleton title="Rivales" rows={6}>
+                                <article
+                                  className="card p-5"
+                                  aria-busy="true"
+                                  aria-label="Cargando Rivales"
+-                                 data-cursor-ref="e35"
+                                >
+                                  <p
+                                    className="eyebrow"
+-                                   data-cursor-ref="e36"
+                                  >
++                                   Rivales
+                                  ...
+                  ...
+                ...
+      ...
+ 
+⚠ Fast Refresh had to perform a full reload when ./components/DashboardProvider.tsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+⚠ Fast Refresh had to perform a full reload when ./components/DashboardProvider.tsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+⚠ Fast Refresh had to perform a full reload when ./components/DashboardProvider.tsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+⨯ ReferenceError: useRef is not defined
+    at DashboardProvider (components\DashboardProvider.tsx:190:20)
+  188 |   }, []);
+  189 |
+> 190 |   const stateRef = useRef<DashboardState>(EMPTY);
+      |                    ^
+  191 |   useEffect(() => {
+  192 |     stateRef.current = state;
+  193 |   }, [state]); {
+  digest: '3388989782'
+}
+⚠ Fast Refresh had to perform a full reload when ./components/DashboardProvider.tsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+⨯ ReferenceError: useRef is not defined
+    at DashboardProvider (components\DashboardProvider.tsx:190:20)
+  188 |   }, []);
+  189 |
+> 190 |   const stateRef = useRef<DashboardState>(EMPTY);
+      |                    ^
+  191 |   useEffect(() => {
+  192 |     stateRef.current = state;
+  193 |   }, [state]); {
+  digest: '3388989782'
+}
+[browser] Uncaught ReferenceError: useRef is not defined
+    at DashboardProvider (components/DashboardProvider.tsx:190:20)
+    at PanelLayout (app\(panel)\layout.tsx:7:5)
+  188 |   }, []);
+  189 |
+> 190 |   const stateRef = useRef<DashboardState>(EMPTY);
+      |                    ^
+  191 |   useEffect(() => {
+  192 |     stateRef.current = state;
+  193 |   }, [state]);
+Error: Route "/once": Could not validate `instant` because an error prevented the target segment from rendering.
+    at PanelLayout (app\(panel)\layout.tsx:7:5)
+   5 | export default function PanelLayout({ children }: { children: ReactNode }) {
+   6 |   return (
+>  7 |     <DashboardProvider>
+     |     ^
+   8 |       <Suspense fallback={null}>
+   9 |         <AppShell>{children}</AppShell>
+  10 |       </Suspense> {
+  [cause]: ReferenceError: useRef is not defined
+      at DashboardProvider (components\DashboardProvider.tsx:190:20)
+    188 |   }, []);
+    189 |
+  > 190 |   const stateRef = useRef<DashboardState>(EMPTY);
+        |                    ^
+    191 |   useEffect(() => {
+    192 |     stateRef.current = state;
+    193 |   }, [state]);
+}
+Error: Route "/once": Could not validate `instant` because an error prevented the target segment from rendering.
+    at PanelLayout (app\(panel)\layout.tsx:7:5)
+   5 | export default function PanelLayout({ children }: { children: ReactNode }) {
+   6 |   return (
+>  7 |     <DashboardProvider>
+     |     ^
+   8 |       <Suspense fallback={null}>
+   9 |         <AppShell>{children}</AppShell>
+  10 |       </Suspense> {
+  [cause]: ReferenceError: useRef is not defined
+      at DashboardProvider (components\DashboardProvider.tsx:190:20)
+    188 |   }, []);
+    189 |
+  > 190 |   const stateRef = useRef<DashboardState>(EMPTY);
+        |                    ^
+    191 |   useEffect(() => {
+    192 |     stateRef.current = state;
+    193 |   }, [state]);
+}

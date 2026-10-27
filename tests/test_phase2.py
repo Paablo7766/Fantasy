@@ -14,6 +14,7 @@ from unittest.mock import patch
 import httpx
 
 import cli
+from toolbox import net
 from toolbox.cache import EntityStore, ResponseCache
 from toolbox.matching import (
     MATCH_THRESHOLD,
@@ -46,7 +47,8 @@ from toolbox.scrapers import (
 MARKET_HTML = """
 <table>
 <tr class="elemento_jugador" data-id="1" data-nombre="b mendez" data-posicion="Centrocampista"
-    data-valor="10000000" data-diferencia1="120000" data-aceleracion="500000">
+    data-valor="10000000" data-diferencia1="120000" data-diferencia2="250000"
+    data-diferencia3="310000" data-aceleracion="500000">
   <td>
     <a class="player-name"><span class="d-none d-md-inline">B. Méndez</span><span>Méndez</span></a>
     <div class="player-equipo"><img alt="Real Sociedad"><span>Real Sociedad</span></div>
@@ -60,6 +62,17 @@ MARKET_HTML = """
     <div class="player-equipo"><span>Celta</span></div>
   </td>
   <td><span class="probabilidad-widget"><span class="prob-5">90%</span></span></td>
+</tr>
+<tr class="elemento_jugador" data-id="1972" data-nombre="yeray alvarez" data-posicion="Defensa"
+    data-valor="15000000" data-diferencia1="-18966" data-aceleracion="18966">
+  <td>
+    <a class="player-name"><span class="d-none d-md-inline">Yeray Álvarez</span></a>
+    <div class="player-equipo"><span>Athletic</span></div>
+  </td>
+  <td>
+    <span class="columna_diferencia columna_diferencia1"><span class="analytics-down">-1,42%</span></span>
+    <span class="porcentaje-perfil"><span class="probabilidad-widget"><span class="prob-3">70%</span></span></span>
+  </td>
 </tr>
 </table>
 """
@@ -91,6 +104,9 @@ FBREF_HTML = """
   <td data-stat="assisted_shots">18</td>
   <td data-stat="challenges_won">22</td>
   <td data-stat="clearances">4</td>
+  <td data-stat="minutes">720</td>
+  <td data-stat="games_starts">8</td>
+  <td data-stat="minutes_pct">85.0</td>
 </tr></table>
 """
 
@@ -99,10 +115,60 @@ SOFA = {
         {
             "player": {"id": 9, "name": "B. Méndez", "position": "M"},
             "team": {"name": "Real Sociedad"},
-            "statistics": {"rating": 7.4, "expectedGoals": 3.2, "saves": 1},
+            "statistics": {
+                "rating": 7.4,
+                "expectedGoals": 3.2,
+                "saves": 1,
+                "minutesPlayed": 720,
+                "appearances": 8,
+                "started": 8,
+            },
         }
     ]
 }
+
+UNDERSTAT_PAYLOAD = {
+    "teams": {
+        "1": {
+            "id": "1",
+            "title": "Real Sociedad",
+            "history": [{"xG": 1.2, "xGA": 0.8}, {"xG": 1.0, "xGA": 1.1}],
+        },
+        "2": {
+            "id": "2",
+            "title": "Celta Vigo",
+            "history": [{"xG": 0.9, "xGA": 1.5}, {"xG": 1.1, "xGA": 1.4}],
+        },
+    },
+    "players": [
+        {
+            "id": "99",
+            "player_name": "Brais Méndez",
+            "games": "8",
+            "time": "720",
+            "xG": "4.0",
+            "xA": "2.0",
+            "key_passes": "20",
+            "position": "M S",
+            "team_title": "Real Sociedad",
+        }
+    ],
+    "dates": [
+        {
+            "id": "1",
+            "isResult": False,
+            "h": {"id": "1", "title": "Real Sociedad"},
+            "a": {"id": "2", "title": "Celta Vigo"},
+            "datetime": "2099-01-01 18:00:00",
+        }
+    ],
+}
+
+JP_HTML = """
+<html><script>
+const marketCaching=[{"playerId":"1","playerUrl":"brais","name":"B. Méndez","real_name":"Brais Méndez","position":"centrocampista","altPositions":[],"remote_player":"1","price":"10000000","max_price":"1","min_price":"1","lastMarkets":{},"url":"brais","teamId":"1","team":"Real Sociedad","teamUrl":"real-sociedad","remote_team":"1","available":"1","penalized":"0","injured":"0","warned":"0","doubt":"0","other":"0","tip":"recomendable","tip_desc":"ok","status":"check","icon":"tick","desc":"Disponible","racha":"3"}];
+</script></html>
+"""
 
 BRAIS_TM = {
     "results": [
@@ -222,6 +288,16 @@ class Phase2Test(unittest.TestCase):
             store.close()
 
     def test_transfermarkt_rate_limit_is_two_per_three_seconds_per_ip(self) -> None:
+        """Presupuesto por IP y ventana. El espaciado por dominio se apaga aquí:
+        esta prueba mide exactamente ``slept`` y el controlador de tráfico
+        añadiría sus propias esperas, que tienen sus propias pruebas."""
+        pacing = patch.dict(os.environ, {"FANTASY_NET_PACING": "0"})
+        pacing.start()
+        self.addCleanup(pacing.stop)
+        from toolbox import net as net_module
+
+        net_module.reset_rate_limits()
+        self.addCleanup(net_module.reset_rate_limits)
         now = [0.0]
         slept: list[float] = []
 
@@ -297,8 +373,14 @@ class Phase2Test(unittest.TestCase):
         self.assertEqual(board[0].p_titular, 0.8)
         self.assertEqual(board[0].acceleration, 500000)
         self.assertEqual(board[0].price_delta, 120000)
+        # Los acumulados de 2 y 3 días se leían y se tiraban: la app oficial a
+        # veces enseña ese tramo y parecía que el panel se había quedado corto.
+        self.assertEqual(board[0].price_delta_2, 250000)
+        self.assertEqual(board[0].price_delta_3, 310000)
         self.assertEqual(board[0].position, "MC")
         self.assertEqual(board[1].acceleration, -400000)
+        yeray = next(row for row in board if row.external_id == "1972")
+        self.assertEqual(yeray.p_titular, 0.7)
         fitness = parse_fitness_board(FITNESS_HTML)
         self.assertEqual(fitness[0].fitness, "duda")
         self.assertEqual(fitness[0].club, "Real Sociedad")
@@ -325,10 +407,17 @@ class Phase2Test(unittest.TestCase):
                 return httpx.Response(200, text=FBREF_HTML)
             if "sofascore.com" in url:
                 return httpx.Response(200, json=SOFA)
+            if "understat.com" in url and "getLeagueData" in url:
+                return httpx.Response(200, json=UNDERSTAT_PAYLOAD)
+            if "jornadaperfecta.com" in url:
+                return httpx.Response(200, text=JP_HTML)
             if "players/search" in url and ("Aspas" in url or "Iago" in url):
                 return httpx.Response(200, json=ASPAS_TM)
             if "players/search" in url:
                 return httpx.Response(200, json=BRAIS_TM)
+            if "analiticafantasy.com" in url:
+                # Enrichment AF vacío pero OK: no fuerza partial ni inventa filas.
+                return httpx.Response(200, text="<html></html>")
             return httpx.Response(404, text="no")
 
         transport = httpx.MockTransport(handler)
@@ -394,10 +483,11 @@ class Phase2Test(unittest.TestCase):
 
         real_client = httpx.Client
 
-        def client_factory(*_args: object, **kwargs: object) -> httpx.Client:
-            options = dict(kwargs)
-            options["transport"] = transport
-            return real_client(**options)
+        def client_factory() -> httpx.Client:
+            # Transporte simulado para el ``ExternalClient()`` que construyen
+            # los scrapers por su cuenta. Es el punto de inyección oficial del
+            # air-gap: fuera de producción solo se acepta un MockTransport.
+            return real_client(transport=transport)
 
         stdout = StringIO()
         stderr = StringIO()
@@ -408,7 +498,10 @@ class Phase2Test(unittest.TestCase):
                 "SOFASCORE_STATS_URL": "https://api.sofascore.com/api/v1/unique-tournament/8/statistics",
             }
             with patch.dict(os.environ, env, clear=False):
-                with patch("cli.LaligaClient", FakeLeague), patch("toolbox.net.httpx.Client", client_factory):
+                with (
+                    patch("cli.LaligaClient", FakeLeague),
+                    patch.object(net, "TRANSPORT_FACTORY", client_factory),
+                ):
                     with redirect_stdout(stdout), redirect_stderr(stderr):
                         code = cli.main(["trends", "--json", "--league", "7"])
             payload = json.loads(stdout.getvalue())
@@ -447,12 +540,23 @@ class Phase2Test(unittest.TestCase):
         self.assertGreaterEqual(rising["matching_confidence"], 0.85)
         self.assertEqual(rising["transfermarkt_value_eur"], 18_000_000)
         self.assertEqual(rising["gap_eur"], 8_000_000)
-        self.assertEqual(rising["form"]["xg"], 3.2)
-        self.assertEqual(rising["form"]["xa"], 1.4)
-        self.assertEqual(rising["form"]["key_passes"], 18)
+        # Understat manda en xG/xA; FBref/Sofascore rellenan el resto.
+        self.assertEqual(rising["form"]["xg"], 4.0)
+        self.assertEqual(rising["form"]["xa"], 2.0)
+        self.assertEqual(rising["form"]["key_passes"], 20)
         self.assertEqual(rising["form"]["duels_won"], 22)
         self.assertEqual(rising["form"]["clearances"], 4)
         self.assertEqual(rising["form"]["average_rating"], 7.4)
+        self.assertEqual(rising["form"]["minutes"], 720)
+        self.assertEqual(rising["form"]["minutes_pct"], 1.0)
+        self.assertEqual(rising["form"]["jp_tip"], "recomendable")
+        self.assertEqual(rising["form"]["jp_projected_points"], 6.5)
+        self.assertIsNotNone(rising.get("fixture"))
+        self.assertEqual(rising["fixture"]["opponent"], "Celta Vigo")
+        self.assertTrue(rising["fixture"]["home"])
+        self.assertIn(rising["fixture"]["fdr"], {1, 2, 3, 4, 5})
+        self.assertTrue(payload["sources"]["understat"]["ok"])
+        self.assertTrue(payload["sources"]["jornadaperfecta"]["ok"])
         self.assertEqual(payload["falling"][0]["player_id"], "1002")
         self.assertLess(payload["falling"][0]["acceleration"], 0)
         self.assertEqual(payload["undervalued"][0]["player_id"], "1001")

@@ -93,6 +93,7 @@
           <p id="league-label" class="text-sm text-white/80">Leyendo liga…</p>
           <p id="updated" class="font-mono text-[11px] text-white/40"></p>
         </div>
+        <span id="trends-pill" class="hidden rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/55">Cargando mercado…</span>
         <span id="partial-pill" class="hidden rounded-full border border-gold/30 bg-gold/10 px-3 py-1 text-[11px] text-gold">Lectura parcial</span>
         <button id="connect" type="button" class="inline-flex items-center gap-2 rounded-full border border-gold/40 bg-gold/15 px-4 py-2 text-sm text-gold backdrop-blur transition hover:bg-gold/25 disabled:opacity-50">
           Conectar cuenta con 1 clic
@@ -123,6 +124,7 @@
     const params = new URLSearchParams(location.search);
     const leagueQuery = params.get("league");
     const state = { optimize: null, trends: null, squads: null, needs: null };
+    const pending = { optimize: false, trends: false, squads: false, needs: false };
 
     const bannerEl = document.getElementById("banner");
     const lineupEl = document.getElementById("lineup");
@@ -131,10 +133,9 @@
     const refreshBtn = document.getElementById("refresh");
     const connectBtn = document.getElementById("connect");
 
-    function endpoint(path, fresh) {
+    function endpoint(path) {
       const query = new URLSearchParams();
       if (leagueQuery) query.set("league", leagueQuery);
-      if (fresh) query.set("fresh", "true");
       const suffix = query.toString();
       return suffix ? `${path}?${suffix}` : path;
     }
@@ -265,13 +266,20 @@
       const optimize = state.optimize?.ok ? state.optimize : null;
       const name = trends?.league_name || squads?.league_name || optimize?.manager_name || "Liga activa";
       document.getElementById("league-label").textContent = name;
-      const when = trends?.dashboard_at || squads?.dashboard_at || optimize?.dashboard_at || trends?.fetched_at;
-      document.getElementById("updated").textContent = when ? `Actualizado ${stamp(when)}` : "";
+      // La foto se sirve al instante; aquí solo se cuenta de cuándo es.
+      const photo = [trends, squads, optimize, state.needs].find((doc) => doc && doc.last_updated);
+      const when = photo?.last_updated || trends?.dashboard_at || squads?.dashboard_at || optimize?.dashboard_at;
+      document.getElementById("updated").textContent = when ? `Foto de ${stamp(when)}` : "";
+      document.getElementById("trends-pill").classList.toggle("hidden", !(pending.trends && state.optimize));
       document.getElementById("partial-pill").classList.toggle("hidden", !(trends && trends.partial));
     }
 
     function renderBanner() {
       const needs = state.needs;
+      if (pending.needs && !needs) {
+        bannerEl.innerHTML = skeleton("Estado de caja");
+        return;
+      }
       if (!needs || needs.ok === false) {
         bannerEl.innerHTML = errorCard("Estado de caja", needs || { error: { message: "Sin datos de caja." } });
         return;
@@ -374,6 +382,10 @@
 
     function renderLineup() {
       const optimize = state.optimize;
+      if (pending.optimize && !optimize) {
+        lineupEl.innerHTML = skeleton("Alineación");
+        return;
+      }
       if (!optimize || optimize.ok === false) {
         lineupEl.innerHTML = errorCard("Alineación", optimize || { error: { message: "Sin once calculado." } }, true);
         return;
@@ -461,7 +473,7 @@
               <p class="text-[11px] uppercase tracking-[0.16em] text-mint">${esc(signing.position || "Jugador")}</p>
               <h3 class="text-base font-medium">${esc(playerName(signing))}</h3>
             </div>
-            <span class="rounded-full bg-mint/15 px-2 py-1 font-mono text-xs text-mint">${esc(accel(signing.acceleration))}</span>
+            <span class="rounded-full bg-mint/15 px-2 py-1 font-mono text-xs text-mint">${esc(accel(typeof signing.price_delta === "number" ? signing.price_delta : signing.acceleration))}</span>
           </div>
           <dl class="mt-3 grid grid-cols-2 gap-2 text-xs text-white/65">
             <div><dt class="text-white/35">Puja</dt><dd class="font-mono text-sm text-white">${esc(eur(signing.bid_eur))}</dd></div>
@@ -476,12 +488,16 @@
       return `
         <li class="flex items-center justify-between gap-3 border-b border-white/5 py-2 last:border-0">
           <span class="truncate text-sm">${esc(player.position || "")} ${esc(playerName(player))}</span>
-          <span class="font-mono text-xs text-mint">${esc(accel(player.acceleration))}</span>
+          <span class="font-mono text-xs text-mint">${esc(accel(typeof player.price_delta === "number" ? player.price_delta : player.acceleration))}</span>
         </li>`;
     }
 
     function renderMarket() {
       const trends = state.trends;
+      if (pending.trends && !trends) {
+        marketEl.innerHTML = skeleton("Mercado y flips");
+        return;
+      }
       if (!trends || trends.ok === false) {
         marketEl.innerHTML = errorCard("Mercado y flips", trends || { error: { message: "Sin lectura de mercado." } }, true);
         return;
@@ -516,7 +532,7 @@
           </div>
           <div class="scroll-thin space-y-3 overflow-y-auto pr-1">
             ${emptyFlips}
-            ${radar.length ? `<div class="pt-2"><p class="mb-1 text-[11px] uppercase tracking-[0.16em] text-white/40">Aceleración alcista</p><ul>${radar.map(risingRow).join("")}</ul></div>` : ""}
+            ${radar.length ? `<div class="pt-2"><p class="mb-1 text-[11px] uppercase tracking-[0.16em] text-white/40">Subida del día</p><ul>${radar.map(risingRow).join("")}</ul></div>` : ""}
             ${valueRows ? `<div class="pt-2"><p class="mb-1 text-[11px] uppercase tracking-[0.16em] text-white/40">Infravalorados</p><ul>${valueRows}</ul></div>` : ""}
             ${alertRows ? `<div class="pt-2"><p class="mb-1 text-[11px] uppercase tracking-[0.16em] text-white/40">Alertas de la jornada</p><ul>${alertRows}</ul></div>` : ""}
           </div>
@@ -547,6 +563,10 @@
 
     function renderRivals() {
       const squads = state.squads;
+      if ((pending.squads || pending.needs) && !squads && !state.needs) {
+        rivalsEl.innerHTML = skeleton("Auditoría de rivales");
+        return;
+      }
       if (!squads || squads.ok === false) {
         rivalsEl.innerHTML = errorCard("Auditoría de rivales", squads || { error: { message: "Sin plantillas." } }, true);
         return;
@@ -629,24 +649,65 @@
       renderRivals();
     }
 
-    async function load(fresh) {
+    async function load() {
+      const names = ["optimize", "squads", "needs", "trends"];
+      names.forEach((name) => { pending[name] = true; });
       setBusy(true);
-      if (!state.optimize && !state.needs) renderLoading();
-      const names = ["optimize", "trends", "squads", "needs"];
-      const results = await Promise.allSettled(names.map((name) => getJson(endpoint(`/api/${name}`, fresh))));
-      results.forEach((result, index) => {
-        const name = names[index];
-        if (result.status === "fulfilled") {
-          state[name] = result.value;
-          return;
+      if (!state.optimize && !state.needs && !state.trends) renderLoading();
+      else render();
+
+      async function fetchBlock(name) {
+        try {
+          state[name] = await getJson(endpoint(`/api/${name}`));
+          if (name === "trends" && state.trends?.ok !== false) {
+            try {
+              state.squads = await getJson(endpoint("/api/squads"));
+            } catch {
+              /* la primera lectura de plantillas sigue valiendo */
+            }
+          }
+        } catch (reason) {
+          const payload = reason?.payload;
+          state[name] = payload && payload.ok === false
+            ? payload
+            : { ok: false, error: { code: "network", message: reason?.message || "Error de red." } };
+        } finally {
+          pending[name] = false;
+          render();
+          if (!names.some((item) => pending[item])) setBusy(false);
         }
-        const payload = result.reason?.payload;
-        state[name] = payload && payload.ok === false
-          ? payload
-          : { ok: false, error: { code: "network", message: result.reason?.message || "Error de red." } };
-      });
-      render();
-      setBusy(false);
+      }
+
+      // Solo lecturas: la red se gasta al pulsar Actualizar.
+      await Promise.all(names.map((name) => fetchBlock(name)));
+    }
+
+    /** Descarga de verdad. Único camino con red: POST /api/plan/refresh. */
+    async function refresh() {
+      setBusy(true);
+      refreshBtn.disabled = true;
+      refreshBtn.classList.add("opacity-60");
+      try {
+        const response = await fetch(endpoint("/api/plan/refresh"), { method: "POST" });
+        const data = await response.json().catch(() => ({
+          ok: false,
+          error: { message: `HTTP ${response.status}` },
+        }));
+        if (!response.ok || data.ok === false) {
+          throw new Error(errorMessage(data));
+        }
+      } catch (error) {
+        bannerEl.innerHTML = errorCard("Actualizar", {
+          error: { message: error.message || "No se pudo actualizar. Se sigue viendo la foto anterior." },
+        });
+        return;
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.classList.remove("opacity-60");
+        setBusy(false);
+      }
+      // El refresco ya escribió en disco: se relee la foto nueva.
+      await load();
     }
 
     function show(data) {
@@ -679,7 +740,7 @@
         if (data.league_saved && data.league_id) {
           const label = data.league_name ? `${data.league_name}` : `Liga ${data.league_id}`;
           document.getElementById("league-label").textContent = label;
-          await load(true);
+          await refresh();
           return;
         }
         const lines = (data.leagues || [])
@@ -701,9 +762,9 @@
     }
 
     connectBtn.addEventListener("click", () => connectAccount());
-    refreshBtn.addEventListener("click", () => load(true));
+    refreshBtn.addEventListener("click", () => refresh());
     window.Dashboard = { load, show, layoutXi, render };
-    load(params.get("fresh") === "1");
+    load();
   </script>
 </body>
 </html>

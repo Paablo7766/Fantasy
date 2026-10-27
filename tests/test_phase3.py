@@ -20,12 +20,22 @@ from toolbox.analyzer import (
     candidates_from_squad,
     exposed_clause_rule,
     is_at_risk,
+    display_price_delta,
+    official_price_delta,
     optimize_from_documents,
     sell_signal,
     solve_lineup,
+    apply_doubt_titular_discount,
     starter_fallback,
+    unavailable_reason,
 )
-from toolbox.normalize import normalize_player, official_week_points
+from toolbox.normalize import (
+    attach_image_urls,
+    image_index_from_players,
+    normalize_listing,
+    normalize_player,
+    official_week_points,
+)
 from toolbox.net import LaligaClient
 from toolbox.bidding import (
     SNIPE_LEAD_SECONDS,
@@ -337,7 +347,16 @@ class Phase3Test(unittest.TestCase):
         }
         trends = {
             "players": [
-                {"player_id": "sube", "name": "Sube", "position": "DEL", "acceleration": 12, "matching_confidence": 0.91, "p_titular": 0.8, "form": {"xg": 1}},
+                {
+                    "player_id": "sube",
+                    "name": "Sube",
+                    "position": "DEL",
+                    "acceleration": 246_253,
+                    "price_delta": 1_325_257,
+                    "matching_confidence": 0.91,
+                    "p_titular": 0.8,
+                    "form": {"xg": 1},
+                },
                 {"player_id": "caro", "name": "Caro", "position": "DEL", "acceleration": 20, "matching_confidence": 0.95, "p_titular": 1, "form": {"xg": 1}},
                 {"player_id": "ruido", "name": "Ruido", "position": "MC", "acceleration": 4, "matching_confidence": 0.4, "p_titular": 1},
                 {"player_id": "cerrado", "name": "Cerrado", "position": "DEL", "acceleration": 6, "matching_confidence": 0.9, "p_titular": 1, "form": {"xg": 1}},
@@ -355,11 +374,56 @@ class Phase3Test(unittest.TestCase):
         self.assertEqual([item["player_id"] for item in flipped["signings"]], ["sube"])
         self.assertEqual(flipped["signings"][0]["cash_after_eur"], 30)
         self.assertEqual(flipped["signings"][0]["expected_points"], 4.0)
+        self.assertEqual(flipped["signings"][0]["acceleration"], 246_253)
+        self.assertEqual(flipped["signings"][0]["price_delta"], 1_325_257)
         self.assertTrue(flipped["bid_run"][0]["interest_hidden"])
         rejected = {item["player_id"]: item["reasons"] for item in flipped["rejected"]}
         self.assertIn("negative_cash", rejected["caro"])
         self.assertIn("matching_confidence", rejected["ruido"])
         self.assertIn("mercado_cerrado", rejected["cerrado"])
+
+    def test_flip_price_delta_from_listing_when_trend_omits_day_move(self) -> None:
+        market = {
+            "ok": True,
+            "listings": [
+                {
+                    "player_id": "sube",
+                    "nickname": "Sube",
+                    "position": "DEL",
+                    "sale_price": 8_674_743,
+                    "market_value": 10_000_000,
+                    "seller_team_id": "9",
+                    "listing_expires_at": "2099-01-01T20:00:00+00:00",
+                }
+            ],
+        }
+        trends = {
+            "ok": True,
+            "players": [
+                {
+                    "player_id": "sube",
+                    "name": "Sube",
+                    "nickname": "Sube",
+                    "position": "DEL",
+                    "acceleration": 246_253,
+                    "price_delta": None,
+                    "fantasy_price": 10_000_000,
+                    "matching_confidence": 0.95,
+                    "p_titular": 1,
+                    "form": {"xg": 1, "xa": 0},
+                    "flip_candidate": True,
+                }
+            ],
+        }
+        flipped = flip_from_documents(
+            market,
+            _document([_squad([], cash=20_000_000)]),
+            trends,
+            lineup={"ok": True, "matchday_void": False},
+            now=datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc),
+        )
+        self.assertTrue(flipped["ok"])
+        self.assertEqual(flipped["signings"][0]["price_delta"], 1_325_257)
 
     def test_sabotage_schedules_clause_minute_only_for_a_thin_direct_rival(self) -> None:
         now = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
@@ -606,18 +670,53 @@ class Phase3Test(unittest.TestCase):
 
 
 class FinancialSignalTests(unittest.TestCase):
+    def test_stale_api_injury_overridden_by_lineup(self) -> None:
+        player = {"player_id": "1147", "player_status": "injured", "position": "DEF"}
+        trend = {
+            "matching_confidence": 0.91,
+            "p_titular": 0.88,
+            "p_titular_source": "scraper",
+            "lineup_status": "titular",
+            "fitness": "lesionado",
+        }
+        self.assertIsNone(unavailable_reason(player, trend))
+
     def test_week_points_replace_a_missing_scraper_probability(self) -> None:
         player = _player("a", "DEL", p_titular=0.0)
         player["p_titular"] = None
         player["week_points"] = [0, 4, 0, 2, 8]
         roster = candidates_from_squad(_squad([player]), {})
-        self.assertEqual(roster[0].p_titular, 0.6)
+        self.assertEqual(roster[0].p_titular, 0.55)
         self.assertEqual(roster[0].p_titular_source, "week_points")
 
         scraped = {"player_id": "a", "matching_confidence": 0.91, "p_titular": 0.25}
         kept = candidates_from_squad(_squad([player]), {"a": scraped})
         self.assertEqual(kept[0].p_titular, 0.25)
         self.assertEqual(kept[0].p_titular_source, "scraper")
+
+    def test_trends_payload_falls_back_to_official_week_points(self) -> None:
+        from toolbox.matching import CanonicalPlayer
+        from toolbox.scrapers import _player_payload
+
+        player = CanonicalPlayer(
+            player_id="a",
+            name="Alpha",
+            nickname="Alpha",
+            club="Celta",
+            position="DEL",
+            fantasy_price=1_000_000,
+            week_points=(0.0, 4.0, 0.0, 2.0, 8.0),
+        )
+        row = _player_payload(
+            player,
+            intel=None,
+            form={},
+            transfermarkt_value=None,
+            confidence=None,
+            matches={},
+        )
+        self.assertEqual(row["p_titular"], 0.55)
+        self.assertEqual(row["p_titular_source"], "week_points")
 
     def test_official_last_stats_count_as_week_points(self) -> None:
         raw = {
@@ -636,15 +735,81 @@ class FinancialSignalTests(unittest.TestCase):
         }
         self.assertEqual(official_week_points(raw), [3.0, 0.0, 0.0, 0.0, 4.0])
         self.assertEqual(starter_fallback(raw), 0.4)
+        self.assertEqual(starter_fallback({**raw, "lastStats": [{"weekNumber": i, "totalPoints": 3} for i in range(1, 6)]}), 0.55)
+        self.assertEqual(
+            apply_doubt_titular_discount(0.8, {"player_status": "doubtful"}, None),
+            0.36,
+        )
         normalized = normalize_player(raw)
         self.assertEqual(normalized["week_points"], [3.0, 0.0, 0.0, 0.0, 4.0])
+
+    def test_player_image_url_from_master_and_catalog(self) -> None:
+        photo = "https://assets-fantasy.llt-services.com/players/t174/p68/256x256/p68_t174_1_001_000.png"
+        normalized = normalize_player(
+            {
+                "playerMaster": {
+                    "id": 68,
+                    "nickname": "Unai Simón",
+                    "positionId": 1,
+                    "image": photo,
+                }
+            }
+        )
+        self.assertEqual(normalized["image_url"], photo)
+        listing = normalize_listing(
+            {
+                "salePrice": 1_000_000,
+                "playerMaster": {"id": 140, "nickname": "Iván Villar", "positionId": 1},
+            }
+        )
+        self.assertIsNone(listing["image_url"])
+        index = image_index_from_players(
+            [
+                {"id": "68", "image": photo},
+                {"id": "140", "image": "https://assets-fantasy.llt-services.com/players/t176/p140/256x256/p140_t176_1_001_000.png"},
+            ]
+        )
+        self.assertEqual(index["68"], photo)
+        attach_image_urls([listing], index)
+        self.assertEqual(
+            listing["image_url"],
+            "https://assets-fantasy.llt-services.com/players/t176/p140/256x256/p140_t176_1_001_000.png",
+        )
+        attach_image_urls([normalized], index)
+        self.assertEqual(normalized["image_url"], photo)
+
+    def test_ensure_board_images_fills_cached_optimize(self) -> None:
+        from server import ensure_board_images
+
+        photo = "https://assets-fantasy.llt-services.com/players/t174/p68/256x256/p68_t174_1_001_000.png"
+        board = {
+            "optimize": {"xi": [{"player_id": "68", "nickname": "Unai Simón"}]},
+            "market": {"listings": [{"player_id": "68", "nickname": "Unai Simón"}]},
+            "squads": {"squads": [{"players": [{"player_id": "68"}]}]},
+            "trends": {"rising": [{"player_id": "68"}]},
+            "flip": {"signings": [{"player_id": "68"}]},
+        }
+        ensure_board_images(board, index={"68": photo})
+        self.assertEqual(board["optimize"]["xi"][0]["image_url"], photo)
+        self.assertEqual(board["market"]["listings"][0]["image_url"], photo)
+        self.assertEqual(board["squads"]["squads"][0]["players"][0]["image_url"], photo)
+        self.assertEqual(board["trends"]["rising"][0]["image_url"], photo)
+        self.assertEqual(board["flip"]["signings"][0]["image_url"], photo)
 
     def test_own_clause_risk_and_sell_peak(self) -> None:
         self.assertTrue(is_at_risk({"buyout_clause": 125, "market_value": 100}))
         self.assertFalse(is_at_risk({"buyout_clause": 126, "market_value": 100}))
         self.assertFalse(is_at_risk({"buyout_clause": 100}))
+        self.assertEqual(official_price_delta({"market_value_change": 1_325_257, "acceleration": 246_253}), 1_325_257)
+        self.assertEqual(official_price_delta({"price_delta": 1_325_257, "acceleration": 246_253}), 1_325_257)
+        self.assertEqual(display_price_delta({"market_value_change": 902_732, "ff_price_delta": 823_000}), 902_732)
+        self.assertEqual(
+            official_price_delta({"market_value": 10_000_000, "sale_price": 8_674_743, "acceleration": 246_253}),
+            1_325_257,
+        )
+        self.assertIsNone(official_price_delta({"acceleration": 246_253}))
         self.assertTrue(sell_signal({"acceleration": 6, "price_delta": 0}))
-        self.assertTrue(sell_signal({"acceleration": 6, "price_delta": -2}))
+        self.assertTrue(sell_signal({"acceleration": 6, "market_value_change": -2}))
         self.assertFalse(sell_signal({"acceleration": 6, "price_delta": 3}))
         self.assertFalse(sell_signal({"acceleration": -1, "price_delta": -2}))
         self.assertTrue(sell_signal({"price_delta_3": 8, "acceleration": 0}))

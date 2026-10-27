@@ -38,6 +38,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -54,7 +55,10 @@ import httpx
 from dotenv import load_dotenv
 
 from toolbox import project_root
+from toolbox import api_meter
 from toolbox.cache import cache_root
+
+logger = logging.getLogger("fantasy.auth")
 
 OAUTH_BASE = "https://login.laliga.es/laligadspprob2c.onmicrosoft.com/oauth2/v2.0"
 AUTHORIZE_ENDPOINT = f"{OAUTH_BASE}/authorize"
@@ -236,7 +240,16 @@ def _redact(text: str) -> str:
 
 
 def write_env_values(updates: dict[str, str], *, path: Path | None = None) -> Path:
-    """Sustituye claves en ``.env`` sin tocar el resto. No registra los valores."""
+    """Sustituye claves en ``.env`` sin tocar el resto. No registra los valores.
+
+    Si el fichero no se puede escribir (contenedor con el código en solo
+    lectura, ``.env`` inyectado por ``env_file`` y propiedad de otro uid), el
+    token recién canjeado **no se pierde**: se aplica al entorno del proceso,
+    que es lo que usa ``TokenManager``. Se avisa por log en lugar de lanzar,
+    porque un fallo de persistencia no debe tumbar un refresco que ya tiene
+    credenciales válidas. El precio es que ese token no sobrevive a un
+    reinicio; el ``refresh_token`` del ``.env`` sigue sirviendo para pedir otro.
+    """
     path = path or (project_root() / ".env")
     existing = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
     seen: set[str] = set()
@@ -255,21 +268,40 @@ def write_env_values(updates: dict[str, str], *, path: Path | None = None) -> Pa
     for key, value in updates.items():
         if key not in seen:
             output.append(f"{key}={_quote_env(value)}")
-    path.write_text("\n".join(output) + "\n", encoding="utf-8")
+    try:
+        path.write_text("\n".join(output) + "\n", encoding="utf-8")
+    except OSError as exc:
+        logger.warning(
+            "No se pudo escribir %s (%s). El token nuevo queda solo en memoria: "
+            "el siguiente reinicio volverá a renovarlo con el refresh token.",
+            path,
+            exc.__class__.__name__,
+        )
     for key, value in updates.items():
         os.environ[key] = value
     return path
 
 
 def _post_token(form: dict[str, str]) -> dict[str, Any]:
+    from toolbox.net import offline_mode
+
+    if offline_mode():
+        # Modo avión: renovar el token también es tráfico saliente. El login se
+        # hace sin la variable puesta; aquí solo se avisa.
+        raise AuthError(
+            "Modo avión (FANTASY_OFFLINE=1): no se renueva el token contra LALIGA.",
+            code="offline",
+        )
     url = f"{TOKEN_ENDPOINT}?p={urllib.parse.quote(SIGNIN_POLICY)}"
     try:
-        response = httpx.post(
-            url,
-            data=form,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=TOKEN_HTTP_TIMEOUT,
-        )
+        with api_meter.call(url=url, retry=form.get("grant_type") == "refresh_token") as probe:
+            response = httpx.post(
+                url,
+                data=form,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=TOKEN_HTTP_TIMEOUT,
+            )
+            probe.status = response.status_code
     except httpx.HTTPError as exc:
         raise AuthError(f"No se pudo contactar con el proveedor de identidad: {exc}", code="network") from exc
     if response.status_code >= 400:
@@ -339,6 +371,23 @@ class TokenManager:
     def force_refresh(self) -> str:
         """Canjea el refresh token aunque el access token aún no haya caducado."""
         with self._lock:
+            access, _refresh = self._refresh_unlocked()
+            return access
+
+    def current_token(self) -> str:
+        with self._lock:
+            return self._access
+
+    def refresh_after_401(self, stale_token: str | None = None) -> str:
+        """Renueva solo si el token que falló sigue siendo el vigente.
+
+        Varios workers pueden recibir 401 a la vez. El primero canjea el refresh
+        token; los demás, al entrar al lock, ven que ``self._access`` ya cambió
+        y reutilizan el nuevo sin una segunda llamada al proveedor.
+        """
+        with self._lock:
+            if stale_token and self._access and self._access != stale_token:
+                return self._access
             access, _refresh = self._refresh_unlocked()
             return access
 

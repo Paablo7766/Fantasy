@@ -1,25 +1,29 @@
-"""Ingesta de Fútbol Fantasy, Sofascore, FBref y Transfermarkt.
+"""Ingesta de Fútbol Fantasy, Sofascore, FBref, Understat, Jornada Perfecta y Transfermarkt.
 
 Las páginas y los JSON pasan por ``ExternalClient``: caché en Supabase y, en
 Transfermarkt, el tope de 2 peticiones cada 3 segundos. Un fallo de una fuente
 no tira el cruce; queda anotado en ``sources`` y el documento sale parcial.
 
 El bonus Relevo de 0 a 4 no se calcula aquí. Solo se guardan las métricas
-(xG, xA, pases clave, duelos, despejes, paradas y nota) que sirven para proyectarlo.
+(xG, xA, minutos, pases clave, duelos, despejes, paradas, nota, tip JP y FDR)
+que alimentan la proyección.
 """
 
 from __future__ import annotations
 
 import html
+import logging
 import os
 import re
+import time
 import urllib.parse
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from toolbox.cache import EntityStore
+from toolbox.cache import EntityStore, madrid_day
 from toolbox.matching import (
     MATCH_THRESHOLD,
     CanonicalPlayer,
@@ -30,8 +34,11 @@ from toolbox.matching import (
     normalize_club,
     normalize_name,
 )
-from toolbox.net import ExternalClient, ExternalHttpError, transfermarkt_api_base
-from toolbox.normalize import SCHEMA_VERSION
+from toolbox.net import ExternalClient, ExternalHttpError, FantasyHttpError, inherited, transfermarkt_api_base
+from toolbox.analyzer import official_price_delta, starter_fallback
+from toolbox.normalize import SCHEMA_VERSION, attach_image_urls
+
+logger = logging.getLogger("fantasy.scrapers")
 
 FF_MARKET_URL = "https://www.futbolfantasy.com/analytics/laliga-fantasy/mercado"
 FF_FITNESS_URL = "https://www.futbolfantasy.com/laliga/lesionados"
@@ -42,14 +49,38 @@ FBREF_URLS = (
     "https://fbref.com/en/comps/12/passing/La-Liga-Stats",
     "https://fbref.com/en/comps/12/defense/La-Liga-Stats",
     "https://fbref.com/en/comps/12/keepers/La-Liga-Stats",
+    "https://fbref.com/en/comps/12/playingtime/La-Liga-Stats",
 )
+# LaLiga (unique-tournament 8). Se puede sustituir con SOFASCORE_STATS_URL.
+SOFASCORE_DEFAULT_SEASON = "77559"
+SOFASCORE_DEFAULT_URL = (
+    f"https://api.sofascore.com/api/v1/unique-tournament/8/season/{SOFASCORE_DEFAULT_SEASON}/top-players/overall"
+)
+# Solo estas fuentes marcan ``partial`` en trends; el núcleo (FF, AF, Understat, own) sigue siendo decisorio.
+_OPTIONAL_TRENDS_SOURCES = frozenset({"fbref", "sofascore", "transfermarkt", "laliga_odds"})
 
 RANK_LIMIT = 15
 FORM_NOTE = (
-    "Las métricas de forma alimentan el bonus Relevo de 0 a 4. "
-    "Este documento no asigna ese bonus."
+    "Las métricas de forma alimentan el bonus Relevo de 0 a 4 y la proyección OPTA. "
+    "Understat manda en xG/xA; minutos y FDR ajustan expected_points. "
+    "Este documento no asigna el bonus Relevo."
 )
-_FORM_KEYS = ("xg", "xa", "key_passes", "duels_won", "clearances", "saves", "average_rating")
+_FORM_KEYS = (
+    "xg",
+    "xa",
+    "key_passes",
+    "duels_won",
+    "clearances",
+    "saves",
+    "average_rating",
+    "minutes",
+    "starts",
+    "minutes_pct",
+    "jp_tip",
+    "jp_projected_points",
+    "jp_multiplier",
+    "jp_racha",
+)
 _TEAM_LINK = re.compile(r'href="[^"]*/laliga/equipos/[a-z0-9-]+"[^>]*>([^<]+)</a>', re.IGNORECASE)
 _FBREF_STATS = {
     "xg": "xg",
@@ -63,6 +94,9 @@ _FBREF_STATS = {
     "clearances": "clearances",
     "saves": "saves",
     "gk_saves": "saves",
+    "minutes": "minutes",
+    "games_starts": "starts",
+    "minutes_pct": "minutes_pct",
 }
 
 
@@ -78,6 +112,7 @@ class ScrapeTTL:
     fitness: float = 30 * 60
     sanctions: float = 6 * 60 * 60
     stats: float = 6 * 60 * 60
+    odds: float = 6 * 60 * 60
     transfermarkt: float = 24 * 60 * 60
 
     @classmethod
@@ -87,8 +122,275 @@ class ScrapeTTL:
             fitness=_env_float("FANTASY_TTL_FITNESS", 30 * 60),
             sanctions=_env_float("FANTASY_TTL_SANCTIONS", 6 * 60 * 60),
             stats=_env_float("FANTASY_TTL_STATS", 6 * 60 * 60),
+            odds=_env_float("FANTASY_TTL_ODDS", 6 * 60 * 60),
             transfermarkt=_env_float("FANTASY_TTL_TRANSFERMARKT", 24 * 60 * 60),
         )
+
+
+THE_ODDS_API_URL = (
+    "https://api.the-odds-api.com/v4/sports/soccer_spain_la_liga/odds"
+    "?regions=eu&markets=h2h,totals,btts&oddsFormat=decimal"
+)
+LALIGA_ODDS_SIM_CACHE_KEY = "laliga_odds_sim:v1"
+
+
+@dataclass(frozen=True)
+class MatchOddsBundle:
+    match_key: str
+    odds_1x2: tuple[float, float, float]
+    odds_ou25: tuple[float, float] | None = None
+    odds_btts: tuple[float, float] | None = None
+    source: str = "simulated"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "match_key": self.match_key,
+            "odds_1x2": self.odds_1x2,
+            "odds_ou25": self.odds_ou25,
+            "odds_btts": self.odds_btts,
+            "source": self.source,
+        }
+
+
+def match_odds_key(home_club: str, away_club: str) -> str:
+    return f"{normalize_club(home_club)}|{normalize_club(away_club)}"
+
+
+def _fixture_home_away_keys(club_key: str, fixture: Any) -> tuple[str, str]:
+    opponent_key = normalize_club(str(getattr(fixture, "opponent", "") or ""))
+    if getattr(fixture, "home", False):
+        return club_key, opponent_key
+    return opponent_key, club_key
+
+
+def _decimal_odds_from_probs(probs: tuple[float, float, float], *, margin: float = 1.06) -> tuple[float, float, float]:
+    ph, pd, pa = probs
+    ph = max(ph, 1e-4)
+    pd = max(pd, 1e-4)
+    pa = max(pa, 1e-4)
+    return (round(margin / ph, 3), round(margin / pd, 3), round(margin / pa, 3))
+
+
+def _simulate_totals_btts(lh: float, la: float) -> tuple[tuple[float, float], tuple[float, float]]:
+    from toolbox.understat import _dixon_coles_grid
+
+    grid = _dixon_coles_grid(lh, la, -0.08, max_goals=10)
+    import numpy as np
+
+    idx = np.add.outer(np.arange(grid.shape[0]), np.arange(grid.shape[1]))
+    over25 = float(np.sum(grid[idx >= 3]))
+    under25 = max(1e-4, 1.0 - over25)
+    btts = float(np.sum(grid[1:, 1:]))
+    not_btts = max(1e-4, 1.0 - btts)
+    margin = 1.05
+    return (
+        (round(margin / max(over25, 1e-4), 3), round(margin / under25, 3)),
+        (round(margin / max(btts, 1e-4), 3), round(margin / not_btts, 3)),
+    )
+
+
+def build_simulated_match_odds_index(
+    fixtures_by_club: dict[str, Any],
+    *,
+    strengths: dict[str, Any],
+    team_rolling: dict[str, Any],
+    league_avg_xg: float = 1.32,
+) -> dict[str, dict[str, Any]]:
+    """Cuotas sintéticas a partir de rolling xG cuando no hay API key."""
+    from toolbox.understat import (
+        TeamStrength,
+        build_hybrid_match_projection,
+        resolve_rolling_window,
+        stat_lambdas_for_fixture,
+    )
+
+    unique_matches: dict[str, tuple[str, str]] = {}
+    for club_key, fixture in fixtures_by_club.items():
+        home_key, away_key = _fixture_home_away_keys(club_key, fixture)
+        if not home_key or not away_key:
+            continue
+        unique_matches[match_odds_key(home_key, away_key)] = (home_key, away_key)
+
+    index: dict[str, dict[str, Any]] = {}
+    strength_map = strengths if isinstance(strengths, dict) else {}
+
+    def _team(key: str) -> TeamStrength | None:
+        raw = strength_map.get(key)
+        return raw if isinstance(raw, TeamStrength) else None
+
+    for key, (home_key, away_key) in unique_matches.items():
+        home_team = _team(home_key) or _team(normalize_name(home_key))
+        away_team = _team(away_key) or _team(normalize_name(away_key))
+        home_roll = resolve_rolling_window(home_team, team_rolling, home_key)
+        away_roll = resolve_rolling_window(away_team, team_rolling, away_key)
+        lh, la = stat_lambdas_for_fixture(
+            home_team=home_team,
+            away_team=away_team,
+            home_rolling=home_roll,
+            away_rolling=away_roll,
+            league_avg_xg=league_avg_xg,
+        )
+        stat_proj = build_hybrid_match_projection(lh, la, odds_1x2=None)
+        odds_1x2 = _decimal_odds_from_probs(
+            (stat_proj.p_home_win, stat_proj.p_draw, stat_proj.p_away_win),
+        )
+        odds_ou25, odds_btts = _simulate_totals_btts(lh, la)
+        bundle = MatchOddsBundle(
+            match_key=key,
+            odds_1x2=odds_1x2,
+            odds_ou25=odds_ou25,
+            odds_btts=odds_btts,
+            source="simulated",
+        )
+        index[key] = bundle.as_dict()
+    return index
+
+
+def parse_the_odds_api_payload(payload: Any) -> dict[str, dict[str, Any]]:
+    """Normaliza eventos The Odds API → índice ``home|away``."""
+    if not isinstance(payload, list):
+        return {}
+    index: dict[str, dict[str, Any]] = {}
+    for event in payload:
+        if not isinstance(event, dict):
+            continue
+        home_name = event.get("home_team")
+        away_name = event.get("away_team")
+        if not isinstance(home_name, str) or not isinstance(away_name, str):
+            continue
+        key = match_odds_key(home_name, away_name)
+        bookmakers = event.get("bookmakers") if isinstance(event.get("bookmakers"), list) else []
+        if not bookmakers:
+            continue
+        book = bookmakers[0] if isinstance(bookmakers[0], dict) else {}
+        markets = book.get("markets") if isinstance(book.get("markets"), list) else []
+        h2h: dict[str, float] = {}
+        over: float | None = None
+        under: float | None = None
+        btts_yes: float | None = None
+        btts_no: float | None = None
+        for market in markets:
+            if not isinstance(market, dict):
+                continue
+            mkey = market.get("key")
+            outcomes = market.get("outcomes") if isinstance(market.get("outcomes"), list) else []
+            if mkey == "h2h":
+                for outcome in outcomes:
+                    if not isinstance(outcome, dict):
+                        continue
+                    name = outcome.get("name")
+                    price = outcome.get("price")
+                    if isinstance(name, str) and isinstance(price, (int, float)) and float(price) > 1.0:
+                        h2h[name] = float(price)
+            elif mkey == "totals":
+                for outcome in outcomes:
+                    if not isinstance(outcome, dict):
+                        continue
+                    point = outcome.get("point")
+                    if point is not None and float(point) != 2.5:
+                        continue
+                    name = str(outcome.get("name") or "").lower()
+                    price = outcome.get("price")
+                    if not isinstance(price, (int, float)) or float(price) <= 1.0:
+                        continue
+                    if name == "over":
+                        over = float(price)
+                    elif name == "under":
+                        under = float(price)
+            elif mkey == "btts":
+                for outcome in outcomes:
+                    if not isinstance(outcome, dict):
+                        continue
+                    name = str(outcome.get("name") or "").lower()
+                    price = outcome.get("price")
+                    if not isinstance(price, (int, float)) or float(price) <= 1.0:
+                        continue
+                    if name in {"yes", "si", "sí"}:
+                        btts_yes = float(price)
+                    elif name == "no":
+                        btts_no = float(price)
+        home_odds = h2h.get(home_name)
+        away_odds = h2h.get(away_name)
+        draw_odds = None
+        for name, price in h2h.items():
+            if name not in {home_name, away_name}:
+                draw_odds = price
+                break
+        if home_odds is None or away_odds is None or draw_odds is None:
+            continue
+        bundle = MatchOddsBundle(
+            match_key=key,
+            odds_1x2=(home_odds, draw_odds, away_odds),
+            odds_ou25=(over, under) if over is not None and under is not None else None,
+            odds_btts=(btts_yes, btts_no) if btts_yes is not None and btts_no is not None else None,
+            source="the_odds_api",
+        )
+        index[key] = bundle.as_dict()
+    return index
+
+
+def load_laliga_match_odds(
+    client: ExternalClient,
+    *,
+    fixtures_by_club: dict[str, Any],
+    strengths: dict[str, Any],
+    team_rolling: dict[str, Any],
+    ttl: float,
+    fresh: bool,
+    league_avg_xg: float = 1.32,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Ingesta cuotas LaLiga (API o simulación) con caché de 6 h por defecto."""
+    api_key = os.getenv("THE_ODDS_API_KEY", "").strip()
+    if api_key:
+        url = f"{THE_ODDS_API_URL}&apiKey={urllib.parse.quote(api_key)}"
+        try:
+            payload, cached = client.get_json(url, ttl=ttl, fresh=fresh)
+            index = parse_the_odds_api_payload(payload)
+            if index:
+                return index, {
+                    "ok": True,
+                    "count": len(index),
+                    "error": None,
+                    "from_cache": cached,
+                    "source": "the_odds_api",
+                }
+        except ExternalHttpError as exc:
+            api_error = str(exc)
+        else:
+            api_error = "the_odds_api_sin_eventos"
+    else:
+        api_error = "sin_api_key"
+
+    if not fresh and ttl > 0:
+        cached_sim = client._cache.get_json(LALIGA_ODDS_SIM_CACHE_KEY)
+        if isinstance(cached_sim, dict) and cached_sim.get("matches"):
+            return cached_sim["matches"], {
+                "ok": True,
+                "count": len(cached_sim["matches"]),
+                "error": None if not api_error else api_error,
+                "from_cache": True,
+                "source": "simulated",
+            }
+
+    index = build_simulated_match_odds_index(
+        fixtures_by_club,
+        strengths=strengths,
+        team_rolling=team_rolling,
+        league_avg_xg=league_avg_xg,
+    )
+    if ttl > 0 and index:
+        client._cache.put_json(
+            LALIGA_ODDS_SIM_CACHE_KEY,
+            {"matches": index, "generated_at": datetime.now(timezone.utc).isoformat()},
+            ttl,
+        )
+    return index, {
+        "ok": bool(index),
+        "count": len(index),
+        "error": None if index else api_error,
+        "from_cache": False,
+        "source": "simulated",
+    }
 
 
 @dataclass
@@ -99,6 +401,12 @@ class IntelPlayer:
     external_id: str | None = None
     p_titular: float | None = None
     price_delta: int | None = None
+    # Acumulados de la misma fuente (FútbolFantasy): ``diferencia2`` y
+    # ``diferencia3`` son la subida de 2 y 3 días. La app oficial muestra a veces
+    # el tramo de 2 días, así que sin estos campos una subida real de 519.675 €
+    # parecía un error cuando el panel enseñaba 257.864 €.
+    price_delta_2: int | None = None
+    price_delta_3: int | None = None
     acceleration: int | None = None
     fitness: str | None = None
     fitness_detail: str | None = None
@@ -123,6 +431,13 @@ class FormLine:
     clearances: float | None = None
     saves: float | None = None
     average_rating: float | None = None
+    minutes: float | None = None
+    starts: float | None = None
+    minutes_pct: float | None = None
+    jp_tip: str | None = None
+    jp_projected_points: float | None = None
+    jp_multiplier: float | None = None
+    jp_racha: float | None = None
 
 
 @dataclass
@@ -176,18 +491,47 @@ def _blank_form() -> dict[str, Any]:
     return payload
 
 
-def _percent(text: str | None) -> float | None:
-    if not text:
-        return None
-    match = re.search(r"(\d+(?:[.,]\d+)?)\s*%", text)
-    if match is None:
-        return None
-    value = float(match.group(1).replace(",", "."))
+def _percent_token(raw: str) -> float | None:
+    value = float(raw.replace(",", "."))
     if value > 1:
         value /= 100.0
     if value < 0 or value > 1:
         return None
     return round(value, 4)
+
+
+def _percent(text: str | None) -> float | None:
+    """Titularidad en FútbolFantasy: no confundir con columnas de variación de precio."""
+    if not text:
+        return None
+    widget = re.search(
+        r'class="probabilidad-widget"[^>]*>.*?(\d+(?:[.,]\d+)?)\s*%',
+        text,
+        flags=re.S | re.I,
+    )
+    if widget is not None:
+        return _percent_token(widget.group(1))
+    profile = re.search(
+        r'porcentaje-perfil"[^>]*>.*?(\d+(?:[.,]\d+)?)\s*%',
+        text,
+        flags=re.S | re.I,
+    )
+    if profile is not None:
+        return _percent_token(profile.group(1))
+    attr = re.search(r'data-probabilidad="(\d+(?:[.,]\d+)?)\s*%"', text, flags=re.I)
+    if attr is not None:
+        return _percent_token(attr.group(1))
+    for match in re.finditer(r"(\d+(?:[.,]\d+)?)\s*%", text):
+        window = text[max(0, match.start() - 140) : match.start()]
+        if any(
+            marker in window
+            for marker in ("columna_diferencia", "analytics-down", "analytics-up")
+        ):
+            continue
+        parsed = _percent_token(match.group(1))
+        if parsed is not None:
+            return parsed
+    return None
 
 
 def _as_int(value: Any) -> int | None:
@@ -345,6 +689,8 @@ def parse_market_board(page: str) -> list[IntelPlayer]:
                 external_id=attrs.get("id"),
                 p_titular=_percent(chunk),
                 price_delta=_as_int(attrs.get("diferencia1")),
+                price_delta_2=_as_int(attrs.get("diferencia2")),
+                price_delta_3=_as_int(attrs.get("diferencia3")),
                 acceleration=_as_int(attrs.get("aceleracion")),
             )
         )
@@ -426,8 +772,36 @@ def parse_fbref_html(page: str) -> list[FormLine]:
                 continue
             number = _as_float(values[stat])
             if number is not None and current is None:
+                if target == "minutes_pct" and number > 1:
+                    number = round(number / 100.0, 4)
                 setattr(line, target, number)
     return list(merged.values())
+
+
+def form_line_from_mapping(row: dict[str, Any]) -> FormLine | None:
+    name = row.get("name")
+    source = row.get("source")
+    if not isinstance(name, str) or not name.strip() or not isinstance(source, str):
+        return None
+    line = FormLine(
+        name=name.strip(),
+        source=source,
+        club=row.get("club") if isinstance(row.get("club"), str) else None,
+        position=row.get("position") if isinstance(row.get("position"), str) else None,
+        external_id=str(row["external_id"]) if row.get("external_id") is not None else None,
+    )
+    for key in _FORM_KEYS:
+        if key not in row:
+            continue
+        value = row.get(key)
+        if key == "jp_tip":
+            if isinstance(value, str) and value.strip():
+                line.jp_tip = value.strip()
+            continue
+        number = _as_float(value)
+        if number is not None and getattr(line, key) is None:
+            setattr(line, key, number)
+    return line
 
 
 def _sofascore_player(node: dict[str, Any]) -> FormLine | None:
@@ -441,6 +815,12 @@ def _sofascore_player(node: dict[str, Any]) -> FormLine | None:
     if not isinstance(name, str) or not name.strip():
         return None
     team = node.get("team") if isinstance(node.get("team"), dict) else {}
+    minutes = _as_float(stats.get("minutesPlayed", stats.get("minutes", stats.get("totalPlayingTime"))))
+    appearances = _as_float(stats.get("appearances", stats.get("games", stats.get("matches"))))
+    starts = _as_float(stats.get("started", stats.get("starts", stats.get("gamesStarted"))))
+    minutes_pct = None
+    if minutes is not None and appearances and appearances > 0:
+        minutes_pct = round(min(1.0, minutes / (90.0 * appearances)), 4)
     return FormLine(
         name=name.strip(),
         source="sofascore",
@@ -454,6 +834,9 @@ def _sofascore_player(node: dict[str, Any]) -> FormLine | None:
         clearances=_as_float(stats.get("clearances")),
         saves=_as_float(stats.get("saves")),
         average_rating=_as_float(stats.get("rating", stats.get("averageRating"))),
+        minutes=minutes,
+        starts=starts,
+        minutes_pct=minutes_pct,
     )
 
 
@@ -467,6 +850,13 @@ def parse_sofascore_payload(payload: Any) -> list[FormLine]:
             if isinstance(payload.get(key), list):
                 found = payload[key]
                 break
+        if found is None:
+            top = payload.get("topPlayers")
+            if isinstance(top, dict):
+                for bucket in top.values():
+                    if isinstance(bucket, list) and bucket:
+                        found = bucket
+                        break
         if found is None and isinstance(payload.get("player"), dict):
             rows = [payload]
         else:
@@ -564,6 +954,10 @@ def _overlay(target: IntelPlayer, incoming: IntelPlayer) -> None:
         target.p_titular = incoming.p_titular
     if incoming.price_delta is not None:
         target.price_delta = incoming.price_delta
+    if incoming.price_delta_2 is not None:
+        target.price_delta_2 = incoming.price_delta_2
+    if incoming.price_delta_3 is not None:
+        target.price_delta_3 = incoming.price_delta_3
     if incoming.acceleration is not None:
         target.acceleration = incoming.acceleration
     if incoming.fitness is not None:
@@ -579,6 +973,21 @@ def _overlay(target: IntelPlayer, incoming: IntelPlayer) -> None:
         target.on_verge = False
 
 
+def _week_points_tuple(value: Any) -> tuple[float, ...]:
+    """Serie oficial de jornadas para el fallback de titularidad (máx. 5)."""
+    if not isinstance(value, list):
+        return ()
+    points: list[float] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            continue
+        number = float(item)
+        if number != number:
+            continue
+        points.append(number)
+    return tuple(points[-5:])
+
+
 def catalog_from_documents(market: dict[str, Any], squads: dict[str, Any]) -> list[CanonicalPlayer]:
     by_id: dict[str, CanonicalPlayer] = {}
     for squad in squads.get("squads") or []:
@@ -589,6 +998,12 @@ def catalog_from_documents(market: dict[str, Any], squads: dict[str, Any]) -> li
                 continue
             player_id = str(player["player_id"])
             price = player.get("market_value") if isinstance(player.get("market_value"), int) else None
+            change = (
+                player.get("market_value_change")
+                if isinstance(player.get("market_value_change"), int)
+                and not isinstance(player.get("market_value_change"), bool)
+                else None
+            )
             by_id[player_id] = CanonicalPlayer(
                 player_id=player_id,
                 name=player.get("name") if isinstance(player.get("name"), str) else None,
@@ -596,6 +1011,9 @@ def catalog_from_documents(market: dict[str, Any], squads: dict[str, Any]) -> li
                 club=player.get("club") if isinstance(player.get("club"), str) else None,
                 position=player.get("position") if isinstance(player.get("position"), str) else None,
                 fantasy_price=price,
+                market_value_change=change,
+                image_url=player.get("image_url") if isinstance(player.get("image_url"), str) else None,
+                week_points=_week_points_tuple(player.get("week_points")),
             )
     for listing in market.get("listings") or []:
         if not isinstance(listing, dict) or listing.get("player_id") is None:
@@ -603,8 +1021,15 @@ def catalog_from_documents(market: dict[str, Any], squads: dict[str, Any]) -> li
         player_id = str(listing["player_id"])
         price = listing.get("market_value") if isinstance(listing.get("market_value"), int) else None
         sale = listing.get("sale_price") if isinstance(listing.get("sale_price"), int) else None
+        change = (
+            listing.get("market_value_change")
+            if isinstance(listing.get("market_value_change"), int)
+            and not isinstance(listing.get("market_value_change"), bool)
+            else None
+        )
         current = by_id.get(player_id)
         if current is None:
+            listing_image = listing.get("image_url") if isinstance(listing.get("image_url"), str) else None
             by_id[player_id] = CanonicalPlayer(
                 player_id=player_id,
                 name=listing.get("name") if isinstance(listing.get("name"), str) else None,
@@ -613,14 +1038,19 @@ def catalog_from_documents(market: dict[str, Any], squads: dict[str, Any]) -> li
                 position=listing.get("position") if isinstance(listing.get("position"), str) else None,
                 fantasy_price=price if price is not None else sale,
                 sale_price=sale,
+                market_value_change=change,
                 on_market=True,
+                image_url=listing_image,
             )
             continue
+        listing_image = listing.get("image_url") if isinstance(listing.get("image_url"), str) else None
         by_id[player_id] = replace(
             current,
             sale_price=sale,
             on_market=True,
             fantasy_price=current.fantasy_price if current.fantasy_price is not None else price or sale,
+            market_value_change=change if change is not None else current.market_value_change,
+            image_url=current.image_url or listing_image,
         )
     return sorted(by_id.values(), key=lambda player: player.player_id)
 
@@ -629,6 +1059,13 @@ def _fetch_text(client: ExternalClient, url: str, *, ttl: float, fresh: bool) ->
     try:
         body, cached = client.get_text(url, ttl=ttl, fresh=fresh)
     except ExternalHttpError as exc:
+        from toolbox.browser_scrape import render_with_browser
+
+        if exc.code in {"forbidden", "blocked"}:
+            rendered = render_with_browser(url)
+            if rendered is not None and not _looks_blocked_html(rendered):
+                client.store_page(url, rendered, ttl=ttl)
+                return rendered, False, None
         return None, False, str(exc)
     return body, cached, None
 
@@ -637,8 +1074,20 @@ def _fetch_json(client: ExternalClient, url: str, *, ttl: float, fresh: bool) ->
     try:
         payload, cached = client.get_json(url, ttl=ttl, fresh=fresh)
     except ExternalHttpError as exc:
+        from toolbox.browser_scrape import fetch_json_with_browser
+
+        if exc.code in {"forbidden", "blocked"}:
+            payload, _raw = fetch_json_with_browser(url)
+            if payload is not None:
+                client.store_json(url, payload, ttl=ttl)
+                return payload, False, None
         return None, False, str(exc)
     return payload, cached, None
+
+
+def _looks_blocked_html(body: str) -> bool:
+    head = body[:2000].lower()
+    return "just a moment" in head or "cf-browser-verification" in head or "attention required" in head
 
 
 def _load_page(
@@ -680,18 +1129,45 @@ def _load_fbref(client: ExternalClient, *, ttl: float, fresh: bool) -> _SourceFe
     )
 
 
+def _sofascore_url() -> str:
+    explicit = os.getenv("SOFASCORE_STATS_URL", "").strip()
+    if explicit:
+        return explicit
+    season = os.getenv("SOFASCORE_SEASON_ID", "").strip() or SOFASCORE_DEFAULT_SEASON
+    return (
+        f"https://api.sofascore.com/api/v1/unique-tournament/8/season/{season}/top-players/overall"
+    )
+
+
 def _load_sofascore(client: ExternalClient, *, ttl: float, fresh: bool) -> _SourceFetch:
-    url = os.getenv("SOFASCORE_STATS_URL", "").strip()
-    if not url:
-        return _SourceFetch(
-            ok=False,
-            error="SOFASCORE_STATS_URL no configurada. El parser queda listo para el JSON de estadísticas.",
-        )
+    url = _sofascore_url()
     payload, cached, error = _fetch_json(client, url, ttl=ttl, fresh=fresh)
     if error or payload is None:
         return _SourceFetch(ok=False, error=error or "Sin JSON de Sofascore.")
     rows = parse_sofascore_payload(payload)
+    if not rows:
+        return _SourceFetch(
+            ok=False,
+            error="Sofascore no devolvió jugadores. Revisa SOFASCORE_STATS_URL (season id).",
+            from_cache=cached,
+        )
     return _SourceFetch(ok=True, count=len(rows), from_cache=cached, rows=rows)
+
+
+def _snapshot_day(market: dict[str, Any] | None) -> str | None:
+    """Día civil de la captura del precio, no el día en que corre el proceso.
+
+    El documento de mercado lleva ``source_stored_at`` (epoch de la copia que se
+    sirvió). Con la API viva es de hace segundos y coincide con hoy; en air-gap
+    puede ser de hace días, y entonces el snapshot debe ir a *ese* día para no
+    grabar un día plano inventado.
+    """
+    if not isinstance(market, dict):
+        return None
+    stored = market.get("source_stored_at")
+    if not isinstance(stored, (int, float)):
+        return None
+    return madrid_day(float(stored))
 
 
 def _search_transfermarkt(
@@ -756,6 +1232,24 @@ def _apply_form(target: dict[str, Any], line: FormLine) -> None:
     target["source"] = "+".join(dict.fromkeys(sources)) or None
 
 
+def _stamp_fixture(form: dict[str, Any], fixture: Any | None) -> dict[str, Any] | None:
+    if fixture is None:
+        return None
+    form["fdr"] = fixture.fdr
+    form["home"] = fixture.home
+    form["opponent"] = fixture.opponent
+    form["opponent_xga"] = fixture.opponent_xga
+    return {
+        "opponent": fixture.opponent,
+        "opponent_id": fixture.opponent_id,
+        "home": fixture.home,
+        "kickoff": fixture.kickoff,
+        "fdr": fixture.fdr,
+        "opponent_xga": fixture.opponent_xga,
+        "opponent_xg": fixture.opponent_xg,
+    }
+
+
 def _player_payload(
     player: CanonicalPlayer,
     *,
@@ -764,6 +1258,7 @@ def _player_payload(
     transfermarkt_value: int | None,
     confidence: float | None,
     matches: dict[str, Any],
+    fixture: Any | None = None,
 ) -> dict[str, Any]:
     price = player.fantasy_price
     gap = None
@@ -772,36 +1267,115 @@ def _player_payload(
         gap = transfermarkt_value - price
         ratio = round(transfermarkt_value / price, 4)
     sanction_cards = intel.yellow_cards if intel is not None else None
+    ff_delta = intel.price_delta if intel is not None else None
+    api_payload = {
+        "market_value_change": player.market_value_change,
+        "price_delta": ff_delta,
+        "market_value": price,
+        "fantasy_price": price,
+        "sale_price": player.sale_price,
+    }
+    day_delta = official_price_delta(api_payload)
+    from toolbox.normalize import reconcile_fitness
+
+    fitness = intel.fitness if intel is not None else None
+    if fitness is None and isinstance(form.get("fitness"), str):
+        fitness = form.get("fitness")
+    fixture_payload = _stamp_fixture(form, fixture)
+    scraped = intel.p_titular if intel is not None else None
+    if scraped is not None:
+        p_titular = scraped
+        p_titular_source = "scraper"
+    else:
+        p_titular = starter_fallback({"week_points": list(player.week_points)})
+        p_titular_source = "week_points" if p_titular is not None else None
+    lineup_status = intel.lineup_status if intel is not None else None
+    fitness = reconcile_fitness(
+        fitness if isinstance(fitness, str) else None,
+        p_titular=p_titular,
+        p_titular_source=p_titular_source,
+        lineup_status=lineup_status,
+    )
     return {
         "player_id": player.player_id,
         "name": player.name,
         "nickname": player.nickname,
         "club": player.club,
         "position": player.position,
+        "image_url": player.image_url,
         "on_market": player.on_market,
         "fantasy_price": price,
         "sale_price": player.sale_price,
-        "price_delta": intel.price_delta if intel is not None else None,
-        "price_direction": _direction(intel.price_delta if intel is not None else None),
+        "market_value_change": player.market_value_change,
+        "ff_price_delta": ff_delta,
+        "ff_price_delta_2": intel.price_delta_2 if intel is not None else None,
+        "ff_price_delta_3": intel.price_delta_3 if intel is not None else None,
+        "price_delta": day_delta,
+        "price_direction": _direction(day_delta),
         "acceleration": intel.acceleration if intel is not None else None,
         "flip_candidate": False,
         "transfermarkt_value_eur": transfermarkt_value,
         "gap_eur": gap,
         "value_ratio": ratio,
-        "p_titular": intel.p_titular if intel is not None else None,
-        "lineup_status": intel.lineup_status if intel is not None else None,
+        "p_titular": p_titular,
+        "p_titular_source": p_titular_source,
+        "lineup_status": lineup_status,
         "lineup_source": intel.lineup_source if intel is not None else None,
-        "fitness": intel.fitness if intel is not None else None,
+        "fitness": fitness,
         "fitness_detail": intel.fitness_detail if intel is not None else None,
         "sanction": {
             "yellow_cards": sanction_cards,
             "on_verge": bool(intel and intel.on_verge),
             "suspended": bool(intel and intel.suspended),
         },
+        "fixture": fixture_payload,
         "form": form,
         "matching_confidence": confidence,
         "matches": matches,
     }
+
+
+def _trends_partial(sources: dict[str, dict[str, Any]]) -> bool:
+    for key, source in sources.items():
+        if not isinstance(source, dict) or source.get("ok") is not False:
+            continue
+        if key in _OPTIONAL_TRENDS_SOURCES:
+            continue
+        return True
+    return False
+
+
+def _optional_sources_degraded(sources: dict[str, dict[str, Any]]) -> bool:
+    degraded = False
+    for key in _OPTIONAL_TRENDS_SOURCES:
+        source = sources.get(key)
+        if isinstance(source, dict) and source.get("ok") is False:
+            degraded = True
+    return degraded
+
+
+def warm_optional_form_sources(
+    client: ExternalClient | None = None,
+    *,
+    fresh: bool = True,
+    ttl: ScrapeTTL | None = None,
+) -> dict[str, Any]:
+    """Precalienta FBref/Sofascore en caché local (útil con ``FANTASY_SCRAPER_BROWSER=1``)."""
+    owns = client is None
+    ext = client or ExternalClient()
+    clocks = ttl or ScrapeTTL.from_env()
+    try:
+        fbref = _load_fbref(ext, ttl=clocks.stats, fresh=fresh)
+        sofa = _load_sofascore(ext, ttl=clocks.stats, fresh=fresh)
+        return {
+            "ok": bool(fbref.ok or sofa.ok),
+            "command": "warm-stats",
+            "fbref": _status(fbref),
+            "sofascore": _status(sofa),
+        }
+    finally:
+        if owns:
+            ext.close()
 
 
 def _rank_key(player: dict[str, Any]) -> int | None:
@@ -824,19 +1398,33 @@ def build_trends(
     ttl: ScrapeTTL | None = None,
     transfermarkt_limit: int | None = None,
     fetched_at: str | None = None,
+    market: dict[str, Any] | None = None,
+    squads: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     owns_external = external is None
     client = external or ExternalClient()
     owns_store = store is None
     entity_store = store or EntityStore(client.root)
     clocks = ttl or ScrapeTTL.from_env()
-    limit = _env_int("TRANSFERMARKT_LOOKUP_LIMIT", 24) if transfermarkt_limit is None else max(0, transfermarkt_limit)
+    limit = _env_int("TRANSFERMARKT_LOOKUP_LIMIT", 8) if transfermarkt_limit is None else max(0, transfermarkt_limit)
     try:
-        market = laliga.market_document(league, fresh=fresh)
-        squads = laliga.squads_document(league, fresh=fresh)
+        if not isinstance(market, dict):
+            market = laliga.market_document(league, fresh=fresh)
+        if not isinstance(squads, dict):
+            squads = laliga.squads_document(league, fresh=fresh)
         catalog = catalog_from_documents(market, squads)
         resolver = EntityResolver(entity_store)
-        sources, intel_by_player, form_by_player, value_by_player, decisions = _cross(
+        (
+            sources,
+            intel_by_player,
+            form_by_player,
+            value_by_player,
+            decisions,
+            fixtures_by_club,
+            understat_strengths,
+            team_rolling,
+            match_odds,
+        ) = _cross(
             catalog,
             resolver,
             client,
@@ -844,13 +1432,75 @@ def build_trends(
             fresh=fresh,
             limit=limit,
         )
-        players = _assemble(catalog, intel_by_player, form_by_player, value_by_player, decisions)
+        players = _assemble(
+            catalog,
+            intel_by_player,
+            form_by_player,
+            value_by_player,
+            decisions,
+            fixtures_by_club=fixtures_by_club,
+        )
+        from toolbox.analitica_fantasy import apply_analitica_fantasy, load_analitica_fantasy
+
+        af_summary: dict[str, Any] = {
+            "prediction_rising": [],
+            "prediction_falling": [],
+            "oracle_points": [],
+            "oracle_chollos": [],
+            "in_form": [],
+        }
+        try:
+            af_bundle = load_analitica_fantasy(client, ttl=clocks.market, fresh=False)
+            sources.update(af_bundle.sources)
+            af_decisions, af_summary = apply_analitica_fantasy(catalog, resolver, af_bundle, players)
+            decisions.extend(af_decisions)
+        except Exception as exc:  # noqa: BLE001 — AF es enriquecimiento; no tumba trends
+            sources["analiticafantasy"] = {
+                "ok": False,
+                "count": 0,
+                "error": str(exc),
+                "from_cache": False,
+            }
+        own_summary: dict[str, Any] = {
+            "prediction_rising": [],
+            "prediction_falling": [],
+            "sources": {},
+        }
+        try:
+            from toolbox.own_intel import persist_and_apply_own_intel
+
+            league_id = market.get("league_id") or squads.get("league_id")
+            own_summary = persist_and_apply_own_intel(
+                players,
+                league_id=league_id if isinstance(league_id, str) else None,
+                fixtures_by_club=fixtures_by_club,
+                strengths=understat_strengths,
+                team_rolling=team_rolling,
+                match_odds=match_odds,
+                day=_snapshot_day(market),
+            )
+            sources.update(own_summary.get("sources") or {})
+        except Exception as exc:  # noqa: BLE001 — own intel no tumba trends
+            sources["own_intel"] = {
+                "ok": False,
+                "count": 0,
+                "error": str(exc),
+                "from_cache": False,
+            }
+        image_lookup = getattr(laliga, "image_index", None)
+        if callable(image_lookup):
+            try:
+                # Catálogo de fotos (TTL 6 h): no es info del día, no se fuerza.
+                attach_image_urls(players, image_lookup(fresh=False))
+            except FantasyHttpError:
+                pass
         rising, falling = _split_acceleration(players)
         undervalued = _undervalued(players)
         availability = _availability(players)
         linked = [item for item in decisions if item.linked]
         audits = resolver.audit()
-        partial = bool(squads.get("partial")) or any(not source["ok"] for source in sources.values())
+        partial = bool(squads.get("partial")) or _trends_partial(sources)
+        optional_degraded = _optional_sources_degraded(sources)
         return {
             "ok": True,
             "schema_version": SCHEMA_VERSION,
@@ -859,6 +1509,7 @@ def build_trends(
             "league_name": market.get("league_name") or squads.get("league_name"),
             "fetched_at": fetched_at or datetime.now(timezone.utc).isoformat(),
             "partial": partial,
+            "optional_sources_degraded": optional_degraded,
             "catalog_count": len(players),
             "form_note": FORM_NOTE,
             "sources": sources,
@@ -873,6 +1524,13 @@ def build_trends(
             "falling": falling,
             "undervalued": undervalued,
             "availability": availability,
+            "af_prediction_rising": af_summary.get("prediction_rising") or [],
+            "af_prediction_falling": af_summary.get("prediction_falling") or [],
+            "af_oracle_points": af_summary.get("oracle_points") or [],
+            "af_oracle_chollos": af_summary.get("oracle_chollos") or [],
+            "af_in_form": af_summary.get("in_form") or [],
+            "own_prediction_rising": own_summary.get("prediction_rising") or [],
+            "own_prediction_falling": own_summary.get("prediction_falling") or [],
             "players": players,
         }
     finally:
@@ -904,9 +1562,22 @@ def _stamp_lineups(
             intel_by_player[player_id] = intel
         if hit.start_probability is not None:
             intel.p_titular = hit.start_probability
+        from toolbox.normalize import reconcile_fitness, stale_injury_overridden
+
+        intel.lineup_status = hit.status
         if hit.fitness == "lesionado" or (hit.fitness and intel.fitness is None):
             intel.fitness = hit.fitness
-        intel.lineup_status = hit.status
+        elif stale_injury_overridden(
+            p_titular=intel.p_titular,
+            p_titular_source="scraper",
+            lineup_status=intel.lineup_status,
+        ):
+            intel.fitness = reconcile_fitness(
+                intel.fitness,
+                p_titular=intel.p_titular,
+                p_titular_source="scraper",
+                lineup_status=intel.lineup_status,
+            )
         intel.lineup_source = hit.source
         for link in hit.links:
             decisions.append(
@@ -920,6 +1591,41 @@ def _stamp_lineups(
                     linked=True,
                 )
             )
+
+
+def _link_form_rows(
+    catalog: list[CanonicalPlayer],
+    resolver: EntityResolver,
+    rows: list[FormLine],
+    source: str,
+    form_by_player: dict[str, dict[str, Any]],
+) -> list[Any]:
+    if not rows:
+        return []
+    records = [
+        ExternalRecord(
+            source=source,
+            name=line.name,
+            external_id=line.external_id,
+            club=line.club,
+            position=line.position,
+        )
+        for line in rows
+    ]
+    decisions = resolver.link_source(catalog, records, source)
+    by_name = {normalize_name(line.name): line for line in rows}
+    by_id = {line.external_id: line for line in rows if line.external_id}
+    for decision in decisions:
+        if not decision.linked:
+            continue
+        line = by_id.get(decision.external_id) if decision.external_id else None
+        if line is None:
+            line = by_name.get(normalize_name(decision.external_name))
+        if line is None:
+            continue
+        bucket = form_by_player.setdefault(decision.player_id, _blank_form())
+        _apply_form(bucket, line)
+    return decisions
 
 
 def _cross(
@@ -936,11 +1642,61 @@ def _cross(
     dict[str, dict[str, Any]],
     dict[str, int],
     list[Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, dict[str, Any]],
 ]:
-    market_fetch = _load_page(client, FF_MARKET_URL, parse_market_board, ttl=clocks.market, fresh=fresh)
-    fitness_fetch = _load_page(client, FF_FITNESS_URL, parse_fitness_board, ttl=clocks.fitness, fresh=fresh)
-    sanctions_fetch = _load_page(client, FF_SANCTIONS_URL, parse_sanction_board, ttl=clocks.sanctions, fresh=fresh)
-    warnings_fetch = _load_page(client, FF_WARNINGS_URL, parse_warning_board, ttl=clocks.sanctions, fresh=fresh)
+    from toolbox.fantasy_scraper import load_lineups
+    from toolbox.jornada_perfecta import load_jornada_perfecta
+    from toolbox.understat import load_understat
+
+    # Páginas independientes en paralelo: la primera carga en frío no las encadena.
+    # Solo el mercado de FútbolFantasy y las alineaciones respetan ``fresh``:
+    # estadística, cuotas, JP y el resto de fuentes pesadas van siempre a caché
+    # con su TTL (horas o días), para no castigarlas con cada "Actualizar".
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        market_future = pool.submit(
+            inherited(_load_page), client, FF_MARKET_URL, parse_market_board, ttl=clocks.market, fresh=fresh
+        )
+        fitness_future = pool.submit(
+            inherited(_load_page), client, FF_FITNESS_URL, parse_fitness_board, ttl=clocks.fitness, fresh=False
+        )
+        sanctions_future = pool.submit(
+            inherited(_load_page), client, FF_SANCTIONS_URL, parse_sanction_board, ttl=clocks.sanctions, fresh=False
+        )
+        warnings_future = pool.submit(
+            inherited(_load_page), client, FF_WARNINGS_URL, parse_warning_board, ttl=clocks.sanctions, fresh=False
+        )
+        lineups_future = pool.submit(inherited(load_lineups), client, ttl=clocks.market, fresh=fresh)
+        fbref_future = pool.submit(inherited(_load_fbref), client, ttl=clocks.stats, fresh=False)
+        sofa_future = pool.submit(inherited(_load_sofascore), client, ttl=clocks.stats, fresh=False)
+        understat_future = pool.submit(inherited(load_understat), client, ttl=clocks.stats, fresh=False)
+        jp_future = pool.submit(inherited(load_jornada_perfecta), client, ttl=clocks.market, fresh=False)
+        market_fetch = market_future.result()
+        fitness_fetch = fitness_future.result()
+        sanctions_fetch = sanctions_future.result()
+        warnings_fetch = warnings_future.result()
+        lineup_sources, sightings = lineups_future.result()
+        fbref_fetch = fbref_future.result()
+        sofa_fetch = sofa_future.result()
+        understat_rows, fixtures_by_club, understat_strengths, team_rolling, understat_status = understat_future.result()
+        jp_rows, jp_status = jp_future.result()
+    league_vals = [
+        item.avg_xg
+        for item in {id(v): v for v in understat_strengths.values()}.values()
+        if getattr(item, "avg_xg", 0) > 0
+    ]
+    league_avg_xg = sum(league_vals) / len(league_vals) if league_vals else 1.32
+    match_odds, odds_status = load_laliga_match_odds(
+        client,
+        fixtures_by_club=fixtures_by_club,
+        strengths=understat_strengths,
+        team_rolling=team_rolling,
+        ttl=clocks.odds,
+        fresh=False,
+        league_avg_xg=league_avg_xg,
+    )
     intel_rows = merge_intel(
         market_fetch.rows,
         fitness_fetch.rows,
@@ -975,40 +1731,33 @@ def _cross(
         if row is not None:
             intel_by_player[decision.player_id] = row
 
-    from toolbox.fantasy_scraper import load_lineups
-
-    lineup_sources, sightings = load_lineups(client, ttl=clocks.market, fresh=fresh)
     _stamp_lineups(catalog, intel_by_player, sightings, ff_decisions)
-
-    fbref_fetch = _load_fbref(client, ttl=clocks.stats, fresh=fresh)
-    sofa_fetch = _load_sofascore(client, ttl=clocks.stats, fresh=fresh)
     form_by_player: dict[str, dict[str, Any]] = {}
     form_decisions: list[Any] = []
-    for fetch, source in ((fbref_fetch, "fbref"), (sofa_fetch, "sofascore")):
-        records = [
-            ExternalRecord(
-                source=source,
-                name=line.name,
-                external_id=line.external_id,
-                club=line.club,
-                position=line.position,
-            )
-            for line in fetch.rows
-        ]
-        decisions = resolver.link_source(catalog, records, source) if records else []
-        form_decisions.extend(decisions)
-        by_name = {normalize_name(line.name): line for line in fetch.rows}
-        by_id = {line.external_id: line for line in fetch.rows if line.external_id}
-        for decision in decisions:
-            if not decision.linked:
-                continue
-            line = by_id.get(decision.external_id) if decision.external_id else None
-            if line is None:
-                line = by_name.get(normalize_name(decision.external_name))
-            if line is None:
-                continue
-            bucket = form_by_player.setdefault(decision.player_id, _blank_form())
-            _apply_form(bucket, line)
+    # Understat primero: manda en xG/xA y minutos; el resto solo rellena huecos.
+    understat_lines = [line for row in understat_rows if (line := form_line_from_mapping(row)) is not None]
+    form_decisions.extend(_link_form_rows(catalog, resolver, understat_lines, "understat", form_by_player))
+    form_decisions.extend(_link_form_rows(catalog, resolver, list(fbref_fetch.rows), "fbref", form_by_player))
+    form_decisions.extend(_link_form_rows(catalog, resolver, list(sofa_fetch.rows), "sofascore", form_by_player))
+    jp_lines = [line for row in jp_rows if (line := form_line_from_mapping(row)) is not None]
+    form_decisions.extend(_link_form_rows(catalog, resolver, jp_lines, "jornadaperfecta", form_by_player))
+    # Fitness JP solo si Fútbol Fantasy no traía parte.
+    jp_fitness = {normalize_name(row["name"]): row.get("fitness") for row in jp_rows if row.get("fitness")}
+    for player_id, intel in intel_by_player.items():
+        if intel.fitness:
+            continue
+        form = form_by_player.get(player_id)
+        name = None
+        player = next((item for item in catalog if item.player_id == player_id), None)
+        if player is not None:
+            name = player.name or player.nickname
+        if not name:
+            continue
+        fitness = jp_fitness.get(normalize_name(name))
+        if isinstance(fitness, str):
+            intel.fitness = fitness
+            if form is not None:
+                form["fitness"] = fitness
 
     value_by_player, tm_fetch, tm_decisions = _load_transfermarkt(
         catalog,
@@ -1016,7 +1765,7 @@ def _cross(
         resolver,
         client,
         ttl=clocks.transfermarkt,
-        fresh=fresh,
+        fresh=False,
         limit=limit,
     )
     sources = {
@@ -1027,9 +1776,39 @@ def _cross(
         **lineup_sources,
         "fbref": _status(fbref_fetch),
         "sofascore": _status(sofa_fetch),
+        "understat": {
+            "ok": bool(understat_status.get("ok")),
+            "count": int(understat_status.get("count") or 0),
+            "error": understat_status.get("error"),
+            "from_cache": bool(understat_status.get("from_cache")),
+            "fixtures": understat_status.get("fixtures"),
+        },
+        "jornadaperfecta": {
+            "ok": bool(jp_status.get("ok")),
+            "count": int(jp_status.get("count") or 0),
+            "error": jp_status.get("error"),
+            "from_cache": bool(jp_status.get("from_cache")),
+        },
         "transfermarkt": _status(tm_fetch),
+        "laliga_odds": {
+            "ok": bool(odds_status.get("ok")),
+            "count": int(odds_status.get("count") or 0),
+            "error": odds_status.get("error"),
+            "from_cache": bool(odds_status.get("from_cache")),
+            "source": odds_status.get("source"),
+        },
     }
-    return sources, intel_by_player, form_by_player, value_by_player, [*ff_decisions, *form_decisions, *tm_decisions]
+    return (
+        sources,
+        intel_by_player,
+        form_by_player,
+        value_by_player,
+        [*ff_decisions, *form_decisions, *tm_decisions],
+        fixtures_by_club,
+        understat_strengths,
+        team_rolling,
+        match_odds,
+    )
 
 
 def _load_transfermarkt(
@@ -1058,6 +1837,14 @@ def _load_transfermarkt(
         query = player.name or player.nickname
         if not query:
             continue
+        # Cortacircuitos: si Transfermarkt se ha caído, no se paga un timeout
+        # por cada nombre restante. Se deja de buscar y se informa arriba.
+        breaker = getattr(client, "transfermarkt_breaker_open", None)
+        if callable(breaker):
+            reason = breaker()
+            if reason:
+                errors.append(reason)
+                break
         try:
             rows, cached = _search_transfermarkt(client, query, ttl=ttl, fresh=fresh)
         except ExternalHttpError as exc:
@@ -1100,10 +1887,13 @@ def _assemble(
     form_by_player: dict[str, dict[str, Any]],
     value_by_player: dict[str, int],
     decisions: list[Any],
+    *,
+    fixtures_by_club: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     by_player: dict[str, list[Any]] = {}
     for decision in decisions:
         by_player.setdefault(decision.player_id, []).append(decision)
+    fixtures = fixtures_by_club or {}
     payloads: list[dict[str, Any]] = []
     for player in catalog:
         linked = [item for item in by_player.get(player.player_id, []) if item.linked]
@@ -1119,6 +1909,10 @@ def _assemble(
             }
             for item in linked
         }
+        club_key = normalize_club(player.club) if player.club else ""
+        fixture = fixtures.get(club_key) if club_key else None
+        if fixture is None and player.club:
+            fixture = fixtures.get(normalize_name(player.club))
         payloads.append(
             _player_payload(
                 player,
@@ -1127,6 +1921,7 @@ def _assemble(
                 transfermarkt_value=value_by_player.get(player.player_id),
                 confidence=confidence,
                 matches=matches,
+                fixture=fixture,
             )
         )
     return payloads
@@ -1140,7 +1935,9 @@ def _split_acceleration(players: list[dict[str, Any]]) -> tuple[list[dict[str, A
     falling = [player for player in falling if int(_rank_key(player) or 0) < 0][:RANK_LIMIT]
     flagged = {player["player_id"] for player in rising + falling}
     for player in players:
-        player["flip_candidate"] = player["player_id"] in flagged
+        own_up = player.get("own_market_signal") == "up"
+        af_up = player.get("af_market_signal") == "up"
+        player["flip_candidate"] = player["player_id"] in flagged or own_up or af_up
     return rising, falling
 
 
@@ -1170,3 +1967,192 @@ def _availability(players: list[dict[str, Any]]) -> list[dict[str, Any]]:
             selected.append(player)
     selected.sort(key=weight)
     return selected
+
+
+_LINEUP_SIGHTINGS_CACHE: tuple[float, list[Any]] | None = None
+_LINEUP_SIGHTINGS_CACHE_TTL = 10 * 60
+
+
+def _cached_lineup_sightings(
+    client: Any,
+    *,
+    fresh: bool,
+    ttl: float,
+) -> list[Any]:
+    global _LINEUP_SIGHTINGS_CACHE
+    from toolbox.fantasy_scraper import load_lineups
+
+    now = time.monotonic()
+    if (
+        not fresh
+        and _LINEUP_SIGHTINGS_CACHE is not None
+        and now - _LINEUP_SIGHTINGS_CACHE[0] < _LINEUP_SIGHTINGS_CACHE_TTL
+    ):
+        return _LINEUP_SIGHTINGS_CACHE[1]
+    _sources, rows = load_lineups(client, ttl=ttl, fresh=fresh)
+    _LINEUP_SIGHTINGS_CACHE = (now, rows)
+    return rows
+
+
+def _squad_needs_titular_refresh(
+    squad: dict[str, Any],
+    trend_index: dict[str, dict[str, Any]],
+) -> bool:
+    players = squad.get("players") if isinstance(squad.get("players"), list) else []
+    for player in players:
+        if not isinstance(player, dict):
+            continue
+        player_id = player.get("player_id")
+        if not isinstance(player_id, str) or not player_id:
+            continue
+        trend = trend_index.get(player_id) if isinstance(trend_index.get(player_id), dict) else {}
+        p_titular = trend.get("p_titular")
+        if p_titular is None:
+            return True
+        if isinstance(p_titular, (int, float)) and not isinstance(p_titular, bool):
+            share = float(p_titular)
+            if share > 1.0:
+                share /= 100.0
+            if share < 0.05:
+                return True
+    return False
+
+
+def refresh_player_titularity(
+    players: list[dict[str, Any]],
+    *,
+    fresh: bool = False,
+    ttl: float = 30 * 60,
+) -> None:
+    """Relee titularidad desde caché HTTP (alineaciones + mercado FF).
+
+    Las fotos ``full`` en disco pueden guardar ``p_titular`` obsoleto; el once
+    la vuelve a cruzar al enriquecer sin repetir todo ``build_trends``.
+
+    Va siempre dentro de ``no_network()``: esto es un refresco de lectura sobre
+    una foto ya guardada, así que se sirve de ``.cache/`` y, si la fuente no
+    tiene copia, se queda con la titularidad de la foto. Un ``GET /api/optimize``
+    no debe abrir sockets hacia Transfermarkt ni FútbolFantasy.
+    """
+    if not players:
+        return
+    from toolbox.fantasy_scraper import LineupPlayer, match_catalog
+    from toolbox.net import ExternalClient, no_network
+
+    rows = [player for player in players if isinstance(player, dict) and player.get("player_id")]
+    if not rows:
+        return
+    catalog = [
+        CanonicalPlayer(
+            player_id=str(player["player_id"]),
+            name=player.get("name") if isinstance(player.get("name"), str) else None,
+            nickname=player.get("nickname") if isinstance(player.get("nickname"), str) else None,
+            club=player.get("club") if isinstance(player.get("club"), str) else None,
+            position=player.get("position") if isinstance(player.get("position"), str) else None,
+            fantasy_price=None,
+        )
+        for player in rows
+    ]
+    client = ExternalClient()
+    try:
+        with no_network():
+            _apply_cached_titularity(client, rows, catalog, fresh=fresh, ttl=ttl)
+    finally:
+        client.close()
+
+
+def _apply_cached_titularity(
+    client: ExternalClient,
+    rows: list[dict[str, Any]],
+    catalog: list[Any],
+    *,
+    fresh: bool,
+    ttl: float,
+) -> None:
+    """Cruza alineaciones y mercado FF **desde caché** sobre ``rows``."""
+    from toolbox.fantasy_scraper import LineupPlayer, match_catalog
+
+    lineup_rows = _cached_lineup_sightings(client, fresh=fresh, ttl=ttl)
+    for player_id, hit in match_catalog(catalog, lineup_rows).items():
+        if hit.start_probability is None:
+            continue
+        target = next((row for row in rows if str(row.get("player_id")) == player_id), None)
+        if target is None:
+            continue
+        target["p_titular"] = hit.start_probability
+        target["p_titular_source"] = "scraper"
+        target["lineup_status"] = hit.status
+    market = _load_page(client, FF_MARKET_URL, parse_market_board, ttl=ttl, fresh=fresh)
+    if not market.ok:
+        return
+    market_rows = [
+        LineupPlayer(
+            name=row.name,
+            source="futbolfantasy_market",
+            club=row.club,
+            position=row.position,
+            external_id=row.external_id,
+            start_probability=row.p_titular,
+            status="titular" if isinstance(row.p_titular, float) and row.p_titular >= 0.5 else "suplente",
+        )
+        for row in market.rows
+        if isinstance(row, IntelPlayer) and row.p_titular is not None
+    ]
+    for player_id, hit in match_catalog(catalog, market_rows).items():
+        if hit.start_probability is None:
+            continue
+        target = next((row for row in rows if str(row.get("player_id")) == player_id), None)
+        if target is None:
+            continue
+        current = target.get("p_titular")
+        if isinstance(current, (int, float)) and not isinstance(current, bool) and float(current) >= 0.05:
+            continue
+        target["p_titular"] = hit.start_probability
+        target["p_titular_source"] = "scraper"
+
+
+def refresh_squad_titularity_in_index(
+    squad: dict[str, Any],
+    trend_index: dict[str, dict[str, Any]],
+    *,
+    fresh: bool = False,
+) -> None:
+    """Actualiza ``p_titular`` en el índice de trends para la plantilla propia.
+
+    Es enriquecimiento opcional: si la fuente de alineaciones no está (sin
+    red, sin caché, host caído), el once se resuelve con lo que ya trae la foto
+    en lugar de romper el comando. Mismo criterio que AF y own-intel en
+    ``build_trends``: un extra no tumba el resultado principal.
+    """
+    players = squad.get("players") if isinstance(squad.get("players"), list) else []
+    rows: list[dict[str, Any]] = []
+    for player in players:
+        if not isinstance(player, dict):
+            continue
+        player_id = player.get("player_id")
+        if not isinstance(player_id, str) or not player_id:
+            continue
+        merged = dict(player)
+        trend = trend_index.get(player_id)
+        if isinstance(trend, dict):
+            merged.update(trend)
+        rows.append(merged)
+    if not rows:
+        return
+    if not _squad_needs_titular_refresh(squad, trend_index):
+        return
+    try:
+        refresh_player_titularity(rows, fresh=fresh)
+    except Exception as exc:  # noqa: BLE001 — titularidad es enriquecimiento; no tumba el once
+        logger.debug("Titularidad no disponible, el once usa la foto: %s", exc)
+        return
+    keys = ("p_titular", "p_titular_source", "lineup_status")
+    for row in rows:
+        player_id = row.get("player_id")
+        if not isinstance(player_id, str) or not player_id:
+            continue
+        patch = {key: row[key] for key in keys if key in row}
+        if not patch:
+            continue
+        current = trend_index.get(player_id)
+        trend_index[player_id] = {**(current if isinstance(current, dict) else {}), **patch}

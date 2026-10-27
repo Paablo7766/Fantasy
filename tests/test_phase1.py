@@ -8,6 +8,7 @@ import json
 import os
 import random
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
@@ -26,7 +27,8 @@ from toolbox.auth import (
     make_pkce_pair,
     write_env_values,
 )
-from toolbox.cache import ResponseCache
+from toolbox.cache import ResponseCache, cache_key
+from toolbox import net
 from toolbox.net import (
     LEAGUE_BASE,
     REQUIRED_HEADERS,
@@ -150,6 +152,7 @@ class Phase1Test(unittest.TestCase):
                         "nickname": "B. Méndez",
                         "name": "Brais Méndez",
                         "marketValue": 12345678,
+                        "marketValueChange": 1325257,
                         "positionId": 3,
                     },
                     "buyoutClause": 25000000,
@@ -166,6 +169,7 @@ class Phase1Test(unittest.TestCase):
         )
         player = squad["players"][0]
         self.assertEqual(player["position"], "MC")
+        self.assertEqual(player["market_value_change"], 1325257)
         self.assertEqual(player["buyout_clause"], 25000000)
         self.assertEqual(player["clause_lock"]["local_time"], "07:05")
         self.assertTrue(player["clause_lock"]["is_locked"])
@@ -189,9 +193,21 @@ class Phase1Test(unittest.TestCase):
 
     def test_league_base_is_the_contract_url(self) -> None:
         self.assertEqual(LEAGUE_BASE, "https://api-fantasy.llt-services.com/api/v4/leagues")
-        joined = " ".join(league_list_urls())
-        self.assertIn(LEAGUE_BASE, joined)
-        self.assertTrue(league_list_urls()[0].startswith("https://fantasy-api.llt-services.com/api/v4/leagues"))
+
+    def test_the_live_league_route_is_first_and_the_dead_ones_are_gone(self) -> None:
+        """Las rutas retiradas no pueden quedarse «de respaldo».
+
+        ``/api/v4/leagues`` contesta 500 en ``fantasy-api`` y 502 en
+        ``api-fantasy``. Un 5xx dispara el kill switch, así que dejarlas en la
+        lista —aunque sea al final— convierte el primer fallo de la ruta buena
+        en el fin de la pasada. Con las muertas delante, todo refresco moría
+        en ``resolve_league`` y el panel servía la foto de ayer.
+        """
+        urls = league_list_urls()
+        self.assertEqual(urls[0], "https://fantasy-api.llt-services.com/api/v1/competition/1/leagues?x-lang=es")
+        for url in urls:
+            self.assertNotIn("api-fantasy.llt-services.com", url)
+            self.assertNotIn("/api/v4/leagues", url)
 
     def test_required_headers_and_backoff(self) -> None:
         for name in ("Origin", "Referer", "X-App", "X-Lang"):
@@ -203,47 +219,63 @@ class Phase1Test(unittest.TestCase):
         self.assertGreaterEqual(delay, 4.0)
         self.assertLessEqual(delay, 4.8)
 
-    def test_retries_429_then_returns_json(self) -> None:
+    def test_429_trips_the_kill_switch_without_a_retry(self) -> None:
+        """Un 429 es una orden de parar, no un reintento con espera."""
         calls: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             calls.append(request)
-            if len(calls) == 1:
-                return httpx.Response(429, headers={"Retry-After": "0"}, json={"error": "slow"})
-            return httpx.Response(200, json={"elements": [{"id": "m1", "salePrice": 10}]})
+            return httpx.Response(429, headers={"Retry-After": "0"}, json={"error": "slow"})
 
-        payload = self._client(handler).get_json(
-            "https://fantasy-api.llt-services.com/api/v4/leagues?x-lang=es",
-            ttl=0,
-            fresh=True,
-        )
-        self.assertEqual(payload["elements"][0]["id"], "m1")
+        client = self._client(handler)
+        with self.assertRaises(SystemExit):
+            client.get_json(
+                "https://fantasy-api.llt-services.com/api/v4/leagues?x-lang=es",
+                ttl=0,
+                fresh=True,
+            )
+        # Una sola petición: los reintentos sobre un 429 son justo lo que
+        # dispara el baneo de la IP.
+        self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0].headers["Authorization"], "Bearer test-token")
         self.assertEqual(calls[0].headers["Origin"], "https://fantasy.laliga.com")
         self.assertEqual(calls[0].headers["Referer"], "https://fantasy.laliga.com/")
         self.assertEqual(calls[0].headers["X-App"], "Fantasy-web")
         self.assertEqual(calls[0].headers["X-Lang"], "es")
+        self.addCleanup(net.reset_kill_switch)
 
-    def test_401_refreshes_once(self) -> None:
+    def test_401_trips_the_kill_switch_without_a_retry(self) -> None:
+        """Un 401 ya no refresca el token y reintenta: mata el proceso.
+
+        Refrescar el token y repetir convertía un token caducado en dos
+        peticiones con la misma IP y el mismo segundo. El contrato vivo es
+        parar en seco y pedir un login manual.
+        """
         tokens = FakeTokens()
         calls: list[str] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             calls.append(request.headers["Authorization"])
-            if len(calls) == 1:
-                return httpx.Response(401, json={"message": "expired"})
-            return httpx.Response(200, json=[])
+            return httpx.Response(401, json={"message": "expired"})
 
         client = self._client(handler, tokens=tokens)
-        self.assertEqual(client.get_json("https://fantasy-api.llt-services.com/api/v4/ping", ttl=0, fresh=True), [])
-        self.assertEqual(tokens.refreshes, 1)
-        self.assertEqual(calls, ["Bearer test-token", "Bearer fresh-token"])
+        with net.kill_switch_as_exception(), self.assertRaises(net.KillSwitchTripped):
+            client.get_json("https://fantasy-api.llt-services.com/api/v4/ping", ttl=0, fresh=True)
+        self.assertEqual(tokens.refreshes, 0)
+        self.assertEqual(calls, ["Bearer test-token"])
 
     def test_legacy_host_502_falls_through_to_market(self) -> None:
+        photo = "https://assets-fantasy.llt-services.com/players/t81/p5/256x256/p5_t81_1_001_000.png"
+
         def handler(request: httpx.Request) -> httpx.Response:
             url = str(request.url)
             if "api-fantasy.llt-services.com" in url:
                 return httpx.Response(502, json={"error": "down"})
+            if "/competition/1/players" in url:
+                return httpx.Response(
+                    200,
+                    json=[{"id": "5", "nickname": "Vinicius", "positionId": "4", "image": photo}],
+                )
             if url.endswith("/market?x-lang=es") or "/market?" in url:
                 return httpx.Response(
                     200,
@@ -265,6 +297,7 @@ class Phase1Test(unittest.TestCase):
         self.assertEqual(document["listings"][0]["nickname"], "Vinicius")
         self.assertEqual(document["listings"][0]["position"], "DEL")
         self.assertEqual(document["listings"][0]["leading_bid"], 13000000)
+        self.assertEqual(document["listings"][0]["image_url"], photo)
         self.assertNotIn("api-fantasy.llt-services.com", document["source_url"])
 
     def test_squads_keep_clause_minute_from_api(self) -> None:
@@ -342,6 +375,48 @@ class Phase1Test(unittest.TestCase):
             self.assertEqual(cache.get_json("https://example.test/b"), {"n": 1})
             cache.close()
 
+    def test_page_cache_writes_one_file_per_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = ResponseCache(root)
+            cache.put_page("https://example.test/a", "A" * 1000, 60)
+            path_a = root / "scraper_bodies" / cache_key("https://example.test/a")
+            stamp = path_a.stat().st_mtime_ns
+            time.sleep(0.05)
+            cache.put_page("https://example.test/b", "B" * 1000, 60)
+            self.assertEqual(path_a.stat().st_mtime_ns, stamp)
+            self.assertEqual(cache.get_page("https://example.test/a"), "A" * 1000)
+            monolith = root / "supabase-local" / "scraper_cache.json"
+            self.assertFalse(monolith.exists())
+            cache.close()
+
+    def test_legacy_scraper_cache_is_split_on_read(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            url = "https://example.test/legacy"
+            key = cache_key(url)
+            folder = root / "supabase-local"
+            folder.mkdir(parents=True)
+            legacy = folder / "scraper_cache.json"
+            legacy.write_text(
+                json.dumps(
+                    [
+                        {
+                            "cache_key": key,
+                            "kind": "page",
+                            "expires_at": time.time() + 60,
+                            "body": "<html>viejo</html>",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            cache = ResponseCache(root)
+            self.assertEqual(cache.get_page(url), "<html>viejo</html>")
+            self.assertEqual(json.loads(legacy.read_text(encoding="utf-8")), [])
+            self.assertTrue((root / "scraper_bodies" / key).is_file())
+            cache.close()
+
     def test_env_writer_replaces_only_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / ".env"
@@ -356,20 +431,54 @@ class Phase1Test(unittest.TestCase):
             self.assertIn('LALIGA_REFRESH_TOKEN="refresh"', text)
             self.assertNotIn("viejo", text)
 
-    def test_cli_optimize_without_token_is_strict_json(self) -> None:
+    def test_env_writer_keeps_the_new_token_when_the_file_is_read_only(self) -> None:
+        """En el contenedor, /app/.env puede ser de solo lectura para el uid que corre.
+
+        El token recién canjeado no se puede perder por eso: se aplica al
+        entorno del proceso y el fallo de escritura solo deja un aviso.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".env"
+            path.write_text("LEAGUE_ID=7\n", encoding="utf-8")
+            path.chmod(0o444)
+            try:
+                if os.access(path, os.W_OK):
+                    self.skipTest("el usuario de la prueba puede escribir ficheros de solo lectura (root)")
+                with patch.dict(os.environ, {}, clear=False):
+                    with self.assertLogs("fantasy.auth", level="WARNING"):
+                        write_env_values({"LALIGA_ACCESS_TOKEN": "nuevo"}, path=path)
+                    self.assertEqual(os.environ["LALIGA_ACCESS_TOKEN"], "nuevo")
+            finally:
+                path.chmod(0o644)
+
+    def test_cli_optimize_without_cache_is_strict_json_and_offline(self) -> None:
+        """Sin tokens y sin copia en ``.cache/`` el air-gap responde ``offline_miss``.
+
+        Antes esta prueba esperaba ``auth_required`` porque el cliente salía a
+        la red y el fallo llegaba al renovar el token. Con el air-gap por
+        defecto no hay petición que hacer: el error correcto es «no hay copia»,
+        y sigue siendo un JSON estricto sin filtrar el bearer.
+        """
         stdout = StringIO()
         stderr = StringIO()
-        with patch.dict(
-            os.environ,
-            {"LALIGA_ACCESS_TOKEN": "", "LALIGA_REFRESH_TOKEN": "", "LEAGUE_ID": ""},
-        ):
-            with redirect_stdout(stdout), redirect_stderr(stderr):
-                code = cli.main(["optimize", "--json"])
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(
+                os.environ,
+                {
+                    "LALIGA_ACCESS_TOKEN": "",
+                    "LALIGA_REFRESH_TOKEN": "",
+                    "LEAGUE_ID": "",
+                    "FANTASY_CACHE_DIR": directory,
+                    "LALIGA_ENV": "development",
+                },
+            ):
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    code = cli.main(["optimize", "--json"])
         self.assertEqual(stderr.getvalue(), "")
         payload = json.loads(stdout.getvalue())
         self.assertEqual(code, 1)
         self.assertFalse(payload["ok"])
-        self.assertEqual(payload["error"]["code"], "auth_required")
+        self.assertEqual(payload["error"]["code"], "offline_miss")
         self.assertNotIn("Bearer ", stdout.getvalue())
 
         stdout = StringIO()

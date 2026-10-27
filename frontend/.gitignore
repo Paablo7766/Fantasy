@@ -31,8 +31,21 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
+.env
+.env.local
 .env*
 !.env.example
+
+# python (scripts auxiliares)
+__pycache__/
+.venv/
+venv/
+env/
+
+# base de datos local
+*.sqlite
+*.sqlite3
+*.db
 
 # vercel
 .vercel

@@ -1,12 +1,31 @@
+# Entorno y secretos
 .env
-.cache/
-.venv/
-venv/
+.env.local
+.env*
+!.env.example
+
+# Node / Next.js
+node_modules/
+.next/
+
+# Python
 __pycache__/
 *.py[cod]
+.venv/
+venv/
+env/
+
+# Base de datos
 *.sqlite
 *.sqlite3
+*.db
+
+# Proyecto
+.cache/
+market_offers_log.json
 .pkce.json
 .pytest_cache/
 .vercel
-.env*
+# Lanzador generado por scripts/create_desktop_shortcut.py: lleva la ruta
+# absoluta de esta máquina, así que no se versiona.
+Actualizar_Fantasy.bat

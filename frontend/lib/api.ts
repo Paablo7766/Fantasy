@@ -10,10 +10,13 @@ export function apiUrl(path: string, search?: URLSearchParams): string {
   return `${path}${suffix}`;
 }
 
-export function endpoint(path: string, fresh: boolean, league: string | null): string {
+/**
+ * URL de un bloque del tablero. **Nunca** lleva ``fresh``: los GET solo leen
+ * la foto guardada. La descarga vive en ``POST /api/plan/refresh``.
+ */
+export function endpoint(path: string, league: string | null): string {
   const query = new URLSearchParams();
   if (league) query.set("league", league);
-  if (fresh) query.set("fresh", "true");
   return apiUrl(path, query);
 }
 
@@ -37,6 +40,22 @@ export async function getJson<T>(path: string): Promise<T> {
     const error = new Error(errorMessage(data));
     (error as Error & { payload: ApiError }).payload = data;
     throw error;
+  }
+  return data;
+}
+
+export async function postJsonBody<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = (await response.json().catch(() => ({
+    ok: false,
+    error: { message: `HTTP ${response.status}` },
+  }))) as T & ApiError;
+  if (!response.ok || data.ok === false) {
+    throw new Error(errorMessage(data));
   }
   return data;
 }

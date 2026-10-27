@@ -68,7 +68,24 @@ create table if not exists public.cash_ledgers (
 create index if not exists cash_ledgers_league_idx
     on public.cash_ledgers (league_id);
 
+create table if not exists public.price_snapshots (
+    player_id text not null,
+    day text not null,
+    league_id text,
+    market_value bigint,
+    market_value_change bigint,
+    stored_at double precision not null,
+    primary key (player_id, day)
+);
+
+create index if not exists price_snapshots_league_day_idx
+    on public.price_snapshots (league_id, day);
+
+create index if not exists price_snapshots_day_idx
+    on public.price_snapshots (day);
+
 alter table public.player_links enable row level security;
 alter table public.match_audits enable row level security;
 alter table public.scraper_cache enable row level security;
 alter table public.cash_ledgers enable row level security;
+alter table public.price_snapshots enable row level security;

@@ -6,14 +6,16 @@ import unittest
 
 from toolbox.fantasy_scraper import (
     DOUBT_BELOW,
+    LineupPlayer,
     enrich_player_list,
+    match_catalog,
     normalize_name,
     parse_af_fixture_urls,
     parse_af_match,
     parse_ff_fixture_urls,
     parse_ff_match,
 )
-from toolbox.matching import MATCH_THRESHOLD
+from toolbox.matching import CanonicalPlayer, MATCH_THRESHOLD
 
 FF_INDEX = """
 <section>
@@ -146,6 +148,42 @@ class LineupParserTest(unittest.TestCase):
         self.assertNotIn("p_titular", enriched["x"])
         self.assertNotIn("externalSource", enriched["x"])
         self.assertEqual(local[0].get("p_titular"), None)
+
+    def test_merge_prefers_high_titular_over_stale_baja(self) -> None:
+        catalog = [
+            CanonicalPlayer(
+                player_id="ji",
+                name="Juan Iglesias",
+                nickname="Juan Iglesias",
+                club="Getafe",
+                position="DEF",
+                fantasy_price=1_000_000,
+                on_market=False,
+                week_points=[],
+            )
+        ]
+        sightings = [
+            LineupPlayer(
+                name="Juan Iglesias",
+                source="futbolfantasy",
+                club="Getafe",
+                position="DEF",
+                start_probability=0.01,
+                status="baja",
+            ),
+            LineupPlayer(
+                name="Juan Iglesias",
+                source="analiticafantasy",
+                club="Getafe",
+                position="DEF",
+                start_probability=0.9,
+                status="titular",
+            ),
+        ]
+        hit = match_catalog(catalog, sightings)["ji"]
+        self.assertEqual(hit.status, "titular")
+        self.assertEqual(hit.start_probability, 0.9)
+        self.assertIsNone(hit.fitness)
 
     def test_long_club_name_matches_short_squad_club(self) -> None:
         from toolbox.fantasy_scraper import LineupPlayer

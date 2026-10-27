@@ -1,4 +1,9 @@
 httpx>=0.27.0,<1.0.0
+# La sesión oficial contra LaLiga es curl_cffi (huella TLS de Chrome). Sin
+# esta dependencia, ``LALIGA_ENV=production`` no puede ni construir la sesión:
+# el refresco real falla con ``missing_dependency`` y el panel se queda con la
+# foto de ayer. Es la dependencia que hacía falta y no estaba declarada.
+curl_cffi>=0.7.0,<1.0.0
 python-dotenv>=1.0.1,<2.0.0
 PuLP>=2.9.0,<3.0.0
 tzdata>=2024.1
@@ -6,3 +11,7 @@ fastapi>=0.115.0,<1.0.0
 uvicorn>=0.32.0,<1.0.0
 playwright>=1.49.0,<2.0.0
 supabase>=2.9.0,<3.0.0
+pytest>=8.0.0
+numpy>=1.26.0,<3.0.0
+scipy>=1.11.0,<2.0.0
+rapidfuzz>=3.9.0,<4.0.0

@@ -1,0 +1,118 @@
+# Orquestador remoto de LALIGA Fantasy (Google Cloud Compute Engine, e2-micro).
+#
+# El dashboard local NO usa este fichero: sigue arrancando con
+# `uvicorn server:app --port 8000` en LALIGA_ENV=development, con el air-gap
+# puesto. Este contenedor es el único proceso que puede abrir sockets hacia
+# LaLiga, y por eso es el único que declara LALIGA_ENV=production.
+#
+#   cp .env.example .env      # rellenar tokens, Supabase y REMOTE_TRIGGER_TOKEN
+#   docker compose up -d --build
+#   curl -X POST http://IP:8080/api/remote/refresh \
+#        -H "X-Remote-Token: $REMOTE_TRIGGER_TOKEN" \
+#        -H "Content-Type: application/json" \
+#        -d '{"target_minutes": 60}'
+#
+# `environment` gana a `env_file`: aunque el .env diga LALIGA_ENV=development
+# (que es lo correcto para el dashboard local), dentro del contenedor manda
+# production. Así una copia del .env de desarrollo no deja el motor sin red
+# ni, al revés, abre la red en la máquina de casa.
+
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Chromium no cabe con holgura en 1 GB. Súbelo a "1" solo en una
+        # instancia con más memoria (e2-small en adelante).
+        INSTALL_BROWSER: "0"
+    image: fantasy-orchestrator:latest
+    container_name: fantasy-orchestrator
+    restart: unless-stopped
+
+    # Credenciales de Supabase, tokens de LaLiga, LEAGUE_ID, TTLs…
+    # Debe existir: `cp .env.example .env` es el paso 0.
+    env_file:
+      - .env
+
+    environment:
+      # Única llave que abre la red en toolbox/net.py.
+      LALIGA_ENV: production
+      # Modo avión debe quedar apagado: si el .env lo trae a 1, este gana.
+      FANTASY_OFFLINE: "0"
+      # El contenedor escucha en 8080 (coincide con EXPOSE y con el healthcheck).
+      PORT: "8080"
+      TZ: Europe/Madrid
+      # OJO: no se declaran REMOTE_TRIGGER_TOKEN ni REMOTE_REFRESH_DEFAULT_MINUTES
+      # aquí. `environment` gana a `env_file` y `${VAR:-}` resolvería al valor
+      # del .env **del host que ejecuta compose**, no al del contenedor: en el
+      # VPS dejaría la contraseña vacía. Llegan por `env_file` como el resto.
+      # (El endpoint acepta también el alias REMOTE_REFRESH_TOKEN.)
+
+    ports:
+      # Solo 8080. El panel local no se publica desde el VPS: se sirve desde
+      # tu máquina leyendo Supabase.
+      - "8080:8080"
+
+    volumes:
+      # La foto del tablero, la bitácora de red y el marcador del kill switch
+      # sobreviven a `docker compose down` y a los reinicios de la instancia.
+      # `project_root()/.cache` con el código en /app.
+      #
+      # **No** definir FANTASY_CACHE_DIR: toolbox/cache.py lo interpreta como
+      # «usa el almacén local» y apagaría Supabase, que es lo que comparte el
+      # VPS con el dashboard de casa.
+      - fantasy-cache:/app/.cache
+
+      # .env en lectura-escritura. TokenManager reescribe aquí el access token
+      # cada 24 h; sin este montaje el token nuevo viviría solo en memoria y se
+      # perdería en cada reinicio del contenedor.
+      #
+      # El contenedor corre como uid 1000: en el VPS hay que darle el fichero,
+      #   sudo chown 1000:1000 .env && chmod 600 .env
+      # Si no, write_env_values avisa y el token queda solo en memoria (el
+      # refresco funciona igual, pero se repite en cada reinicio).
+      #
+      # Docker lee `env_file` al **crear** el contenedor, no al reiniciarlo. Tras
+      # una rotación conviene `docker compose up -d --force-recreate` para que
+      # el token nuevo entre como variable de entorno (con `override=False`,
+      # la variable del contenedor manda sobre el fichero).
+      - ./.env:/app/.env
+
+    # e2-micro: 2 vCPU compartidas y 1 GB. El límite de memoria evita que el
+    # OOM killer se lleve por delante el resto del sistema.
+    #
+    # Con 1 GB conviene crear swap antes de construir la imagen en la propia VM
+    # (pip compilando wheels se pasa de memoria):
+    #   sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+    #   sudo mkswap /swapfile && sudo swapon /swapfile
+    #   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+    # Alternativa: construir en tu PC y subirla (docker save | ssh docker load).
+    deploy:
+      resources:
+        limits:
+          memory: 900M
+        reservations:
+          memory: 256M
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/',timeout=4)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    logging:
+      # Sin límite, la bitácora de uvicorn de un refresco de una hora llena el
+      # disco de arranque de la instancia.
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  fantasy-cache:

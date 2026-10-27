@@ -1,0 +1,10 @@
+{
+  "_comment": "Asientos manuales de conciliación. Formato: team_id -> YYYY-MM-DD -> {cash_override, reason}. Ancla la caja observada en esa fecha; la auditoría solo suma las variaciones posteriores.",
+    "example-team-id": {
+    "2026-09-15": {
+      "cash_override": 5000000,
+      "reason": "Micropagos premium: la API no publica la inyección de caja"
+    }
+  },
+  "_comment_2": "Las claves prefijadas con guion bajo se ignoran; sirven para documentar el propio fichero."
+}

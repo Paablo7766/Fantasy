@@ -1,19 +1,31 @@
 """Resuelve nombres de futbolistas entre LALIGA Fantasy y las fuentes externas.
 
 El pipeline normaliza diacríticos, mayúsculas, prefijos y una clave fonética
-del castellano. La similitud mezcla Jaro-Winkler, Levenshtein y
-``difflib.SequenceMatcher``. Si ``rapidfuzz`` está instalado, sustituye a las
-dos primeras. El club y la posición deshacen homónimos. Por debajo de 0.85
-no hay enlace automático: queda una auditoría o un mapeo manual.
+del castellano. La similitud mezcla Jaro-Winkler, Levenshtein y el ratio de
+edición de ``rapidfuzz`` (antes ``difflib.SequenceMatcher``): las tres las
+calcula ``rapidfuzz`` en C. Si no está instalado quedan las versiones puras de
+Python. ``name_similarity`` se memoiza con ``lru_cache``: dentro de una jornada
+los nombres son los mismos y un emparejamiento ya resuelto no se recalcula.
+El club y la posición deshacen homónimos. Por debajo de 0.85 no hay enlace
+automático: queda una auditoría o un mapeo manual.
 """
 
 from __future__ import annotations
 
+import functools
 import re
 import unicodedata
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 from typing import Any
+
+try:  # pragma: no cover - depende del entorno de instalación
+    from rapidfuzz import fuzz as _fuzz
+    from rapidfuzz.distance import JaroWinkler as _RapidJaroWinkler
+    from rapidfuzz.distance import Levenshtein as _RapidLevenshtein
+except ImportError:  # pragma: no cover - fallback puro de Python
+    _fuzz = None
+    _RapidJaroWinkler = None
+    _RapidLevenshtein = None
 
 from toolbox.cache import EntityStore
 
@@ -88,18 +100,6 @@ _POSITION_EXACT = {
 }
 
 
-def _rapidfuzz():
-    try:
-        from rapidfuzz.distance import JaroWinkler
-        from rapidfuzz.distance import Levenshtein as RapidLevenshtein
-    except ImportError:
-        return None
-    return JaroWinkler, RapidLevenshtein
-
-
-_RAPID = _rapidfuzz()
-
-
 @dataclass(frozen=True)
 class CanonicalPlayer:
     player_id: str
@@ -109,7 +109,10 @@ class CanonicalPlayer:
     position: str | None
     fantasy_price: int | None
     sale_price: int | None = None
+    market_value_change: int | None = None
     on_market: bool = False
+    image_url: str | None = None
+    week_points: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -258,9 +261,8 @@ def jaro(left: str, right: str) -> float:
 
 
 def jaro_winkler(left: str, right: str, *, prefix_scale: float = 0.1) -> float:
-    if _RAPID is not None:
-        jaro_winkler_metric, _lev = _RAPID
-        return float(jaro_winkler_metric.normalized_similarity(left, right))
+    if _RapidJaroWinkler is not None:
+        return float(_RapidJaroWinkler.normalized_similarity(left, right))
     score = jaro(left, right)
     prefix = 0
     for left_char, right_char in zip(left, right):
@@ -271,22 +273,49 @@ def jaro_winkler(left: str, right: str, *, prefix_scale: float = 0.1) -> float:
 
 
 def _string_similarity(left: str, right: str) -> float:
-    if _RAPID is not None:
-        jaro_winkler_metric, levenshtein_metric = _RAPID
-        jw = float(jaro_winkler_metric.normalized_similarity(left, right))
-        lev = float(levenshtein_metric.normalized_similarity(left, right))
+    """Mezcla 0.5 Jaro-Winkler + 0.3 Levenshtein + 0.2 ratio de edición."""
+    if _fuzz is not None:
+        jw = float(_RapidJaroWinkler.normalized_similarity(left, right))
+        lev = float(_RapidLevenshtein.normalized_similarity(left, right))
+        ratio = _fuzz.ratio(left, right) / 100.0
     else:
         jw = jaro_winkler(left, right)
         lev = 1.0 - levenshtein(left, right) / max(len(left), len(right), 1)
-    sequence = SequenceMatcher(None, left, right).ratio()
-    return (0.5 * jw) + (0.3 * lev) + (0.2 * sequence)
+        ratio = _ratio_fallback(left, right)
+    return (0.5 * jw) + (0.3 * lev) + (0.2 * ratio)
+
+
+def _ratio_fallback(left: str, right: str) -> float:
+    """``fuzz.ratio`` en Python puro: 2·M/T, con M de la subsecuencia común."""
+    if left == right:
+        return 1.0
+    if not left or not right:
+        return 0.0
+    longest = [0] * (len(right) + 1)
+    for left_char in left:
+        diagonal = 0
+        for index, right_char in enumerate(right, start=1):
+            stored = longest[index]
+            if left_char == right_char:
+                longest[index] = diagonal + 1
+            elif longest[index - 1] > longest[index]:
+                longest[index] = longest[index - 1]
+            diagonal = stored
+    return (2.0 * longest[-1]) / (len(left) + len(right))
 
 
 def _significant(text: str) -> list[str]:
     return [token for token in text.split() if len(token) > 1]
 
 
+@functools.lru_cache(maxsize=1024)
 def name_similarity(left: str | None, right: str | None) -> float:
+    """Similitud 0..1 de dos nombres.
+
+    Memoizada: en una jornada los nombres del catálogo y de las fuentes no
+    cambian, así que un par ya puntuado no se vuelve a calcular. El resultado
+    depende solo de los dos argumentos, de ahí que la caché sea segura.
+    """
     normalized_left = normalize_name(left)
     normalized_right = normalize_name(right)
     if not normalized_left or not normalized_right:

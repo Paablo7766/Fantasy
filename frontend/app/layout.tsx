@@ -1,29 +1,37 @@
-import type { Metadata } from "next";
-import { JetBrains_Mono, Outfit } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-const outfit = Outfit({
-  variable: "--font-outfit",
+const sans = Plus_Jakarta_Sans({
+  variable: "--font-sans-app",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const jetbrains = JetBrains_Mono({
-  variable: "--font-jetbrains",
+const mono = JetBrains_Mono({
+  variable: "--font-mono-app",
   subsets: ["latin"],
   weight: ["500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "LALIGA Fantasy · Tablero",
-  description: "Caja de herramientas de solo lectura: once óptimo, mercado y auditoría de rivales.",
+  title: "LALIGA Fantasy · Hoy",
+  description: "Panel de acción: reloj, supervivencia del XI y las acciones del día.",
   robots: { index: false, follow: false },
+  themeColor: "#111827",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="es" className={`${outfit.variable} ${jetbrains.variable} h-full antialiased`}>
-      <body className="min-h-full bg-slate-950 font-sans text-slate-100">{children}</body>
+    <html lang="es" className={`${sans.variable} ${mono.variable} h-full overflow-x-hidden antialiased`}>
+      <body className="min-h-full overflow-x-hidden bg-background font-sans text-foreground">{children}</body>
     </html>
   );
 }

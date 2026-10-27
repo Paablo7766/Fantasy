@@ -23,6 +23,7 @@ from toolbox.analyzer import (
     candidates_from_squad,
     index_trends,
     objective_value,
+    official_price_delta,
     optimize_from_documents,
     own_squad,
     relevo_bonus,
@@ -342,19 +343,30 @@ def needs_from_documents(
 ) -> dict[str, Any]:
     events = activity.get("events") if isinstance(activity, dict) and isinstance(activity.get("events"), list) else []
     roster = squads.get("squads") if isinstance(squads.get("squads"), list) else []
+    snapshots = _snapshot_index(cache)
     fingerprint = {
         "events": events,
         "cash": [
-            {"team_id": squad.get("team_id"), "cash": squad.get("cash")}
+            {"team_id": squad.get("team_id"), "cash": squad.get("cash"), "manager_id": squad.get("manager_id")}
             for squad in roster
             if isinstance(squad, dict)
         ],
+        "snapshots": sorted((player_id, day, value) for (player_id, day), value in snapshots.items()),
     }
 
-    def build_ledgers() -> list[dict[str, Any]]:
-        return reconstruct_ledgers([squad for squad in roster if isinstance(squad, dict)], events)
+    def build_books() -> dict[str, Any]:
+        from toolbox.league_history import books_from_activity
 
-    ledgers = _cached_value("ledgers", fingerprint, build_ledgers, cache=cache, fresh=fresh)
+        ledgers, history = books_from_activity(
+            [squad for squad in roster if isinstance(squad, dict)],
+            [event for event in events if isinstance(event, dict)],
+            snapshots,
+        )
+        return {"ledgers": ledgers, "history": history}
+
+    books = _cached_value("ledgers", fingerprint, build_books, cache=cache, fresh=fresh)
+    ledgers = books["ledgers"] if isinstance(books, dict) else []
+    history = books["history"] if isinstance(books, dict) and isinstance(books.get("history"), dict) else {}
     league_id = squads.get("league_id") if isinstance(squads.get("league_id"), str) else None
     if cache is not None and league_id:
         CashLedgerStore(root=cache.root, client=cache.client).replace_league(league_id, ledgers)
@@ -379,8 +391,13 @@ def needs_from_documents(
         },
         "ledger_note": (
             "Caja reconstruida = presupuesto inicial + primas - compras - cláusulas + ventas. "
+            "Si el historial no trae el presupuesto, se infiere del residual de tu caja y se aplica a todos. "
+            "En un rival esa cifra es un techo: subir la cláusula no sale en el historial."
+            if history.get("initial_source") == "caja_propia"
+            else "Caja reconstruida = presupuesto inicial + primas - compras - cláusulas + ventas. "
             "Sin presupuesto inicial en el historial, reconstructed_cash_eur es null."
         ),
+        "history": history,
         "ledgers": ledgers,
         "rival_count": len(rivals),
         "rivals": rivals,
@@ -565,6 +582,27 @@ def _signing(
         if "mercado_cerrado" not in reasons:
             reasons.append("mercado_cerrado")
     acceleration = trend.get("acceleration") if isinstance(trend.get("acceleration"), int) and not isinstance(trend.get("acceleration"), bool) else None
+    listing_change = (
+        listing.get("market_value_change")
+        if isinstance(listing.get("market_value_change"), int)
+        and not isinstance(listing.get("market_value_change"), bool)
+        else None
+    )
+    listing_value = listing.get("market_value") if isinstance(listing.get("market_value"), int) else None
+    listing_sale = listing.get("sale_price") if isinstance(listing.get("sale_price"), int) else None
+    day_delta = official_price_delta(trend)
+    if day_delta is None:
+        day_delta = official_price_delta(
+            {
+                "market_value_change": listing_change if listing_change is not None else trend.get("market_value_change"),
+                "price_delta": trend.get("price_delta"),
+                "market_value": trend.get("fantasy_price")
+                if isinstance(trend.get("fantasy_price"), int)
+                else listing_value if listing_value is not None else trend.get("market_value"),
+                "fantasy_price": trend.get("fantasy_price"),
+                "sale_price": listing_sale if listing_sale is not None else trend.get("sale_price"),
+            }
+        )
     return {
         "player_id": player_id,
         "name": trend.get("name") if isinstance(trend.get("name"), str) else listing.get("name"),
@@ -572,6 +610,7 @@ def _signing(
         "position": listing.get("position") if isinstance(listing.get("position"), str) else trend.get("position"),
         "action": "bid",
         "acceleration": acceleration,
+        "price_delta": day_delta,
         "matching_confidence": trend.get("matching_confidence") if isinstance(trend.get("matching_confidence"), (int, float)) else None,
         "p_titular": p_titular,
         "expected_points": points,
@@ -584,6 +623,23 @@ def _signing(
         "components": components,
         "relevo_bonus": bonus,
         "bid_eur": amount,
+        "af_ideal_bid": trend.get("af_ideal_bid") if isinstance(trend.get("af_ideal_bid"), int) else None,
+        "af_max_bid": trend.get("af_max_bid") if isinstance(trend.get("af_max_bid"), int) else None,
+        "af_market_signal": trend.get("af_market_signal") if isinstance(trend.get("af_market_signal"), str) else None,
+        "af_signal_strength": trend.get("af_signal_strength")
+        if isinstance(trend.get("af_signal_strength"), (int, float))
+        else None,
+        "af_expected_points": trend.get("af_expected_points")
+        if isinstance(trend.get("af_expected_points"), (int, float))
+        else None,
+        "own_ideal_bid": trend.get("own_ideal_bid") if isinstance(trend.get("own_ideal_bid"), int) else None,
+        "own_max_bid": trend.get("own_max_bid") if isinstance(trend.get("own_max_bid"), int) else None,
+        "own_market_signal": trend.get("own_market_signal")
+        if isinstance(trend.get("own_market_signal"), str)
+        else None,
+        "own_expected_points": trend.get("own_expected_points")
+        if isinstance(trend.get("own_expected_points"), (int, float))
+        else None,
         "cash_after_eur": purchase["cash_after_eur"],
         "xi_remains_valid": not lineup_void and isinstance(purchase["cash_after_eur"], int) and purchase["cash_after_eur"] >= 0,
         "eligible": eligible,
@@ -597,7 +653,9 @@ def _speculative(trend: dict[str, Any]) -> tuple[bool, str | None]:
         return False, "matching_confidence"
     acceleration = trend.get("acceleration")
     rising = isinstance(acceleration, int) and not isinstance(acceleration, bool) and acceleration > 0
-    if rising or trend.get("flip_candidate") is True:
+    own_up = trend.get("own_market_signal") == "up"
+    af_up = trend.get("af_market_signal") == "up"
+    if rising or own_up or af_up or trend.get("flip_candidate") is True:
         return True, None
     return False, "sin_aceleracion"
 
@@ -616,7 +674,13 @@ def _rival_risk(
     for candidate in roster:
         if candidate.eligible and candidate.position in available:
             available[candidate.position] += 1
-    cash = squad.get("cash") if isinstance(squad.get("cash"), int) else None
+    observed = squad.get("cash") if isinstance(squad.get("cash"), int) else None
+    reconstructed = (
+        ledger.get("reconstructed_cash_eur")
+        if isinstance(ledger, dict) and isinstance(ledger.get("reconstructed_cash_eur"), int)
+        else None
+    )
+    cash = observed if observed is not None else reconstructed
     direct = _direct(own.get("rank"), squad.get("rank"))
     thin = [position for position in POSITIONS if available[position] <= MIN_HEADCOUNT[position]]
     alerts: list[dict[str, Any]] = []
@@ -642,6 +706,7 @@ def _rival_risk(
         "rank": squad.get("rank") if isinstance(squad.get("rank"), int) else None,
         "direct": direct,
         "cash_eur": cash,
+        "cash_is_ceiling": bool(observed is None and isinstance(ledger, dict) and ledger.get("cash_is_ceiling") is True),
         "ledger": ledger,
         "depth": available,
         "minimum": dict(MIN_HEADCOUNT),
@@ -832,6 +897,10 @@ def _ledger(team_id: str, events: list[dict[str, Any]], squad: dict[str, Any] | 
 
 
 def _parse_event(row: dict[str, Any]) -> dict[str, Any] | None:
+    if "activityTypeId" in row or "activity_type_id" in row:
+        from toolbox.league_history import parse_activity_row
+
+        return parse_activity_row(row)
     kind = _kind(row)
     amount = _amount(row)
     team_id = _team_id(row)
@@ -1046,23 +1115,43 @@ def _bundle(
     return market, squads, trends, store, True
 
 
+def _snapshot_index(cache: ResponseCache | None) -> dict[tuple[str, str], int]:
+    from toolbox.cache import PriceSnapshotStore
+
+    store = PriceSnapshotStore(
+        root=cache.root if cache is not None else None,
+        client=cache.client if cache is not None else None,
+    )
+    grouped = store.list_history(days=120)
+    index: dict[tuple[str, str], int] = {}
+    for player_id, rows in grouped.items():
+        if not isinstance(player_id, str):
+            continue
+        for row in rows:
+            day = row.get("day")
+            value = row.get("market_value")
+            if isinstance(day, str) and isinstance(value, int) and not isinstance(value, bool):
+                index[(player_id, day)] = value
+    return index
+
+
 def _cached_value(
     kind: str,
     fingerprint: dict[str, Any],
-    build: Callable[[], list[dict[str, Any]]],
+    build: Callable[[], dict[str, Any]],
     *,
     cache: ResponseCache | None,
     fresh: bool,
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     if cache is None or fresh:
         return build()
     from toolbox.analyzer import _digest
 
     url = f"phase3://{kind}/{_digest(fingerprint)}"
     cached = cache.get_json(url)
-    if isinstance(cached, dict) and isinstance(cached.get("ledgers"), list):
-        return list(cached["ledgers"])
-    ledgers = build()
-    cache.put_json(url, {"ledgers": ledgers}, LEDGER_TTL_SECONDS)
-    return ledgers
+    if isinstance(cached, dict) and isinstance(cached.get("ledgers"), list) and isinstance(cached.get("history"), dict):
+        return cached
+    books = build()
+    cache.put_json(url, books, LEDGER_TTL_SECONDS)
+    return books
 

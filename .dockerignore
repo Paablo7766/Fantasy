@@ -1,3 +1,9 @@
+# Contexto de build de la imagen del orquestador.
+#
+# Se excluye lo que no necesita el proceso de scraping: el frontend, las
+# pruebas, la caché local y las credenciales. El .env NO viaja en la imagen:
+# entra en tiempo de ejecución por `env_file` y por el montaje de
+# docker-compose.yml.
 .git
 .github
 .venv
@@ -12,4 +18,11 @@ venv
 frontend
 node_modules
 tests
+scripts
 *.md
+
+# El contexto del agente sí se necesita en la imagen: bidding.py lee
+# context/USER.md para decidir qué es «silencioso» y el servidor escribe
+# MEMORY.md / expert_notes.md. La última regla gana, así que se reintroducen.
+!context
+!context/*.md

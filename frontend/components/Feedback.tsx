@@ -12,26 +12,49 @@ export function ErrorCard({
 }) {
   const code = payload?.error?.code || "";
   const auth = code === "auth_required" || code === "unauthorized";
+  const offline = code === "offline_miss" || code === "offline";
   const message = auth && brief ? "Inicia sesión para cargar este bloque." : errorMessage(payload);
   const hint = auth
     ? "Pulsa Conectar cuenta con 1 clic y elige tu cuenta de Google."
-    : "Prueba a actualizar. Si la API limita las peticiones, espera un momento.";
+    : offline
+      ? "Aún no hay ninguna foto guardada. Pulsa Actualizar para descargar la primera: la lectura nunca descarga sola."
+      : code === "optimize_missing"
+        ? "La foto guardada no trae once calculado. Pulsa Actualizar y se recalcula con la plantilla que hay en disco."
+        : "Prueba a actualizar. Si la API limita las peticiones, espera un momento.";
   return (
-    <article className={glass("p-6")}>
-      <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">{title}</p>
-      <h2 className="mt-2 text-lg text-coral">{message}</h2>
-      {!(brief && auth) ? <p className="mt-2 text-sm text-white/55">{hint}</p> : null}
+    <article className={glass("p-5 md:p-6 reveal")} role="alert">
+      <div className="flex items-start gap-3">
+        <span
+          className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[color:var(--coral-soft)] text-coral"
+          aria-hidden="true"
+        >
+          <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <circle cx="8" cy="8" r="6.2" />
+            <path d="M8 5v3.5M8 11.2h.01" strokeLinecap="round" />
+          </svg>
+        </span>
+        <div className="min-w-0">
+          <p className="eyebrow">{title}</p>
+          <h2 className="mt-1.5 text-base font-medium tracking-tight text-coral md:text-lg">{message}</h2>
+          {!(brief && auth) ? <p className="mt-2 text-sm leading-6 text-muted">{hint}</p> : null}
+        </div>
+      </div>
     </article>
   );
 }
 
 export function Skeleton({ title, rows = 4 }: { title: string; rows?: number }) {
   return (
-    <article className={glass("p-4")} aria-busy="true">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">{title}</p>
-      <div className="mt-4 space-y-2">
+    <article className={glass("p-5")} aria-busy="true" aria-label={`Cargando ${title}`}>
+      <p className="eyebrow">{title}</p>
+      <div className="mt-1 h-5 w-40 skeleton-bar" />
+      <div className="mt-5 space-y-2.5">
         {Array.from({ length: rows }, (_, index) => (
-          <div key={index} className="h-12 animate-pulse rounded-2xl bg-white/5" />
+          <div
+            key={index}
+            className="skeleton-bar h-11"
+            style={{ opacity: 1 - index * 0.08, animationDelay: `${index * 80}ms` }}
+          />
         ))}
       </div>
     </article>

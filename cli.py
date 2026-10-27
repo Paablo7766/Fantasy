@@ -10,14 +10,19 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from toolbox.analyzer import build_optimize_command
 from toolbox.auth import AuthError, TokenManager, complete_pkce_login, login_with_browser, start_pkce_login
 from toolbox.bidding import build_agent_command, build_flip_command, build_needs_command
+from toolbox.jornada_plan import build_plan_command
+from toolbox.clause_intel import build_clause_intel_command
+from toolbox.market_intel import build_market_intel_command
 from toolbox.net import FantasyHttpError, LaligaClient
 from toolbox.normalize import SCHEMA_VERSION
-from toolbox.scrapers import build_trends
+from toolbox.rival_intel import build_rival_intel_command
+from toolbox.scrapers import build_trends, warm_optional_form_sources
 _LOGIN_HELP = (
     "Abre authorize_url, entra con Google y copia la petición cancelada que empieza "
     "por authredirect://com.lfp.laligafantasy?code= . "
@@ -43,6 +48,13 @@ def build_parser() -> argparse.ArgumentParser:
         "optimize": "Once titular óptimo por ILP.",
         "flip": "Fichajes para especular y pujas de último segundo.",
         "needs": "Caja de los rivales y alertas de clausulazo.",
+        "clause-intel": "Clausulazos que entran al XI y jugadores propios a proteger.",
+        "market-intel": "Veredicto pujar/esperar/no por fichaje del mercado.",
+        "own-intel": "Señales propias: puja, Poisson, E[pts] OPTA (contraste AF).",
+        "plan": "Plan de jornada: reloj, once, pujas y cláusulas. No envía órdenes.",
+        "rival-intel": "Auditoría forense de caja rival: cota superior y gasto oculto.",
+        "warm-stats": "Precalienta FBref/Sofascore en caché (Playwright si hace falta).",
+        "refresh": "Descarga y ESCRIBE la foto que sirve el panel (igual que el botón Actualizar).",
     }
     for name, help_text in helps.items():
         sub.add_parser(name, parents=[common], help=help_text)
@@ -95,6 +107,31 @@ def main(argv: list[str] | None = None) -> int:
 
 def _dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     command = str(args.command)
+    if command == "refresh":
+        # Misma ruta que el botón «Actualizar» del panel: refresca Y escribe
+        # ``.cache/dashboard/``. ``optimize`` descargaba pero no guardaba la
+        # foto, así que el panel seguía sirviendo la de ayer con fecha nueva.
+        from server import production_window, refresh_board
+
+        with production_window():
+            board = refresh_board(args.league, tier="full", track_status=False)
+        market = board.get("market") if isinstance(board.get("market"), dict) else {}
+        trends = board.get("trends") if isinstance(board.get("trends"), dict) else {}
+        optimize = board.get("optimize") if isinstance(board.get("optimize"), dict) else {}
+        return {
+            "ok": True,
+            "schema_version": SCHEMA_VERSION,
+            "command": "refresh",
+            "league_id": board.get("league_id") or market.get("league_id"),
+            "dashboard_at": board.get("dashboard_at"),
+            "photo_saved_unix": board.get("photo_saved_unix"),
+            "market_count": market.get("count"),
+            "market_source_age_seconds": market.get("source_age_seconds"),
+            "catalog_count": trends.get("catalog_count"),
+            "xi_count": len(optimize.get("xi") or []),
+            "partial": bool(trends.get("partial")),
+            "sources": trends.get("sources"),
+        }, 0
     if command == "optimize":
         with LaligaClient() as client:
             return _coded(build_optimize_command(client, league=args.league, fresh=bool(args.fresh)))
@@ -104,6 +141,32 @@ def _dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     if command == "needs":
         with LaligaClient() as client:
             return _coded(build_needs_command(client, league=args.league, fresh=bool(args.fresh)))
+    if command == "clause-intel":
+        with LaligaClient() as client:
+            return _coded(build_clause_intel_command(client, league=args.league, fresh=bool(args.fresh)))
+    if command == "market-intel":
+        with LaligaClient() as client:
+            return _coded(build_market_intel_command(client, league=args.league, fresh=bool(args.fresh)))
+    if command == "plan":
+        with LaligaClient() as client:
+            root = Path(__file__).resolve().parent
+            return _coded(
+                build_plan_command(
+                    client,
+                    league=args.league,
+                    fresh=bool(args.fresh),
+                    memory_path=root / "context" / "MEMORY.md",
+                    note_path=root / "context" / "expert_notes.md",
+                )
+            )
+    if command == "own-intel":
+        with LaligaClient() as client:
+            return _coded(_own_intel_command(client, league=args.league, fresh=bool(args.fresh)))
+    if command == "rival-intel":
+        with LaligaClient() as client:
+            return _coded(
+                build_rival_intel_command(client, league=args.league, fresh=bool(args.fresh))
+            )
     if command == "agent":
         with LaligaClient() as client:
             return _coded(
@@ -117,6 +180,8 @@ def _dispatch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     if command == "trends":
         with LaligaClient() as client:
             return build_trends(league=args.league, fresh=bool(args.fresh), laliga=client), 0
+    if command == "warm-stats":
+        return warm_optional_form_sources(fresh=bool(args.fresh)), 0
     if command == "auth":
         return _auth(args), 0
     if command == "market":
@@ -214,8 +279,23 @@ def _render_human(payload: dict[str, Any]) -> None:
     if command == "needs":
         _render_needs(payload)
         return
+    if command == "clause-intel":
+        _render_clause_intel(payload)
+        return
     if command == "agent":
         _render_agent(payload)
+        return
+    if command == "market-intel":
+        _render_market_intel(payload)
+        return
+    if command == "own-intel":
+        _render_own_intel(payload)
+        return
+    if command == "rival-intel":
+        _render_rival_intel(payload)
+        return
+    if command == "plan":
+        _render_plan(payload)
         return
     if command == "auth" and payload.get("action") == "url":
         sys.stdout.write(str(payload["authorize_url"]) + "\n")
@@ -345,6 +425,40 @@ def _render_needs(payload: dict[str, Any]) -> None:
         )
 
 
+def _render_clause_intel(payload: dict[str, Any]) -> None:
+    window = payload.get("clause_window_open")
+    if window is True:
+        window_label = "abierta"
+    elif window is False:
+        window_label = "cerrada"
+    else:
+        window_label = "s/d"
+    close = payload.get("clause_market_close") if isinstance(payload.get("clause_market_close"), dict) else {}
+    close_when = ""
+    if close.get("local_date") and close.get("local_time"):
+        close_when = f" · cierra {close['local_date']} {close['local_time']}"
+    sys.stdout.write(
+        f"Clausulazos · ventana {window_label}{close_when} · caja {_eur(payload.get('cash_eur'))} · "
+        f"baseline {payload.get('baseline_points')}\n"
+    )
+    for row in payload.get("offers") or []:
+        label = row.get("nickname") or row.get("name") or row.get("player_id")
+        rival = row.get("manager_name") or row.get("team_id") or "?"
+        decision = row.get("decision") or "NO"
+        sys.stdout.write(
+            f"- {decision} {label} ({row.get('position')}) · {rival} · objetivo {row.get('objective')} · "
+            f"ROI +{row.get('points_delta')} pts · cláusula {_eur(row.get('buyout_clause_eur'))}\n"
+        )
+    for row in payload.get("protect") or []:
+        label = row.get("nickname") or row.get("name") or row.get("player_id")
+        top = row.get("top_rival") if isinstance(row.get("top_rival"), dict) else {}
+        rival = top.get("manager_name") or top.get("team_id") or "?"
+        sys.stdout.write(
+            f"- proteger {label} · {row.get('threat_count')} amenazas · rival más probable {rival} · "
+            f"cláusula {_eur(row.get('buyout_clause_eur'))}\n"
+        )
+
+
 def _render_agent(payload: dict[str, Any]) -> None:
     optimize = payload.get("optimize") or {}
     governance = payload.get("governance") or {}
@@ -352,6 +466,166 @@ def _render_agent(payload: dict[str, Any]) -> None:
     sys.stdout.write(f"Agente · {state} · formación {optimize.get('formation') or 'jornada a 0'}\n")
     for order in governance.get("orders") or []:
         sys.stdout.write(f"- {order.get('operation')}: {order.get('status')}\n")
+
+
+def _render_plan(payload: dict[str, Any]) -> None:
+    lineup = payload.get("lineup") or {}
+    sys.stdout.write(
+        f"Plan · XI {lineup.get('formation') or 's/d'} · "
+        f"puntos {lineup.get('expected_points')} · caja {_eur(payload.get('cash_eur'))}\n"
+    )
+    for event in payload.get("clock") or []:
+        sys.stdout.write(f"- {event.get('local_date')} {event.get('local_time')} · {event.get('label')}\n")
+    sys.stdout.write("Acciones\n")
+    for action in payload.get("actions") or []:
+        label = action.get("nickname") or action.get("name") or action.get("kind")
+        sys.stdout.write(
+            f"- {action.get('kind')} {label} · {_eur(action.get('amount_eur'))} · "
+            f"caja {_eur(action.get('cash_after_eur'))} · {action.get('when')}\n"
+        )
+
+
+def _render_market_intel(payload: dict[str, Any]) -> None:
+    summary = payload.get("summary") or {}
+    sys.stdout.write(
+        f"Mercado · {summary.get('pujar', 0)} pujar · {summary.get('esperar', 0)} esperar · "
+        f"{summary.get('no', 0)} no · caja {_eur(summary.get('cash_eur'))}\n"
+    )
+    for row in payload.get("decisions") or []:
+        label = row.get("nickname") or row.get("name") or row.get("player_id")
+        decision = row.get("decision") or "?"
+        motive = row.get("primary_motive") or "-"
+        pts = row.get("own_expected_points")
+        if pts is None:
+            pts = row.get("af_expected_points")
+        if pts is None:
+            pts = row.get("expected_points")
+        ideal = row.get("ideal_bid")
+        if ideal is None:
+            ideal = row.get("own_ideal_bid")
+        if ideal is None:
+            ideal = row.get("af_ideal_bid")
+        sys.stdout.write(
+            f"- {decision} {label} · {motive} · puja {_eur(row.get('bid_eur'))} · "
+            f"ideal {_eur(ideal)} · pts {pts if pts is not None else '-'}\n"
+        )
+
+
+def _own_intel_command(client: LaligaClient, *, league: str | None, fresh: bool) -> dict[str, Any]:
+    """Reutiliza trends y proyecta solo las señales own_*."""
+    trends = build_trends(league=league, fresh=fresh, laliga=client)
+    if not isinstance(trends, dict) or trends.get("ok") is False:
+        return {
+            "ok": False,
+            "schema_version": SCHEMA_VERSION,
+            "command": "own-intel",
+            "error": (trends or {}).get("error") if isinstance(trends, dict) else "trends_failed",
+        }
+    players = [
+        {
+            "player_id": p.get("player_id"),
+            "name": p.get("name"),
+            "nickname": p.get("nickname"),
+            "club": p.get("club"),
+            "position": p.get("position"),
+            "fantasy_price": p.get("fantasy_price"),
+            "own_ideal_bid": p.get("own_ideal_bid"),
+            "own_max_bid": p.get("own_max_bid"),
+            "own_market_signal": p.get("own_market_signal"),
+            "own_signal_strength": p.get("own_signal_strength"),
+            "own_predicted_delta": p.get("own_predicted_delta"),
+            "own_expected_points": p.get("own_expected_points"),
+            "own_ceiling_points": p.get("own_ceiling_points"),
+            "own_goal_probability": p.get("own_goal_probability"),
+            "own_assist_probability": p.get("own_assist_probability"),
+            "own_points_per_million": p.get("own_points_per_million"),
+            "own_recommendation_pct": p.get("own_recommendation_pct"),
+            "own_calendar": p.get("own_calendar"),
+            "af_ideal_bid": p.get("af_ideal_bid"),
+            "af_max_bid": p.get("af_max_bid"),
+            "af_expected_points": p.get("af_expected_points"),
+            "af_market_signal": p.get("af_market_signal"),
+        }
+        for p in (trends.get("players") or [])
+        if isinstance(p, dict)
+        and (
+            p.get("own_ideal_bid") is not None
+            or p.get("own_expected_points") is not None
+            or p.get("own_market_signal") is not None
+        )
+    ]
+    sources = {
+        key: value
+        for key, value in (trends.get("sources") or {}).items()
+        if isinstance(key, str) and key.startswith("own_intel")
+    }
+    return {
+        "ok": True,
+        "schema_version": SCHEMA_VERSION,
+        "command": "own-intel",
+        "league_id": trends.get("league_id"),
+        "league_name": trends.get("league_name"),
+        "fetched_at": trends.get("fetched_at"),
+        "count": len(players),
+        "sources": sources,
+        "own_prediction_rising": trends.get("own_prediction_rising") or [],
+        "own_prediction_falling": trends.get("own_prediction_falling") or [],
+        "players": players,
+    }
+
+
+def _render_own_intel(payload: dict[str, Any]) -> None:
+    sys.stdout.write(f"Own intel · {payload.get('count', 0)} jugadores con señal\n")
+    rising = payload.get("own_prediction_rising") or []
+    if rising:
+        sys.stdout.write("Subidas previstas\n")
+        for player in rising[:8]:
+            label = player.get("nickname") or player.get("name") or player.get("player_id")
+            sys.stdout.write(
+                f"- {label} · δ {player.get('own_predicted_delta')} · "
+                f"ideal {_eur(player.get('own_ideal_bid'))} · pts {player.get('own_expected_points')}\n"
+            )
+    falling = payload.get("own_prediction_falling") or []
+    if falling:
+        sys.stdout.write("Bajadas previstas\n")
+        for player in falling[:8]:
+            label = player.get("nickname") or player.get("name") or player.get("player_id")
+            sys.stdout.write(
+                f"- {label} · δ {player.get('own_predicted_delta')} · señal {player.get('own_signal_strength')}\n"
+            )
+
+
+def _render_rival_intel(payload: dict[str, Any]) -> None:
+    teams = payload.get("teams") if isinstance(payload.get("teams"), dict) else {}
+    ads = payload.get("ad_revenue_per_team_eur")
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    rate = config.get("own_ad_rate_pct")
+    rate_text = f" · tu vídeo {rate} %" if isinstance(rate, (int, float)) else ""
+    sys.stdout.write(
+        f"Rival intel · {len(teams)} equipos · {payload.get('days_elapsed') or 0} días de liga · "
+        f"anuncios {_eur(ads)}/equipo{rate_text}\n"
+    )
+    start = config.get("season_start_date")
+    if isinstance(start, str):
+        sys.stdout.write(f"- Ventana de anuncios desde {start} ({config.get('league_start_source')})\n")
+    rows = sorted(
+        (row for row in teams.values() if isinstance(row, dict)),
+        key=lambda row: (-(row.get("calculated_cash") or 0), str(row.get("team_id"))),
+    )
+    for row in rows:
+        marker = " · propia" if row.get("is_self") else ""
+        hidden = len(row.get("detected_hidden_expenses") or [])
+        floor = row.get("cash_floor_eur")
+        expected = row.get("cash_expected_eur")
+        band = ""
+        if isinstance(floor, int) and isinstance(expected, int):
+            band = f"banda {_eur(floor)}–{_eur(expected)} · "
+        sys.stdout.write(
+            f"- {row.get('manager_name') or row.get('team_id')}{marker} · "
+            f"{band}techo {_eur(row.get('calculated_cash'))} · "
+            f"puja máx {_eur(row.get('max_bid_limit'))} · "
+            f"{hidden} subidas ocultas ({_eur(row.get('hidden_expenses_eur'))})\n"
+        )
 
 
 def _eur(value: object) -> str:

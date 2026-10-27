@@ -22,6 +22,7 @@ import os
 import re
 from dataclasses import dataclass
 
+from toolbox.analyzer import starter_fallback
 from toolbox.matching import (
     AMBIGUITY_GAP,
     MATCH_THRESHOLD,
@@ -32,7 +33,7 @@ from toolbox.matching import (
     normalize_name,
     score_pair,
 )
-from toolbox.net import ExternalClient, ExternalHttpError
+from toolbox.net import ExternalClient, ExternalHttpError, inherited
 
 FF_LINEUPS_URL = "https://www.futbolfantasy.com/laliga/posibles-alineaciones"
 AF_LINEUPS_URL = "https://www.analiticafantasy.com/la-liga/alineaciones-probables"
@@ -443,9 +444,13 @@ def index_by_name(rows: list[LineupPlayer]) -> dict[str, dict]:
 
 def _merge_rows(rows: list[tuple[LineupPlayer, float]]) -> LineupHit:
     probabilities = [row.start_probability for row, _score in rows if row.start_probability is not None]
+    peak = max(probabilities) if probabilities else None
     probability = round(sum(probabilities) / len(probabilities), 4) if probabilities else None
     statuses = {row.status for row, _score in rows}
-    if "baja" in statuses:
+    if "titular" in statuses and peak is not None and peak >= DOUBT_BELOW:
+        status = "titular"
+        probability = round(peak, 4)
+    elif "baja" in statuses and (peak is None or peak < DOUBT_BELOW):
         status = "baja"
     elif "duda" in statuses or ("titular" in statuses and probability is not None and probability < DOUBT_BELOW):
         status = "duda"
@@ -536,16 +541,20 @@ def enrich_player_list(local_players: list, sightings: list[LineupPlayer]) -> li
         copy = dict(player)
         hit = hits.get(catalog[cursor].player_id)
         cursor += 1
-        if hit is None:
-            enriched.append(copy)
-            continue
-        if hit.start_probability is not None:
-            copy["startProbability"] = hit.start_probability
-            copy["p_titular"] = hit.start_probability
-        copy["lineupStatus"] = hit.status
-        copy["externalSource"] = hit.source
-        if hit.links:
-            copy["matchingConfidence"] = min(link.confidence for link in hit.links)
+        if hit is not None:
+            if hit.start_probability is not None:
+                copy["startProbability"] = hit.start_probability
+                copy["p_titular"] = hit.start_probability
+                copy["p_titular_source"] = "scraper"
+            copy["lineupStatus"] = hit.status
+            copy["externalSource"] = hit.source
+            if hit.links:
+                copy["matchingConfidence"] = min(link.confidence for link in hit.links)
+        if copy.get("p_titular") is None:
+            fallback = starter_fallback(copy)
+            if fallback is not None:
+                copy["p_titular"] = fallback
+                copy["p_titular_source"] = "week_points"
         enriched.append(copy)
     return enriched
 
@@ -558,31 +567,15 @@ def _get_text(client: ExternalClient, url: str, *, ttl: float, fresh: bool) -> t
     try:
         body, cached = client.get_text(url, ttl=ttl, fresh=fresh)
     except ExternalHttpError as exc:
-        if os.getenv("FANTASY_SCRAPER_BROWSER", "").strip() == "1" and exc.code in {"forbidden", "blocked"}:
-            rendered = _render_with_browser(url)
+        from toolbox.browser_scrape import render_with_browser
+
+        if exc.code in {"forbidden", "blocked"}:
+            rendered = render_with_browser(url)
             if rendered is not None:
+                client.store_page(url, rendered, ttl=ttl)
                 return rendered, False, None
         return None, False, str(exc)
     return body, cached, None
-
-
-def _render_with_browser(url: str) -> str | None:
-    """Solo con ``FANTASY_SCRAPER_BROWSER=1`` y un HTTP 403 o página de bloqueo."""
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        return None
-    try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
-            try:
-                page = browser.new_page()
-                page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                return page.content()
-            finally:
-                browser.close()
-    except Exception:
-        return None
 
 
 def _load_source(
@@ -627,22 +620,30 @@ def load_lineups(
     ttl: float,
     fresh: bool,
 ) -> tuple[dict[str, dict], list[LineupPlayer]]:
-    ff_status, ff_rows = _load_source(
-        client,
-        FF_LINEUPS_URL,
-        parse_ff_fixture_urls,
-        parse_ff_match,
-        ttl=ttl,
-        fresh=fresh,
-    )
-    af_status, af_rows = _load_source(
-        client,
-        AF_LINEUPS_URL,
-        parse_af_fixture_urls,
-        parse_af_match,
-        ttl=ttl,
-        fresh=fresh,
-    )
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        ff_future = pool.submit(
+            inherited(_load_source),
+            client,
+            FF_LINEUPS_URL,
+            parse_ff_fixture_urls,
+            parse_ff_match,
+            ttl=ttl,
+            fresh=fresh,
+        )
+        # Analítica Fantasy no es info táctica del día: va siempre a su TTL.
+        af_future = pool.submit(
+            inherited(_load_source),
+            client,
+            AF_LINEUPS_URL,
+            parse_af_fixture_urls,
+            parse_af_match,
+            ttl=ttl,
+            fresh=False,
+        )
+        ff_status, ff_rows = ff_future.result()
+        af_status, af_rows = af_future.result()
     return {"futbolfantasy_lineups": ff_status, "analiticafantasy_lineups": af_status}, [*ff_rows, *af_rows]
 
 
