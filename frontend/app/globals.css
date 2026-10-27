@@ -1229,6 +1229,196 @@ body {
   color: #fff;
 }
 
+/* ── Pizarra de recomendaciones ──────────────────────────────────────────── */
+
+.rec-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(243, 239, 230, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.45rem 0.8rem;
+  font-size: 12px;
+  font-weight: 600;
+  color: #f3efe6;
+}
+
+.rec-refresh:disabled { opacity: 0.6; }
+
+.rec-status {
+  display: inline-flex;
+  margin-top: 0.85rem;
+  border-radius: 999px;
+  background: rgba(232, 201, 138, 0.14);
+  padding: 0.28rem 0.65rem;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #e8c98a;
+}
+
+.rec-impact {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.9rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(243, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.9rem 1rem;
+}
+
+.rec-lane {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #9ec8ff;
+}
+
+.rec-card {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid rgba(243, 239, 230, 0.06);
+}
+
+.rec-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: #f3efe6;
+}
+
+.rec-title--search { color: #7eb6ff; }
+.rec-title--sell { color: #ff5d6c; }
+.rec-title--offer { color: #f3efe6; }
+
+.rec-amount {
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  color: #f7f4ee;
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-detail {
+  margin-top: 0.2rem;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #9aa3b5;
+}
+
+.rec-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #8fb4e0;
+}
+
+.rec-meta--lock { color: #b9a6e6; }
+
+.rec-mystery {
+  position: relative;
+  display: grid;
+  height: 2.75rem;
+  width: 2.75rem;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 999px;
+  border: 1.5px dashed rgba(126, 182, 255, 0.7);
+  background: rgba(126, 182, 255, 0.08);
+}
+
+.rec-mystery__badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  height: 1.05rem;
+  width: 1.05rem;
+  place-items: center;
+  border-radius: 999px;
+  background: #16324f;
+  color: #9ec8ff;
+}
+
+.rec-face__badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  height: 1.05rem;
+  width: 1.05rem;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  color: white;
+}
+
+.rec-face__badge--bid { background: #1f9d62; }
+.rec-face__badge--sell { background: #d64545; }
+
+.rec-offer {
+  border-radius: 1rem;
+  border: 1px solid rgba(232, 201, 138, 0.28);
+  border-left-width: 3px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.9rem 0.95rem;
+}
+
+.rec-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 0.7rem;
+}
+
+.rec-bars i {
+  display: block;
+  width: 3px;
+  border-radius: 1px;
+  background: #3ee0a0;
+}
+
+.rec-bars i:nth-child(1) { height: 35%; }
+.rec-bars i:nth-child(2) { height: 65%; }
+.rec-bars i:nth-child(3) { height: 100%; opacity: 0.35; }
+
+.rec-btn {
+  border-radius: 999px;
+  border: 1px solid rgba(243, 239, 230, 0.18);
+  padding: 0.4rem 0.9rem;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f3efe6;
+}
+
+.rec-btn--ghost { border-color: transparent; color: #9aa3b5; }
+
+.rec-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.75rem 0.85rem;
+  font-size: 13px;
+  color: #c5cedb;
+}
+
 /* ── Radar de las próximas horas ─────────────────────────────────────────── */
 
 .hoy-wave {
