@@ -40,7 +40,7 @@ RUN python -m pip install --upgrade pip \
 # `--build-arg INSTALL_BROWSER=1` en una instancia con más memoria.
 # Los scrapers que usan httpx (FútbolFantasy, Jornada Perfecta, Analítica
 # Fantasy, …) funcionan igual sin navegador.
-ARG INSTALL_BROWSER=0
+ARG INSTALL_BROWSER=1
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN if [ "$INSTALL_BROWSER" = "1" ]; then \
         python -m playwright install --with-deps chromium; \

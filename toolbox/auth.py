@@ -625,37 +625,30 @@ def _import_playwright() -> Any:
 
 
 def _launch_login_context(playwright: Any, playwright_error: type[Exception]) -> Any:
-    """Abre el Chrome o Edge instalado, con perfil persistente y sin marca de automatización."""
+    """Abre Chromium de Playwright con perfil persistente y sin marca de automatización."""
     profile = cache_root() / BROWSER_PROFILE_DIRNAME
     profile.mkdir(parents=True, exist_ok=True)
-    last_error: Exception | None = None
-    attempts: tuple[dict[str, str], ...] = ({"channel": "chrome"}, {"channel": "msedge"})
-    for extra in attempts:
-        try:
-            return playwright.chromium.launch_persistent_context(
-                str(profile),
-                headless=False,
-                locale="es-ES",
-                no_viewport=True,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "--start-maximized",
-                ],
-                ignore_default_args=["--enable-automation"],
-                **extra,
-            )
-        except playwright_error as exc:
-            last_error = exc
-    detail = ""
-    if last_error is not None:
-        detail = " " + str(last_error).splitlines()[0][:180]
-    raise AuthError(
-        "No se pudo abrir Chrome ni Edge. Cierra otra ventana de este login si sigue abierta."
-        + detail,
-        code="browser_missing",
-    )
+    try:
+        return playwright.chromium.launch_persistent_context(
+            str(profile),
+            headless=True,
+            locale="es-ES",
+            no_viewport=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-first-run",
+                "--no-default-browser-check",
+            ],
+            ignore_default_args=["--enable-automation"],
+        )
+    except playwright_error as exc:
+        detail = " " + str(exc).splitlines()[0][:180]
+        raise AuthError(
+            "No se pudo abrir Chromium (Playwright). "
+            "Instala el navegador con `python -m playwright install chromium`."
+            + detail,
+            code="browser_missing",
+        ) from exc
 
 
 def _attach_redirect_watch(context: Any, page: Any, consider: Any) -> None:
