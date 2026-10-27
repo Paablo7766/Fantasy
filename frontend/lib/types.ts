@@ -1112,6 +1112,8 @@ export type PlanPayload = ApiError & PhotoMeta & {
     missing_slots?: number;
     recommended_partial?: boolean;
     xi_changed?: boolean;
+    /** Huecos por posición, con las opciones de mercado que los tapan. */
+    gaps?: Gap[];
   };
   actions?: PlanAction[];
   decisions?: MarketDecision[];
