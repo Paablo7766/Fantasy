@@ -445,14 +445,31 @@ function sentenceFrom(parts: Array<string | null>): string | null {
 function strategyTitle(row: PlanStrategy, index: number): string {
   const rank = row.rank ?? index + 1;
   const delta = money(row.points_delta);
-  const yieldPts = money(row.points_per_million);
-  const bits = [
-    `Plan ${rank}`,
-    delta !== null ? `${signedPoints(delta)} pts` : null,
-    yieldPts !== null ? `${yieldPts.toFixed(1)} pts/M€` : null,
-    row.needs_sale ? "pide venta" : row.cash_only ? "solo caja" : null,
-  ].filter((bit): bit is string => Boolean(bit));
-  return bits.join(" · ");
+  const name = rank === 1 ? "Mejor plan" : `Alternativa ${rank}`;
+  return delta !== null ? `${name} · ${signedPoints(delta)} pts` : name;
+}
+
+function namesOf(moves: PlanStrategyMove[] | undefined, kind: "vender" | "ficha"): string[] {
+  return (moves || [])
+    .filter((move) => (kind === "vender" ? move.kind === "vender" : move.kind !== "vender"))
+    .map((move) => labelOf(move))
+    .filter((name): name is string => Boolean(name));
+}
+
+function planSentence(row: PlanStrategy | undefined): string | null {
+  if (!row) return null;
+  const delta = money(row.points_delta);
+  const sells = namesOf(row.moves, "vender");
+  const buys = namesOf(row.moves, "ficha");
+  const value = money(row.value_delta_eur);
+  return sentenceFrom([
+    delta !== null ? `El once sube ${signedPoints(delta)} pts.` : null,
+    sells.length ? `Vende a ${sells.join(", ")}.` : null,
+    buys.length ? `Ficha a ${buys.join(", ")}.` : null,
+    value !== null && Math.abs(value) >= 100_000
+      ? `El valor de la plantilla ${value < 0 ? "baja" : "sube"} ${eurShort(Math.abs(value))}.`
+      : null,
+  ]);
 }
 
 function strategyMoves(row: PlanStrategy, planIndex: number): StrategyMove[] {
@@ -467,21 +484,28 @@ function strategyMove(row: PlanStrategyMove, planIndex: number, index: number): 
   const kind = text(row.kind);
   const amount = money(row.amount_eur);
   const cash = kind === "vender" ? income(amount) : spend(amount);
-  const pts = plainPts(money(row.points_in_xi) ?? money(row.jornada_ev));
+  const swap = money(row.points_delta);
+  const pts = kind === "vender" || swap === null ? plainPts(money(row.points_in_xi) ?? money(row.jornada_ev)) : deltaPts(swap);
   const manager = text(row.manager_name);
+  const replaces = text(row.replaces_name);
+  const replacedBy = text(row.replaced_by_name);
   const verb = kind === "vender" ? "Poner en venta" : kind === "clausular" ? "Fichar de un rival" : "Pujar en el mercado";
   const href = kind === "pujar" ? "/mercado" : kind === "vender" ? "/equipo?tab=cartera" : "/equipo?tab=clausulas";
   const guide = kind === "pujar" ? "Abrir mercado" : kind === "vender" ? "Abrir cartera" : "Abrir cláusulas";
+  const where =
+    kind === "clausular"
+      ? manager
+        ? `Cláusula de ${manager}`
+        : "Cláusula de un rival"
+      : kind === "pujar"
+        ? manager
+          ? `Sale de ${manager}`
+          : "Listing del mercado"
+        : null;
   const detail =
     kind === "vender"
-      ? "Ingreso si alguien la compra"
-      : kind === "clausular"
-        ? manager
-          ? `Cláusula de ${manager}`
-          : "Cláusula de un rival"
-        : manager
-          ? `Sale de ${manager}`
-          : "Listing del mercado";
+      ? sentenceFrom([replacedBy ? `Sale del once: entra ${replacedBy}` : "Ingreso si alguien la compra", where])
+      : sentenceFrom([replaces ? `Juega en lugar de ${replaces}` : null, where]);
   return {
     id: `plan-${planIndex}-${kind || "mov"}-${text(row.player_id) || index}`,
     verb,
@@ -523,7 +547,6 @@ export function buildStrategyViews(
   })).filter((group) => group.moves.length);
   const best = found[0];
   const bestDelta = money(best?.points_delta);
-  const bestYield = money(best?.points_per_million);
   const planMeters = meters(strategyGroups[0]?.moves || [], bestDelta);
   const topSales = sales(plan, prices, squads);
 
@@ -544,13 +567,11 @@ export function buildStrategyViews(
       label: "Estrategia",
       kicker: "Plan de fichajes",
       headline: best
-        ? `Once a ${points(money(best.expected_points) ?? recommended)}`
+        ? bestDelta !== null
+          ? `Mejora el once ${signedPoints(bestDelta)} pts`
+          : `Once a ${points(money(best.expected_points) ?? recommended)}`
         : status,
-      sentence: sentenceFrom([
-        bestDelta !== null ? `El mejor plan deja el once en ${points(money(best?.expected_points) ?? recommended)} (${signedPoints(bestDelta)} pts).` : null,
-        bestYield !== null ? `${bestYield.toFixed(1)} pts por millón gastado.` : null,
-        best?.needs_sale ? "Ese plan pide una venta para cuadrar la caja." : null,
-      ]),
+      sentence: planSentence(best),
       ...planMeters,
       groups: strategyGroups,
       savedPoints: saved === null ? null : points(saved),

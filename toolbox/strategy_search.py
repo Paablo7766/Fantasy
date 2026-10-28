@@ -1,8 +1,9 @@
-"""Planes de fichaje que maximizan los puntos del once.
+"""Planes de fichaje que suben los puntos del once.
 
-Un solo ILP elige ventas propias, pujas del mercado del día y cláusulas de
-rivales a la vez que el once. No envía órdenes. Las ventas solo aparecen si
-hacen falta para pagar un fichaje.
+Un ILP elige, juntos, el once y como mucho cuatro fichajes (puja o cláusula),
+más las ventas que hacen falta para pagarlos. No envía órdenes. Cada fichaje
+dice a quién saca del once y cuántos puntos aporta ese cambio. Si el mejor
+plan no es el único que suma, guarda alternativas aunque puntúen menos.
 """
 
 from __future__ import annotations
@@ -25,12 +26,16 @@ from toolbox.analyzer import (
     lineup_points,
     own_squad,
 )
-from toolbox.normalize import SCHEMA_VERSION
+from toolbox.normalize import SCHEMA_VERSION, parse_clause_lock
 
-MAX_PLANS = 4
+MAX_PLANS = 3
+MAX_SIGNINGS = 4
+# Por debajo de esto el once no cambia de verdad: no es un plan.
+MIN_GAIN = 0.2
 _SOLVER_TIME = 8
 _CACHE_KEEP = 8
 _PHOTO_CACHE: dict[str, dict[str, Any]] = {}
+_SOLVE_SEQ = 0
 
 
 def _int(value: Any) -> int | None:
@@ -59,6 +64,7 @@ class TargetAsset:
     kind: str
     manager_name: str | None = None
     team_id: str | None = None
+    market_eur: int | None = None
 
 
 @dataclass
@@ -68,9 +74,17 @@ class _TransferCut:
 
 
 def _unlocked(player: dict[str, Any]) -> bool:
+    """Candado vencido cuenta como abierto aunque la foto lo marcara cerrado."""
     if player.get("is_shielded") is True:
         return False
     lock = player.get("clause_lock") if isinstance(player.get("clause_lock"), dict) else {}
+    expires = lock.get("expires_at")
+    if isinstance(expires, str) and expires.strip():
+        parsed = parse_clause_lock(expires)
+        if parsed.get("is_locked") is True:
+            return False
+        if parsed.get("is_locked") is False:
+            return True
     return lock.get("is_locked") is False
 
 
@@ -184,6 +198,7 @@ def collect_universe(
                 kind="pujar",
                 manager_name=manager,
                 team_id=listing.get("seller_team_id") if isinstance(listing.get("seller_team_id"), str) else None,
+                market_eur=_euros(listing.get("market_value")),
             )
         )
 
@@ -219,6 +234,7 @@ def collect_universe(
                     kind="clausular",
                     manager_name=manager,
                     team_id=team_id,
+                    market_eur=_euros(player.get("market_value")),
                 )
             )
     return cash, owned, targets
@@ -287,6 +303,35 @@ def _baseline_points(
     return solved["expected_points"]
 
 
+def _sales_for_plan(
+    cash: int,
+    spend: int,
+    sellable: dict[str, OwnedAsset],
+    xi_ids: set[str],
+    baseline_ids: frozenset[str] | None,
+) -> list[OwnedAsset]:
+    """Vende a quien sale del once. Del banquillo, solo lo que falte para pagar."""
+    displaced: list[OwnedAsset] = []
+    bench: list[OwnedAsset] = []
+    for asset in sellable.values():
+        player_id = asset.candidate.player_id
+        if not player_id or player_id in xi_ids:
+            continue
+        if baseline_ids is not None and player_id in baseline_ids:
+            displaced.append(asset)
+        else:
+            bench.append(asset)
+    chosen = list(displaced)
+    income = sum(asset.sell_eur or 0 for asset in chosen)
+    if cash + income < spend:
+        for asset in sorted(bench, key=lambda item: -(item.sell_eur or 0)):
+            chosen.append(asset)
+            income += asset.sell_eur or 0
+            if cash + income >= spend:
+                break
+    return chosen
+
+
 def search_plans(
     *,
     cash: int,
@@ -314,6 +359,7 @@ def _solve_once(
     allow_sales: bool,
     cuts: tuple[_TransferCut, ...],
     baseline_points: float | None = None,
+    baseline_ids: frozenset[str] | None = None,
     keep_if_not_better: bool = False,
 ) -> dict[str, Any] | None:
     starters: list[Candidate] = []
@@ -335,71 +381,85 @@ def _solve_once(
     if available < XI_SIZE:
         return None
 
-    problem = pulp.LpProblem("strategy_xi", pulp.LpMaximize)
-    chosen = {candidate.key: pulp.LpVariable(f"x_{index}", cat=pulp.LpBinary) for index, candidate in enumerate(starters)}
-    formation_vars = {name: pulp.LpVariable(f"f_{name.replace('-', '_')}", cat=pulp.LpBinary) for name in FORMATIONS}
-    buy_vars = {key: pulp.LpVariable(f"b_{index}", cat=pulp.LpBinary) for index, key in enumerate(buyable)}
-    sell_vars = {key: pulp.LpVariable(f"s_{index}", cat=pulp.LpBinary) for index, key in enumerate(sellable)}
+    global _SOLVE_SEQ
+    _SOLVE_SEQ += 1
+    tag = _SOLVE_SEQ
+    # PuLP guarda las variables por nombre en el proceso. Reusar x_0 en el
+    # siguiente plan ata el modelo nuevo al anterior y el solver no devuelve nada.
+    problem = pulp.LpProblem(f"strategy_xi_{tag}", pulp.LpMaximize)
+    chosen = {candidate.key: pulp.LpVariable(f"x{tag}_{index}", cat=pulp.LpBinary) for index, candidate in enumerate(starters)}
+    formation_vars = {name: pulp.LpVariable(f"f{tag}_{name.replace('-', '_')}", cat=pulp.LpBinary) for name in FORMATIONS}
+    buy_vars = {key: pulp.LpVariable(f"b{tag}_{index}", cat=pulp.LpBinary) for index, key in enumerate(buyable)}
+    sell_vars = {key: pulp.LpVariable(f"s{tag}_{index}", cat=pulp.LpBinary) for index, key in enumerate(sellable)}
 
-    problem += pulp.lpSum(formation_vars.values()) == 1, "una_formacion"
-    problem += pulp.lpSum(chosen.values()) == XI_SIZE, "once_exacto"
+    problem += pulp.lpSum(formation_vars.values()) == 1, f"form_{tag}"
+    problem += pulp.lpSum(chosen.values()) == XI_SIZE, f"xi_{tag}"
     for position in POSITIONS:
         problem += (
             pulp.lpSum(chosen[candidate.key] for candidate in starters if candidate.position == position)
             == pulp.lpSum(FORMATIONS[name][position] * formation_vars[name] for name in FORMATIONS)
-        ), f"cupo_{position}"
+        ), f"cupo_{tag}_{position}"
 
     owned_keys = {asset.candidate.key for asset in owned}
-    for candidate in starters:
+    for slot, candidate in enumerate(starters):
         xi = chosen[candidate.key]
         if candidate.key in owned_keys:
             if candidate.key in sell_vars:
-                problem += xi <= 1 - sell_vars[candidate.key], f"disp_{candidate.key}"
+                problem += xi <= 1 - sell_vars[candidate.key], f"disp_{tag}_{slot}"
             continue
-        problem += xi <= buy_vars[candidate.key], f"compra_{candidate.key}"
+        problem += xi <= buy_vars[candidate.key], f"compra_{tag}_{slot}"
 
     buy_cost = pulp.lpSum(buy_vars[key] * buyable[key].cost_eur for key in buy_vars)
     sale_income = pulp.lpSum(sell_vars[key] * sellable[key].sell_eur for key in sell_vars)
-    problem += cash + sale_income - buy_cost >= 0, "caja"
+    problem += cash + sale_income - buy_cost >= 0, f"caja_{tag}"
+    if buy_vars:
+        problem += pulp.lpSum(buy_vars.values()) <= MAX_SIGNINGS, f"tope_{tag}"
     points = pulp.lpSum(chosen[candidate.key] * float(candidate.jornada_ev) for candidate in starters)
 
     for index, cut in enumerate(cuts):
-        terms = []
-        for key, variable in buy_vars.items():
-            player_id = buyable[key].candidate.player_id
-            if player_id in cut.bought:
-                terms.append(variable)
-            else:
-                terms.append(1 - variable)
-        for key, variable in sell_vars.items():
-            player_id = sellable[key].candidate.player_id
-            if player_id in cut.sold:
-                terms.append(variable)
-            else:
-                terms.append(1 - variable)
-        if terms:
-            problem += pulp.lpSum(terms) <= len(terms) - 1, f"corte_{index}"
+        blocked = [
+            buy_vars[key]
+            for key in buy_vars
+            if buyable[key].candidate.player_id in cut.bought
+        ]
+        if len(blocked) >= 2:
+            problem += pulp.lpSum(blocked) <= len(blocked) - 1, f"corte_{tag}_{index}"
+        elif len(blocked) == 1:
+            problem += blocked[0] == 0, f"corte_{tag}_{index}"
 
     engine = pulp.PULP_CBC_CMD(msg=False, timeLimit=_SOLVER_TIME)
     problem.setObjective(points)
-    if pulp.LpStatus.get(problem.solve(engine), "NotSolved") != "Optimal":
+    status = pulp.LpStatus.get(problem.solve(engine), "NotSolved")
+    if status != "Optimal":
         return None
     best_points = pulp.value(points)
     if best_points is None:
         return None
-    problem += points >= float(best_points) - 1e-6, "puntos_optimos"
+
+    def _picked(variables: dict[str, Any]) -> set[str]:
+        return {key for key, variable in variables.items() if (variable.value() or 0.0) > 0.5}
+
+    chosen_keys = _picked(chosen)
+    bought_keys = _picked(buy_vars)
+    formation = next((name for name, variable in formation_vars.items() if (variable.value() or 0.0) > 0.5), None)
+    # CBC a veces no reacepta el óptimo de puntos al céntimo. Si el desempate
+    # de precio no resuelve, nos quedamos con el once que ya maximiza puntos.
+    problem += points >= float(best_points) - 0.02, f"puntos_{tag}"
     max_sale = sum(asset.sell_eur or 0 for asset in sellable.values()) + 1
     problem.sense = pulp.LpMinimize
     problem.setObjective(float(max_sale) * buy_cost + sale_income)
-    if pulp.LpStatus.get(problem.solve(engine), "NotSolved") != "Optimal":
-        return None
+    if pulp.LpStatus.get(problem.solve(engine), "NotSolved") == "Optimal":
+        chosen_keys = _picked(chosen)
+        bought_keys = _picked(buy_vars)
+        formation = next((name for name, variable in formation_vars.items() if (variable.value() or 0.0) > 0.5), formation)
 
-    xi_rows = [candidate for candidate in starters if (chosen[candidate.key].value() or 0.0) > 0.5]
+    xi_rows = [candidate for candidate in starters if candidate.key in chosen_keys]
     if len(xi_rows) != XI_SIZE:
         return None
-    formation = next((name for name, variable in formation_vars.items() if (variable.value() or 0.0) > 0.5), None)
-    bought = [buyable[key] for key, variable in buy_vars.items() if (variable.value() or 0.0) > 0.5]
-    sold = [sellable[key] for key, variable in sell_vars.items() if (variable.value() or 0.0) > 0.5]
+    bought = [buyable[key] for key in bought_keys]
+    xi_ids = {candidate.player_id for candidate in xi_rows if candidate.player_id}
+    spend_now = sum(asset.cost_eur for asset in bought)
+    sold = _sales_for_plan(cash, spend_now, sellable, xi_ids, baseline_ids)
     spend = sum(asset.cost_eur for asset in bought)
     income = sum(asset.sell_eur or 0 for asset in sold)
     cash_after = cash + income - spend
@@ -408,8 +468,11 @@ def _solve_once(
     expected = round(sum(float(candidate.jornada_ev) for candidate in xi_rows), 4)
     if not bought and not sold and not keep_if_not_better:
         return None
-    if not keep_if_not_better and baseline_points is not None and expected <= baseline_points + 1e-9:
+    if not keep_if_not_better and baseline_points is not None and expected < baseline_points + MIN_GAIN:
         return None
+    bought_market = sum(asset.market_eur if asset.market_eur is not None else asset.cost_eur for asset in bought)
+    sold_market = sum(asset.sell_eur or 0 for asset in sold)
+    value_delta = income - spend + bought_market - sold_market
     xi_ids = {candidate.player_id for candidate in xi_rows}
     moves: list[dict[str, Any]] = []
     for asset in sold:
@@ -458,6 +521,7 @@ def _solve_once(
         "points_per_million": per_million,
         "needs_sale": bool(sold),
         "cash_only": not sold,
+        "value_delta_eur": value_delta,
         "formation": formation,
         "moves": moves,
         "xi": [_player_row(candidate) for candidate in xi_rows],
@@ -466,17 +530,103 @@ def _solve_once(
     }
 
 
+def _label(row: dict[str, Any]) -> str | None:
+    nickname = row.get("nickname")
+    if isinstance(nickname, str) and nickname.strip():
+        return nickname.strip()
+    name = row.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return None
+
+
+def _attach_replacements(plan: dict[str, Any], baseline_rows: list[dict[str, Any]]) -> None:
+    """Cada fichaje nombra al jugador del once al que sustituye y el delta de ese cambio."""
+    base: dict[str, dict[str, Any]] = {}
+    for row in baseline_rows:
+        player_id = row.get("player_id")
+        if isinstance(player_id, str) and player_id:
+            base[player_id] = row
+    new_ids = {
+        row.get("player_id")
+        for row in plan.get("xi") or []
+        if isinstance(row, dict) and isinstance(row.get("player_id"), str)
+    }
+    outs = [row for player_id, row in base.items() if player_id not in new_ids]
+    ins = [
+        move
+        for move in plan.get("moves") or []
+        if move.get("kind") != "vender" and move.get("player_id") in new_ids
+    ]
+    used: set[str] = set()
+
+    def _take(incoming: dict[str, Any], pool: list[dict[str, Any]]) -> None:
+        outgoing = min(pool, key=lambda row: float(row.get("jornada_ev") or 0.0))
+        outgoing_id = outgoing.get("player_id")
+        if not isinstance(outgoing_id, str):
+            return
+        used.add(outgoing_id)
+        in_ev = float(incoming.get("jornada_ev") or 0.0)
+        out_ev = float(outgoing.get("jornada_ev") or 0.0)
+        incoming["replaces_id"] = outgoing_id
+        incoming["replaces_name"] = _label(outgoing)
+        incoming["points_delta"] = round(in_ev - out_ev, 4)
+
+    ordered = sorted(ins, key=lambda move: -float(move.get("jornada_ev") or 0.0))
+    for incoming in ordered:
+        same = [
+            row
+            for row in outs
+            if row.get("position") == incoming.get("position") and row.get("player_id") not in used
+        ]
+        if same:
+            _take(incoming, same)
+    for incoming in ordered:
+        if incoming.get("replaces_id"):
+            continue
+        pool = [row for row in outs if row.get("player_id") not in used]
+        if pool:
+            _take(incoming, pool)
+    paired = {
+        move.get("replaces_id"): move
+        for move in ins
+        if isinstance(move.get("replaces_id"), str)
+    }
+    for move in plan.get("moves") or []:
+        if move.get("kind") != "vender":
+            continue
+        incoming = paired.get(move.get("player_id"))
+        if not isinstance(incoming, dict):
+            continue
+        move["replaced_by_name"] = _label(incoming)
+        move["points_delta"] = incoming.get("points_delta")
+
+
 def search_strategies(
     *,
     cash: int,
     owned: list[OwnedAsset],
     targets: list[TargetAsset],
     baseline_points: float | None = None,
+    baseline_xi: list[dict[str, Any]] | None = None,
     max_plans: int = MAX_PLANS,
 ) -> dict[str, Any]:
+    rows = baseline_xi if isinstance(baseline_xi, list) and baseline_xi else []
+    if not rows:
+        bare = _solve_once(
+            cash=0,
+            owned=owned,
+            targets=[],
+            allow_sales=False,
+            cuts=(),
+            keep_if_not_better=True,
+        )
+        rows = bare.get("xi") if isinstance(bare, dict) else []
+    baseline_ids = frozenset(
+        row.get("player_id") for row in rows if isinstance(row, dict) and isinstance(row.get("player_id"), str)
+    )
     plans: list[dict[str, Any]] = []
     cuts: list[_TransferCut] = []
-    best_points: float | None = None
     for _ in range(max(1, max_plans)):
         solved = _solve_once(
             cash=cash,
@@ -485,18 +635,14 @@ def search_strategies(
             allow_sales=True,
             cuts=tuple(cuts),
             baseline_points=baseline_points,
+            baseline_ids=baseline_ids,
         )
         if solved is None:
-            break
-        points = float(solved["expected_points"])
-        if best_points is None:
-            best_points = points
-        elif points + 1e-9 < best_points:
             break
         plans.append(solved)
         cuts.append(_TransferCut(bought=solved["_bought_ids"], sold=solved["_sold_ids"]))
 
-    if any(plan.get("needs_sale") for plan in plans):
+    if any(plan.get("needs_sale") for plan in plans) and len(plans) < max(1, max_plans):
         cash_only = _solve_once(
             cash=cash,
             owned=owned,
@@ -504,6 +650,7 @@ def search_strategies(
             allow_sales=False,
             cuts=(),
             baseline_points=baseline_points,
+            baseline_ids=baseline_ids,
         )
         if cash_only is not None:
             signature = (cash_only["_bought_ids"], cash_only["_sold_ids"])
@@ -511,6 +658,15 @@ def search_strategies(
                 cash_only["cash_only"] = True
                 plans.append(cash_only)
 
+    for plan in plans:
+        _attach_replacements(plan, rows if isinstance(rows, list) else [])
+
+    plans.sort(
+        key=lambda plan: (
+            -(float(plan["points_delta"]) if isinstance(plan.get("points_delta"), (int, float)) else float(plan["expected_points"])),
+            int(plan.get("spend_eur") or 0),
+        )
+    )
     cleaned: list[dict[str, Any]] = []
     for index, plan in enumerate(plans, start=1):
         row = {key: value for key, value in plan.items() if not key.startswith("_")}
@@ -545,9 +701,18 @@ def strategies_from_documents(
     if cash is None or not owned:
         return empty
     baseline = _baseline_points(owned, optimize)
+    xi_rows = None
+    if isinstance(optimize, dict) and isinstance(optimize.get("xi"), list):
+        xi_rows = [row for row in optimize["xi"] if isinstance(row, dict)]
     key = _photo_key(cash, owned, targets, baseline)
     cached = _PHOTO_CACHE.get(key)
     if cached is not None:
         return cached
-    document = search_strategies(cash=cash, owned=owned, targets=targets, baseline_points=baseline)
+    document = search_strategies(
+        cash=cash,
+        owned=owned,
+        targets=targets,
+        baseline_points=baseline,
+        baseline_xi=xi_rows,
+    )
     return _remember(key, document)

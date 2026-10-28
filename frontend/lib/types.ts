@@ -1082,8 +1082,11 @@ export type PlanStrategyMove = PlanPlayer & {
   amount_eur?: number | null;
   jornada_ev?: number | null;
   points_in_xi?: number | null;
+  points_delta?: number | null;
   manager_name?: string | null;
   image_url?: string | null;
+  replaces_name?: string | null;
+  replaced_by_name?: string | null;
 };
 
 export type PlanStrategy = {
@@ -1098,6 +1101,7 @@ export type PlanStrategy = {
   points_per_million?: number | null;
   needs_sale?: boolean;
   cash_only?: boolean;
+  value_delta_eur?: number | null;
   formation?: string | null;
   moves?: PlanStrategyMove[];
 };
