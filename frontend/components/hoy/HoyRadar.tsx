@@ -56,7 +56,10 @@ function Timeline({ plan }: { plan: PlanPayload | null }) {
     <div className="hoy-panel flex min-w-0 flex-col p-4">
       <div className="flex items-baseline justify-between gap-2">
         <p className="hoy-label">Radar</p>
-        <Link href="/clausulazos" className="text-[10.5px] text-[color:var(--hoy-faint)] hover:text-[color:var(--hoy-ink)]">
+        <Link
+          href="/equipo?tab=clausulas"
+          className="text-[10.5px] text-[color:var(--hoy-faint)] hover:text-[color:var(--hoy-ink)]"
+        >
           Calendario
         </Link>
       </div>
@@ -121,7 +124,10 @@ function Exposure({ plan }: { plan: PlanPayload | null }) {
     <div className="hoy-panel flex min-w-0 flex-col p-4">
       <div className="flex items-baseline justify-between gap-2">
         <p className="hoy-label">Riesgo de cláusula</p>
-        <Link href="/clausulazos" className="text-[10.5px] text-[color:var(--hoy-faint)] hover:text-[color:var(--hoy-ink)]">
+        <Link
+          href="/equipo?tab=clausulas"
+          className="text-[10.5px] text-[color:var(--hoy-faint)] hover:text-[color:var(--hoy-ink)]"
+        >
           Proteger
         </Link>
       </div>

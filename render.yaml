@@ -11,9 +11,15 @@ services:
     healthCheckPath: /
     autoDeployTrigger: commit
     envVars:
+      - key: LALIGA_ENV
+        value: production
       - key: PORT
         value: "8000"
+      - key: REMOTE_REFRESH_TOKEN
+        sync: false
       - key: FANTASY_SCRAPER_BROWSER
+        value: "1"
+      - key: FANTASY_AUTH_HEADLESS
         value: "1"
       - key: LALIGA_ACCESS_TOKEN
         sync: false

@@ -1077,6 +1077,31 @@ export type PlanPriorityAction = PlanAction & {
   is_lineup?: boolean;
 };
 
+export type PlanStrategyMove = PlanPlayer & {
+  kind?: "vender" | "pujar" | "clausular" | string;
+  amount_eur?: number | null;
+  jornada_ev?: number | null;
+  points_in_xi?: number | null;
+  manager_name?: string | null;
+  image_url?: string | null;
+};
+
+export type PlanStrategy = {
+  id?: string;
+  rank?: number;
+  expected_points?: number | null;
+  points_delta?: number | null;
+  cash_after_eur?: number | null;
+  spend_eur?: number | null;
+  sale_income_eur?: number | null;
+  net_eur?: number | null;
+  points_per_million?: number | null;
+  needs_sale?: boolean;
+  cash_only?: boolean;
+  formation?: string | null;
+  moves?: PlanStrategyMove[];
+};
+
 export type PlanPayload = ApiError & PhotoMeta & {
   ok?: boolean;
   league_id?: string | null;
@@ -1133,6 +1158,9 @@ export type PlanPayload = ApiError & PhotoMeta & {
   expert_note?: string | null;
   clause_market_close?: { at?: string | null; local_date?: string; local_time?: string } | null;
   clause_offers?: Array<Record<string, unknown>>;
+  /** Planes conjuntos: mercado + cláusulas + ventas que maximizan el once. */
+  strategies?: PlanStrategy[];
+  strategy_baseline_points?: number | null;
   audit?: {
     complete?: boolean;
     played?: boolean | null;

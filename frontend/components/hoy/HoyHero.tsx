@@ -63,7 +63,11 @@ const FIX_COPY: Record<string, string> = {
   xi: "ficha el jugador que falta en el Mercado y guarda el once con 11.",
 };
 
-const FIX_HREF: Record<string, string> = { caja: "/cartera", xi: "/mercado", once: "/once" };
+const FIX_HREF: Record<string, string> = {
+  caja: "/equipo?tab=cartera",
+  xi: "/mercado",
+  once: "/equipo",
+};
 const FIX_LABEL: Record<string, string> = { caja: "Vender", xi: "Ir al mercado", once: "Abrir once" };
 
 export function HoyHero({

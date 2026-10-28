@@ -24,6 +24,7 @@ from toolbox.experts import (
 )
 from toolbox.market_intel import build_market_decisions
 from toolbox.normalize import SCHEMA_VERSION, display_zone
+from toolbox.strategy_search import strategies_from_documents
 
 _MADRID = ZoneInfo("Europe/Madrid")
 _NOTE_LIMIT = 20_000
@@ -1397,6 +1398,9 @@ def plan_from_documents(
         audit = append_audit(audit, memory_path, now=current)
     document["audit"] = audit
     document["decisions"] = decisions.get("decisions")
+    search = strategies_from_documents(market, squads, trends, optimize)
+    document["strategies"] = search.get("strategies") or []
+    document["strategy_baseline_points"] = search.get("baseline_points")
     return document
 
 

@@ -67,6 +67,16 @@ class PlanRefreshGateTests(unittest.TestCase):
                 response = self._post()
         self.assertEqual(response.status_code, 401)
 
+    def test_async_mode_returns_202_without_blocking(self) -> None:
+        with patch.object(server, "startup_production", return_value=False):
+            with patch.object(server, "_run_plan_refresh_job"):
+                response = self.client.post(f"{REFRESH_PATH}?async=1")
+        self.assertEqual(response.status_code, 202)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["accepted"])
+        self.assertEqual(payload["status"], "started")
+
 
 class PlanRefreshOpensTheGateTests(unittest.TestCase):
     """El botón Actualizar es la única puerta: tiene que abrir la red de verdad.

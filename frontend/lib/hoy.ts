@@ -486,14 +486,14 @@ const INELIGIBLE_REASON: Record<string, string> = {
 };
 
 const HREF_BY_KIND: Record<string, string> = {
-  alinear: "/once",
+  alinear: "/equipo",
   pujar: "/mercado",
-  clausular: "/clausulazos",
-  subir_clausula: "/clausulazos",
-  vender: "/cartera",
-  blindar: "/clausulazos",
+  clausular: "/equipo?tab=clausulas",
+  subir_clausula: "/equipo?tab=clausulas",
+  vender: "/equipo?tab=cartera",
+  blindar: "/equipo?tab=clausulas",
   cerrar_hueco: "/mercado",
-  vender_emergencia: "/cartera",
+  vender_emergencia: "/equipo?tab=cartera",
 };
 
 /**

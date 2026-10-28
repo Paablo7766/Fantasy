@@ -32,6 +32,24 @@ const BLOCK_LABELS: Record<BlockName, string> = {
   plan: "Hoy",
 };
 
+function isUsableBlock(doc: unknown): boolean {
+  return !!doc && typeof doc === "object" && (doc as { ok?: boolean }).ok !== false;
+}
+
+function hasUsableSnapshot(state: DashboardState): boolean {
+  return BLOCKS.some((name) => isUsableBlock(state[name]));
+}
+
+function pendingFromSnapshot(state: DashboardState): Record<BlockName, boolean> {
+  return BLOCKS.reduce(
+    (acc, name) => {
+      acc[name] = !isUsableBlock(state[name]);
+      return acc;
+    },
+    {} as Record<BlockName, boolean>,
+  );
+}
+
 function leagueFromLocation(): string | null {
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get("league");
@@ -104,14 +122,28 @@ async function waitForRefresh(
   }
 }
 
+/** Render/Vercel pueden tardar en arrancar: el POST falla antes de que ``running`` sea true. */
+async function waitForRefreshStart(
+  beat: () => Promise<RefreshStatusPayload | null>,
+  maxMs = 90_000,
+): Promise<RefreshStatusPayload | null> {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => window.setTimeout(resolve, 2000));
+    const status = await beat();
+    if (status?.running === true) return status;
+  }
+  return null;
+}
+
 type DashboardContextValue = {
   state: DashboardState;
   pending: Record<BlockName, boolean>;
   connecting: boolean;
   connectMessage: string | null;
   /**
-   * LECTURA: hidrata los cinco bloques desde la foto guardada. Cero red hacia
-   * LALIGA. Se llama al montar y solo entonces; no hay auto-recarga.
+   * LECTURA: hidrata los cinco bloques desde la foto del servidor (sin
+   * descargar). Tras Actualizar, o al abrir si no hay copia local guardada.
    */
   load: () => Promise<void>;
   /**
@@ -188,6 +220,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const stateRef = useRef<DashboardState>(EMPTY);
+  /** El botón Actualizar es dueño de ``refreshing`` hasta que termina su ``load()``. */
+  const refreshLeadRef = useRef(false);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
@@ -255,6 +289,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
    */
   const refresh = useCallback(async () => {
     const league = leagueFromLocation();
+    refreshLeadRef.current = true;
     setRefreshing(true);
     setRefreshError(null);
     setRefreshStatus(null);
@@ -280,17 +315,29 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       });
     }, 3000);
     try {
-      const fresh = await postJson<PlanPayload>(endpoint("/api/plan/refresh", league));
-      if (fresh && fresh.ok !== false) {
+      // ``async=1``: el backend responde 202 al instante (imprescindible en Vercel:
+      // el proxy serverless no puede mantener un POST de media hora abierto).
+      const fresh = await postJson<PlanPayload & { accepted?: boolean }>(
+        endpoint("/api/plan/refresh", league, { asyncRefresh: true }),
+      );
+      if (fresh.accepted) {
+        await waitForRefresh(beat);
+        await load();
+      } else if (fresh && fresh.ok !== false) {
         setState((prev) => ({ ...prev, plan: fresh }));
         writeDashboardBlock(league, "plan", fresh);
+        await load();
+      } else {
+        await load();
       }
-      await load();
     } catch (reason) {
       // El proxy de Next corta a los 5 min aunque el backend siga trabajando.
       // Si el latido dice que la descarga continúa, no es un error: se sigue
       // esperando y se recarga al terminar.
-      const status = await beat();
+      let status = await beat();
+      if (status?.running !== true) {
+        status = await waitForRefreshStart(beat);
+      }
       if (status?.running === true) {
         await waitForRefresh(beat);
         await load();
@@ -300,6 +347,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       }
     } finally {
       window.clearInterval(timer);
+      refreshLeadRef.current = false;
       setRefreshing(false);
     }
   }, [load]);
@@ -307,18 +355,25 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!shellReady) return;
     const league = leagueFromLocation();
-    // Abrir o recargar la pestaña: solo lecturas. La red espera al botón.
-    //
-    // La copia del navegador **no** se pinta. Se pintaba mientras el GET de la
-    // foto del servidor estaba en vuelo, así que al entrar se veía la foto de
-    // la última sesión (la subida de ayer, el once de antes del refresco) y no
-    // se distinguía de un dato fresco. El disco del backend es la única fuente;
-    // la copia local solo sirve para no quedarse en blanco si el backend no
-    // responde y no hay nada nuevo que enseñar.
+    // Al abrir (p. ej. al día siguiente) se enseña la última foto que el usuario
+    // vio tras pulsar Actualizar. ``GET /api/plan`` recomputa el plan con la
+    // foto vieja y cambia recomendaciones sin descargar; por eso no se relee
+    // el servidor hasta que vuelva a pulsar Actualizar.
+    const snap = readDashboardSnapshot(league);
+    if (snap?.state && hasUsableSnapshot(snap.state)) {
+      setState({ ...EMPTY, ...snap.state });
+      setPending(pendingFromSnapshot(snap.state));
+      setReadAt(typeof snap.savedAt === "number" ? snap.savedAt : Date.now());
+      return;
+    }
     void load().then(() => {
       if (blankAfterLoad()) {
-        const snap = readDashboardSnapshot(league);
-        if (snap?.state) setState((prev) => ({ ...EMPTY, ...snap.state, ...prev }));
+        const fallback = readDashboardSnapshot(league);
+        if (fallback?.state) {
+          setState({ ...EMPTY, ...fallback.state });
+          setPending(pendingFromSnapshot(fallback.state));
+          if (typeof fallback.savedAt === "number") setReadAt(fallback.savedAt);
+        }
       }
     });
   }, [load, shellReady, blankAfterLoad]);
@@ -352,13 +407,19 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       if (status?.running !== true) {
         if (following) {
           following = false;
-          setRefreshing(false);
-          await load();
+          // Si el usuario pulsó Actualizar, no apagar la barra aquí: el POST
+          // puede seguir en vuelo y ``refresh()`` hará el ``load()`` al cerrar.
+          if (!refreshLeadRef.current) {
+            setRefreshing(false);
+            await load();
+          }
         }
         return;
       }
       following = true;
-      setRefreshing(true);
+      if (!refreshLeadRef.current) {
+        setRefreshing(true);
+      }
       timer = window.setTimeout(() => {
         void follow();
       }, 3000);

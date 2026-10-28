@@ -39,4 +39,18 @@ El frontend se despliega en **Vercel** (plan gratuito). El backend **no** se hos
 
 Cada vez que reinicies el túnel rápido (`--url`), Cloudflare puede asignar un dominio distinto: actualiza `NEXT_PUBLIC_API_URL` en Vercel con la nueva URL.
 
-`Dockerfile` y `render.yaml` se mantienen por si más adelante vuelves a un despliegue en la nube.
+### Vercel + Render (backend en la nube)
+
+Si el frontend está en **Vercel** y el API en **Render** (`render.yaml`):
+
+1. **Render** (servicio `fantasy-api`): define `LALIGA_ACCESS_TOKEN`, `LALIGA_REFRESH_TOKEN`, `LEAGUE_ID` y un secreto **`REMOTE_REFRESH_TOKEN`** (cadena larga aleatoria). `LALIGA_ENV=production` ya va en el blueprint.
+2. **Vercel** (proyecto `frontend/`):
+   - `NEXT_PUBLIC_API_URL` = URL del servicio Render, **sin** `/api` al final (p. ej. `https://fantasy-api.onrender.com`).
+   - **`REMOTE_REFRESH_TOKEN`** = el **mismo** valor que en Render (variable de servidor, **no** pública). El proxy de Next la envía en `POST /api/plan/refresh` hacia Render.
+3. Vuelve a desplegar frontend y backend tras cambiar variables.
+
+El botón **Actualizar** usa `?async=1`: Render responde **202** al momento y la barra avanza con `GET /api/refresh-status`. Así Vercel no corta la descarga (en plan Hobby el proxy serverless no aguanta un POST de media hora).
+
+Si la barra desaparece al instante y ves **«Sin actualizar»**, suele faltar `REMOTE_REFRESH_TOKEN` en Vercel o no coincide con Render (401), o `NEXT_PUBLIC_API_URL` apunta a un backend caído.
+
+`Dockerfile` y `render.yaml` documentan el despliegue en Render; el túnel Cloudflare sigue siendo la opción sin servidor de pago.

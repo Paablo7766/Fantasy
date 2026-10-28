@@ -624,14 +624,19 @@ def _import_playwright() -> Any:
     return sync_playwright, PlaywrightError
 
 
-def _launch_login_context(playwright: Any, playwright_error: type[Exception]) -> Any:
+def _launch_login_context(
+    playwright: Any,
+    playwright_error: type[Exception],
+    *,
+    headless: bool,
+) -> Any:
     """Abre Chromium de Playwright con perfil persistente y sin marca de automatización."""
     profile = cache_root() / BROWSER_PROFILE_DIRNAME
     profile.mkdir(parents=True, exist_ok=True)
     try:
         return playwright.chromium.launch_persistent_context(
             str(profile),
-            headless=True,
+            headless=headless,
             locale="es-ES",
             no_viewport=True,
             args=[
@@ -757,7 +762,7 @@ def _raise_login_window(page: Any) -> None:
         return
 
 
-def _capture_auth_redirect(timeout_seconds: float) -> str:
+def _capture_auth_redirect(timeout_seconds: float, *, headless: bool) -> str:
     """Abre la URL de login y devuelve el ``authredirect://`` en cuanto aparece."""
     sync_playwright, playwright_error = _import_playwright()
     started = start_pkce_login()
@@ -782,7 +787,7 @@ def _capture_auth_redirect(timeout_seconds: float) -> str:
             store(found)
 
     with sync_playwright() as playwright:
-        context = _launch_login_context(playwright, playwright_error)
+        context = _launch_login_context(playwright, playwright_error, headless=headless)
         try:
             page = context.pages[0] if context.pages else context.new_page()
 
@@ -852,17 +857,31 @@ def _capture_auth_redirect(timeout_seconds: float) -> str:
     )
 
 
-def login_with_browser(*, timeout_seconds: float = BROWSER_LOGIN_TIMEOUT_SECONDS) -> dict[str, Any]:
+def login_headless_from_env() -> bool:
+    """``True`` si el login con navegador debe ser headless (p. ej. Render sin pantalla)."""
+    return os.getenv("FANTASY_AUTH_HEADLESS", "").strip() == "1"
+
+
+def login_with_browser(
+    *,
+    timeout_seconds: float = BROWSER_LOGIN_TIMEOUT_SECONDS,
+    headless: bool | None = None,
+) -> dict[str, Any]:
     """Abre el login, canjea el código y guarda tokens y ``LEAGUE_ID`` en ``.env``.
+
+    Por defecto abre una ventana visible. En servidores sin pantalla usa
+    ``FANTASY_AUTH_HEADLESS=1`` o ``headless=True``.
 
     La respuesta no incluye el código ni los tokens.
     """
     if timeout_seconds <= 0:
         raise AuthError("El tiempo de espera del login tiene que ser positivo.", code="invalid_code")
+    if headless is None:
+        headless = login_headless_from_env()
     if not _browser_lock.acquire(blocking=False):
         raise AuthError("Ya hay una ventana de login abierta.", code="login_in_progress")
     try:
-        redirect = _capture_auth_redirect(timeout_seconds)
+        redirect = _capture_auth_redirect(timeout_seconds, headless=headless)
         exchanged = complete_pkce_login(redirect)
         league = persist_detected_league()
     finally:

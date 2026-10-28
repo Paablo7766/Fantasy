@@ -14,9 +14,14 @@ export function apiUrl(path: string, search?: URLSearchParams): string {
  * URL de un bloque del tablero. **Nunca** lleva ``fresh``: los GET solo leen
  * la foto guardada. La descarga vive en ``POST /api/plan/refresh``.
  */
-export function endpoint(path: string, league: string | null): string {
+export function endpoint(
+  path: string,
+  league: string | null,
+  opts?: { asyncRefresh?: boolean },
+): string {
   const query = new URLSearchParams();
   if (league) query.set("league", league);
+  if (opts?.asyncRefresh) query.set("async", "1");
   return apiUrl(path, query);
 }
 

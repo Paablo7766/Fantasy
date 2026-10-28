@@ -3544,9 +3544,32 @@ def api_remote_status(
 # ---------------------------------------------------------------------------
 # Modo actualización: el ÚNICO endpoint que descarga
 # ---------------------------------------------------------------------------
+_plan_refresh_async_lock = threading.Lock()
+
+
+def _plan_refresh_busy() -> bool:
+    return refresh_status_snapshot().get("running") is True
+
+
+def _run_plan_refresh_job(league: str | None) -> None:
+    """Descarga en segundo plano (``?async=1``): el proxy de Vercel no espera media hora."""
+    try:
+        with production_window():
+            _plan_refresh_download(league)
+    except SystemExit:
+        close_official_session()
+        marker = kill_switch_state()
+        _refresh_status_finish(
+            ok=False,
+            error={"code": "kill_switch", "message": marker.get("reason")},
+        )
+        logger.critical("Kill switch disparado durante el refresco manual (async).")
+
+
 @app.post("/api/plan/refresh")
 def api_plan_refresh(
     league: str | None = Query(default=None),
+    respond_async: bool = Query(default=False, alias="async"),
     x_remote_token: str | None = Header(default=None, alias=REMOTE_TOKEN_HEADER),
 ) -> Any:
     """Baja todo, sobrescribe la caché y devuelve la foto nueva.
@@ -3571,6 +3594,45 @@ def api_plan_refresh(
     """
     if startup_production() and not _remote_authorized(x_remote_token):
         return _remote_error(401, "unauthorized", "Token remoto inválido.")
+
+    if respond_async:
+        # Vercel (y la mayoría de proxies serverless) cortan el POST a los pocos
+        # segundos. La descarga real sigue en Render; el panel solo necesita un
+        # 202 y el latido ``GET /api/refresh-status``.
+        with _plan_refresh_async_lock:
+            if _plan_refresh_busy():
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "ok": False,
+                        "schema_version": SCHEMA_VERSION,
+                        "command": "plan-refresh",
+                        "error": {
+                            "code": "already_running",
+                            "message": "Ya hay una descarga en curso; espera a que termine.",
+                        },
+                    },
+                )
+            _refresh_status_start("full", _league(league))
+            thread = threading.Thread(
+                target=_run_plan_refresh_job,
+                args=(_league(league),),
+                name="plan-refresh-async",
+                daemon=True,
+            )
+            thread.start()
+        return JSONResponse(
+            status_code=202,
+            content={
+                "ok": True,
+                "schema_version": SCHEMA_VERSION,
+                "command": "plan-refresh",
+                "accepted": True,
+                "status": "started",
+                "poll": "/api/refresh-status",
+            },
+        )
+
     # Un solo latido para las dos pasadas: el panel no debe ver «terminado»
     # entre la foto rápida y la completa, porque los scrapers aún no empezaron.
     _refresh_status_start("full", _league(league))

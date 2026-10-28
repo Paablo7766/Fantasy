@@ -14,54 +14,32 @@ type NavItem = {
   hint: string;
 };
 
-type NavGroup = {
-  id: string;
-  label: string;
-  hint: string;
-  items: readonly NavItem[];
-};
-
-const GROUPS: readonly NavGroup[] = [
+const SECTIONS: readonly NavItem[] = [
   {
-    id: "hoy",
-    label: "Hoy",
-    hint: "Qué hacer antes del próximo cierre",
-    items: [{ href: "/", label: "Hoy", title: "Hoy", hint: "Reloj, supervivencia y acciones del día" }],
+    href: "/",
+    label: "Recomendaciones",
+    title: "Recomendaciones",
+    hint: "Qué hacer primero: vender, pujar, clausular o alinear",
   },
   {
-    id: "equipo",
-    label: "Mi Equipo",
-    hint: "Once, dinero y cláusulas",
-    items: [
-      { href: "/once", label: "Once", title: "Once", hint: "Alineación óptima y huecos" },
-      { href: "/cartera", label: "Cartera", title: "Cartera", hint: "Rentabilidad e historial de fichajes" },
-      {
-        href: "/clausulazos",
-        label: "Cláusulas",
-        title: "Cláusulas",
-        hint: "Proteger, calendario, fichaje y confirmar",
-      },
-    ],
+    href: "/equipo",
+    label: "Equipo",
+    title: "Equipo",
+    hint: "Once, cartera y cláusulas en un solo sitio",
   },
   {
-    id: "contexto",
-    label: "Contexto",
-    hint: "Mercado, rivales y modelo",
-    items: [
-      { href: "/mercado", label: "Mercado", title: "Mercado", hint: "Pujar, esperar o dejar pasar" },
-      { href: "/rivales", label: "Rivales", title: "Rivales", hint: "Caja ajena y cláusulas" },
-      { href: "/intel", label: "Intel", title: "Intel", hint: "Señales externas de la jornada" },
-      {
-        href: "/calibracion",
-        label: "Calibración",
-        title: "Calibración",
-        hint: "Precisión del motor y tendencias",
-      },
-    ],
+    href: "/mercado",
+    label: "Mercado",
+    title: "Mercado",
+    hint: "Pujas, radar cuantitativo y catálogo",
+  },
+  {
+    href: "/liga",
+    label: "Liga",
+    title: "Liga",
+    hint: "Clasificación, rivales y cláusulas ajenas",
   },
 ] as const;
-
-const SECTIONS = GROUPS.flatMap((group) => group.items);
 
 type SectionLabel = (typeof SECTIONS)[number]["label"];
 
@@ -74,34 +52,14 @@ function Icon({ name }: { name: SectionLabel }) {
     strokeWidth: 1.6,
     "aria-hidden": true as const,
   };
-  if (name === "Hoy") {
+  if (name === "Recomendaciones") {
     return (
       <svg {...common}>
-        <circle cx="10" cy="10" r="6.4" />
-        <path d="M10 6.6V10l2.2 1.4" strokeLinecap="round" />
+        <path d="M10 3.2 12.4 8h4.6l-3.7 2.7 1.4 4.5L10 14.8l-4.7 3.4 1.4-4.5L3 8h4.6L10 3.2Z" strokeLinejoin="round" />
       </svg>
     );
   }
-  if (name === "Cláusulas") {
-    return (
-      <svg {...common}>
-        <rect x="4.5" y="8.5" width="11" height="8.5" rx="1.4" />
-        <path d="M7 8.5V6.8a3 3 0 0 1 6 0V8.5" strokeLinecap="round" />
-        <circle cx="10" cy="12.5" r="1.1" fill="currentColor" stroke="none" />
-      </svg>
-    );
-  }
-  if (name === "Cartera") {
-    return (
-      <svg {...common}>
-        <path d="M4 7.5h12v8.5H4V7.5Z" strokeLinejoin="round" />
-        <path d="M7 7.5V6a3 3 0 0 1 6 0v1.5" strokeLinecap="round" />
-        <path d="M10 11.2v2.6" strokeLinecap="round" />
-        <circle cx="10" cy="10.5" r="0.9" fill="currentColor" stroke="none" />
-      </svg>
-    );
-  }
-  if (name === "Once") {
+  if (name === "Equipo") {
     return (
       <svg {...common}>
         <circle cx="10" cy="6.2" r="1.5" />
@@ -119,28 +77,10 @@ function Icon({ name }: { name: SectionLabel }) {
       </svg>
     );
   }
-  if (name === "Intel") {
-    return (
-      <svg {...common}>
-        <path d="M4 14.5 8.2 9.6l2.6 2.4L16 6.2" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M12.2 6.2H16V10" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  if (name === "Calibración") {
-    return (
-      <svg {...common}>
-        <path d="M4 15.5 7.5 11l2.5 2 6-6.5" strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx="14.5" cy="6.5" r="1.6" />
-      </svg>
-    );
-  }
   return (
     <svg {...common}>
-      <circle cx="7" cy="7.2" r="2" />
-      <circle cx="13.2" cy="8" r="1.7" />
-      <path d="M3.6 15.2c.5-2 2-3.1 3.4-3.1s2.9 1.1 3.4 3.1" strokeLinecap="round" />
-      <path d="M11.2 12.4c.8-.4 1.6-.5 2.2-.4 1.1.2 2 1.1 2.5 2.8" strokeLinecap="round" />
+      <path d="M5 18V8l7-4 7 4v10" strokeLinejoin="round" />
+      <path d="M9 18v-5h6v5" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -153,7 +93,20 @@ function sectionFromPath(pathname: string): NavItem {
 }
 
 function isActive(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+  if (href === "/") return pathname === "/";
+  if (href === "/equipo") {
+    return (
+      pathname === "/equipo" ||
+      pathname.startsWith("/equipo/") ||
+      pathname === "/once" ||
+      pathname === "/cartera" ||
+      pathname === "/clausulazos"
+    );
+  }
+  if (href === "/liga") {
+    return pathname === "/liga" || pathname === "/rivales" || pathname.startsWith("/rivales/");
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -178,7 +131,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const section = sectionFromPath(pathname);
-  const group = GROUPS.find((candidate) => candidate.items.some((item) => item.href === section.href));
   const query = searchParams.toString();
   const withQuery = (href: string) => (query ? `${href}?${query}` : href);
 
@@ -193,37 +145,30 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="brand-mark">LF</span>
           <div className="min-w-0">
             <p className="text-[0.95rem] font-semibold leading-none tracking-[-0.03em] text-white">LALIGA Fantasy</p>
-            <p className="mt-1 text-[11px] text-[color:var(--sidebar-muted)]">Mesa de decisión</p>
+            <p className="mt-1 text-[11px] text-[color:var(--sidebar-muted)]">4 pantallas · decisión clara</p>
           </div>
         </div>
 
-        <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1" aria-label="Secciones">
-          {GROUPS.map((navGroup) => (
-            <div key={navGroup.id} className="flex flex-col gap-1">
-              <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--sidebar-muted)]">
-                {navGroup.label}
-              </p>
-              {navGroup.items.map((item) => {
-                const active = isActive(pathname, item.href);
-                return (
-                  <Link
-                    key={item.label}
-                    href={withQuery(item.href)}
-                    className={active ? "side-link side-link--active" : "side-link"}
-                    aria-current={active ? "page" : undefined}
-                  >
-                    <span className="side-link__icon">
-                      <Icon name={item.label} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium tracking-tight">{item.label}</span>
-                      <span className="block truncate text-[11px] text-[color:var(--sidebar-muted)]">{item.hint}</span>
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
+        <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1" aria-label="Secciones">
+          {SECTIONS.map((item) => {
+            const active = isActive(pathname, item.href);
+            return (
+              <Link
+                key={item.label}
+                href={withQuery(item.href)}
+                className={active ? "side-link side-link--active" : "side-link"}
+                aria-current={active ? "page" : undefined}
+              >
+                <span className="side-link__icon">
+                  <Icon name={item.label} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium tracking-tight">{item.label}</span>
+                  <span className="block truncate text-[11px] text-[color:var(--sidebar-muted)]">{item.hint}</span>
+                </span>
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="mt-4 border-t border-[color:var(--sidebar-line)] px-2 pt-4">
@@ -246,13 +191,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="flex min-w-0 items-center gap-3 lg:block">
               <span className="brand-mark lg:hidden">LF</span>
               <div className="min-w-0">
-                <p className="eyebrow hidden sm:block">{group?.label ?? "Hoy"}</p>
+                <p className="eyebrow hidden sm:block">Mesa de decisión</p>
                 <h1 className="truncate text-lg font-semibold tracking-[-0.03em] text-ink md:text-xl">{section.title}</h1>
                 <p className="hidden truncate text-sm text-muted sm:block">{section.hint}</p>
               </div>
             </div>
 
-            <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+            <div className="flex w-full min-w-0 items-center gap-1.5 overflow-x-auto sm:w-auto sm:justify-end sm:gap-2">
               {refreshing ? (
                 <span className="status-dot status-dot--pulse" aria-live="polite">
                   Descargando {refreshPct}%
@@ -306,42 +251,47 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           ) : null}
           {connectMessage ? (
-            <div
-              className="px-4 pb-3 md:px-7"
-              role={connecting ? "status" : "alert"}
-              aria-live="polite"
-            >
+            <div className="px-4 pb-3 md:px-7" role={connecting ? "status" : "alert"} aria-live="polite">
               <div className="status-note">{connectMessage}</div>
             </div>
           ) : null}
         </header>
 
         <nav className="app-tabs scroll-thin" aria-label="Secciones">
-          {GROUPS.map((navGroup) => (
-            <div key={navGroup.id} className="flex shrink-0 items-center gap-1">
-              <span className="whitespace-nowrap px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
-                {navGroup.label}
-              </span>
-              {navGroup.items.map((item) => (
-                <Link
-                  key={item.label}
-                  href={withQuery(item.href)}
-                  className={isActive(pathname, item.href) ? "tab-link tab-link--active" : "tab-link"}
-                  aria-current={isActive(pathname, item.href) ? "page" : undefined}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
+          {SECTIONS.map((item) => (
+            <Link
+              key={item.label}
+              href={withQuery(item.href)}
+              className={isActive(pathname, item.href) ? "tab-link tab-link--active" : "tab-link"}
+              aria-current={isActive(pathname, item.href) ? "page" : undefined}
+            >
+              {item.label}
+            </Link>
           ))}
         </nav>
 
-        <div className="app-page min-w-0">{children}</div>
+        <div className="app-page min-w-0 app-page--dock">{children}</div>
 
-        <footer className="mx-auto w-full max-w-[1240px] px-4 pb-8 text-xs leading-5 text-faint md:px-7">
-          Solo lectura. Las horas de cláusula salen de la API en Europe/Madrid, con hora y minuto. Si la marca no viene,
-          el tablero no inventa una hora. Las señales af_* de Analítica Fantasy no sustituyen al optimizador ni al bonus
-          Relevo.
+        <nav className="app-dock lg:hidden" aria-label="Navegación principal">
+          {SECTIONS.map((item) => {
+            const active = isActive(pathname, item.href);
+            return (
+              <Link
+                key={item.label}
+                href={withQuery(item.href)}
+                className={active ? "app-dock__link app-dock__link--active" : "app-dock__link"}
+                aria-current={active ? "page" : undefined}
+              >
+                <Icon name={item.label} />
+                <span>{item.label === "Recomendaciones" ? "Inicio" : item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <footer className="mx-auto w-full max-w-[1240px] px-4 pb-24 text-xs leading-5 text-faint md:px-7 md:pb-8 lg:pb-8">
+          Solo lectura. Las horas de cláusula salen de la API en Europe/Madrid. Pulsa Actualizar antes de decidir con
+          dinero real.
         </footer>
       </div>
     </div>

@@ -7,7 +7,7 @@ import { buildActionCards, signedPoints, type ActionCard } from "@/lib/hoy";
 import { eur, eurShort } from "@/lib/format";
 import type { PlanPayload } from "@/lib/types";
 
-const MAX_ACTIONS = 4;
+const DEFAULT_MAX = 4;
 
 function CopyButton({ action }: { action: ActionCard }) {
   const [state, setState] = useState<"idle" | "done" | "error">("idle");
@@ -49,9 +49,21 @@ const OPEN_LABEL: Record<string, string> = {
 };
 
 /** Una tarjeta = una decisión. Qué, cuánto y cuándo; nada más. */
+const KIND_ACCENT: Record<string, string> = {
+  pujar: "hoy-act--pujar",
+  clausular: "hoy-act--clausula",
+  subir_clausula: "hoy-act--clausula",
+  blindar: "hoy-act--clausula",
+  vender: "hoy-act--vender",
+  vender_emergencia: "hoy-act--vender",
+  alinear: "hoy-act--once",
+  cerrar_hueco: "hoy-act--pujar",
+};
+
 function ActionCardView({ action }: { action: ActionCard }) {
   const delta = signedPoints(action.pointsDelta);
   const blocked = !action.eligible || action.verdict === "NO";
+  const kindAccent = KIND_ACCENT[action.kind] || "";
   const verdictTone =
     action.verdict === "HAZLO" && !blocked
       ? "hoy-chip hoy-chip--mint"
@@ -66,7 +78,9 @@ function ActionCardView({ action }: { action: ActionCard }) {
         : "text-[color:var(--hoy-muted)]";
 
   return (
-    <li className={`hoy-act ${blocked ? "hoy-act--blocked" : ""} ${action.isSurvival ? "hoy-act--survival" : ""}`}>
+    <li
+      className={`hoy-act ${kindAccent} ${blocked ? "hoy-act--blocked" : ""} ${action.isSurvival ? "hoy-act--survival" : ""}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           {action.playerName ? (
@@ -212,23 +226,36 @@ function ClearDay({ plan }: { plan: PlanPayload | null }) {
   );
 }
 
-export function HoyActions({ plan, loading }: { plan: PlanPayload | null; loading: boolean }) {
-  const cards = useMemo(() => buildActionCards(plan, MAX_ACTIONS), [plan]);
+export function HoyActions({
+  plan,
+  loading,
+  limit = DEFAULT_MAX,
+  layout = "grid",
+  title = "Qué hacer",
+}: {
+  plan: PlanPayload | null;
+  loading: boolean;
+  limit?: number;
+  layout?: "grid" | "stack";
+  title?: string;
+}) {
+  const cards = useMemo(() => buildActionCards(plan, limit), [plan, limit]);
   const prioritized = Array.isArray(plan?.priority_actions) ? plan.priority_actions : [];
   const total = prioritized.length || (Array.isArray(plan?.actions) ? plan.actions.length : 0);
   const hazlo = prioritized.filter((row) => row.verdict === "HAZLO").length;
+  const gridClass = layout === "stack" ? "mt-4 flex flex-col gap-2.5" : "mt-4 grid gap-2.5 sm:grid-cols-2";
 
   return (
     <section className="hoy-panel p-4 md:p-5" aria-labelledby="hoy-acciones">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <p className="hoy-label" id="hoy-acciones">
-            Qué hacer
+            {title}
           </p>
           {hazlo ? <span className="hoy-chip hoy-chip--mint">{hazlo} HAZLO</span> : null}
-          {total > MAX_ACTIONS ? <span className="hoy-chip">+{total - MAX_ACTIONS} en el plan</span> : null}
+          {total > limit ? <span className="hoy-chip">+{total - limit} en el plan</span> : null}
         </div>
-        <p className="text-[10.5px] text-[color:var(--hoy-faint)]">Máximo 4 · orden por prioridad</p>
+        <p className="text-[10.5px] text-[color:var(--hoy-faint)]">Ordenadas por impacto · empieza por el #01</p>
       </div>
 
       {loading && !plan ? (
@@ -238,7 +265,7 @@ export function HoyActions({ plan, loading }: { plan: PlanPayload | null; loadin
           ))}
         </div>
       ) : cards.length ? (
-        <ul className="mt-4 grid gap-2.5 xl:grid-cols-2">
+        <ul className={gridClass}>
           {cards.map((action) => (
             <ActionCardView key={action.key} action={action} />
           ))}
