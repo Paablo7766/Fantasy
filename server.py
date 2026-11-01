@@ -58,6 +58,7 @@ from toolbox.portfolio import (
     league_activity_feed,
     merge_ledgers,
     player_name_index,
+    squad_value_history,
     team_activity_profile,
 )
 from toolbox.rival_intel import events_from_ledgers, get_financial_intel, madrid_day_of
@@ -835,6 +836,20 @@ def _snapshot_day_deltas(league_id: str | None) -> dict[str, int]:
         if isinstance(change, int) and not isinstance(change, bool):
             out[player_id] = change
     return out
+
+
+def _own_value_history(league_id: str | None, players: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Evolución del valor de tu plantilla en las últimas dos semanas (fotos diarias)."""
+    if not players:
+        return []
+    try:
+        from toolbox.cache import PriceSnapshotStore
+
+        history = PriceSnapshotStore().list_history(league_id=league_id, days=14)
+    except Exception:
+        logger.debug("Sin histórico de precios para la evolución de la cartera", exc_info=True)
+        return []
+    return squad_value_history(players, history)
 
 
 def _patch_optimize_titularity(
@@ -1625,6 +1640,7 @@ def shape_squads(board: dict[str, Any]) -> dict[str, Any]:
             "history_ready": activity_event_count > 0 and own_ledger_events > 0,
         },
         "activity_feed": activity_feed,
+        "value_history": _own_value_history(league_id, own_players),
         "shield": [player for player in own_players if player.get("is_at_risk") is True],
         "sell": [player for player in own_players if player.get("sell_signal") is True],
         "error": document.get("error") if document.get("ok") is False else None,

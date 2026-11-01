@@ -851,6 +851,8 @@ export type SquadsPayload = ApiError & PhotoMeta & {
     history_ready?: boolean;
   } | null;
   activity_feed?: ActivityEvent[];
+  /** Valor diario de tu plantilla actual (fotos de precio, últimos 14 días). */
+  value_history?: Array<{ day: string; value_eur: number; coverage?: number | null }>;
   clause_lock_timezone?: string | null;
   clause_lock_note?: string | null;
   ratio_mercado?: number | null;

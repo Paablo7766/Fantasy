@@ -1,11 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { ClausulazosGuide } from "@/components/ClausulazosGuide";
-
-export default function ClausulazosPage() {
-  return (
-    <section className="reveal min-w-0">
-      <ClausulazosGuide />
-    </section>
-  );
+// Ruta antigua: next.config.ts ya redirige; esto cubre la navegación del cliente.
+export default function Page() {
+  redirect("/equipo?tab=clausulas");
 }

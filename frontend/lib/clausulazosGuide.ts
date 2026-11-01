@@ -255,7 +255,10 @@ function collectUnlocks(squads: SquadsPayload | null, board?: ClauseBoardPayload
   }
   const rivals: Array<ClauseRow | ClauseBoardRow> =
     board?.ok !== false && board?.rows?.length ? board.rows : squads?.clauses || [];
+  // Si el tablero trae también tus jugadores, cuentan una vez y como tuyos.
+  const own = new Set(out.map((entry) => entry.player_id).filter(Boolean));
   for (const row of rivals) {
+    if (row.player_id && own.has(row.player_id)) continue;
     const mapped = entryFromClause(row, false);
     if (mapped) out.push(mapped);
   }

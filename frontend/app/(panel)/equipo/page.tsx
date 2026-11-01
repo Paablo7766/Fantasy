@@ -1,51 +1,64 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
-import { Pitch } from "@/components/Pitch";
-import { PortfolioDashboard } from "@/components/PortfolioDashboard";
-import { ClausulazosGuide } from "@/components/ClausulazosGuide";
-import type { OptimizePayload, SquadsPayload } from "@/lib/types";
+import { CarteraTab } from "@/components/equipo/CarteraTab";
+import { ClausulasTab } from "@/components/equipo/ClausulasTab";
+import { OnceTab } from "@/components/equipo/OnceTab";
+import { Skeleton } from "@/components/equipo/ui";
+import { buildPhotoIndex } from "@/lib/photoIndex";
+import type { NeedsPayload, OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
 type Tab = "once" | "cartera" | "clausulas";
 
-const TABS: { id: Tab; label: string; hint: string }[] = [
-  { id: "once", label: "Once", hint: "Alineación óptima y puntos esperados" },
-  { id: "cartera", label: "Cartera", hint: "Vender, ofertas del ordenador y rentabilidad" },
-  { id: "clausulas", label: "Cláusulas", hint: "Proteger, pagar clausulazo y calendario" },
+const TABS: { id: Tab; label: string }[] = [
+  { id: "once", label: "Once" },
+  { id: "cartera", label: "Cartera" },
+  { id: "clausulas", label: "Cláusulas" },
 ];
+
+function asTab(value: string | null): Tab {
+  return value === "cartera" || value === "clausulas" ? value : "once";
+}
 
 function EquipoContent() {
   const search = useSearchParams();
-  const tabParam = search.get("tab");
-  const initial: Tab =
-    tabParam === "cartera" || tabParam === "clausulas" || tabParam === "once" ? tabParam : "once";
-  const [tab, setTab] = useState<Tab>(initial);
-  const { state, pending } = useDashboard();
+  const router = useRouter();
+  const pathname = usePathname();
+  // La pestaña vive en la URL: ``/equipo?tab=cartera`` desde Inicio o el dock abre la correcta.
+  const tab = asTab(search.get("tab"));
+  const { state, pending, busy } = useDashboard();
+  const plan = state.plan as PlanPayload | null;
+  const optimize = state.optimize as OptimizePayload | null;
+  const squads = state.squads as SquadsPayload | null;
+  const trends = state.trends as TrendsPayload | null;
+  const needs = state.needs as NeedsPayload | null;
+  const photos = useMemo(() => buildPhotoIndex(plan, optimize, squads, trends), [plan, optimize, squads, trends]);
 
-  useEffect(() => {
-    if (tabParam === "cartera" || tabParam === "clausulas" || tabParam === "once") {
-      setTab(tabParam);
-    }
-  }, [tabParam]);
-
-  const active = TABS.find((item) => item.id === tab) ?? TABS[0];
+  const select = (next: Tab) => {
+    const params = new URLSearchParams(search.toString());
+    if (next === "once") params.delete("tab");
+    else params.set("tab", next);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
 
   return (
-    <div className="reveal flex min-w-0 flex-col gap-4">
-      <div className="card p-4 md:p-5">
-        <p className="eyebrow">Mi equipo</p>
-        <h2 className="mt-1 text-lg font-semibold tracking-[-0.03em] text-ink">{active.label}</h2>
-        <p className="mt-1 text-sm text-muted">{active.hint}</p>
-        <div className="seg mt-4">
+    <div className="eq-stack reveal min-w-0">
+      <div className="flex flex-col gap-3 px-1">
+        <h1 className="text-[1.6rem] font-semibold leading-tight tracking-tight text-white">Mi equipo</h1>
+        <div className="desk-switch" role="tablist" aria-label="Secciones de tu equipo">
           {TABS.map((item) => (
             <button
               key={item.id}
+              id={`eq-tab-${item.id}`}
               type="button"
-              onClick={() => setTab(item.id)}
-              className={tab === item.id ? "seg__btn seg__btn--active" : "seg__btn"}
-              aria-pressed={tab === item.id}
+              role="tab"
+              aria-selected={tab === item.id}
+              aria-controls={`eq-panel-${item.id}`}
+              className={tab === item.id ? "desk-switch__btn desk-switch__btn--on" : "desk-switch__btn"}
+              onClick={() => select(item.id)}
             >
               {item.label}
             </button>
@@ -53,29 +66,34 @@ function EquipoContent() {
         </div>
       </div>
 
-      {tab === "once" ? (
-        <Pitch
-          optimize={state.optimize as OptimizePayload | null}
-          squads={state.squads as SquadsPayload | null}
-          loading={pending.optimize && !state.optimize}
-        />
-      ) : null}
-
-      {tab === "cartera" ? (
-        <PortfolioDashboard
-          squads={state.squads as SquadsPayload | null}
-          loading={pending.squads && !state.squads}
-        />
-      ) : null}
-
-      {tab === "clausulas" ? <ClausulazosGuide /> : null}
+      <div key={tab} id={`eq-panel-${tab}`} role="tabpanel" aria-labelledby={`eq-tab-${tab}`} className="row-in min-w-0">
+        {tab === "once" ? (
+          <OnceTab plan={plan} optimize={optimize} squads={squads} photos={photos} loading={(pending.optimize || busy) && !optimize} />
+        ) : tab === "cartera" ? (
+          <CarteraTab plan={plan} squads={squads} photos={photos} loading={(pending.squads || busy) && !squads} />
+        ) : (
+          <ClausulasTab
+            plan={plan}
+            squads={squads}
+            needs={needs}
+            photos={photos}
+            loading={(pending.plan || busy) && !plan}
+          />
+        )}
+      </div>
     </div>
   );
 }
 
 export default function EquipoPage() {
   return (
-    <Suspense fallback={<div className="reveal min-h-[40vh] animate-pulse rounded-2xl bg-white/5" />}>
+    <Suspense
+      fallback={
+        <div className="eq-stack">
+          <Skeleton />
+        </div>
+      }
+    >
       <EquipoContent />
     </Suspense>
   );

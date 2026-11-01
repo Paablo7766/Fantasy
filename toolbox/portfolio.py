@@ -317,3 +317,60 @@ def league_activity_feed(
             )
     merged.sort(key=lambda item: (item.get("at") is None, item.get("at") or ""), reverse=True)
     return merged[:limit]
+
+
+def squad_value_history(
+    players: list[dict[str, Any]],
+    history: dict[str, list[dict[str, Any]]] | None,
+    *,
+    min_coverage: float = 0.6,
+) -> list[dict[str, Any]]:
+    """Valor diario de la plantilla actual a partir de las fotos de precio.
+
+    Suma, día a día, el valor de mercado de los jugadores que tienes hoy. Si a un
+    jugador le falta la foto de un día se arrastra la última conocida; si aún no
+    tiene ninguna, ese día no lo cubre. Solo se publican los días en que la parte
+    cubierta llega a ``min_coverage``: una suma con media plantilla no es tu valor.
+    """
+    ids: list[str] = []
+    for player in players:
+        if not isinstance(player, dict):
+            continue
+        player_id = _team_key(player.get("player_id"))
+        if player_id and player_id not in ids:
+            ids.append(player_id)
+    if not ids or not isinstance(history, dict):
+        return []
+    by_player: dict[str, dict[str, int]] = {}
+    days: set[str] = set()
+    for player_id in ids:
+        rows = history.get(player_id) or []
+        values: dict[str, int] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            day = row.get("day")
+            value = row.get("market_value")
+            if isinstance(day, str) and day and isinstance(value, int) and not isinstance(value, bool):
+                values[day] = value
+        if values:
+            by_player[player_id] = values
+            days.update(values)
+    last: dict[str, int] = {}
+    out: list[dict[str, Any]] = []
+    for day in sorted(days):
+        total = 0
+        covered = 0
+        for player_id in ids:
+            value = by_player.get(player_id, {}).get(day)
+            if value is not None:
+                last[player_id] = value
+            known = last.get(player_id)
+            if known is None:
+                continue
+            total += known
+            covered += 1
+        coverage = covered / len(ids)
+        if covered and coverage >= min_coverage:
+            out.append({"day": day, "value_eur": total, "coverage": round(coverage, 3)})
+    return out
