@@ -85,6 +85,7 @@ from toolbox.net import (
     PRODUCTION_ENV,
     close_official_session,
     environment,
+    fetch_once_per_click,
     is_production,
     kill_switch_state,
     network_sealed,
@@ -3735,7 +3736,15 @@ def _plan_refresh_download(league: str | None, *, force_rivals: bool = False) ->
     Actualizar: respondía 200 con ``calls: 0`` y ``cache_hits: 122``, sirviendo
     la foto de ayer con la fecha de hoy. ``GET /api/plan`` no descarga nunca;
     la única puerta es este POST y, por tanto, la ventana se abre aquí.
+
+    Las dos pasadas piden ``fresh=True``, pero cada URL se baja una sola vez por
+    clic: la segunda lee lo que la primera acaba de guardar.
     """
+    with fetch_once_per_click():
+        return _plan_refresh_passes(league, force_rivals=force_rivals)
+
+
+def _plan_refresh_passes(league: str | None, *, force_rivals: bool = False) -> Any:
     core = _refresh("plan", league, tier="core", track_status=False, force_rivals=force_rivals)
     if isinstance(core, JSONResponse):
         _refresh_status_finish(ok=False, error=None)

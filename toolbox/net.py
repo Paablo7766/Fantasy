@@ -264,6 +264,45 @@ def no_network() -> Iterator[None]:
         _NETWORK_VETO.reset(token)
 
 
+# Un clic de Actualizar encadena dos pasadas con ``fresh=True``. Sin memoria, la
+# segunda volvía a pedir lo que la primera acababa de guardar (el catálogo de
+# jugadores, por ejemplo, hasta seis veces). Dentro de ``fetch_once_per_click()``
+# cada URL se descarga una sola vez; las siguientes lecturas «frescas» salen de
+# la caché que acaba de escribirse. Es estado de proceso y no ``contextvars``
+# porque los workers de los pools no heredan el contexto del hilo que los lanza.
+_CLICK_LOCK = threading.Lock()
+_CLICK_DEPTH = 0
+_CLICK_FETCHED: set[str] = set()
+
+
+@contextlib.contextmanager
+def fetch_once_per_click() -> Iterator[None]:
+    """Dentro del bloque, ``fresh=True`` descarga cada URL como mucho una vez."""
+    global _CLICK_DEPTH
+    with _CLICK_LOCK:
+        if _CLICK_DEPTH == 0:
+            _CLICK_FETCHED.clear()
+        _CLICK_DEPTH += 1
+    try:
+        yield
+    finally:
+        with _CLICK_LOCK:
+            _CLICK_DEPTH -= 1
+            if _CLICK_DEPTH == 0:
+                _CLICK_FETCHED.clear()
+
+
+def _already_fetched_this_click(url: str) -> bool:
+    with _CLICK_LOCK:
+        return _CLICK_DEPTH > 0 and url in _CLICK_FETCHED
+
+
+def _note_fetched_this_click(url: str) -> None:
+    with _CLICK_LOCK:
+        if _CLICK_DEPTH > 0:
+            _CLICK_FETCHED.add(url)
+
+
 def inherited(task: Callable[..., Any]) -> Callable[..., Any]:
     """Envuelve una tarea de pool para que herede el veto de red del padre.
 
@@ -1837,13 +1876,18 @@ class LaligaClient:
                 raise offline_cache_miss(url)
             api_meter.record_cache_hit(url=url)
             return cached
+        if fresh and ttl > 0 and _already_fetched_this_click(url):
+            fresh = False
         if not fresh and ttl > 0:
             cached = self._cache.get_json(url)
             if cached is not None:
                 api_meter.record_cache_hit(url=url)
                 return cached
         try:
-            return self._live_json(url, ttl=ttl)
+            payload = self._live_json(url, ttl=ttl)
+            if ttl > 0:
+                _note_fetched_this_click(url)
+            return payload
         except FantasyHttpError as exc:
             # Solo una caída de red llega aquí: los 401/403/429/5xx ya han
             # matado el proceso en ``_send``. Una copia caducada es preferible

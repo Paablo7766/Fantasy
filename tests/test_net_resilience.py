@@ -495,3 +495,45 @@ class TrafficControllerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FetchOncePerClickTests(_ClientFixture):
+    """Un clic de Actualizar baja cada URL una sola vez aunque pida ``fresh``."""
+
+    def _counting_client(self) -> tuple[LaligaClient, list[str]]:
+        hits: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            hits.append(str(request.url))
+            return httpx.Response(200, json={"ok": True})
+
+        client, _cache = self._build(handler)
+        return client, hits
+
+    def test_second_fresh_read_inside_a_click_uses_the_cache(self) -> None:
+        client, hits = self._counting_client()
+        with net.fetch_once_per_click():
+            client.get_json(URL, ttl=600, fresh=True)
+            client.get_json(URL, ttl=600, fresh=True)
+        self.assertEqual(len(hits), 1)
+
+    def test_outside_a_click_every_fresh_read_downloads(self) -> None:
+        client, hits = self._counting_client()
+        client.get_json(URL, ttl=600, fresh=True)
+        client.get_json(URL, ttl=600, fresh=True)
+        self.assertEqual(len(hits), 2)
+
+    def test_registry_is_cleared_when_the_click_ends(self) -> None:
+        client, hits = self._counting_client()
+        with net.fetch_once_per_click():
+            client.get_json(URL, ttl=600, fresh=True)
+        with net.fetch_once_per_click():
+            client.get_json(URL, ttl=600, fresh=True)
+        self.assertEqual(len(hits), 2)
+
+    def test_distinct_urls_are_not_merged(self) -> None:
+        client, hits = self._counting_client()
+        with net.fetch_once_per_click():
+            client.get_json(URL, ttl=600, fresh=True)
+            client.get_json(LEGACY_URL, ttl=600, fresh=True)
+        self.assertEqual(len(hits), 2)
