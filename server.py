@@ -19,6 +19,7 @@ import logging
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -84,8 +85,10 @@ from toolbox.net import (
     LALIGA_ENV_VAR,
     PRODUCTION_ENV,
     close_official_session,
+    click_in_progress,
     environment,
     fetch_once_per_click,
+    inherited,
     is_production,
     kill_switch_state,
     network_sealed,
@@ -93,7 +96,7 @@ from toolbox.net import (
     pace_stretch_for,
 )
 from toolbox.normalize import SCHEMA_VERSION, attach_image_urls, daily_market_is_past
-from toolbox.scrapers import build_trends, refresh_squad_titularity_in_index
+from toolbox.scrapers import build_trends, prefetch_futbolfantasy, refresh_squad_titularity_in_index
 
 logger = logging.getLogger("fantasy.dashboard")
 
@@ -699,13 +702,36 @@ def load_snapshot(
     *,
     force_rivals: bool = False,
 ) -> dict[str, Any]:
-    """Foto completa: incluye scrapers de mercado, titularidad y valor."""
+    """Foto completa: incluye scrapers de mercado, titularidad y valor.
+
+    En un Actualizar, FútbolFantasy se calienta en paralelo mientras LaLiga hace
+    cola en su cerrojo: son hosts distintos con cadencias propias. ``build_trends``
+    lee después de la caché lo que ya está bajado.
+    """
+    warmup = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ff-warmup")
+    warming = None
+    if fresh and click_in_progress():
+        warming = warmup.submit(inherited(prefetch_futbolfantasy), fresh=True)
+    try:
+        return _load_full_board(league, fresh, force_rivals, warming)
+    finally:
+        warmup.shutdown(wait=False)
+
+
+def _load_full_board(
+    league: str | None,
+    fresh: bool,
+    force_rivals: bool,
+    warming: Any,
+) -> dict[str, Any]:
     with LaligaClient() as client:
         _refresh_status_phase("mercado", "Mercado de LALIGA")
         market = client.market_document(league, fresh=fresh)
         _refresh_status_phase("plantillas", "Plantillas de la liga")
         squads = client.squads_document(league, fresh=fresh, force_rivals=force_rivals)
         _refresh_status_phase("scrapers", "Scrapers: puntos, forma y valor")
+        if warming is not None:
+            warming.result()
         trends = build_trends(
             league=league,
             fresh=fresh,

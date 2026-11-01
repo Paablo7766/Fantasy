@@ -537,3 +537,29 @@ class FetchOncePerClickTests(_ClientFixture):
             client.get_json(URL, ttl=600, fresh=True)
             client.get_json(LEGACY_URL, ttl=600, fresh=True)
         self.assertEqual(len(hits), 2)
+
+    def test_click_in_progress_follows_the_context(self) -> None:
+        self.assertFalse(net.click_in_progress())
+        with net.fetch_once_per_click():
+            self.assertTrue(net.click_in_progress())
+        self.assertFalse(net.click_in_progress())
+
+    def test_external_client_also_downloads_once_per_click(self) -> None:
+        hits: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            hits.append(str(request.url))
+            return httpx.Response(200, text="<html>ok</html>")
+
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        cache = ResponseCache(Path(directory.name))
+        self.addCleanup(cache.close)
+        http = httpx.Client(transport=httpx.MockTransport(handler))
+        self.addCleanup(http.close)
+        client = ExternalClient(cache=cache, http=http, sleeper=lambda _s: None)
+        page = "https://www.futbolfantasy.com/laliga/posibles-alineaciones"
+        with net.fetch_once_per_click():
+            client.get_text(page, ttl=600, fresh=True)
+            client.get_text(page, ttl=600, fresh=True)
+        self.assertEqual(len(hits), 1)

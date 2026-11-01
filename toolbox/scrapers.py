@@ -1628,6 +1628,27 @@ def _link_form_rows(
     return decisions
 
 
+def prefetch_futbolfantasy(*, fresh: bool, ttl: ScrapeTTL | None = None) -> None:
+    """Calienta la caché con las dos páginas de FútbolFantasy que respetan ``fresh``.
+
+    Son las únicas que ``_cross`` baja de verdad en un Actualizar, y no dependen
+    del catálogo de LaLiga: se pueden pedir mientras LaLiga espera su cerrojo.
+    Los hosts son distintos y cada uno guarda su propia cadencia, así que no hay
+    más tráfico, solo menos tiempo muerto. Dentro de ``fetch_once_per_click()``
+    la pasada posterior de ``_cross`` lee lo que esto deje en caché. Nunca lanza:
+    si falla, ``_cross`` hace lo de siempre.
+    """
+    from toolbox.fantasy_scraper import load_lineups
+
+    clocks = ttl or ScrapeTTL.from_env()
+    try:
+        with ExternalClient() as client:
+            _load_page(client, FF_MARKET_URL, parse_market_board, ttl=clocks.market, fresh=fresh)
+            load_lineups(client, ttl=clocks.market, fresh=fresh)
+    except Exception:  # noqa: BLE001 — es un calentamiento; la pasada real decide
+        logger.debug("Calentamiento de FútbolFantasy fallido", exc_info=True)
+
+
 def _cross(
     catalog: list[CanonicalPlayer],
     resolver: EntityResolver,

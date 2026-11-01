@@ -292,6 +292,12 @@ def fetch_once_per_click() -> Iterator[None]:
                 _CLICK_FETCHED.clear()
 
 
+def click_in_progress() -> bool:
+    """``True`` dentro de ``fetch_once_per_click()``."""
+    with _CLICK_LOCK:
+        return _CLICK_DEPTH > 0
+
+
 def _already_fetched_this_click(url: str) -> bool:
     with _CLICK_LOCK:
         return _CLICK_DEPTH > 0 and url in _CLICK_FETCHED
@@ -2559,6 +2565,8 @@ class ExternalClient:
                 raise offline_cache_miss(url, external=True)
             api_meter.record_cache_hit(url=url)
             return stale, True
+        if fresh and ttl > 0 and _already_fetched_this_click(url):
+            fresh = False
         if not fresh and ttl > 0:
             cached = self._cache.get_page(url)
             if cached is not None:
@@ -2578,6 +2586,7 @@ class ExternalClient:
             raise ExternalHttpError("La fuente ha servido una página de bloqueo.", code="blocked")
         if ttl > 0:
             self._cache.put_page(url, body, ttl)
+            _note_fetched_this_click(url)
         return body, False
 
     def get_json(self, url: str, *, ttl: float, fresh: bool) -> tuple[Any, bool]:
@@ -2590,6 +2599,8 @@ class ExternalClient:
                 raise offline_cache_miss(url, external=True)
             api_meter.record_cache_hit(url=url)
             return stale, True
+        if fresh and ttl > 0 and _already_fetched_this_click(url):
+            fresh = False
         if not fresh and ttl > 0:
             cached = self._cache.get_json(url)
             if cached is not None:
@@ -2613,6 +2624,7 @@ class ExternalClient:
             raise ExternalHttpError("La fuente no devolvió JSON.", code="invalid_json") from exc
         if ttl > 0 and payload is not None:
             self._cache.put_json(url, payload, ttl)
+            _note_fetched_this_click(url)
         return payload, False
 
     def _request_headers(self, url: str) -> dict[str, str] | None:
