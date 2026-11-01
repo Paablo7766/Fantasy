@@ -348,6 +348,90 @@ export type ResumenVentas = {
   jugadores: number;
 };
 
+export type NivelClausula = {
+  clausula_objetivo: number;
+  subida_eur: number;
+  coste_eur: number;
+  caja_tras: number | null;
+  rivales_cubiertos: number;
+  rivales_sin_cubrir: number;
+  viable: boolean;
+};
+
+export type VeredictoProteger = "PROTEGER_YA" | "PROTEGER_PARCIAL" | "SIN_CAJA" | "VENDER_ANTES" | "ASUMIR";
+export type VeredictoClausulazo = "CLAUSULAR_YA" | "PROGRAMAR" | "SIN_CAJA" | "OPORTUNIDAD";
+
+export type ClausulaEnPeligro = {
+  player_id: string;
+  nombre: string;
+  posicion?: string | null;
+  en_xi: boolean;
+  xp_jornada?: number | null;
+  tu_once_pierde_sin_el: number;
+  valor_mercado?: number | null;
+  clausula_actual: number;
+  multiplo_clausula?: number | null;
+  prevision_7d_pct?: number | null;
+  riesgo: "ALTO" | "MEDIO" | "BAJO";
+  rivales_que_pueden_pagar: number;
+  rivales_total: number;
+  rival_mas_rico?: { manager?: string | null; caja: number } | null;
+  necesitan_su_posicion: string[];
+  bloqueada_hasta?: string | null;
+  clausula_perfecta?: NivelClausula | null;
+  subida_recomendada?: NivelClausula | null;
+  niveles: NivelClausula[];
+  exposicion_eur: number;
+  veredicto_codigo: VeredictoProteger;
+  veredicto_titulo: string;
+  motivos: string[];
+  motivo_detallado: string;
+};
+
+export type ClausulazoSugerido = {
+  player_id: string;
+  nombre: string;
+  posicion?: string | null;
+  propietario?: string | null;
+  clausula_eur: number;
+  valor_mercado?: number | null;
+  valor_justo?: number | null;
+  margen_valor_justo_pct?: number | null;
+  multiplo_clausula?: number | null;
+  xp_jornada: number;
+  mejora_once: number;
+  roi_pts_por_millon?: number | null;
+  p_titular?: number | null;
+  prevision_7d_pct?: number | null;
+  abierta_ahora: boolean;
+  desbloqueo?: string | null;
+  cuando: string;
+  ventana_cierra?: string | null;
+  asequible: boolean;
+  falta_caja_eur: number;
+  caja_tras?: number | null;
+  rivales_que_pueden_quitartelo: number;
+  veredicto_codigo: VeredictoClausulazo;
+  veredicto_titulo: string;
+  motivo_detallado: string;
+};
+
+export type AsesorClausulas = {
+  resumen: {
+    en_peligro: number;
+    riesgo_alto: number;
+    coste_proteger_eur: number;
+    seguros: number;
+    bloqueadas: number;
+    clausulazos_listos: number;
+    clausulazos: number;
+    ventana_cierra?: string | null;
+    ventana_abierta: boolean;
+  };
+  proteger: ClausulaEnPeligro[];
+  clausulazos: ClausulazoSugerido[];
+};
+
 export type VentaForzada = {
   player_id?: string | null;
   nombre?: string | null;
@@ -1326,6 +1410,8 @@ export type PlanPayload = ApiError & PhotoMeta & {
   /** Una auditoría por jugador susceptible de venta (ofertas de LaLiga y rivales). */
   auditoria_ventas?: AuditoriaVenta[];
   resumen_ventas?: ResumenVentas | null;
+  /** Jugadores tuyos en peligro con su cláusula perfecta y los mejores clausulazos. */
+  asesor_clausulas?: AsesorClausulas | null;
   strategy_baseline_points?: number | null;
   audit?: {
     complete?: boolean;

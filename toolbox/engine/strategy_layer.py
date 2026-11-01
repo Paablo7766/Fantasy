@@ -27,6 +27,7 @@ from toolbox.engine.market_predictor import (
     ratio_mercado_liga,
     valor_justo_jugador,
 )
+from toolbox.engine.clause_advisor import evaluar_clausulas
 from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
 from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes
 from toolbox.market_intel import _jornada_kickoff, _parse_kickoff
@@ -657,6 +658,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
     )
     consejos = _consejos(records, war, plan, own_id)
     auditoria = _auditar_ventas(records, war, plan, previsiones, saldo, own_id)
+    clausulas = _asesorar_clausulas(records, war, previsiones, rivales, saldo, ratio, board if isinstance(board, dict) else {}, current)
     return {
         "ratio_mercado": round(ratio, 2),
         "ratio_detalle": {
@@ -678,6 +680,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         "plan_fichajes": plan,
         "auditoria_ventas": auditoria["filas"],
         "resumen_ventas": auditoria["resumen"],
+        "asesor_clausulas": clausulas,
     }
 
 
@@ -726,6 +729,111 @@ def _auditar_ventas(
     except Exception:
         logger.exception("auditoría de ventas")
         return {"resumen": _resumen_vacio(), "filas": []}
+
+
+def _cierre_ventana(board: dict[str, Any], now: datetime) -> datetime | None:
+    """Cierre del mercado de clausulazos: 24 h antes del primer partido de la jornada."""
+    try:
+        from toolbox.jornada_plan import build_clock
+
+        trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
+        squads = board.get("squads") if isinstance(board.get("squads"), dict) else None
+        _, _, cierre = build_clock(trends=trends, squads=squads, decisions=[], now=now)
+    except Exception:
+        logger.exception("cierre de la ventana de cláusulas")
+        return None
+    texto = cierre.get("expires_at") if isinstance(cierre, dict) else None
+    if not isinstance(texto, str):
+        return None
+    try:
+        momento = datetime.fromisoformat(texto)
+    except ValueError:
+        return None
+    return momento if momento.tzinfo else momento.replace(tzinfo=timezone.utc)
+
+
+def _clausulas_vacias() -> dict[str, Any]:
+    return {
+        "resumen": {
+            "en_peligro": 0,
+            "riesgo_alto": 0,
+            "coste_proteger_eur": 0,
+            "seguros": 0,
+            "bloqueadas": 0,
+            "clausulazos_listos": 0,
+            "clausulazos": 0,
+            "ventana_cierra": None,
+            "ventana_abierta": True,
+        },
+        "proteger": [],
+        "clausulazos": [],
+    }
+
+
+def _asesorar_clausulas(
+    records: dict[str, dict[str, Any]],
+    war: dict[str, float],
+    previsiones: dict[str, dict[str, Any]],
+    rivales: list[dict[str, Any]],
+    saldo: int | None,
+    ratio: float,
+    board: dict[str, Any],
+    now: datetime,
+) -> dict[str, Any]:
+    propios: list[dict[str, Any]] = []
+    ajenos: list[dict[str, Any]] = []
+    for row in records.values():
+        player_id = row.get("player_id")
+        if not isinstance(player_id, str):
+            continue
+        valor = row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None
+        base = {
+            "player_id": player_id,
+            "nombre": row.get("nombre"),
+            "position": row.get("position") if row.get("position") in POSITIONS else None,
+            "valor": valor,
+            "clausula": row.get("clause"),
+            "blindado": row.get("shielded") is True,
+            "bloqueo": row.get("clause_lock"),
+            "jornada": row.get("jornada"),
+            "p_titular": row.get("p_titular"),
+            "pct": _pct_previsto(previsiones, player_id),
+            "valor_justo": (previsiones.get(player_id) or {}).get("valor_justo"),
+        }
+        if row.get("is_self") is True:
+            propios.append(
+                {
+                    **base,
+                    "en_xi": row.get("in_xi") is True,
+                    "tu_once_pierde_sin_el": war.get(player_id),
+                    "elegible": row.get("excluded") is not True and base["position"] is not None,
+                }
+            )
+        elif row.get("team_id"):
+            ajenos.append(
+                {
+                    **base,
+                    "manager": row.get("manager"),
+                    "team_id": row.get("team_id"),
+                    "valor_justo": (previsiones.get(player_id) or {}).get("valor_justo"),
+                }
+            )
+    try:
+        return evaluar_clausulas(
+            propios=propios,
+            ajenos=ajenos,
+            rivales=[
+                {"team_id": rival.get("team_id"), "manager": rival.get("manager"), "saldo": rival.get("saldo"), "posiciones": rival.get("posiciones")}
+                for rival in rivales
+            ],
+            saldo=saldo,
+            ratio=ratio,
+            ahora=now,
+            cierre=_cierre_ventana(board, now),
+        )
+    except Exception:
+        logger.exception("asesor de cláusulas")
+        return _clausulas_vacias()
 
 
 def _resumen_vacio() -> dict[str, Any]:
@@ -1003,6 +1111,7 @@ def stamp_strategy(payload: dict[str, Any], report: dict[str, Any]) -> None:
     payload["ventas_forzadas"] = report.get("ventas_forzadas") or []
     payload["auditoria_ventas"] = report.get("auditoria_ventas") or []
     payload["resumen_ventas"] = report.get("resumen_ventas") or _resumen_vacio()
+    payload["asesor_clausulas"] = report.get("asesor_clausulas") or _clausulas_vacias()
 
 
 def publish_strategy(board: dict[str, Any], payload: dict[str, Any], *, now: datetime | None = None) -> None:
@@ -1033,5 +1142,6 @@ def publish_strategy(board: dict[str, Any], payload: dict[str, Any], *, now: dat
             "plan_fichajes": _empty_plan(None, ratio),
             "auditoria_ventas": [],
             "resumen_ventas": _resumen_vacio(),
+            "asesor_clausulas": _clausulas_vacias(),
         }
     stamp_strategy(payload, report)

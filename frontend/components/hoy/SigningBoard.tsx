@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { ClauseAdvisor } from "@/components/hoy/ClauseAdvisor";
 import { SalesAdvisor } from "@/components/hoy/SalesAdvisor";
 import { eurShort, jornadaEv, points, titularShare } from "@/lib/format";
 import { signedPoints } from "@/lib/hoy";
@@ -256,7 +257,10 @@ export function SigningBoard({
   };
 
   const advisor = desk === "ventas" && audit.length > 0;
-  const total = advisor ? salesCount : sales.length + showcase.length + buys.length;
+  const clauseData = plan?.asesor_clausulas;
+  const clauseCount = (clauseData?.proteger.length ?? 0) + (clauseData?.clausulazos.length ?? 0);
+  const clauseAdvisor = desk === "clausulas" && clauseData != null && clauseCount > 0;
+  const total = advisor ? salesCount : clauseAdvisor ? clauseCount : sales.length + showcase.length + buys.length;
   const today = [...sales, ...buys].filter((move) => !laterIds.has(move.id));
   const later = [...sales, ...buys].filter((move) => laterIds.has(move.id));
 
@@ -317,8 +321,10 @@ export function SigningBoard({
               }}
             >
               {TAB_LABEL[item.id]}
-              {item.id === "ventas" && salesCount > 0 ? (
-                <span className={`ml-1.5 text-[12px] tabular-nums ${active ? "text-[#120C09]/60" : "text-white/35"}`}>{salesCount}</span>
+              {(item.id === "ventas" ? salesCount : item.id === "clausulas" ? clauseCount : 0) > 0 ? (
+                <span className={`ml-1.5 text-[12px] tabular-nums ${active ? "text-[#120C09]/60" : "text-white/35"}`}>
+                  {item.id === "ventas" ? salesCount : clauseCount}
+                </span>
               ) : null}
             </button>
           );
@@ -327,6 +333,10 @@ export function SigningBoard({
 
       {loading && !plan ? (
         <div className="desk-skel" aria-hidden="true" />
+      ) : clauseAdvisor && clauseData ? (
+        <div key={desk}>
+          <ClauseAdvisor data={clauseData} photos={photos} />
+        </div>
       ) : advisor ? (
         <div key={desk}>
           <SalesAdvisor rows={audit} summary={plan?.resumen_ventas} photos={photos} />
