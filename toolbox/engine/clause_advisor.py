@@ -159,7 +159,15 @@ def _proteger(
     seguros = 0
     con_caja = [rival for rival in rivales if _int(rival.get("saldo")) is not None and int(rival["saldo"]) > 0]
     sin_dato = len(rivales) - len([rival for rival in rivales if _int(rival.get("saldo")) is not None])
-    for jugador in propios:
+    # La caja es una sola: se protege primero a quien más daño hace perder y se descuenta lo gastado.
+    restante = saldo
+
+    def _prioridad(jugador: dict[str, Any]) -> float:
+        valor_ = _int(jugador.get("valor")) or 0
+        clausula_ = _int(jugador.get("clausula")) or 0
+        return -((_num(jugador.get("tu_once_pierde_sin_el")) or 0.0) * ratio + max(0, valor_ - clausula_))
+
+    for jugador in sorted(propios, key=_prioridad):
         clausula = _int(jugador.get("clausula"))
         valor = _int(jugador.get("valor"))
         if clausula is None or clausula <= 0 or jugador.get("blindado") is True or not isinstance(jugador.get("player_id"), str):
@@ -184,7 +192,8 @@ def _proteger(
         en_xi = jugador.get("en_xi") is True
         necesitan = [rival for _, rival in capaces if posicion in (rival.get("posiciones") or [])]
         capacidades = [(caja, str(rival.get("manager") or "Rival")) for caja, rival in capaces]
-        niveles = _niveles(clausula, capacidades, saldo) if capaces else []
+        niveles = _niveles(clausula, capacidades, restante) if capaces else []
+        caja_antes = restante
 
         # Daño si te lo clausulan: los puntos que pierde tu once pagados a precio de mercado
         # y, si la cláusula está por debajo de su valor, lo que dejas de cobrar.
@@ -200,6 +209,8 @@ def _proteger(
                 mejor_neto = neto
                 elegido = nivel
         perfecta = niveles[0] if niveles else None
+        if elegido is not None and restante is not None:
+            restante -= int(elegido["coste_eur"])
 
         if not capaces:
             riesgo = "BAJO"
@@ -241,7 +252,7 @@ def _proteger(
             perfecta=perfecta,
             pierde=pierde,
             capaces=capaces,
-            saldo=saldo,
+            saldo=caja_antes,
             en_xi=en_xi,
         )
         filas.append(

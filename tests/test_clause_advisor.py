@@ -136,6 +136,19 @@ class ProtegerTests(unittest.TestCase):
         fila = _fila(resultado, "proteger", "MC-1")
         self.assertEqual(fila["veredicto_codigo"], "VENDER_ANTES")
 
+    def test_la_suma_de_las_subidas_recomendadas_nunca_supera_la_caja(self) -> None:
+        plantilla = _once()
+        for player_id in ("DEL-0", "DEL-1", "MC-0"):
+            _con(plantilla, player_id, clausula=8_000_000, tu_once_pierde_sin_el=3.0)
+        resultado = _evaluar(plantilla, [_rival("Luis", 12_000_000)], saldo=5_000_000)
+        gastado = sum((fila["subida_recomendada"] or {}).get("coste_eur", 0) for fila in resultado["proteger"])
+        self.assertEqual(gastado, 2 * 2_125_000)
+        self.assertLessEqual(gastado, 5_000_000)
+        self.assertEqual(resultado["resumen"]["coste_proteger_eur"], gastado)
+        # El tercero ya no tiene caja: se le avisa en lugar de recomendarle algo imposible.
+        codigos = [fila["veredicto_codigo"] for fila in resultado["proteger"]]
+        self.assertIn("SIN_CAJA", codigos)
+
     def test_un_rival_con_la_posicion_floja_se_senala(self) -> None:
         plantilla = _con(_once(), "DEF-0", clausula=8_000_000, tu_once_pierde_sin_el=2.0)
         resultado = _evaluar(plantilla, [_rival("Luis", 12_000_000, ["DEF"]), _rival("Ana", 12_000_000, ["POR"])])

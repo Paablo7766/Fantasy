@@ -259,7 +259,7 @@ export function ClauseAdvisor({ data, photos }: { data: AsesorClausulas; photos:
     resumen.ventana_abierta
       ? resumen.ventana_cierra
         ? `Ventana abierta hasta ${resumen.ventana_cierra}`
-        : "Ventana abierta"
+        : "Hora de cierre sin datos"
       : "Ventana cerrada",
   );
   return (
