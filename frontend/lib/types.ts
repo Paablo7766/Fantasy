@@ -263,13 +263,16 @@ export type CapitanPick = {
 };
 
 export type PlanFichajeAccion = {
-  tipo?: "VENDE" | "PUJA" | "CLAUSULAZO" | "BUSCA" | string;
-  momento?: "hoy" | "luego" | string;
+  tipo?: "VENDE" | "VENDER HOY" | "ESCAPARATE" | "PUJA" | "CLAUSULAZO" | "BUSCA" | string;
+  momento?: "hoy" | "luego" | "radar" | string;
+  impulso?: "MUST-BUY" | "CHOLLO" | "HOLD" | "ALL-IN" | "NORMAL" | "VENTA" | string | null;
   player_id?: string | null;
   nombre?: string | null;
   posicion?: string | null;
   jornada?: number | null;
   euros?: number | null;
+  mejora_neta?: number | null;
+  prevision_7d_pct?: number | null;
   detalle?: string | null;
 };
 
@@ -284,6 +287,11 @@ export type PlanFichajes = {
   puntos_once?: number | null;
   puntos_once_actual?: number | null;
   ratio_mercado?: number | null;
+  dias_al_cierre?: number | null;
+  penalizacion_liquidez?: number | null;
+  factor_ajuste?: number | null;
+  modo_liquidez?: "VENTANA" | "ALL-IN" | "SIN_RELOJ" | string | null;
+  en_radar?: PlanFichajeAccion[];
   once?: Array<{
     player_id?: string | null;
     nombre?: string | null;

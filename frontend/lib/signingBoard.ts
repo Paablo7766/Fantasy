@@ -35,6 +35,12 @@ export type StrategyMove = {
   id: string;
   /** Id del jugador cuando la acción lo trae; sin él se busca por nombre. */
   playerId?: string | null;
+  /** Etiqueta del solver: must-buy, chollo especulativo, venta con oferta o escaparate. */
+  tag?: "MUST-BUY" | "CHOLLO" | "ACEPTAR" | "ESCAPARATE" | null;
+  /** Previsión de valor a 7 días en %, tal cual la publica el solver. */
+  forecastPct?: number | null;
+  /** El solver lo deja para después del mercado de hoy. */
+  later?: boolean;
   verb: string;
   title: string;
   position: string | null;

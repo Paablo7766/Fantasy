@@ -9,17 +9,19 @@ import { factsFor, photoFor, type PhotoIndex, type PlayerIndex } from "@/lib/pho
 import { buildStrategyViews, type StrategyMove, type StrategyView } from "@/lib/signingBoard";
 import type { NeedsPayload, OptimizePayload, PlanFichajeAccion, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
-type Kind = "PUJA" | "BUSCA" | "VENDE" | "CLAUSULAZO";
+type Kind = "PUJA" | "BUSCA" | "VENDE" | "CLAUSULAZO" | "ESCAPARATE";
 
 const KIND_LABEL: Record<Kind, string> = {
   PUJA: "Pujar",
   BUSCA: "Buscar en el mercado",
-  VENDE: "Vender",
-  CLAUSULAZO: "Pagar cláusula",
+  VENDE: "Vender hoy",
+  CLAUSULAZO: "Cláusula",
+  ESCAPARATE: "Poner en escaparate",
 };
 
 function kindOf(verb: string): Kind {
   const value = verb.toLowerCase();
+  if (value.includes("escaparate")) return "ESCAPARATE";
   if (value.includes("busca") || value.includes("buscar")) return "BUSCA";
   if (value.includes("vend") || value.includes("venta")) return "VENDE";
   if (value.includes("cláus") || value.includes("claus") || value.includes("rival") || value.includes("proteger") || value.includes("subir")) {
@@ -30,11 +32,30 @@ function kindOf(verb: string): Kind {
 
 function moveFromAction(action: PlanFichajeAccion, index: number, photos: PhotoIndex): StrategyMove {
   const tipo = (action.tipo || "PUJA").toUpperCase();
-  const verb =
-    tipo === "VENDE" ? "Poner en venta" : tipo === "BUSCA" ? "Buscar en el mercado" : tipo === "CLAUSULAZO" ? "Fichar de un rival" : "Pujar en el mercado";
+  const aceptar = tipo === "VENDE" || tipo === "VENDER HOY";
+  const escaparate = tipo === "ESCAPARATE";
+  const verb = escaparate
+    ? "Poner en escaparate"
+    : aceptar
+      ? "Vender hoy"
+      : tipo === "BUSCA"
+        ? "Buscar en el mercado"
+        : tipo === "CLAUSULAZO"
+          ? "Fichar de un rival"
+          : "Pujar en el mercado";
   const amount = typeof action.euros === "number" ? Math.abs(action.euros) : null;
   const jornada = typeof action.jornada === "number" ? action.jornada : null;
-  const income = tipo === "VENDE";
+  const income = aceptar;
+  const impulso = (action.impulso || "").toUpperCase();
+  const tag: StrategyMove["tag"] = escaparate
+    ? "ESCAPARATE"
+    : tipo === "VENDER HOY"
+      ? "ACEPTAR"
+      : impulso === "MUST-BUY"
+        ? "MUST-BUY"
+        : impulso === "CHOLLO"
+          ? "CHOLLO"
+          : null;
   return {
     id: `plan-${tipo}-${action.player_id || action.nombre || index}`,
     playerId: action.player_id || null,
@@ -42,16 +63,55 @@ function moveFromAction(action: PlanFichajeAccion, index: number, photos: PhotoI
     title: tipo === "BUSCA" ? (action.posicion ? `un ${action.posicion}` : "un hueco") : action.nombre || "Jugador",
     position: action.posicion || null,
     imageUrl: photoFor(photos, action.player_id, action.nombre),
-    cashImpact: amount === null ? null : income ? amount : -amount,
-    cashLabel: amount === null ? null : eurShort(amount),
+    cashImpact: escaparate || amount === null ? null : income ? amount : -amount,
+    cashLabel: escaparate || amount === null ? null : eurShort(amount),
     cashTone: income ? "up" : "down",
     pointsImpact: jornada,
     pointsLabel: jornada === null ? null : `${points(jornada)} xP`,
     pointsTone: "flat",
+    tag,
+    forecastPct: typeof action.prevision_7d_pct === "number" ? action.prevision_7d_pct : null,
+    later: action.momento === "luego",
     detail: action.detalle || null,
-    href: tipo === "VENDE" ? "/equipo?tab=cartera" : tipo === "CLAUSULAZO" ? "/equipo?tab=clausulas" : "/mercado",
-    guide: tipo === "VENDE" ? "Cartera" : tipo === "CLAUSULAZO" ? "Cláusulas" : "Mercado",
+    href: aceptar || escaparate ? "/equipo?tab=cartera" : tipo === "CLAUSULAZO" ? "/equipo?tab=clausulas" : "/mercado",
+    guide: aceptar || escaparate ? "Cartera" : tipo === "CLAUSULAZO" ? "Cláusulas" : "Mercado",
   };
+}
+
+const TAG_STYLE: Record<NonNullable<StrategyMove["tag"]>, string> = {
+  "MUST-BUY": "bg-[#FF7A3D]/20 text-[#FFB48A]",
+  CHOLLO: "bg-[#10B981]/15 text-[#34D399]",
+  ACEPTAR: "bg-[#FC734D]/15 text-[#FFA088]",
+  ESCAPARATE: "border border-dashed border-[#F59E0B]/70 bg-[#F59E0B]/10 text-[#F5B544]",
+};
+
+function pctText(value: number): string {
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toLocaleString("es-ES", { maximumFractionDigits: 0 })}%`;
+}
+
+function tagLabel(move: StrategyMove): string | null {
+  if (!move.tag) return null;
+  if (move.tag === "CHOLLO") return typeof move.forecastPct === "number" ? `ESPECULAR ${pctText(move.forecastPct)}` : "CHOLLO";
+  if (move.tag === "ACEPTAR") return "ACEPTAR OFERTA";
+  return move.tag;
+}
+
+function Tag({ move }: { move: StrategyMove }) {
+  const label = tagLabel(move);
+  if (!label || !move.tag) return null;
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold tracking-wide ${TAG_STYLE[move.tag]}`}>
+      {label}
+    </span>
+  );
+}
+
+/** Frase corta de la fila: en escaparate explica por qué se lista y cuándo vender. */
+function showcaseNote(move: StrategyMove): string | null {
+  if (typeof move.forecastPct === "number" && move.forecastPct > 0) {
+    return `Sube ${pctText(move.forecastPct)} · Ponlo en venta hoy para recibir oferta de LaLiga, vende el jueves/viernes`;
+  }
+  return move.detail;
 }
 
 const TAB_LABEL: Record<StrategyView["id"], string> = {
@@ -125,6 +185,7 @@ export function SigningBoard({
   const view = views.find((item) => item.id === desk) ?? views[0];
   const fichajes = plan?.plan_fichajes;
   const actions = useMemo(() => fichajes?.acciones || [], [fichajes?.acciones]);
+  const radar = useMemo(() => fichajes?.en_radar || [], [fichajes?.en_radar]);
   const planMoves = useMemo(() => actions.map((action, index) => moveFromAction(action, index, photos)), [actions, photos]);
   const usePlan = desk === "estrategia" && planMoves.length > 0;
   const listed = (usePlan ? planMoves : view.groups.flatMap((group) => group.moves)).map((move) =>
@@ -132,7 +193,11 @@ export function SigningBoard({
   );
 
   const sales = listed.filter((move) => kindOf(move.verb) === "VENDE");
-  const buys = listed.filter((move) => kindOf(move.verb) !== "VENDE");
+  const showcase = listed.filter((move) => kindOf(move.verb) === "ESCAPARATE");
+  const buys = listed.filter((move) => {
+    const kind = kindOf(move.verb);
+    return kind !== "VENDE" && kind !== "ESCAPARATE";
+  });
   const laterIds = new Set(
     usePlan
       ? actions.map((action, index) => (action.momento === "luego" ? planMoves[index].id : null)).filter((id): id is string => id !== null)
@@ -166,9 +231,28 @@ export function SigningBoard({
     return squads.rivals.filter((rival) => typeof rival.cash_eur === "number" && rival.cash_eur >= amount).length;
   };
 
-  const total = sales.length + buys.length;
+  const total = sales.length + showcase.length + buys.length;
   const today = [...sales, ...buys].filter((move) => !laterIds.has(move.id));
   const later = [...sales, ...buys].filter((move) => laterIds.has(move.id));
+
+  // Tira del solver: lo que el motor está aplicando hoy al plan.
+  const exempt = (move: StrategyMove) => move.tag === "MUST-BUY" || move.tag === "CHOLLO";
+  const drain = Math.max(0, buyActions.filter((move) => !exempt(move)).reduce((sum, move) => sum + Math.abs(move.cashImpact || 0), 0) - incomeTotal);
+  const dias = fichajes?.dias_al_cierre;
+  const peaje = fichajes?.penalizacion_liquidez;
+  const solverBits: string[] = [];
+  if (desk === "estrategia" && fichajes) {
+    if (fichajes.modo_liquidez === "ALL-IN") {
+      solverBits.push("Modo all-in", "filtro de liquidez apagado");
+    } else if (typeof dias === "number") {
+      solverBits.push(`Faltan ${dias.toLocaleString("es-ES", { maximumFractionDigits: 1 })}d`);
+      if (typeof peaje === "number") {
+        solverBits.push(`Peaje liquidez: ${peaje.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} pts/M€`);
+      }
+      if (buyActions.length) solverBits.push(`Drenaje neto: ≈${eurShort(drain)}`);
+    }
+  }
+  const sectioned = usePlan;
   const hasBreakdown = desk === "estrategia" && (cashNow !== null || cashEnd !== null || lineDelta);
 
   return (
@@ -180,6 +264,16 @@ export function SigningBoard({
         <p className="mt-1 text-[14px] text-white/50">
           {refreshing ? "Actualizando…" : total ? `${total} ${total === 1 ? "movimiento" : "movimientos"}` : "Sin movimientos"}
         </p>
+        {solverBits.length ? (
+          <p className="mt-3 inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-1.5 text-[12px] tabular-nums text-white/60">
+            {solverBits.map((bit, index) => (
+              <span key={bit} className="inline-flex items-center gap-2">
+                {index > 0 ? <span className="text-white/20" aria-hidden="true">·</span> : null}
+                {bit}
+              </span>
+            ))}
+          </p>
+        ) : null}
       </div>
 
       <div className="desk-switch" role="tablist" aria-label="Mesas de recomendación">
@@ -208,7 +302,7 @@ export function SigningBoard({
       ) : total ? (
         <div key={desk} className="flex flex-col gap-6">
           <MoveList
-            title={later.length ? "Para hoy" : null}
+            title={sectioned ? "Ejecutar hoy" : null}
             moves={today}
             index0={0}
             featured
@@ -218,8 +312,8 @@ export function SigningBoard({
             rivalsWithCash={rivalsWithCash}
           />
           <MoveList
-            title="Más adelante"
-            moves={later}
+            title="Preparar liquidez · escaparate"
+            moves={showcase}
             index0={today.length}
             featured={false}
             openId={openId}
@@ -227,6 +321,18 @@ export function SigningBoard({
             facts={facts}
             rivalsWithCash={rivalsWithCash}
           />
+          <MoveList
+            title="Fase 2 · luego"
+            moves={later}
+            index0={today.length + showcase.length}
+            featured={false}
+            openId={openId}
+            onToggle={setOpenId}
+            facts={facts}
+            rivalsWithCash={rivalsWithCash}
+          />
+
+          {desk === "estrategia" && radar.length ? <RadarList rows={radar} photos={photos} penalty={peaje ?? null} /> : null}
 
           {hasBreakdown ? (
             <div>
@@ -266,6 +372,8 @@ export function SigningBoard({
             </div>
           ) : null}
         </div>
+      ) : desk === "estrategia" && radar.length ? (
+        <RadarList rows={radar} photos={photos} penalty={peaje ?? null} />
       ) : (
         <p className="desk-empty">
           {view.id === "estrategia"
@@ -274,6 +382,61 @@ export function SigningBoard({
         </p>
       )}
     </div>
+  );
+}
+
+function RadarList({ rows, photos, penalty }: { rows: PlanFichajeAccion[]; photos: PhotoIndex; penalty: number | null }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="home-glass overflow-hidden" aria-label="En el radar">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
+      >
+        <span className="min-w-0">
+          <span className="block text-[15px] font-medium text-white">En el radar · No pujar hoy</span>
+          <span className="mt-0.5 block text-[13px] text-white/50">
+            {rows.length} {rows.length === 1 ? "jugador descartado" : "jugadores descartados"} por el peaje
+          </span>
+        </span>
+        <Chevron open={open} />
+      </button>
+      {open ? (
+        <ul className="row-in divide-y divide-white/[0.06] border-t border-white/[0.06]">
+          {rows.map((row, index) => {
+            const name = row.nombre || "Jugador";
+            const gain = typeof row.mejora_neta === "number" ? row.mejora_neta : null;
+            const euros = typeof row.euros === "number" ? row.euros : null;
+            const toll = penalty !== null && euros !== null ? (penalty * euros) / 1_000_000 : null;
+            const missing = toll !== null && gain !== null ? Math.max(0, toll - gain) : null;
+            return (
+              <li key={`${row.player_id || name}-${index}`} className="flex items-center gap-3 px-4 py-3">
+                <PlayerAvatar
+                  player={{ name, image_url: photoFor(photos, row.player_id, name) }}
+                  size="sm"
+                  className="!h-10 !w-10 !text-[10px] !ring-0"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-medium text-white">{name}</span>
+                  <span className="mt-0.5 block text-[12.5px] leading-4 text-white/50">
+                    {gain !== null ? `Mejora +${points(gain)} xP` : "En el radar"}
+                    {toll !== null ? ` · peaje ≈${points(toll)} pts` : ""}
+                  </span>
+                </span>
+                <span className="shrink-0 text-right">
+                  {euros !== null ? <span className="block text-[14px] font-medium tabular-nums text-white">{eurShort(euros)}</span> : null}
+                  {missing !== null && missing > 0.04 ? (
+                    <span className="block text-[12px] tabular-nums text-[#F5B544]">faltan {points(missing)} pts</span>
+                  ) : null}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 
@@ -311,7 +474,7 @@ function factRows(
 ): FactRows {
   const amount = move.cashImpact === null ? null : Math.abs(move.cashImpact);
   const rows: FactRows = [];
-  if (kind === "VENDE") {
+  if (kind === "VENDE" || kind === "ESCAPARATE") {
     const share = titularShare(info?.p_titular);
     if (share !== null) rows.push(["Titular", `${Math.round(share * 100)}%`]);
     if (typeof info?.tu_once_pierde_sin_el === "number") rows.push(["Impacto en tu once", `−${points(Math.abs(info.tu_once_pierde_sin_el))} pts`]);
@@ -419,7 +582,11 @@ function FeaturedMove({ move, index, open, onToggle, facts, rivalsWithCash }: Ro
     <article className="home-feature row-in" style={{ animationDelay: `${index * 30}ms` }}>
       <div className="relative flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <span className="inline-flex rounded-full bg-[#FF7A3D]/20 px-2.5 py-1 text-[11.5px] font-medium text-[#FFB48A]">Prioridad</span>
+          {move.tag ? (
+            <Tag move={move} />
+          ) : (
+            <span className="inline-flex rounded-full bg-[#FF7A3D]/20 px-2.5 py-1 text-[11.5px] font-medium text-[#FFB48A]">Prioridad</span>
+          )}
           <h4 className="mt-3 truncate text-[1.65rem] font-semibold leading-tight tracking-tight text-white">
             {kind === "BUSCA" ? `Buscar ${name}` : name}
           </h4>
@@ -470,10 +637,20 @@ function MoveCard({ move, index, open, onToggle, facts, rivalsWithCash }: RowPro
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[16px] font-medium leading-tight text-white">{kind === "BUSCA" ? `Buscar ${name}` : name}</span>
-          <span className="mt-0.5 block truncate text-[13.5px] text-white/50">
-            {KIND_LABEL[kind]}
-            {move.position && kind !== "BUSCA" ? ` · ${move.position.slice(0, 3).toUpperCase()}` : ""}
-          </span>
+          {kind === "ESCAPARATE" ? (
+            <span className="mt-1 block">
+              <Tag move={move} />
+              <span className="mt-1.5 block text-[12.5px] leading-4 text-white/50">{showcaseNote(move)}</span>
+            </span>
+          ) : (
+            <span className="mt-0.5 flex items-center gap-1.5 text-[13.5px] text-white/50">
+              <Tag move={move} />
+              <span className="truncate">
+                {KIND_LABEL[kind]}
+                {move.position && kind !== "BUSCA" ? ` · ${move.position.slice(0, 3).toUpperCase()}` : ""}
+              </span>
+            </span>
+          )}
         </span>
         <span className={`shrink-0 text-[16px] font-semibold tabular-nums ${sale ? "text-[#34D399]" : "text-white"}`}>
           {move.cashLabel ? `${sale ? "+" : ""}${move.cashLabel}` : ""}

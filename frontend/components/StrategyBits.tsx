@@ -104,6 +104,8 @@ const ACTION_TONE: Record<string, string> = {
   PUJA: "border border-[#0297DE] bg-[rgba(2,151,222,0.15)] text-[#0297DE]",
   BUSCA: "border border-dashed border-[#67C6F5] bg-[rgba(2,151,222,0.08)] text-[#67C6F5]",
   VENDE: "border border-[#FC734D] bg-[rgba(252,115,77,0.15)] text-[#FC734D]",
+  "VENDER HOY": "border border-[#FC734D] bg-[rgba(252,115,77,0.15)] text-[#FC734D]",
+  ESCAPARATE: "border border-dashed border-[#FC734D] bg-[rgba(252,115,77,0.08)] text-[#FC734D]",
   CLAUSULAZO: "border border-[#FC734D] bg-[rgba(252,115,77,0.15)] text-[#FC734D]",
 };
 
@@ -119,16 +121,42 @@ function gainLabel(value: number | null | undefined): string {
   return `${value > 0 ? "+" : ""}${text} PTS/J`;
 }
 
+const IMPULSE_LABEL: Record<string, string> = {
+  "MUST-BUY": "Must-buy",
+  CHOLLO: "Chollo",
+  HOLD: "En el radar",
+  "ALL-IN": "All-in",
+  NORMAL: "Encaja",
+  VENTA: "Venta",
+  ESCAPARATE: "Escaparate",
+};
+
+function liquidityCaption(plan: PlanFichajes): string | null {
+  if (plan.modo_liquidez === "ALL-IN") {
+    return "Jueves o viernes: el filtro está apagado y el once se optimiza por puntos.";
+  }
+  if (plan.modo_liquidez !== "VENTANA" || typeof plan.dias_al_cierre !== "number") return null;
+  const dias = plan.dias_al_cierre.toLocaleString("es-ES", { maximumFractionDigits: 1 });
+  if (typeof plan.penalizacion_liquidez !== "number") {
+    return `Faltan ${dias} días para el inicio de la jornada.`;
+  }
+  const pena = plan.penalizacion_liquidez.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `Faltan ${dias} días para el inicio de la jornada. Cada millón gastado tiene que rendir ${pena} pts de más.`;
+}
+
 export function SigningPlanCard({ plan }: { plan: PlanFichajes | null | undefined }) {
   const acciones = Array.isArray(plan?.acciones) ? plan.acciones : [];
+  const radar = Array.isArray(plan?.en_radar) ? plan.en_radar : [];
   const veredicto = plan?.veredicto || "Opcional";
   const nota = typeof plan?.nota === "number" ? plan.nota : 0;
+  const caption = plan ? liquidityCaption(plan) : null;
   return (
     <article className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4 md:p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="eyebrow">Motor</p>
           <h2 className="section-title mt-1">Tu plan de fichajes</h2>
+          {caption ? <p className="mt-1 max-w-xl text-[12px] leading-4 text-muted">{caption}</p> : null}
         </div>
         <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${verdictTone(veredicto)}`}>{veredicto}</span>
       </div>
@@ -157,13 +185,24 @@ export function SigningPlanCard({ plan }: { plan: PlanFichajes | null | undefine
       ) : (
         <p className="mt-4 text-sm text-muted">Hoy el mercado no mejora el once. No hay operaciones que merezcan la caja.</p>
       )}
+      {radar.length ? (
+        <div className="mt-4 border-t border-[color:var(--line)] pt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-faint">En el radar · no pujar hoy</p>
+          <ul className="mt-2 divide-y divide-[color:var(--line)]">
+            {radar.map((accion, index) => (
+              <PlanRow key={`radar-${accion.player_id || accion.nombre}-${index}`} accion={accion} />
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </article>
   );
 }
 
 function PlanRow({ accion }: { accion: PlanFichajeAccion }) {
   const tipo = accion.tipo || "PUJA";
-  const momento = accion.momento === "hoy" ? "hoy" : "luego";
+  const momento = accion.momento === "hoy" ? "hoy" : accion.momento === "radar" ? "radar" : "luego";
+  const impulso = accion.impulso ? IMPULSE_LABEL[accion.impulso] || accion.impulso : null;
   return (
     <li className="flex items-start justify-between gap-3 py-2.5">
       <div className="min-w-0">
@@ -171,12 +210,18 @@ function PlanRow({ accion }: { accion: PlanFichajeAccion }) {
           <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide ${ACTION_TONE[tipo] || "bg-white/5 text-muted"}`}>
             {tipo}
           </span>
+          {impulso ? (
+            <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-muted">{impulso}</span>
+          ) : null}
           <span className="truncate text-sm font-medium text-ink">{accion.nombre || "Jugador"}</span>
         </div>
         <p className="mt-1 text-[11px] leading-4 text-muted">
           {accion.posicion ? `${accion.posicion}` : ""}
           {typeof accion.jornada === "number" ? ` · ${accion.jornada.toLocaleString("es-ES", { maximumFractionDigits: 1 })} pts` : ""}
           {typeof accion.euros === "number" ? ` · ${eurShort(accion.euros)}` : ""}
+          {typeof accion.mejora_neta === "number"
+            ? ` · ${accion.mejora_neta > 0 ? "+" : ""}${accion.mejora_neta.toLocaleString("es-ES", { maximumFractionDigits: 1 })} xP netos`
+            : ""}
         </p>
       </div>
       <span className={`shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em] ${momento === "hoy" ? "text-gold" : "text-faint"}`}>
