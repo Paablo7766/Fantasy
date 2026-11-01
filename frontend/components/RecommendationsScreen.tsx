@@ -5,7 +5,7 @@ import { useDashboard } from "@/components/DashboardProvider";
 import { HomeHero } from "@/components/hoy/HomeHero";
 import { HomeLineup } from "@/components/hoy/HomeLineup";
 import { SigningBoard } from "@/components/hoy/SigningBoard";
-import { buildPhotoIndex } from "@/lib/photoIndex";
+import { buildPhotoIndex, buildPlayerIndex } from "@/lib/photoIndex";
 import type { NeedsPayload, OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
 export function RecommendationsScreen() {
@@ -17,6 +17,7 @@ export function RecommendationsScreen() {
   const needs = state.needs as NeedsPayload | null;
   const loading = (pending.plan || busy) && !plan;
   const photos = useMemo(() => buildPhotoIndex(plan, optimize, squads, trends), [plan, optimize, squads, trends]);
+  const facts = useMemo(() => buildPlayerIndex(plan, optimize, squads, trends), [plan, optimize, squads, trends]);
 
   return (
     <div className="hoy-root rec-home home-stack">
@@ -30,6 +31,7 @@ export function RecommendationsScreen() {
         loading={loading}
         refreshing={refreshing}
         photos={photos}
+        facts={facts}
         photoLine={photoLine}
       />
       <HomeLineup plan={plan} optimize={optimize} photos={photos} />

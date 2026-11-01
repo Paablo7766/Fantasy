@@ -3,50 +3,50 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
-import { eurShort, points } from "@/lib/format";
+import { eurShort, jornadaEv, points, titularShare } from "@/lib/format";
 import { signedPoints } from "@/lib/hoy";
-import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
+import { factsFor, photoFor, type PhotoIndex, type PlayerIndex } from "@/lib/photoIndex";
 import { buildStrategyViews, type StrategyMove, type StrategyView } from "@/lib/signingBoard";
 import type { NeedsPayload, OptimizePayload, PlanFichajeAccion, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
-const PILL: Record<string, string> = {
-  PUJA: "border border-[#0297DE] bg-[rgba(2,151,222,0.15)] text-[#0297DE]",
-  BUSCA: "border border-dashed border-[#67C6F5] bg-[rgba(2,151,222,0.08)] text-[#67C6F5]",
-  VENDE: "border border-[#FC734D] bg-[rgba(252,115,77,0.15)] text-[#FC734D]",
-  CLAUSULAZO: "border border-[#FC734D] bg-[rgba(252,115,77,0.15)] text-[#FC734D]",
+type Kind = "PUJA" | "BUSCA" | "VENDE" | "CLAUSULAZO";
+
+const KIND_STYLE: Record<Kind, { label: string; className: string }> = {
+  PUJA: { label: "Pujar", className: "bg-[#0297DE]/15 text-[#67C6F5]" },
+  BUSCA: { label: "Buscar", className: "bg-white/[0.06] text-[#8B9EB0]" },
+  VENDE: { label: "Vender", className: "bg-[#10B981]/15 text-[#6EE7B7]" },
+  CLAUSULAZO: { label: "Cláusula", className: "bg-[#FC734D]/15 text-[#FFB4A0]" },
 };
 
-function pillOf(verb: string): { label: string; className: string } {
+function kindOf(verb: string): Kind {
   const value = verb.toLowerCase();
-  if (value.includes("busca") || value.includes("buscar")) return { label: "BUSCA", className: PILL.BUSCA };
-  if (value.includes("vend") || value.includes("venta")) return { label: "VENDE", className: PILL.VENDE };
+  if (value.includes("busca") || value.includes("buscar")) return "BUSCA";
+  if (value.includes("vend") || value.includes("venta")) return "VENDE";
   if (value.includes("cláus") || value.includes("claus") || value.includes("rival") || value.includes("proteger") || value.includes("subir")) {
-    return { label: "CLAUSULAZO", className: PILL.CLAUSULAZO };
+    return "CLAUSULAZO";
   }
-  return { label: "PUJA", className: PILL.PUJA };
-}
-
-function bucketOf(verb: string): "hoy" | "luego" {
-  return pillOf(verb).label === "BUSCA" ? "luego" : "hoy";
+  return "PUJA";
 }
 
 function moveFromAction(action: PlanFichajeAccion, index: number, photos: PhotoIndex): StrategyMove {
   const tipo = (action.tipo || "PUJA").toUpperCase();
   const verb =
     tipo === "VENDE" ? "Poner en venta" : tipo === "BUSCA" ? "Buscar en el mercado" : tipo === "CLAUSULAZO" ? "Fichar de un rival" : "Pujar en el mercado";
-  const amount = typeof action.euros === "number" ? action.euros : null;
+  const amount = typeof action.euros === "number" ? Math.abs(action.euros) : null;
   const jornada = typeof action.jornada === "number" ? action.jornada : null;
+  const income = tipo === "VENDE";
   return {
     id: `plan-${tipo}-${action.player_id || action.nombre || index}`,
+    playerId: action.player_id || null,
     verb,
     title: tipo === "BUSCA" ? (action.posicion ? `un ${action.posicion}` : "un hueco") : action.nombre || "Jugador",
     position: action.posicion || null,
     imageUrl: photoFor(photos, action.player_id, action.nombre),
-    cashImpact: amount,
+    cashImpact: amount === null ? null : income ? amount : -amount,
     cashLabel: amount === null ? null : eurShort(amount),
-    cashTone: tipo === "VENDE" ? "up" : "down",
+    cashTone: income ? "up" : "down",
     pointsImpact: jornada,
-    pointsLabel: jornada === null ? null : `${points(jornada)} pts`,
+    pointsLabel: jornada === null ? null : `${points(jornada)} xP`,
     pointsTone: "flat",
     detail: action.detalle || null,
     href: tipo === "VENDE" ? "/equipo?tab=cartera" : tipo === "CLAUSULAZO" ? "/equipo?tab=clausulas" : "/mercado",
@@ -60,19 +60,44 @@ const TAB_LABEL: Record<StrategyView["id"], string> = {
   ventas: "Ventas",
 };
 
-function rowHeadline(move: StrategyMove, later: boolean): string {
-  const kind = pillOf(move.verb).label;
-  if (kind === "BUSCA") return move.title.startsWith("Busca") ? move.title : `Busca ${move.title}`;
-  if (kind === "VENDE") return later ? `Vende más adelante a ${move.title}` : `Vende a ${move.title}`;
-  if (kind === "CLAUSULAZO") return `Cláusula a ${move.title}`;
-  return `Puja por ${move.title}`;
-}
-
 function leadLine(detail: string | null): string | null {
   if (!detail) return null;
   const line = detail.split(/(?<=\.)\s+/)[0]?.trim();
   if (!line) return null;
   return line.length > 96 ? `${line.slice(0, 93)}…` : line;
+}
+
+const LINE_CODES: Record<string, string> = {
+  POR: "POR",
+  GK: "POR",
+  PORTERO: "POR",
+  DEF: "DEF",
+  DF: "DEF",
+  DEFENSA: "DEF",
+  MC: "MC",
+  MED: "MC",
+  MID: "MC",
+  MI: "MC",
+  MEDIO: "MC",
+  DEL: "DEL",
+  DL: "DEL",
+  FWD: "DEL",
+  DELANTERO: "DEL",
+};
+const LINE_ORDER = ["POR", "DEF", "MC", "DEL"] as const;
+
+function lineOf(position: string | null | undefined): string | null {
+  return LINE_CODES[(position || "").toUpperCase()] || null;
+}
+
+function sumBy<T>(rows: T[], pick: (row: T) => [string | null, number | null]): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const row of rows) {
+    const [line, value] = pick(row);
+    if (!line || value === null) continue;
+    totals[line] = (totals[line] || 0) + value;
+  }
+  return totals;
 }
 
 export function SigningBoard({
@@ -84,6 +109,7 @@ export function SigningBoard({
   loading,
   refreshing,
   photos,
+  facts,
 }: {
   plan: PlanPayload | null;
   optimize: OptimizePayload | null;
@@ -93,6 +119,7 @@ export function SigningBoard({
   loading: boolean;
   refreshing: boolean;
   photos: PhotoIndex;
+  facts: PlayerIndex;
   photoLine?: string;
 }) {
   const views = useMemo(
@@ -103,18 +130,25 @@ export function SigningBoard({
   const [openId, setOpenId] = useState<string | null>(null);
   const view = views.find((item) => item.id === desk) ?? views[0];
   const fichajes = plan?.plan_fichajes;
-  const planMoves = (fichajes?.acciones || []).map((action, index) => moveFromAction(action, index, photos));
-  const listed = (desk === "estrategia" && planMoves.length ? planMoves : view.groups.flatMap((group) => group.moves)).map(
-    (move) => (move.imageUrl ? move : { ...move, imageUrl: photoFor(photos, null, move.title) }),
+  const actions = useMemo(() => fichajes?.acciones || [], [fichajes?.acciones]);
+  const planMoves = useMemo(() => actions.map((action, index) => moveFromAction(action, index, photos)), [actions, photos]);
+  const usePlan = desk === "estrategia" && planMoves.length > 0;
+  const listed = (usePlan ? planMoves : view.groups.flatMap((group) => group.moves)).map((move) =>
+    move.imageUrl ? move : { ...move, imageUrl: photoFor(photos, move.playerId, move.title) },
   );
-  const hoy = listed.filter((move) => {
-    if (desk === "estrategia" && planMoves.length) {
-      const action = (fichajes?.acciones || []).find((row, index) => moveFromAction(row, index, photos).id === move.id);
-      return action ? action.momento !== "luego" : bucketOf(move.verb) === "hoy";
-    }
-    return bucketOf(move.verb) === "hoy";
-  });
-  const luego = listed.filter((move) => !hoy.includes(move));
+
+  const sales = listed.filter((move) => kindOf(move.verb) === "VENDE");
+  const buys = listed.filter((move) => kindOf(move.verb) !== "VENDE");
+  const laterIds = new Set(
+    usePlan
+      ? actions.map((action, index) => (action.momento === "luego" ? planMoves[index].id : null)).filter((id): id is string => id !== null)
+      : [],
+  );
+  const net = (rows: StrategyMove[]) => {
+    const values = rows.map((move) => move.cashImpact).filter((value): value is number => value !== null);
+    return values.length ? values.reduce((total, value) => total + value, 0) : null;
+  };
+
   const verdict =
     desk === "estrategia"
       ? fichajes?.veredicto || (view.pointsTone === "up" ? "Hazlo ya" : view.headline || "Sin plan")
@@ -127,6 +161,26 @@ export function SigningBoard({
         : null;
   const cashNow = typeof plan?.cash_eur === "number" ? plan.cash_eur : null;
   const cashEnd = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
+
+  const salesActions = usePlan ? sales : [];
+  const buyActions = usePlan ? buys.filter((move) => kindOf(move.verb) !== "BUSCA") : [];
+  const incomeTotal = salesActions.reduce((total, move) => total + Math.abs(move.cashImpact || 0), 0);
+  const spendTotal = buyActions.reduce((total, move) => total + Math.abs(move.cashImpact || 0), 0);
+
+  // Qué líneas mejoran: el once que propone el plan frente al once que tienes guardado.
+  const lineDelta = useMemo(() => {
+    const next = fichajes?.once;
+    const current = optimize?.saved_lineup?.xi?.length ? optimize.saved_lineup.xi : optimize?.xi;
+    if (!next?.length || !current?.length) return null;
+    const after = sumBy(next, (row) => [lineOf(row.posicion), typeof row.jornada === "number" ? row.jornada : null]);
+    const before = sumBy(current, (row) => [lineOf(row.position), jornadaEv(row)]);
+    return LINE_ORDER.map((line) => ({ line, delta: (after[line] || 0) - (before[line] || 0) }));
+  }, [fichajes?.once, optimize]);
+
+  const rivalsWithCash = (amount: number | null) => {
+    if (amount === null || !squads?.rivals?.length) return null;
+    return squads.rivals.filter((rival) => typeof rival.cash_eur === "number" && rival.cash_eur >= amount).length;
+  };
 
   return (
     <div className="desk">
@@ -156,44 +210,90 @@ export function SigningBoard({
         })}
       </div>
 
-      <header className="board-hero">
-        <div className="relative flex items-end justify-between gap-3">
+      <header className="rounded-2xl border border-white/[0.07] bg-[#07121A] p-4">
+        <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8B9EB0]">Qué hace el plan</p>
-            <p className="mt-1.5 text-[1.5rem] font-bold leading-tight tracking-tight text-[#F0F6FC]">
+            <p className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#8B9EB0]">Qué hace el plan</p>
+            <p className="mt-1.5 truncate text-xl font-semibold leading-tight tracking-tight text-white">
               {loading && !plan ? "…" : verdict}
             </p>
             {refreshing ? <p className="mt-1 font-mono text-[11px] text-[#0297DE]">Actualizando</p> : null}
           </div>
           {gain && desk === "estrategia" ? (
             <div className="shrink-0 text-right">
-              <p className={`font-mono text-[2.4rem] font-bold leading-none tabular-nums ${gain.startsWith("−") || gain.startsWith("-") ? "text-[#FC734D]" : "text-[#67C6F5]"}`}>
+              <p className={`font-mono text-2xl font-semibold leading-none tabular-nums ${gain.startsWith("−") || gain.startsWith("-") ? "text-[#FC734D]" : "text-[#0297DE]"}`}>
                 {gain}
               </p>
-              <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8B9EB0]">pts/jornada</p>
+              <p className="mt-1 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#8B9EB0]">pts/jornada</p>
             </div>
           ) : null}
         </div>
+
         {desk === "estrategia" && (cashNow !== null || cashEnd !== null) ? (
-          <div className="relative mt-4 flex items-center gap-2 text-[11px] font-semibold text-[#8B9EB0]">
-            {cashNow !== null ? <span className="rounded-full bg-white/[0.06] px-2.5 py-1 font-mono tabular-nums text-[#C5D4E2]">Ahora {eurShort(cashNow)}</span> : null}
-            {cashNow !== null && cashEnd !== null ? <span aria-hidden="true">→</span> : null}
-            {cashEnd !== null ? (
-              <span className={`rounded-full px-2.5 py-1 font-mono tabular-nums ${cashEnd < 0 ? "bg-[#FC734D]/20 text-[#FFB4A0]" : "bg-[#10B981]/15 text-[#6EE7B7]"}`}>
-                Final {eurShort(cashEnd)}
-              </span>
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-white/[0.05] bg-[#02070A]/60 p-2.5 font-mono text-xs tabular-nums">
+            {cashNow !== null ? <span className="text-[#C5D4E2]">Inicial: {eurShort(cashNow)}</span> : null}
+            {salesActions.length ? (
+              <>
+                <span className="text-[#4B6075]" aria-hidden="true">➔</span>
+                <span className="text-[#10B981]">
+                  Ventas ({salesActions.length}): +{eurShort(incomeTotal)}
+                </span>
+              </>
             ) : null}
+            {buyActions.length ? (
+              <>
+                <span className="text-[#4B6075]" aria-hidden="true">➔</span>
+                <span className="text-[#0297DE]">
+                  Compras ({buyActions.length}): −{eurShort(spendTotal)}
+                </span>
+              </>
+            ) : null}
+            {cashEnd !== null ? (
+              <>
+                <span className="text-[#4B6075]" aria-hidden="true">➔</span>
+                <span className={cashEnd < 0 ? "text-[#FC734D]" : "text-white"}>Final: {eurShort(cashEnd)}</span>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {desk === "estrategia" && lineDelta ? (
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] tabular-nums">
+            <span className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#8B9EB0]">Impacto</span>
+            {lineDelta.map(({ line, delta }) => (
+              <span key={line} className={Math.abs(delta) < 0.05 ? "text-[#4B6075]" : delta > 0 ? "text-[#0297DE]" : "text-[#FC734D]"}>
+                {line} {Math.abs(delta) < 0.05 ? "=" : `${signedPoints(delta)} pts`}
+              </span>
+            ))}
           </div>
         ) : null}
       </header>
 
       {loading && !plan ? (
         <div className="desk-skel" aria-hidden="true" />
-      ) : hoy.length || luego.length ? (
-        <>
-          <ActionGroup title="Hoy" tone="hoy" moves={hoy} later={false} openId={openId} onToggle={setOpenId} />
-          <ActionGroup title="Espera" tone="espera" moves={luego} later openId={openId} onToggle={setOpenId} />
-        </>
+      ) : sales.length || buys.length ? (
+        <div key={desk} className="flex flex-col gap-3">
+          <OrderBook
+            title="Fase 1 · Ejecutar hoy"
+            moves={sales}
+            total={net(sales)}
+            laterIds={laterIds}
+            openId={openId}
+            onToggle={setOpenId}
+            facts={facts}
+            rivalsWithCash={rivalsWithCash}
+          />
+          <OrderBook
+            title="Fase 2 · Compras y clausulazos"
+            moves={buys}
+            total={net(buys)}
+            laterIds={laterIds}
+            openId={openId}
+            onToggle={setOpenId}
+            facts={facts}
+            rivalsWithCash={rivalsWithCash}
+          />
+        </div>
       ) : (
         <p className="desk-empty">
           {view.id === "estrategia"
@@ -205,111 +305,153 @@ export function SigningBoard({
   );
 }
 
-function ActionGroup({
+function OrderBook({
   title,
-  tone,
   moves,
-  later,
+  total,
+  laterIds,
   openId,
   onToggle,
+  facts,
+  rivalsWithCash,
 }: {
   title: string;
-  tone: "hoy" | "espera";
   moves: StrategyMove[];
-  later: boolean;
+  total: number | null;
+  laterIds: Set<string>;
   openId: string | null;
   onToggle: (id: string | null) => void;
+  facts: PlayerIndex;
+  rivalsWithCash: (amount: number | null) => number | null;
 }) {
   if (!moves.length) return null;
+  const operations = `${moves.length} ${moves.length === 1 ? "operación" : "operaciones"}`;
   return (
-    <section aria-label={title}>
-      <h2 className="mb-2">
-        <span
-          className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${
-            tone === "hoy" ? "bg-[#FC734D] text-[#02070A]" : "bg-[#0297DE]/20 text-[#67C6F5]"
-          }`}
-        >
-          {title}
+    <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#07121A]" aria-label={title}>
+      <h2 className="flex items-center justify-between gap-2 border-b border-white/[0.05] px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#8B9EB0]">
+        <span>
+          {title} <span className="whitespace-nowrap text-[#4B6075]">({operations})</span>
         </span>
+        {total !== null ? (
+          <span className={`shrink-0 font-mono text-[11px] normal-case tracking-normal tabular-nums ${total >= 0 ? "text-[#10B981]" : "text-[#F0F6FC]"}`}>
+            {total >= 0 ? "+" : "−"}
+            {eurShort(Math.abs(total))}
+          </span>
+        ) : null}
       </h2>
-      <ul className="flex flex-col gap-2">
-        {moves.map((move) => (
-          <ActionRow key={move.id} move={move} later={later} open={openId === move.id} onToggle={() => onToggle(openId === move.id ? null : move.id)} />
+      <ul className="divide-y divide-white/[0.05]">
+        {moves.map((move, index) => (
+          <OrderRow
+            key={move.id}
+            move={move}
+            index={index}
+            later={laterIds.has(move.id)}
+            open={openId === move.id}
+            onToggle={() => onToggle(openId === move.id ? null : move.id)}
+            facts={facts}
+            rivalsWithCash={rivalsWithCash}
+          />
         ))}
       </ul>
     </section>
   );
 }
 
-const KIND_RING: Record<string, string> = {
-  PUJA: "from-[#0297DE] to-[#0297DE]/10",
-  BUSCA: "from-[#4B6075] to-[#4B6075]/10",
-  VENDE: "from-[#FC734D] to-[#FC734D]/10",
-  CLAUSULAZO: "from-[#FC734D] to-[#FC734D]/10",
-};
-
-const KIND_COPY: Record<string, string> = {
-  PUJA: "Pujar",
-  BUSCA: "Buscar",
-  VENDE: "Vender",
-  CLAUSULAZO: "Cláusula",
-};
-
-function ActionRow({
+function OrderRow({
   move,
+  index,
   later,
   open,
   onToggle,
+  facts,
+  rivalsWithCash,
 }: {
   move: StrategyMove;
+  index: number;
   later: boolean;
   open: boolean;
   onToggle: () => void;
+  facts: PlayerIndex;
+  rivalsWithCash: (amount: number | null) => number | null;
 }) {
-  const kind = pillOf(move.verb).label;
+  const kind = kindOf(move.verb);
+  const style = KIND_STYLE[kind];
+  const info = kind === "BUSCA" ? null : factsFor(facts, move.playerId, move.title);
   const name = kind === "BUSCA" ? move.position || move.title : move.title;
-  const preview = leadLine(move.detail);
-  const selling = kind === "VENDE";
+  const amount = move.cashImpact === null ? null : Math.abs(move.cashImpact);
+
+  const bits: string[] = [];
+  if (kind === "VENDE") {
+    const share = titularShare(info?.p_titular);
+    if (share !== null) bits.push(`Titular ${Math.round(share * 100)}%`);
+    if (typeof info?.tu_once_pierde_sin_el === "number") bits.push(`Impacto XI: −${points(Math.abs(info.tu_once_pierde_sin_el))} pts`);
+    if (info?.prevision_7d_pct) bits.push(`Previsión 7d: ${info.prevision_7d_pct}`);
+  } else if (kind === "CLAUSULAZO") {
+    if (info?.owner) bits.push(`De: ${info.owner}`);
+    if (typeof info?.valor_justo === "number") {
+      bits.push(`Valor justo: ${eurShort(info.valor_justo)}`);
+      if (amount) {
+        const margin = (info.valor_justo / amount - 1) * 100;
+        bits.push(`Margen ${margin >= 0 ? "+" : "−"}${Math.abs(Math.round(margin))}%`);
+      }
+    }
+  } else if (kind === "PUJA") {
+    if (typeof info?.market_value === "number") bits.push(`Valor: ${eurShort(info.market_value)}`);
+    const cap = info?.puja_maxima ?? info?.max_bid ?? info?.own_max_bid ?? null;
+    if (typeof cap === "number") bits.push(`Puja máx: ${eurShort(cap)}`);
+    const rivals = rivalsWithCash(amount);
+    if (rivals !== null) bits.push(`${rivals} ${rivals === 1 ? "rival" : "rivales"} con saldo`);
+  }
+  const preview = bits.length ? bits.join(" · ") : leadLine(move.detail);
+
+  const ceiling = info?.own_ceiling_points ?? info?.af_ceiling_points ?? null;
+  const sale = kind === "VENDE";
   return (
-    <li className={`home-card !p-0 ${open ? "!border-[#0297DE]/40" : ""} ${later ? "opacity-80" : ""}`}>
-      <button type="button" className="flex w-full items-center gap-3.5 p-3 text-left" onClick={onToggle} aria-expanded={open}>
-        <span className={`shrink-0 rounded-full bg-gradient-to-br p-[2.5px] ${KIND_RING[kind] || KIND_RING.PUJA}`}>
+    <li className="row-in" style={{ animationDelay: `${index * 30}ms` }}>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-white/[0.02]"
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <span className="flex min-w-0 items-center gap-3">
           <PlayerAvatar
             player={{ name, image_url: move.imageUrl }}
             size="sm"
-            className="!h-[3.4rem] !w-[3.4rem] !text-[12px] !ring-0 border-[3px] border-[#07121A]"
+            className="!h-9 !w-9 !text-[10px] !ring-0 border border-white/[0.12]"
           />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5">
-            <span className={`rounded-full px-2 py-[3px] text-[9.5px] font-bold uppercase tracking-[0.12em] ${pillOf(move.verb).className}`}>
-              {KIND_COPY[kind] || kind}
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5">
+              <span className="truncate text-sm font-medium text-white">{kind === "BUSCA" ? `Buscar ${name}` : name}</span>
+              {move.position && kind !== "BUSCA" ? (
+                <span className="shrink-0 text-[10px] uppercase text-[#8B9EB0]">{move.position.slice(0, 3)}</span>
+              ) : null}
+              <span className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase ${style.className}`}>{style.label}</span>
+              {later ? <span className="shrink-0 text-[10px] text-[#4B6075]">luego</span> : null}
             </span>
-            {later ? <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8B9EB0]">luego</span> : null}
+            {preview && !open ? <span className="mt-0.5 block truncate text-[11px] text-[#8B9EB0]">{preview}</span> : null}
           </span>
-          <span className="mt-1 block truncate text-[16px] font-bold leading-tight tracking-tight text-[#F0F6FC]">
-            {kind === "BUSCA" ? rowHeadline(move, later) : name}
-          </span>
-          {move.position && kind !== "BUSCA" ? (
-            <span className="mt-0.5 block truncate text-[11.5px] capitalize text-[#8B9EB0]">{move.position}</span>
-          ) : preview && !open ? (
-            <span className="mt-0.5 block truncate text-[11.5px] text-[#8B9EB0]">{preview}</span>
-          ) : null}
         </span>
-        <span className="flex shrink-0 flex-col items-end gap-1">
+        <span className="shrink-0 text-right font-mono tabular-nums">
           {move.cashLabel ? (
-            <span className={`font-mono text-[14px] font-bold tabular-nums ${selling ? "text-[#6EE7B7]" : "text-[#F0F6FC]"}`}>
-              {selling ? "+" : ""}
+            <span className={`block text-[13px] font-semibold ${sale ? "text-[#10B981]" : "text-[#F0F6FC]"}`}>
+              {sale ? "+" : ""}
               {move.cashLabel}
             </span>
           ) : null}
-          {move.pointsLabel ? <span className="font-mono text-[11px] font-semibold tabular-nums text-[#FC734D]">{move.pointsLabel}</span> : null}
+          {move.pointsLabel ? (
+            <span className="block text-[11px] text-[#0297DE]">
+              {move.pointsLabel}
+              {typeof ceiling === "number" && ceiling > 10 ? <span className="ml-1 text-[#FC734D]">Techo {points(ceiling)}</span> : null}
+            </span>
+          ) : null}
         </span>
       </button>
       {open ? (
-        <div className="border-t border-white/[0.06] px-3.5 pb-3.5 pt-3">
-          {move.detail ? <p className="text-[13px] leading-5 text-[#C5D4E2]">{move.detail}</p> : null}
-          <Link href={move.href} className="mt-3 inline-flex items-center gap-1 rounded-full bg-[#0297DE]/15 px-3 py-1.5 text-xs font-semibold text-[#67C6F5]">
+        <div className="border-t border-white/[0.05] bg-white/[0.015] px-3.5 py-3 pl-[3.6rem]">
+          {bits.length ? <p className="mb-1.5 text-[11.5px] leading-4 text-[#8B9EB0]">{bits.join(" · ")}</p> : null}
+          {move.detail ? <p className="text-[12.5px] leading-5 text-[#C5D4E2]">{move.detail}</p> : null}
+          <Link href={move.href} className="mt-2 inline-flex text-xs font-medium text-[#0297DE]">
             Ver en {move.guide} →
           </Link>
         </div>

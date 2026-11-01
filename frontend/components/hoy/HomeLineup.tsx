@@ -1,82 +1,123 @@
 "use client";
 
-import Link from "next/link";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
-import { points } from "@/lib/format";
+import { points, titularShare } from "@/lib/format";
+import { signedPoints } from "@/lib/hoy";
 import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
 import type { CapitanPick, OptimizePayload, PlanPayload } from "@/lib/types";
 
-type Slot = {
-  id: string;
-  name: string;
-  position: string;
-  imageUrl: string | null;
-  ev: number | null;
+type Swap = {
+  outName: string;
+  outPos: string;
+  outEv: number | null;
+  inName: string;
+  inPos: string;
+  inEv: number | null;
 };
 
-const LINES: { code: string; match: string[] }[] = [
-  { code: "DEL", match: ["DEL", "DL", "FWD"] },
-  { code: "MC", match: ["MC", "MED", "MID", "MI"] },
-  { code: "DEF", match: ["DEF", "DF"] },
-  { code: "POR", match: ["POR", "GK"] },
-];
+type Mover = { name: string; position: string; ev: number | null };
 
-function shortName(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0];
-  const last = parts.at(-1) as string;
-  return last.length <= 2 && parts.length > 2 ? parts.slice(-2).join(" ") : last;
+function foldKey(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
-function slotsFrom(plan: PlanPayload | null, optimize: OptimizePayload | null, photos: PhotoIndex): Slot[] {
-  const saved = optimize?.saved_lineup?.xi;
-  const source = saved?.length ? saved : optimize?.xi?.length ? optimize.xi : null;
-  if (source) {
-    return source.map((player, index) => {
-      const name = player.nickname || player.name || "Jugador";
-      return {
-        id: player.player_id || `${name}-${index}`,
-        name,
-        position: (player.position || "").toUpperCase(),
-        imageUrl: player.image_url || photoFor(photos, player.player_id, name),
-        ev: typeof player.jornada_ev === "number" ? player.jornada_ev : (player.expected_points ?? null),
-      };
+/** Quién sale y quién entra en tu once al aplicar el plan, emparejados por línea cuando se puede. */
+function buildSwaps(plan: PlanPayload | null, optimize: OptimizePayload | null): Swap[] {
+  let leaves: Mover[] = (plan?.lineup?.leaves || []).map((row) => ({
+    name: row.nickname || row.name || "Jugador",
+    position: (row.position || "").toUpperCase(),
+    ev: row.expected_points ?? null,
+  }));
+  let enters: Mover[] = (plan?.lineup?.enters || []).map((row) => ({
+    name: row.nickname || row.name || "Jugador",
+    position: (row.position || "").toUpperCase(),
+    ev: row.expected_points ?? null,
+  }));
+
+  if (!leaves.length && !enters.length) {
+    const next = plan?.plan_fichajes?.once;
+    const current = optimize?.saved_lineup?.xi?.length ? optimize.saved_lineup.xi : optimize?.xi;
+    if (!next?.length || !current?.length) return [];
+    const nextKeys = new Set(next.map((row) => foldKey(row.nombre || "")));
+    const currentKeys = new Set(current.map((row) => foldKey(row.nickname || row.name || "")));
+    leaves = current
+      .filter((row) => !nextKeys.has(foldKey(row.nickname || row.name || "")))
+      .map((row) => ({
+        name: row.nickname || row.name || "Jugador",
+        position: (row.position || "").toUpperCase(),
+        ev: row.jornada_ev ?? row.expected_points ?? null,
+      }));
+    enters = next
+      .filter((row) => !currentKeys.has(foldKey(row.nombre || "")))
+      .map((row) => ({ name: row.nombre || "Jugador", position: (row.posicion || "").toUpperCase(), ev: row.jornada ?? null }));
+  }
+
+  const pool = [...enters];
+  const swaps: Swap[] = [];
+  for (const out of leaves) {
+    const at = pool.findIndex((row) => row.position === out.position);
+    const incoming = at >= 0 ? pool.splice(at, 1)[0] : pool.shift();
+    if (!incoming) break;
+    swaps.push({
+      outName: out.name,
+      outPos: out.position,
+      outEv: out.ev,
+      inName: incoming.name,
+      inPos: incoming.position,
+      inEv: incoming.ev,
     });
   }
-  return (plan?.lineup?.xi || []).map((player, index) => {
-    const name = player.nickname || player.name || "Jugador";
-    return {
-      id: player.player_id || `${name}-${index}`,
-      name,
-      position: (player.position || "").toUpperCase(),
-      imageUrl: photoFor(photos, player.player_id, name),
-      ev: player.expected_points ?? null,
-    };
-  });
+  return swaps;
 }
 
-function Captain({ pick, photos, label, tone }: { pick: CapitanPick | null | undefined; photos: PhotoIndex; label: string; tone: "orange" | "blue" }) {
+function Captain({ pick, photos, label }: { pick: CapitanPick | null | undefined; photos: PhotoIndex; label: string }) {
   if (!pick?.nombre) return null;
-  const value = pick.criterio === "techo" ? pick.techo : (pick.jornada ?? pick.si_titular);
+  const base = typeof pick.jornada === "number" ? pick.jornada : typeof pick.si_titular === "number" ? pick.si_titular : null;
+  const ceiling = typeof pick.techo === "number" ? pick.techo : null;
+  const share = titularShare(pick.p_titular);
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.04] p-2.5">
-      <span className={`rounded-full p-[2px] ${tone === "orange" ? "bg-gradient-to-br from-[#FC734D] to-[#FC734D]/20" : "bg-gradient-to-br from-[#0297DE] to-[#0297DE]/20"}`}>
+    <div className="min-w-0 flex-1 rounded-xl border border-white/[0.07] p-3">
+      <p className="truncate text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#8B9EB0]">{label}</p>
+      <div className="mt-2 flex items-center gap-2.5">
         <PlayerAvatar
           player={{ name: pick.nombre, image_url: photoFor(photos, pick.player_id, pick.nombre) }}
           size="sm"
-          className="!h-12 !w-12 !ring-0 border-2 border-[#07121A]"
+          className="!h-9 !w-9 !text-[10px] !ring-0 border border-white/[0.12]"
         />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[9.5px] font-semibold uppercase tracking-[0.14em] text-[#8B9EB0]">{label}</span>
-        <span className="mt-0.5 block truncate text-[14px] font-bold tracking-tight text-[#F0F6FC]">{shortName(pick.nombre)}</span>
-        {typeof value === "number" ? (
-          <span className={`font-mono text-[11px] font-semibold tabular-nums ${tone === "orange" ? "text-[#FC734D]" : "text-[#67C6F5]"}`}>
-            {points(value)} pts
-          </span>
-        ) : null}
-      </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-white">{pick.nombre}</p>
+          {share !== null ? <p className="text-[10.5px] text-[#8B9EB0]">Titular {Math.round(share * 100)}%</p> : null}
+        </div>
+      </div>
+      <div className="mt-2.5 space-y-0.5 font-mono text-[11.5px] tabular-nums">
+        {base !== null ? <p className="text-[#0297DE]">x2 = {points(base * 2)} pts</p> : null}
+        {ceiling !== null ? <p className="text-[#FC734D]">Techo x2 = {points(ceiling * 2)} pts</p> : null}
+      </div>
     </div>
+  );
+}
+
+function SwapPlayer({ name, position, ev, photos }: { name: string; position: string; ev: number | null; photos: PhotoIndex }) {
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-2">
+      <PlayerAvatar
+        player={{ name, image_url: photoFor(photos, null, name) }}
+        size="sm"
+        className="!h-7 !w-7 !text-[9px] !ring-0 border border-white/[0.12]"
+      />
+      <span className="min-w-0">
+        <span className="block truncate text-[12.5px] font-medium leading-tight text-white">{name}</span>
+        <span className="block font-mono text-[10px] leading-tight text-[#8B9EB0]">
+          {position.slice(0, 3)}
+          {ev !== null ? ` · ${points(ev)} xP` : ""}
+        </span>
+      </span>
+    </span>
   );
 }
 
@@ -89,62 +130,44 @@ export function HomeLineup({
   optimize: OptimizePayload | null;
   photos: PhotoIndex;
 }) {
-  const slots = slotsFrom(plan, optimize, photos);
+  const swaps = buildSwaps(plan, optimize);
   const safe = plan?.capitan_seguro || optimize?.capitan_seguro;
   const bold = plan?.capitan_remontada || optimize?.capitan_remontada;
-  const formation = plan?.lineup?.saved_formation || optimize?.saved_lineup?.formation || plan?.lineup?.formation || optimize?.formation;
-  if (!slots.length && !safe?.nombre) return null;
-
-  const rows = LINES.map((line) => ({
-    code: line.code,
-    players: slots.filter((slot) => line.match.includes(slot.position)),
-  })).filter((row) => row.players.length);
-  const placed = new Set(rows.flatMap((row) => row.players.map((player) => player.id)));
-  const rest = slots.filter((slot) => !placed.has(slot.id));
-  if (rest.length) rows.push({ code: "—", players: rest });
+  const showBold = bold?.nombre && bold.nombre !== safe?.nombre;
+  if (!swaps.length && !safe?.nombre && !showBold) return null;
 
   return (
-    <section className="home-card" aria-label="Tu once">
-      <div className="flex items-center justify-between gap-2 px-1">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8B9EB0]">Tu once</p>
-          {formation ? <p className="mt-0.5 font-mono text-[13px] font-bold text-[#F0F6FC]">{formation}</p> : null}
-        </div>
-        <Link href="/equipo" className="text-xs font-semibold text-[#0297DE]">
-          Abrir
-        </Link>
-      </div>
+    <section className="rounded-2xl border border-white/[0.07] bg-[#07121A]" aria-label="Cambios en tu XI y capitanía">
+      <h2 className="border-b border-white/[0.05] px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#8B9EB0]">
+        Cambios en tu XI &amp; capitanía
+      </h2>
 
-      {rows.length ? (
-        <div className="home-pitch mt-3">
-          {rows.map((row) => (
-            <div key={row.code} className="flex items-start justify-around gap-1">
-              {row.players.map((player) => (
-                <div key={player.id} className="flex w-[4.1rem] min-w-0 flex-col items-center">
-                  <PlayerAvatar
-                    player={{ name: player.name, image_url: player.imageUrl }}
-                    size="sm"
-                    className="!h-12 !w-12 !text-[11px] !ring-2 !ring-white/15"
-                  />
-                  <span className="mt-1 w-full truncate text-center text-[10.5px] font-semibold leading-tight text-[#F0F6FC]">
-                    {shortName(player.name)}
+      {swaps.length ? (
+        <ul className="divide-y divide-white/[0.05]">
+          {swaps.map((swap, index) => {
+            const gain = swap.outEv !== null && swap.inEv !== null ? swap.inEv - swap.outEv : null;
+            return (
+              <li key={`${swap.outName}-${swap.inName}`} className="row-in flex items-center gap-2 px-3.5 py-2.5" style={{ animationDelay: `${index * 30}ms` }}>
+                <SwapPlayer name={swap.outName} position={swap.outPos} ev={swap.outEv} photos={photos} />
+                <span className="shrink-0 text-xs text-[#4B6075]" aria-hidden="true">➔</span>
+                <SwapPlayer name={swap.inName} position={swap.inPos} ev={swap.inEv} photos={photos} />
+                {gain !== null ? (
+                  <span className={`shrink-0 font-mono text-[11.5px] font-semibold tabular-nums ${gain >= 0 ? "text-[#0297DE]" : "text-[#FC734D]"}`}>
+                    ({signedPoints(gain)})
                   </span>
-                  {player.ev !== null ? (
-                    <span className="font-mono text-[9.5px] font-semibold tabular-nums text-[#FC734D]">{points(player.ev)}</span>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      ) : null}
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="px-3.5 py-3 text-[12px] text-[#8B9EB0]">Con el plan tu once no cambia.</p>
+      )}
 
-      {safe?.nombre || bold?.nombre ? (
-        <div className="mt-3 flex gap-2">
-          <Captain pick={safe} photos={photos} label="Capitán seguro" tone="blue" />
-          {bold?.nombre && bold.nombre !== safe?.nombre ? (
-            <Captain pick={bold} photos={photos} label="Capitán remontada" tone="orange" />
-          ) : null}
+      {safe?.nombre || showBold ? (
+        <div className="flex gap-2 border-t border-white/[0.05] p-3">
+          <Captain pick={safe} photos={photos} label="Capitán seguro" />
+          {showBold ? <Captain pick={bold} photos={photos} label="Capitán remontada" /> : null}
         </div>
       ) : null}
     </section>

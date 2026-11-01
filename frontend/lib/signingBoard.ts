@@ -33,6 +33,8 @@ export type MoveTone = "up" | "down" | "flat" | "none";
 
 export type StrategyMove = {
   id: string;
+  /** Id del jugador cuando la acción lo trae; sin él se busca por nombre. */
+  playerId?: string | null;
   verb: string;
   title: string;
   position: string | null;
