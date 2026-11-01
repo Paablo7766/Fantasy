@@ -177,7 +177,7 @@ export function SigningBoard({
         <h2 className="truncate text-[1.6rem] font-semibold leading-tight tracking-tight text-white">
           {loading && !plan ? "…" : verdict}
         </h2>
-        <p className="mt-1 text-[14px] text-[#8B9EB0]">
+        <p className="mt-1 text-[14px] text-white/50">
           {refreshing ? "Actualizando…" : total ? `${total} ${total === 1 ? "movimiento" : "movimientos"}` : "Sin movimientos"}
         </p>
       </div>
@@ -211,6 +211,7 @@ export function SigningBoard({
             title={later.length ? "Para hoy" : null}
             moves={today}
             index0={0}
+            featured
             openId={openId}
             onToggle={setOpenId}
             facts={facts}
@@ -220,6 +221,7 @@ export function SigningBoard({
             title="Más adelante"
             moves={later}
             index0={today.length}
+            featured={false}
             openId={openId}
             onToggle={setOpenId}
             facts={facts}
@@ -232,13 +234,13 @@ export function SigningBoard({
                 type="button"
                 onClick={() => setShowBreakdown((value) => !value)}
                 aria-expanded={showBreakdown}
-                className="flex w-full items-center justify-between px-1 py-1 text-[14px] font-medium text-[#8B9EB0] transition-colors hover:text-white"
+                className="flex w-full items-center justify-between px-1 py-1 text-[14px] font-medium text-white/50 transition-colors hover:text-white"
               >
                 Desglose del plan
                 <Chevron open={showBreakdown} />
               </button>
               {showBreakdown ? (
-                <dl className="row-in mt-2 divide-y divide-white/[0.05] rounded-3xl bg-white/[0.035] px-4 text-[14px] tabular-nums">
+                <dl className="row-in mt-2 divide-y divide-white/[0.05] home-glass px-4 text-[14px] tabular-nums">
                   {cashNow !== null ? <Line label="Saldo inicial" value={eurShort(cashNow)} /> : null}
                   {salesActions.length ? (
                     <Line label={`Ventas (${salesActions.length})`} value={`+${eurShort(incomeTotal)}`} tone="text-[#34D399]" />
@@ -275,11 +277,11 @@ export function SigningBoard({
   );
 }
 
-function Chevron({ open }: { open: boolean }) {
+function Chevron({ open, dark }: { open: boolean; dark?: boolean }) {
   return (
     <svg
       viewBox="0 0 16 16"
-      className={`h-4 w-4 shrink-0 text-[#4B6075] transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+      className={`h-4 w-4 shrink-0 ${dark ? "text-[#120C09]" : "text-white/35"} transition-transform duration-200 ${open ? "rotate-180" : ""}`}
       fill="none"
       stroke="currentColor"
       strokeWidth="1.6"
@@ -293,75 +295,22 @@ function Chevron({ open }: { open: boolean }) {
 function Line({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div className="flex items-center justify-between py-3">
-      <dt className="text-[#8B9EB0]">{label}</dt>
+      <dt className="text-white/50">{label}</dt>
       <dd className={`font-medium ${tone || "text-white"}`}>{value}</dd>
     </div>
   );
 }
 
-function MoveList({
-  title,
-  moves,
-  index0,
-  openId,
-  onToggle,
-  facts,
-  rivalsWithCash,
-}: {
-  title: string | null;
-  moves: StrategyMove[];
-  index0: number;
-  openId: string | null;
-  onToggle: (id: string | null) => void;
-  facts: PlayerIndex;
-  rivalsWithCash: (amount: number | null) => number | null;
-}) {
-  if (!moves.length) return null;
-  return (
-    <section aria-label={title || "Movimientos"}>
-      {title ? <h3 className="mb-2 px-1 text-[14px] font-medium text-[#8B9EB0]">{title}</h3> : null}
-      <ul className="overflow-hidden rounded-3xl bg-white/[0.035]">
-        {moves.map((move, index) => (
-          <MoveRow
-            key={move.id}
-            move={move}
-            index={index0 + index}
-            first={index === 0}
-            open={openId === move.id}
-            onToggle={() => onToggle(openId === move.id ? null : move.id)}
-            facts={facts}
-            rivalsWithCash={rivalsWithCash}
-          />
-        ))}
-      </ul>
-    </section>
-  );
-}
+type FactRows = [string, string][];
 
-function MoveRow({
-  move,
-  index,
-  first,
-  open,
-  onToggle,
-  facts,
-  rivalsWithCash,
-}: {
-  move: StrategyMove;
-  index: number;
-  first: boolean;
-  open: boolean;
-  onToggle: () => void;
-  facts: PlayerIndex;
-  rivalsWithCash: (amount: number | null) => number | null;
-}) {
-  const kind = kindOf(move.verb);
-  const info = kind === "BUSCA" ? null : factsFor(facts, move.playerId, move.title);
-  const name = kind === "BUSCA" ? move.position || move.title : move.title;
+function factRows(
+  kind: Kind,
+  move: StrategyMove,
+  info: ReturnType<typeof factsFor>,
+  rivalsWithCash: (amount: number | null) => number | null,
+): FactRows {
   const amount = move.cashImpact === null ? null : Math.abs(move.cashImpact);
-  const sale = kind === "VENDE";
-
-  const rows: [string, string][] = [];
+  const rows: FactRows = [];
   if (kind === "VENDE") {
     const share = titularShare(info?.p_titular);
     if (share !== null) rows.push(["Titular", `${Math.round(share * 100)}%`]);
@@ -386,49 +335,156 @@ function MoveRow({
   if (move.pointsImpact !== null) rows.push(["Puntos esperados", `${points(move.pointsImpact)} xP`]);
   const ceiling = info?.own_ceiling_points ?? info?.af_ceiling_points ?? null;
   if (typeof ceiling === "number" && ceiling > 10) rows.push(["Techo", `${points(ceiling)} pts`]);
+  return rows;
+}
 
+type RowProps = {
+  move: StrategyMove;
+  index: number;
+  open: boolean;
+  onToggle: () => void;
+  facts: PlayerIndex;
+  rivalsWithCash: (amount: number | null) => number | null;
+};
+
+function Expanded({ rows, move }: { rows: FactRows; move: StrategyMove }) {
   return (
-    <li className="row-in" style={{ animationDelay: `${index * 30}ms` }}>
-      {first ? null : <div className="ml-[4.5rem] mr-4 h-px bg-white/[0.06]" />}
+    <div className="row-in">
+      {rows.length ? (
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+          {rows.map(([label, value]) => (
+            <div key={label} className="min-w-0">
+              <dt className="truncate text-[12.5px] text-white/50">{label}</dt>
+              <dd className="mt-0.5 truncate text-[15px] font-medium tabular-nums text-white">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {move.detail ? <p className="mt-3 text-[14px] leading-5 text-white/55">{move.detail}</p> : null}
+      <Link href={move.href} className="mt-3 inline-flex text-[14px] font-medium text-[#FF9A5A]">
+        Ver en {move.guide} →
+      </Link>
+    </div>
+  );
+}
+
+function MoveList({
+  title,
+  moves,
+  index0,
+  featured,
+  openId,
+  onToggle,
+  facts,
+  rivalsWithCash,
+}: {
+  title: string | null;
+  moves: StrategyMove[];
+  index0: number;
+  featured: boolean;
+  openId: string | null;
+  onToggle: (id: string | null) => void;
+  facts: PlayerIndex;
+  rivalsWithCash: (amount: number | null) => number | null;
+}) {
+  if (!moves.length) return null;
+  const lead = featured ? moves[0] : null;
+  const rest = featured ? moves.slice(1) : moves;
+  const common = (move: StrategyMove, index: number): RowProps => ({
+    move,
+    index: index0 + index,
+    open: openId === move.id,
+    onToggle: () => onToggle(openId === move.id ? null : move.id),
+    facts,
+    rivalsWithCash,
+  });
+  return (
+    <section aria-label={title || "Movimientos"} className="flex flex-col gap-2.5">
+      {title ? <h3 className="px-1 text-[14px] font-medium text-white/50">{title}</h3> : null}
+      {lead ? <FeaturedMove {...common(lead, 0)} /> : null}
+      {rest.map((move, index) => (
+        <MoveCard key={move.id} {...common(move, index + (featured ? 1 : 0))} />
+      ))}
+    </section>
+  );
+}
+
+function FeaturedMove({ move, index, open, onToggle, facts, rivalsWithCash }: RowProps) {
+  const kind = kindOf(move.verb);
+  const info = kind === "BUSCA" ? null : factsFor(facts, move.playerId, move.title);
+  const name = kind === "BUSCA" ? move.position || move.title : move.title;
+  const sale = kind === "VENDE";
+  const rows = factRows(kind, move, info, rivalsWithCash);
+  return (
+    <article className="home-feature row-in" style={{ animationDelay: `${index * 30}ms` }}>
+      <div className="relative flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <span className="inline-flex rounded-full bg-[#FF7A3D]/20 px-2.5 py-1 text-[11.5px] font-medium text-[#FFB48A]">Prioridad</span>
+          <h4 className="mt-3 truncate text-[1.65rem] font-semibold leading-tight tracking-tight text-white">
+            {kind === "BUSCA" ? `Buscar ${name}` : name}
+          </h4>
+          <p className="mt-0.5 text-[14px] text-white/55">
+            {KIND_LABEL[kind]}
+            {move.position && kind !== "BUSCA" ? ` · ${move.position.slice(0, 3).toUpperCase()}` : ""}
+          </p>
+          {move.cashLabel ? (
+            <p className={`mt-3 text-[1.35rem] font-semibold tabular-nums ${sale ? "text-[#34D399]" : "text-white"}`}>
+              {sale ? "+" : ""}
+              {move.cashLabel}
+            </p>
+          ) : null}
+        </div>
+        <span className="shrink-0 rounded-full bg-gradient-to-br from-[#FF9A5A] to-[#FF7A3D]/10 p-[3px] shadow-[0_0_32px_rgba(255,122,61,0.45)]">
+          <PlayerAvatar player={{ name, image_url: move.imageUrl }} size="sm" className="!h-[5.25rem] !w-[5.25rem] !text-[18px] !ring-0 border-[3px] border-[#120C09]" />
+        </span>
+      </div>
       <button
         type="button"
-        className="flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.02]"
         onClick={onToggle}
         aria-expanded={open}
+        className="relative mt-4 inline-flex h-10 items-center gap-2 rounded-full bg-white px-5 text-[14px] font-semibold text-[#120C09] transition-transform duration-200 active:scale-95"
       >
-        <PlayerAvatar player={{ name, image_url: move.imageUrl }} size="sm" className="!h-11 !w-11 !text-[11px] !ring-0" />
+        {open ? "Ocultar" : "Ver detalle"}
+        <Chevron open={open} dark />
+      </button>
+      {open ? (
+        <div className="relative mt-4 border-t border-white/[0.08] pt-4">
+          <Expanded rows={rows} move={move} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function MoveCard({ move, index, open, onToggle, facts, rivalsWithCash }: RowProps) {
+  const kind = kindOf(move.verb);
+  const info = kind === "BUSCA" ? null : factsFor(facts, move.playerId, move.title);
+  const name = kind === "BUSCA" ? move.position || move.title : move.title;
+  const sale = kind === "VENDE";
+  const rows = factRows(kind, move, info, rivalsWithCash);
+  return (
+    <div className="home-glass row-in" style={{ animationDelay: `${index * 30}ms` }}>
+      <button type="button" className="flex w-full items-center gap-3.5 p-3.5 text-left" onClick={onToggle} aria-expanded={open}>
+        <span className="shrink-0 rounded-full bg-gradient-to-br from-white/30 to-white/5 p-[2px]">
+          <PlayerAvatar player={{ name, image_url: move.imageUrl }} size="sm" className="!h-11 !w-11 !text-[11px] !ring-0 border-2 border-[#120C09]" />
+        </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[16px] font-medium leading-tight text-white">
-            {kind === "BUSCA" ? `Buscar ${name}` : name}
-          </span>
-          <span className="mt-0.5 block truncate text-[13.5px] text-[#8B9EB0]">
+          <span className="block truncate text-[16px] font-medium leading-tight text-white">{kind === "BUSCA" ? `Buscar ${name}` : name}</span>
+          <span className="mt-0.5 block truncate text-[13.5px] text-white/50">
             {KIND_LABEL[kind]}
             {move.position && kind !== "BUSCA" ? ` · ${move.position.slice(0, 3).toUpperCase()}` : ""}
           </span>
         </span>
-        <span className={`shrink-0 text-[16px] font-medium tabular-nums ${sale ? "text-[#34D399]" : "text-white"}`}>
+        <span className={`shrink-0 text-[16px] font-semibold tabular-nums ${sale ? "text-[#34D399]" : "text-white"}`}>
           {move.cashLabel ? `${sale ? "+" : ""}${move.cashLabel}` : ""}
         </span>
         <Chevron open={open} />
       </button>
       {open ? (
-        <div className="px-4 pb-4 pl-[4.5rem]">
-          {rows.length ? (
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-              {rows.map(([label, value]) => (
-                <div key={label} className="min-w-0">
-                  <dt className="truncate text-[12.5px] text-[#8B9EB0]">{label}</dt>
-                  <dd className="mt-0.5 truncate text-[15px] font-medium tabular-nums text-white">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
-          {move.detail ? <p className="mt-3 text-[14px] leading-5 text-[#8B9EB0]">{move.detail}</p> : null}
-          <Link href={move.href} className="mt-3 inline-flex text-[14px] font-medium text-[#0297DE]">
-            Ver en {move.guide}
-          </Link>
+        <div className="border-t border-white/[0.06] px-4 pb-4 pt-3.5">
+          <Expanded rows={rows} move={move} />
         </div>
       ) : null}
-    </li>
+    </div>
   );
 }

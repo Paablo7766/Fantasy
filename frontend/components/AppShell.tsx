@@ -113,19 +113,17 @@ function DockLink({ item, active, href }: { item: NavItem; active: boolean; href
   return (
     <Link
       href={href}
-      className={`relative flex h-full min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium tracking-tight transition-colors duration-200 ${
-        active ? "text-[#0297DE]" : "text-[#8B9EB0]"
-      }`}
+      className="flex h-full min-w-0 flex-1 items-center justify-center"
       aria-current={active ? "page" : undefined}
     >
       <span
-        className={`absolute inset-x-5 top-0 h-[2px] rounded-full bg-[#0297DE] shadow-[0_0_8px_rgba(2,151,222,0.8)] transition-opacity duration-200 ${
-          active ? "opacity-100" : "opacity-0"
+        className={`flex flex-col items-center gap-0.5 rounded-xl px-3.5 py-1.5 text-[10px] font-medium tracking-tight transition-all duration-200 ${
+          active ? "bg-[#FF7A3D] text-[#120C09] shadow-[0_0_18px_rgba(255,122,61,0.45)]" : "text-white/50"
         }`}
-        aria-hidden="true"
-      />
-      <Icon name={item.label} />
-      <span>{item.label === "Recomendaciones" ? "Inicio" : item.label}</span>
+      >
+        <Icon name={item.label} />
+        <span>{item.label === "Recomendaciones" ? "Inicio" : item.label}</span>
+      </span>
     </Link>
   );
 }
