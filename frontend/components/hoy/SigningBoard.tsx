@@ -188,22 +188,31 @@ export function SigningBoard({
   const actions = useMemo(() => fichajes?.acciones || [], [fichajes?.acciones]);
   const radar = useMemo(() => fichajes?.en_radar || [], [fichajes?.en_radar]);
   const audit = useMemo(() => plan?.auditoria_ventas || [], [plan?.auditoria_ventas]);
-  // Pestaña Ventas: ofertas y jugadores auditados, más las ventas del plan que la auditoría no trae.
-  const salesCount = useMemo(() => {
-    const ventasView = views.find((item) => item.id === "ventas");
-    const audited = new Set(audit.map((row) => row.player_id));
-    const names = new Set(audit.map((row) => row.nombre.toLowerCase()));
-    const extra = (ventasView?.groups.flatMap((group) => group.moves) || []).filter(
-      (move) => !(move.playerId && audited.has(move.playerId)) && !names.has(move.title.toLowerCase()),
-    );
-    const planSales = (plan?.plan_fichajes?.acciones || []).filter(
-      (action) => (action.tipo === "VENDE" || action.tipo === "VENDER HOY") && !(action.player_id && audited.has(action.player_id)),
-    );
-    return audit.length + Math.max(extra.length, planSales.length);
-  }, [views, audit, plan?.plan_fichajes?.acciones]);
   const planMoves = useMemo(() => actions.map((action, index) => moveFromAction(action, index, photos)), [actions, photos]);
   const usePlan = desk === "estrategia" && planMoves.length > 0;
-  const listed = (usePlan ? planMoves : view.groups.flatMap((group) => group.moves)).map((move) =>
+
+  // Pestaña Ventas: lo auditado más las ventas de la vista y del plan que la auditoría no trae.
+  // El contador y la lista salen de aquí, así que siempre coinciden.
+  const ventasExtra = useMemo(() => {
+    const audited = new Set(audit.map((row) => row.player_id));
+    const seen = new Set(audit.map((row) => row.nombre.toLowerCase()));
+    const fromView = views.find((item) => item.id === "ventas")?.groups.flatMap((group) => group.moves) || [];
+    const fromPlan = planMoves.filter((move) => {
+      const kind = kindOf(move.verb);
+      return kind === "VENDE" || kind === "ESCAPARATE";
+    });
+    const rows: StrategyMove[] = [];
+    for (const move of [...fromView, ...fromPlan]) {
+      const key = move.title.toLowerCase();
+      if ((move.playerId && audited.has(move.playerId)) || seen.has(key)) continue;
+      seen.add(key);
+      rows.push(move.imageUrl ? move : { ...move, imageUrl: photoFor(photos, move.playerId, move.title) });
+    }
+    return rows;
+  }, [views, audit, planMoves, photos]);
+  const salesCount = audit.length + ventasExtra.length;
+
+  const listed = (desk === "ventas" ? ventasExtra : usePlan ? planMoves : view.groups.flatMap((group) => group.moves)).map((move) =>
     move.imageUrl ? move : { ...move, imageUrl: photoFor(photos, move.playerId, move.title) },
   );
 
@@ -321,6 +330,20 @@ export function SigningBoard({
       ) : advisor ? (
         <div key={desk}>
           <SalesAdvisor rows={audit} summary={plan?.resumen_ventas} photos={photos} />
+          {ventasExtra.length ? (
+            <div className="mt-6">
+              <MoveList
+                title="Otras ventas del plan"
+                moves={ventasExtra}
+                index0={audit.length}
+                featured={false}
+                openId={openId}
+                onToggle={setOpenId}
+                facts={facts}
+                rivalsWithCash={rivalsWithCash}
+              />
+            </div>
+          ) : null}
         </div>
       ) : total ? (
         <div key={desk} className="flex flex-col gap-6">
