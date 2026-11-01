@@ -731,6 +731,7 @@ def expected_opta_points(
     return {
         "expected_points": result["expected_points"],
         "ceiling_points": result["ceiling_points"],
+        "xp_condicional": result.get("xp_condicional"),
         "goal_probability": result.get("goal_probability"),
         "assist_probability": result.get("assist_probability"),
         "p_start_eff": result.get("p_start_eff"),
@@ -934,6 +935,8 @@ def apply_own_intel(
         if isinstance(pts, dict) and pts.get("expected_points") is not None:
             player["own_expected_points"] = pts["expected_points"]
             player["own_ceiling_points"] = pts["ceiling_points"]
+            if pts.get("xp_condicional") is not None:
+                player["own_points_if_starts"] = pts["xp_condicional"]
             player["own_goal_probability"] = pts["goal_probability"]
             player["own_assist_probability"] = pts["assist_probability"]
             if pts.get("p_start_eff") is not None:

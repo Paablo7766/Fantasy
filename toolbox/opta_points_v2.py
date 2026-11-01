@@ -1,4 +1,9 @@
-"""Motor E[Pts] OPTA v2.0: escalones Poisson, Ordered Probit y Monte Carlo."""
+"""E[pts] de jornada.
+
+Los puntos que se publican salen de la serie fantasy del jugador (titular
+contra revulsivo, contracción al prior del puesto y rival). El bloque de
+eventos solo alimenta P(gol) y P(asistencia).
+"""
 
 from __future__ import annotations
 
@@ -9,11 +14,9 @@ import numpy as np
 from scipy.special import gammainc
 from scipy.stats import norm
 
+from toolbox.engine.xp_calculator import predecir_desde_jugador
+
 GOAL_PTS = {"POR": 6.0, "DEF": 6.0, "MC": 5.0, "DEL": 4.0}
-CS_PTS = {"POR": 4.0, "DEF": 3.0, "MC": 2.0, "DEL": 1.0}
-GC_PTS_PER_2 = {"POR": -2.0, "DEF": -2.0, "MC": -1.0, "DEL": -1.0}
-LOSS_DIVISOR = {"POR": 8, "DEF": 8, "MC": 10, "DEL": 12}
-BASE_LOSSES_90 = {"POR": 5.2, "DEF": 9.8, "MC": 11.4, "DEL": 10.6}
 UEFA_FATIGUE_RHO = {"POR": 0.02, "DEF": 0.14, "MC": 0.18, "DEL": 0.16}
 PROBIT_THRESHOLDS = np.array([6.75, 7.10, 7.45, 7.90], dtype=np.float64)
 MC_SIMS_DEFAULT = 4000
@@ -138,7 +141,12 @@ def compute_expected_opta_points_v2(
     run_monte_carlo: bool = True,
     n_sims: int = MC_SIMS_DEFAULT,
 ) -> dict[str, float]:
-    """E[Pts] determinista + techo P90 (Monte Carlo vectorizado)."""
+    """Valor de jornada, puntos si sale de inicio y techo.
+
+    ``run_monte_carlo`` y ``n_sims`` se conservan para quien ya llama con
+    ellos. El techo ya no sale de una simulación: es la proyección de
+    titular más la volatilidad de sus puntos.
+    """
     if _player_ineligible(player):
         return _empty_result()
 
@@ -169,16 +177,12 @@ def compute_expected_opta_points_v2(
         p_sub_eff = 0.0
         mu_m_start = 90.0
         eff_m_start = mu_m_start
-        p_60_given_start = 0.985
     else:
         p_sub_eff = (1.0 - p_start_eff) * float(np.clip(0.65 * p_titular_raw + 0.25 * minutes_pct, 0.0, 0.75))
         raw_m_start = (minutes_total / starts_count) if starts_count >= 2 else (68.0 + 18.0 * minutes_pct)
         mu_m_start = float(np.clip(raw_m_start, 55.0, 90.0))
-        # ``on_verge`` (tarjetas) recorta los minutos de una sola vez aquí: el
-        # ajuste se propaga a ``expected_minutes`` y a ``p_60_given_start`` sin
-        # restarse otra vez en cada fórmula.
+        # ``on_verge`` (tarjetas) recorta los minutos esperados una sola vez.
         eff_m_start = mu_m_start - (4.5 if on_verge else 0.0)
-        p_60_given_start = float(norm.cdf((eff_m_start - 60.0) / 11.5))
 
     expected_minutes = p_start_eff * eff_m_start + p_sub_eff * 22.0
     tau = expected_minutes / 90.0
@@ -186,149 +190,49 @@ def compute_expected_opta_points_v2(
         out = _empty_result()
         return out
 
-    pts_minutes = p_start_eff * (1.0 + p_60_given_start) + p_sub_eff * 1.0
-
     raw_xg = float(form.get("xg") or 0.0)
     raw_xa = float(form.get("xa") or 0.0)
     xg_90 = rate_per90(raw_xg, minutes_total)
     xa_90 = rate_per90(raw_xa, minutes_total)
-
     phi_atk = float(np.clip(lambda_own / 1.32, 0.45, 2.40))
     phi_def = float(np.clip(lambda_opp / 1.32, 0.45, 2.40))
 
-    lam_g = xg_90 * phi_atk * tau
-    lam_a = xa_90 * phi_atk * tau
-
-    raw_kp = float(form.get("key_passes") or 0.0)
-    kp_90 = rate_per90(raw_kp, minutes_total, sparse_cap=3.0)
-    lam_kp = kp_90 * phi_atk * tau
-    pts_direct_atk = GOAL_PTS[pos] * lam_g + 3.0 * lam_a + 0.28 * max(0.0, lam_kp - lam_a)
-
-    raw_duels = float(form.get("duels_won") or 0.0)
-    duels_90 = rate_per90(raw_duels, minutes_total, sparse_cap=8.0)
-
-    mu_sot = (2.6 * xg_90 + (0.25 if pos in {"MC", "DEL"} else 0.05)) * phi_atk * tau
-    mu_drib = (0.28 * duels_90 if pos in {"MC", "DEL"} else 0.08 * duels_90) * tau
-    mu_box = (1.8 * xg_90 + 0.9 * xa_90) * phi_atk * tau
-    pts_atk_vol = (
-        poisson_step_expectation(mu_sot, 2)
-        + poisson_step_expectation(mu_drib, 2)
-        + poisson_step_expectation(mu_box, 2)
+    fantasy = predecir_desde_jugador(
+        player,
+        prob_titular=p_start_eff,
+        lambda_favor=lambda_own,
+        lambda_contra=lambda_opp,
+        prob_clean_sheet=p_cs_own,
     )
-
-    p_cs = p_cs_own if p_cs_own is not None else math.exp(-lambda_opp)
-    pts_cs = CS_PTS[pos] * p_start_eff * p_60_given_start * p_cs
-    pts_gc = GC_PTS_PER_2[pos] * poisson_step_expectation(lambda_opp * tau, 2)
-
-    pts_saves = 0.0
-    if pos == "POR":
-        raw_saves = float(form.get("saves") or 2.8)
-        saves_90 = rate_per90(raw_saves, minutes_total, sparse_cap=6.0)
-        mu_saves = saves_90 * (phi_def**0.65) * tau
-        p_pen_saved = p_start_eff * (0.14 * phi_def) * 0.22
-        pts_saves = poisson_step_expectation(mu_saves, 2) + 5.0 * p_pen_saved
-
-    raw_clr = float(form.get("clearances") or (3.2 if pos == "DEF" else 0.8))
-    clr_90 = rate_per90(raw_clr, minutes_total, sparse_cap=6.0)
-    rec_90 = max(1.5, 0.85 * duels_90)
-    pts_def_vol = poisson_step_expectation(clr_90 * (phi_def**0.50) * tau, 3) + poisson_step_expectation(
-        rec_90 * (phi_def**0.35) * tau, 5
-    )
-
-    losses_90 = BASE_LOSSES_90[pos] + 1.4 * kp_90 + 0.9 * duels_90
-    pts_losses = -1.0 * poisson_step_expectation(losses_90 * tau, LOSS_DIVISOR[pos])
-
-    p_yc_base = {"POR": 0.04, "DEF": 0.22, "MC": 0.19, "DEL": 0.12}[pos]
-    p_yc = float(np.clip(p_yc_base * (phi_def**0.3) * tau, 0.02, 0.45))
-    p_rc = 0.012 * tau if pos == "DEF" else 0.006 * tau
-    pts_cards = -1.0 * p_yc - 3.0 * p_rc
-
-    explicit_bonus = player.get("relevo_bonus")
-    if isinstance(explicit_bonus, bool) or not isinstance(explicit_bonus, int):
-        explicit_bonus = None
-    if explicit_bonus is not None and 0 <= explicit_bonus <= 4:
-        inferred_bonus = float(explicit_bonus) * (p_start_eff + p_sub_eff)
-    else:
-        avg_points = float(player.get("average_points") or 4.0)
-        avg_rating = float(
-            form.get("average_rating") or form.get("rating") or (6.75 + 0.08 * (avg_points - 4.0))
-        )
-        # El bonus es una valoración (nota media), no un subproducto de los
-        # minutos: se acota el rating al rango del probe y se reescala por
-        # ``p_start_eff`` para que acumular minutos con nota baja no infle el
-        # bonus (el sustituto cobra el bonus de suplente, no el de titular).
-        inferred_bonus = infer_opta_performance_bonus(
-            avg_rating=float(np.clip(avg_rating, 5.6, 8.4)),
-            lambda_own=lambda_own,
-            lambda_opp=lambda_opp,
-            key_passes_90=kp_90,
-            duels_won_90=duels_90,
-            p_start_eff=p_start_eff,
-            p_sub_eff=p_sub_eff,
-        )
-
-    expected_pts = (
-        pts_minutes
-        + pts_direct_atk
-        + pts_atk_vol
-        + pts_cs
-        + pts_gc
-        + pts_saves
-        + pts_def_vol
-        + pts_losses
-        + pts_cards
-        + inferred_bonus
-    )
-
+    xp_pizarra = float(fantasy["xp_pizarra"])
+    xp_condicional = float(fantasy["xp_condicional"])
+    techo = float(fantasy["techo"])
     jp_mult = float(form.get("jp_multiplier") or 1.0)
     if jp_mult != 1.0:
-        expected_pts *= 1.0 + 0.35 * (jp_mult - 1.0)
+        jp_scale = 1.0 + 0.35 * (jp_mult - 1.0)
+        xp_pizarra *= jp_scale
+        xp_condicional *= jp_scale
+        techo *= jp_scale
 
     play_mass = max(1e-4, p_start_eff + p_sub_eff)
     p_goal = (1.0 - math.exp(-max(0.0, xg_90 * phi_atk * tau / play_mass))) * play_mass
     p_assist = (1.0 - math.exp(-max(0.0, xa_90 * phi_atk * tau / play_mass))) * play_mass
 
-    if run_monte_carlo and n_sims > 0:
-        seed = abs(hash(str(player.get("player_id") or player.get("name") or "0"))) % (2**32)
-        rng = np.random.default_rng(seed=seed)
-        u_play = rng.random(n_sims)
-        is_starter = u_play < p_start_eff
-        is_sub = (~is_starter) & (u_play < (p_start_eff + p_sub_eff))
-        active = is_starter | is_sub
-
-        plays_60 = is_starter & (rng.random(n_sims) < p_60_given_start)
-        sim_pts = np.where(plays_60, 2.0, np.where(active, 1.0, 0.0))
-
-        opp_goals = rng.poisson(lambda_opp, size=n_sims)
-        cs_achieved = plays_60 & (opp_goals == 0)
-        sim_pts += np.where(cs_achieved, CS_PTS[pos], 0.0)
-        sim_pts += np.where(active, GC_PTS_PER_2[pos] * (opp_goals // 2), 0.0)
-
-        # ``tau / play_mass`` es el tiempo condicionado a jugar. El antiguo suelo
-        # de 0.25 truncaba esa condición al alza en muestras bajas: un suplente
-        # de 10' recibía el xG de un titular de 22'. Se acota a ``[0, 1]`` (nadie
-        # juega más de 90') y se aplica solo a los que juegan, sin alterar la
-        # media: ``tau`` ya es el tiempo esperado.
-        tau_cond = float(np.clip(tau / play_mass, 0.0, 1.0))
-        g_sim = rng.poisson(max(0.0, xg_90 * phi_atk * tau_cond), size=n_sims)
-        a_sim = rng.poisson(max(0.0, xa_90 * phi_atk * tau_cond), size=n_sims)
-        sim_pts += np.where(active, GOAL_PTS[pos] * g_sim + 3.0 * a_sim, 0.0)
-
-        vol_mean = (pts_atk_vol + pts_saves + pts_def_vol + pts_losses + pts_cards + inferred_bonus) / play_mass
-        vol_noise = rng.normal(loc=vol_mean, scale=1.65, size=n_sims)
-        sim_pts += np.where(active, np.round(vol_noise + 0.8 * (g_sim > 0) + 0.5 * cs_achieved), 0.0)
-        ceiling_pts = float(np.percentile(sim_pts, 90))
-    else:
-        ceiling_pts = expected_pts * 1.65 + 2.0
-
+    p_yc_base = {"POR": 0.04, "DEF": 0.22, "MC": 0.19, "DEL": 0.12}[pos]
+    p_yc = float(np.clip(p_yc_base * (phi_def**0.3) * tau, 0.02, 0.45))
     next_match_survival = 1.0 - (p_start_eff * p_yc) if on_verge else 1.0
 
     return {
-        "expected_points": round(max(0.0, expected_pts), 3),
-        "ceiling_points": round(max(expected_pts, ceiling_pts), 2),
+        "expected_points": round(max(0.0, xp_pizarra), 3),
+        "ceiling_points": round(max(xp_pizarra, techo), 2),
+        "xp_condicional": round(xp_condicional, 2),
+        "xp_pizarra": round(max(0.0, xp_pizarra), 3),
+        "base_titular": fantasy["base_titular"],
+        "factor_partido": fantasy["factor_partido"],
+        "n_titular": fantasy["n_titular"],
+        "prob_clean_sheet": fantasy["prob_clean_sheet"],
         "p_start_eff": round(p_start_eff, 4),
         "expected_minutes": round(expected_minutes, 1),
-        "inferred_bonus": round(inferred_bonus, 3),
         "next_match_survival": round(next_match_survival, 4),
         "goal_probability": round(float(np.clip(p_goal, 0.0, 1.0)), 4),
         "assist_probability": round(float(np.clip(p_assist, 0.0, 1.0)), 4),

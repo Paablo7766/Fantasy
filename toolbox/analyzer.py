@@ -65,8 +65,10 @@ DOUBT_TITULAR_FACTOR = 0.45
 _INJURED = {"lesionado", "baja", "injured", "out"}
 _DOUBTFUL = {"doubtful", "duda", "doubt"}
 _CALIBRATION_NOTE = (
-    "En el once se muestra jornada_ev (valor esperado de la jornada). "
-    "OPTA v2 ya incluye titularidad y minutos; el motor v1 multiplica por p_titular. "
+    "En el once se muestra jornada_ev (valor esperado de la jornada, con la titularidad dentro). "
+    "xp condicional es lo que haría si sale de inicio: la media de sus partidos de titular, "
+    "contraída al prior del puesto si hay poca muestra, y ajustada al rival. "
+    "El motor v1, sin esa serie, multiplica por p_titular. "
     "Un emparejamiento con matching_confidence < 0.85 no aporta titularidad ni forma. "
     "Sin scraper, la titularidad sale de week_points: participaciones recientes / 5, tope 55 %. "
     "En duda se aplica un recorte adicional sobre p_titular."
@@ -469,11 +471,27 @@ def _opta_v2_payload(
         form = player["form"]
     sanction = usable.get("sanction") if isinstance(usable.get("sanction"), dict) else player.get("sanction")
     p_titular = usable.get("p_titular") if usable.get("p_titular") is not None else player.get("p_titular")
+    week_points = player.get("week_points") if isinstance(player.get("week_points"), list) else None
+    if week_points is None and isinstance(usable.get("week_points"), list):
+        week_points = usable.get("week_points")
+    average_rating = None
+    for source in (form if isinstance(form, dict) else {}, player, usable):
+        if not isinstance(source, dict):
+            continue
+        for key in ("average_rating", "sofascore_rating", "sofascore_rating_medio"):
+            rating = source.get(key)
+            if isinstance(rating, (int, float)) and not isinstance(rating, bool):
+                average_rating = float(rating)
+                break
+        if average_rating is not None:
+            break
     return {
         "player_id": player.get("player_id") or usable.get("player_id"),
         "position": position,
         "p_titular": p_titular,
+        "week_points": week_points or [],
         "form": form if isinstance(form, dict) else {},
+        "average_rating": average_rating,
         "sanction": sanction if isinstance(sanction, dict) else {},
         "player_status": player.get("player_status") or usable.get("player_status"),
         "fitness": usable.get("fitness") if isinstance(usable.get("fitness"), str) else player.get("fitness"),
@@ -672,6 +690,10 @@ def candidate_from_player(
     if uses_v2:
         opta = float(v2["expected_points"])
         components["opta_v2"] = opta
+        for key in ("base_titular", "factor_partido", "n_titular"):
+            piece = v2.get(key)
+            if isinstance(piece, (int, float)) and not isinstance(piece, bool):
+                components[key] = round(float(piece), 4)
         if bonus is not None:
             bonus = None
     else:
@@ -691,12 +713,16 @@ def candidate_from_player(
     weak_titularity = p_titular is not None and float(p_titular) <= FALLBACK_TITULAR_CAP
     if uses_v2 or external_ev:
         jornada_ev = round(points, 4)
-        # E[pts] de OPTA v2 ya pondera por ``p_start_eff``. Un suplente
-        # (titularidad estimada ≤ tope del fallback) no puede publicar ese
-        # número como «puntos si titular»: el fallback inflaría el suplente
-        # hasta los puntos del titular. O hay titularidad real (scraper o
-        # roster) o el campo queda vacío y la UI usa ``jornada_ev``.
-        points_if_starts = points if (not weak_titularity and not external_ev) else None
+        # ``expected_points`` del motor ya es el valor de jornada (titularidad
+        # dentro). «Si titular» es la proyección condicionada a salir de inicio,
+        # también para quien rota: no es la media de temporada inflada.
+        conditional = v2.get("xp_condicional") if uses_v2 and isinstance(v2, dict) else None
+        if isinstance(conditional, (int, float)) and not isinstance(conditional, bool) and float(conditional) > 0:
+            points_if_starts = round(float(conditional), 2)
+        elif weak_titularity or external_ev:
+            points_if_starts = None
+        else:
+            points_if_starts = points
         objective = round(weights.expected_points * jornada_ev, 4)
     else:
         points_if_starts = points
