@@ -1,21 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
-import { points, titularShare } from "@/lib/format";
+import { points } from "@/lib/format";
 import { signedPoints } from "@/lib/hoy";
 import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
 import type { CapitanPick, OptimizePayload, PlanPayload } from "@/lib/types";
 
-type Swap = {
-  outName: string;
-  outPos: string;
-  outEv: number | null;
-  inName: string;
-  inPos: string;
-  inEv: number | null;
-};
-
 type Mover = { name: string; position: string; ev: number | null };
+type Swap = { out: Mover; into: Mover };
 
 function foldKey(value: string): string {
   return value
@@ -61,64 +54,43 @@ function buildSwaps(plan: PlanPayload | null, optimize: OptimizePayload | null):
   const swaps: Swap[] = [];
   for (const out of leaves) {
     const at = pool.findIndex((row) => row.position === out.position);
-    const incoming = at >= 0 ? pool.splice(at, 1)[0] : pool.shift();
-    if (!incoming) break;
-    swaps.push({
-      outName: out.name,
-      outPos: out.position,
-      outEv: out.ev,
-      inName: incoming.name,
-      inPos: incoming.position,
-      inEv: incoming.ev,
-    });
+    const into = at >= 0 ? pool.splice(at, 1)[0] : pool.shift();
+    if (!into) break;
+    swaps.push({ out, into });
   }
   return swaps;
 }
 
-function Captain({ pick, photos, label }: { pick: CapitanPick | null | undefined; photos: PhotoIndex; label: string }) {
-  if (!pick?.nombre) return null;
-  const base = typeof pick.jornada === "number" ? pick.jornada : typeof pick.si_titular === "number" ? pick.si_titular : null;
-  const ceiling = typeof pick.techo === "number" ? pick.techo : null;
-  const share = titularShare(pick.p_titular);
+function Chevron({ open }: { open: boolean }) {
   return (
-    <div className="min-w-0 flex-1 rounded-xl border border-white/[0.07] p-3">
-      <p className="truncate text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#8B9EB0]">{label}</p>
-      <div className="mt-2 flex items-center gap-2.5">
-        <PlayerAvatar
-          player={{ name: pick.nombre, image_url: photoFor(photos, pick.player_id, pick.nombre) }}
-          size="sm"
-          className="!h-9 !w-9 !text-[10px] !ring-0 border border-white/[0.12]"
-        />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-white">{pick.nombre}</p>
-          {share !== null ? <p className="text-[10.5px] text-[#8B9EB0]">Titular {Math.round(share * 100)}%</p> : null}
-        </div>
-      </div>
-      <div className="mt-2.5 space-y-0.5 font-mono text-[11.5px] tabular-nums">
-        {base !== null ? <p className="text-[#0297DE]">x2 = {points(base * 2)} pts</p> : null}
-        {ceiling !== null ? <p className="text-[#FC734D]">Techo x2 = {points(ceiling * 2)} pts</p> : null}
-      </div>
-    </div>
+    <svg
+      viewBox="0 0 16 16"
+      className={`h-4 w-4 shrink-0 text-[#4B6075] transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      aria-hidden="true"
+    >
+      <path d="M4 6.2 8 10l4-3.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
-function SwapPlayer({ name, position, ev, photos }: { name: string; position: string; ev: number | null; photos: PhotoIndex }) {
+function Person({ name, caption, photos }: { name: string; caption?: string; photos: PhotoIndex }) {
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-2">
-      <PlayerAvatar
-        player={{ name, image_url: photoFor(photos, null, name) }}
-        size="sm"
-        className="!h-7 !w-7 !text-[9px] !ring-0 border border-white/[0.12]"
-      />
+    <span className="flex min-w-0 flex-1 items-center gap-2.5">
+      <PlayerAvatar player={{ name, image_url: photoFor(photos, null, name) }} size="sm" className="!h-9 !w-9 !text-[10px] !ring-0" />
       <span className="min-w-0">
-        <span className="block truncate text-[12.5px] font-medium leading-tight text-white">{name}</span>
-        <span className="block font-mono text-[10px] leading-tight text-[#8B9EB0]">
-          {position.slice(0, 3)}
-          {ev !== null ? ` · ${points(ev)} xP` : ""}
-        </span>
+        <span className="block truncate text-[14.5px] font-medium leading-tight text-white">{name}</span>
+        {caption ? <span className="block truncate text-[12.5px] text-[#8B9EB0]">{caption}</span> : null}
       </span>
     </span>
   );
+}
+
+function captainCaption(pick: CapitanPick): string | undefined {
+  const base = typeof pick.jornada === "number" ? pick.jornada : typeof pick.si_titular === "number" ? pick.si_titular : null;
+  return base !== null ? `x2 = ${points(base * 2)} pts` : undefined;
 }
 
 export function HomeLineup({
@@ -130,44 +102,75 @@ export function HomeLineup({
   optimize: OptimizePayload | null;
   photos: PhotoIndex;
 }) {
+  const [open, setOpen] = useState(false);
   const swaps = buildSwaps(plan, optimize);
   const safe = plan?.capitan_seguro || optimize?.capitan_seguro;
   const bold = plan?.capitan_remontada || optimize?.capitan_remontada;
-  const showBold = bold?.nombre && bold.nombre !== safe?.nombre;
+  const showBold = bold?.nombre && bold.nombre !== safe?.nombre ? bold : null;
   if (!swaps.length && !safe?.nombre && !showBold) return null;
 
+  const summary = [
+    swaps.length ? `${swaps.length} ${swaps.length === 1 ? "cambio" : "cambios"}` : "Sin cambios",
+    safe?.nombre ? `Capitán ${safe.nombre}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <section className="rounded-2xl border border-white/[0.07] bg-[#07121A]" aria-label="Cambios en tu XI y capitanía">
-      <h2 className="border-b border-white/[0.05] px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#8B9EB0]">
-        Cambios en tu XI &amp; capitanía
-      </h2>
+    <section className="overflow-hidden rounded-3xl bg-white/[0.035]" aria-label="Tu once y capitanía">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition-colors hover:bg-white/[0.02]"
+      >
+        <span className="min-w-0">
+          <span className="block text-[16px] font-medium text-white">Tu once</span>
+          <span className="mt-0.5 block truncate text-[13.5px] text-[#8B9EB0]">{summary}</span>
+        </span>
+        <Chevron open={open} />
+      </button>
 
-      {swaps.length ? (
-        <ul className="divide-y divide-white/[0.05]">
-          {swaps.map((swap, index) => {
-            const gain = swap.outEv !== null && swap.inEv !== null ? swap.inEv - swap.outEv : null;
-            return (
-              <li key={`${swap.outName}-${swap.inName}`} className="row-in flex items-center gap-2 px-3.5 py-2.5" style={{ animationDelay: `${index * 30}ms` }}>
-                <SwapPlayer name={swap.outName} position={swap.outPos} ev={swap.outEv} photos={photos} />
-                <span className="shrink-0 text-xs text-[#4B6075]" aria-hidden="true">➔</span>
-                <SwapPlayer name={swap.inName} position={swap.inPos} ev={swap.inEv} photos={photos} />
-                {gain !== null ? (
-                  <span className={`shrink-0 font-mono text-[11.5px] font-semibold tabular-nums ${gain >= 0 ? "text-[#0297DE]" : "text-[#FC734D]"}`}>
-                    ({signedPoints(gain)})
-                  </span>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="px-3.5 py-3 text-[12px] text-[#8B9EB0]">Con el plan tu once no cambia.</p>
-      )}
+      {open ? (
+        <div className="row-in border-t border-white/[0.06] px-4 pb-4 pt-3">
+          {swaps.length ? (
+            <ul className="space-y-3">
+              {swaps.map((swap) => {
+                const gain = swap.out.ev !== null && swap.into.ev !== null ? swap.into.ev - swap.out.ev : null;
+                return (
+                  <li key={`${swap.out.name}-${swap.into.name}`} className="flex items-center gap-2.5">
+                    <Person name={swap.out.name} caption={swap.out.ev !== null ? `${points(swap.out.ev)} xP` : undefined} photos={photos} />
+                    <span className="shrink-0 text-[#4B6075]" aria-hidden="true">→</span>
+                    <Person name={swap.into.name} caption={swap.into.ev !== null ? `${points(swap.into.ev)} xP` : undefined} photos={photos} />
+                    {gain !== null ? (
+                      <span className={`shrink-0 text-[14px] font-medium tabular-nums ${gain >= 0 ? "text-[#0297DE]" : "text-[#FC734D]"}`}>
+                        {signedPoints(gain)}
+                      </span>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-[14px] text-[#8B9EB0]">Con el plan tu once no cambia.</p>
+          )}
 
-      {safe?.nombre || showBold ? (
-        <div className="flex gap-2 border-t border-white/[0.05] p-3">
-          <Captain pick={safe} photos={photos} label="Capitán seguro" />
-          {showBold ? <Captain pick={bold} photos={photos} label="Capitán remontada" /> : null}
+          {safe?.nombre || showBold ? (
+            <div className="mt-4 space-y-3 border-t border-white/[0.06] pt-4">
+              {safe?.nombre ? (
+                <div>
+                  <p className="mb-2 text-[12.5px] text-[#8B9EB0]">Capitán seguro</p>
+                  <Person name={safe.nombre} caption={captainCaption(safe)} photos={photos} />
+                </div>
+              ) : null}
+              {showBold?.nombre ? (
+                <div>
+                  <p className="mb-2 text-[12.5px] text-[#8B9EB0]">Capitán remontada</p>
+                  <Person name={showBold.nombre} caption={captainCaption(showBold)} photos={photos} />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>

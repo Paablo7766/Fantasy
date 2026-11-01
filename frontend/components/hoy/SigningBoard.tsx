@@ -11,11 +11,11 @@ import type { NeedsPayload, OptimizePayload, PlanFichajeAccion, PlanPayload, Squ
 
 type Kind = "PUJA" | "BUSCA" | "VENDE" | "CLAUSULAZO";
 
-const KIND_STYLE: Record<Kind, { label: string; className: string }> = {
-  PUJA: { label: "Pujar", className: "bg-[#0297DE]/15 text-[#67C6F5]" },
-  BUSCA: { label: "Buscar", className: "bg-white/[0.06] text-[#8B9EB0]" },
-  VENDE: { label: "Vender", className: "bg-[#10B981]/15 text-[#6EE7B7]" },
-  CLAUSULAZO: { label: "Cláusula", className: "bg-[#FC734D]/15 text-[#FFB4A0]" },
+const KIND_LABEL: Record<Kind, string> = {
+  PUJA: "Pujar",
+  BUSCA: "Buscar en el mercado",
+  VENDE: "Vender",
+  CLAUSULAZO: "Pagar cláusula",
 };
 
 function kindOf(verb: string): Kind {
@@ -59,13 +59,6 @@ const TAB_LABEL: Record<StrategyView["id"], string> = {
   clausulas: "Cláusulas",
   ventas: "Ventas",
 };
-
-function leadLine(detail: string | null): string | null {
-  if (!detail) return null;
-  const line = detail.split(/(?<=\.)\s+/)[0]?.trim();
-  if (!line) return null;
-  return line.length > 96 ? `${line.slice(0, 93)}…` : line;
-}
 
 const LINE_CODES: Record<string, string> = {
   POR: "POR",
@@ -128,6 +121,7 @@ export function SigningBoard({
   );
   const [desk, setDesk] = useState<StrategyView["id"]>("estrategia");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const view = views.find((item) => item.id === desk) ?? views[0];
   const fichajes = plan?.plan_fichajes;
   const actions = useMemo(() => fichajes?.acciones || [], [fichajes?.acciones]);
@@ -144,21 +138,11 @@ export function SigningBoard({
       ? actions.map((action, index) => (action.momento === "luego" ? planMoves[index].id : null)).filter((id): id is string => id !== null)
       : [],
   );
-  const net = (rows: StrategyMove[]) => {
-    const values = rows.map((move) => move.cashImpact).filter((value): value is number => value !== null);
-    return values.length ? values.reduce((total, value) => total + value, 0) : null;
-  };
 
   const verdict =
     desk === "estrategia"
       ? fichajes?.veredicto || (view.pointsTone === "up" ? "Hazlo ya" : view.headline || "Sin plan")
       : view.headline || view.label;
-  const gain =
-    typeof fichajes?.mejora_puntos_jornada === "number"
-      ? signedPoints(fichajes.mejora_puntos_jornada)
-      : view.pointsMove
-        ? view.pointsMove.replace(" pts", "")
-        : null;
   const cashNow = typeof plan?.cash_eur === "number" ? plan.cash_eur : null;
   const cashEnd = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
 
@@ -182,14 +166,24 @@ export function SigningBoard({
     return squads.rivals.filter((rival) => typeof rival.cash_eur === "number" && rival.cash_eur >= amount).length;
   };
 
+  const total = sales.length + buys.length;
+  const today = [...sales, ...buys].filter((move) => !laterIds.has(move.id));
+  const later = [...sales, ...buys].filter((move) => laterIds.has(move.id));
+  const hasBreakdown = desk === "estrategia" && (cashNow !== null || cashEnd !== null || lineDelta);
+
   return (
     <div className="desk">
+      <div className="px-1">
+        <h2 className="truncate text-[1.6rem] font-semibold leading-tight tracking-tight text-white">
+          {loading && !plan ? "…" : verdict}
+        </h2>
+        <p className="mt-1 text-[14px] text-[#8B9EB0]">
+          {refreshing ? "Actualizando…" : total ? `${total} ${total === 1 ? "movimiento" : "movimientos"}` : "Sin movimientos"}
+        </p>
+      </div>
+
       <div className="desk-switch" role="tablist" aria-label="Mesas de recomendación">
         {views.map((item) => {
-          const count =
-            item.id === "estrategia" && planMoves.length
-              ? planMoves.length
-              : item.groups.reduce((total, group) => total + group.moves.length, 0);
           const active = item.id === view.id;
           return (
             <button
@@ -204,95 +198,71 @@ export function SigningBoard({
               }}
             >
               {TAB_LABEL[item.id]}
-              {count ? <span>{count}</span> : null}
             </button>
           );
         })}
       </div>
 
-      <header className="rounded-2xl border border-white/[0.07] bg-[#07121A] p-4">
-        <div className="flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#8B9EB0]">Qué hace el plan</p>
-            <p className="mt-1.5 truncate text-xl font-semibold leading-tight tracking-tight text-white">
-              {loading && !plan ? "…" : verdict}
-            </p>
-            {refreshing ? <p className="mt-1 font-mono text-[11px] text-[#0297DE]">Actualizando</p> : null}
-          </div>
-          {gain && desk === "estrategia" ? (
-            <div className="shrink-0 text-right">
-              <p className={`font-mono text-2xl font-semibold leading-none tabular-nums ${gain.startsWith("−") || gain.startsWith("-") ? "text-[#FC734D]" : "text-[#0297DE]"}`}>
-                {gain}
-              </p>
-              <p className="mt-1 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#8B9EB0]">pts/jornada</p>
-            </div>
-          ) : null}
-        </div>
-
-        {desk === "estrategia" && (cashNow !== null || cashEnd !== null) ? (
-          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-white/[0.05] bg-[#02070A]/60 p-2.5 font-mono text-xs tabular-nums">
-            {cashNow !== null ? <span className="text-[#C5D4E2]">Inicial: {eurShort(cashNow)}</span> : null}
-            {salesActions.length ? (
-              <>
-                <span className="text-[#4B6075]" aria-hidden="true">➔</span>
-                <span className="text-[#10B981]">
-                  Ventas ({salesActions.length}): +{eurShort(incomeTotal)}
-                </span>
-              </>
-            ) : null}
-            {buyActions.length ? (
-              <>
-                <span className="text-[#4B6075]" aria-hidden="true">➔</span>
-                <span className="text-[#0297DE]">
-                  Compras ({buyActions.length}): −{eurShort(spendTotal)}
-                </span>
-              </>
-            ) : null}
-            {cashEnd !== null ? (
-              <>
-                <span className="text-[#4B6075]" aria-hidden="true">➔</span>
-                <span className={cashEnd < 0 ? "text-[#FC734D]" : "text-white"}>Final: {eurShort(cashEnd)}</span>
-              </>
-            ) : null}
-          </div>
-        ) : null}
-
-        {desk === "estrategia" && lineDelta ? (
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] tabular-nums">
-            <span className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#8B9EB0]">Impacto</span>
-            {lineDelta.map(({ line, delta }) => (
-              <span key={line} className={Math.abs(delta) < 0.05 ? "text-[#4B6075]" : delta > 0 ? "text-[#0297DE]" : "text-[#FC734D]"}>
-                {line} {Math.abs(delta) < 0.05 ? "=" : `${signedPoints(delta)} pts`}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </header>
-
       {loading && !plan ? (
         <div className="desk-skel" aria-hidden="true" />
-      ) : sales.length || buys.length ? (
-        <div key={desk} className="flex flex-col gap-3">
-          <OrderBook
-            title="Fase 1 · Ejecutar hoy"
-            moves={sales}
-            total={net(sales)}
-            laterIds={laterIds}
+      ) : total ? (
+        <div key={desk} className="flex flex-col gap-6">
+          <MoveList
+            title={later.length ? "Para hoy" : null}
+            moves={today}
+            index0={0}
             openId={openId}
             onToggle={setOpenId}
             facts={facts}
             rivalsWithCash={rivalsWithCash}
           />
-          <OrderBook
-            title="Fase 2 · Compras y clausulazos"
-            moves={buys}
-            total={net(buys)}
-            laterIds={laterIds}
+          <MoveList
+            title="Más adelante"
+            moves={later}
+            index0={today.length}
             openId={openId}
             onToggle={setOpenId}
             facts={facts}
             rivalsWithCash={rivalsWithCash}
           />
+
+          {hasBreakdown ? (
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowBreakdown((value) => !value)}
+                aria-expanded={showBreakdown}
+                className="flex w-full items-center justify-between px-1 py-1 text-[14px] font-medium text-[#8B9EB0] transition-colors hover:text-white"
+              >
+                Desglose del plan
+                <Chevron open={showBreakdown} />
+              </button>
+              {showBreakdown ? (
+                <dl className="row-in mt-2 divide-y divide-white/[0.05] rounded-3xl bg-white/[0.035] px-4 text-[14px] tabular-nums">
+                  {cashNow !== null ? <Line label="Saldo inicial" value={eurShort(cashNow)} /> : null}
+                  {salesActions.length ? (
+                    <Line label={`Ventas (${salesActions.length})`} value={`+${eurShort(incomeTotal)}`} tone="text-[#34D399]" />
+                  ) : null}
+                  {buyActions.length ? <Line label={`Compras (${buyActions.length})`} value={`−${eurShort(spendTotal)}`} /> : null}
+                  {cashEnd !== null ? (
+                    <Line label="Saldo final" value={eurShort(cashEnd)} tone={cashEnd < 0 ? "text-[#FC734D]" : undefined} />
+                  ) : null}
+                  {lineDelta
+                    ? lineDelta
+                        .filter(({ delta }) => Math.abs(delta) >= 0.05)
+                        .map(({ line, delta }) => (
+                          <Line
+                            key={line}
+                            label={`Puntos ${line}`}
+                            value={`${signedPoints(delta)} pts`}
+                            tone={delta > 0 ? "text-[#0297DE]" : "text-[#FC734D]"}
+                          />
+                        ))
+                    : null}
+                </dl>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : (
         <p className="desk-empty">
@@ -305,47 +275,58 @@ export function SigningBoard({
   );
 }
 
-function OrderBook({
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={`h-4 w-4 shrink-0 text-[#4B6075] transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      aria-hidden="true"
+    >
+      <path d="M4 6.2 8 10l4-3.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function Line({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="flex items-center justify-between py-3">
+      <dt className="text-[#8B9EB0]">{label}</dt>
+      <dd className={`font-medium ${tone || "text-white"}`}>{value}</dd>
+    </div>
+  );
+}
+
+function MoveList({
   title,
   moves,
-  total,
-  laterIds,
+  index0,
   openId,
   onToggle,
   facts,
   rivalsWithCash,
 }: {
-  title: string;
+  title: string | null;
   moves: StrategyMove[];
-  total: number | null;
-  laterIds: Set<string>;
+  index0: number;
   openId: string | null;
   onToggle: (id: string | null) => void;
   facts: PlayerIndex;
   rivalsWithCash: (amount: number | null) => number | null;
 }) {
   if (!moves.length) return null;
-  const operations = `${moves.length} ${moves.length === 1 ? "operación" : "operaciones"}`;
   return (
-    <section className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#07121A]" aria-label={title}>
-      <h2 className="flex items-center justify-between gap-2 border-b border-white/[0.05] px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#8B9EB0]">
-        <span>
-          {title} <span className="whitespace-nowrap text-[#4B6075]">({operations})</span>
-        </span>
-        {total !== null ? (
-          <span className={`shrink-0 font-mono text-[11px] normal-case tracking-normal tabular-nums ${total >= 0 ? "text-[#10B981]" : "text-[#F0F6FC]"}`}>
-            {total >= 0 ? "+" : "−"}
-            {eurShort(Math.abs(total))}
-          </span>
-        ) : null}
-      </h2>
-      <ul className="divide-y divide-white/[0.05]">
+    <section aria-label={title || "Movimientos"}>
+      {title ? <h3 className="mb-2 px-1 text-[14px] font-medium text-[#8B9EB0]">{title}</h3> : null}
+      <ul className="overflow-hidden rounded-3xl bg-white/[0.035]">
         {moves.map((move, index) => (
-          <OrderRow
+          <MoveRow
             key={move.id}
             move={move}
-            index={index}
-            later={laterIds.has(move.id)}
+            index={index0 + index}
+            first={index === 0}
             open={openId === move.id}
             onToggle={() => onToggle(openId === move.id ? null : move.id)}
             facts={facts}
@@ -357,10 +338,10 @@ function OrderBook({
   );
 }
 
-function OrderRow({
+function MoveRow({
   move,
   index,
-  later,
+  first,
   open,
   onToggle,
   facts,
@@ -368,91 +349,83 @@ function OrderRow({
 }: {
   move: StrategyMove;
   index: number;
-  later: boolean;
+  first: boolean;
   open: boolean;
   onToggle: () => void;
   facts: PlayerIndex;
   rivalsWithCash: (amount: number | null) => number | null;
 }) {
   const kind = kindOf(move.verb);
-  const style = KIND_STYLE[kind];
   const info = kind === "BUSCA" ? null : factsFor(facts, move.playerId, move.title);
   const name = kind === "BUSCA" ? move.position || move.title : move.title;
   const amount = move.cashImpact === null ? null : Math.abs(move.cashImpact);
+  const sale = kind === "VENDE";
 
-  const bits: string[] = [];
+  const rows: [string, string][] = [];
   if (kind === "VENDE") {
     const share = titularShare(info?.p_titular);
-    if (share !== null) bits.push(`Titular ${Math.round(share * 100)}%`);
-    if (typeof info?.tu_once_pierde_sin_el === "number") bits.push(`Impacto XI: −${points(Math.abs(info.tu_once_pierde_sin_el))} pts`);
-    if (info?.prevision_7d_pct) bits.push(`Previsión 7d: ${info.prevision_7d_pct}`);
+    if (share !== null) rows.push(["Titular", `${Math.round(share * 100)}%`]);
+    if (typeof info?.tu_once_pierde_sin_el === "number") rows.push(["Impacto en tu once", `−${points(Math.abs(info.tu_once_pierde_sin_el))} pts`]);
+    if (info?.prevision_7d_pct) rows.push(["Previsión a 7 días", info.prevision_7d_pct]);
   } else if (kind === "CLAUSULAZO") {
-    if (info?.owner) bits.push(`De: ${info.owner}`);
+    if (info?.owner) rows.push(["Propietario", info.owner]);
     if (typeof info?.valor_justo === "number") {
-      bits.push(`Valor justo: ${eurShort(info.valor_justo)}`);
+      rows.push(["Valor justo", eurShort(info.valor_justo)]);
       if (amount) {
         const margin = (info.valor_justo / amount - 1) * 100;
-        bits.push(`Margen ${margin >= 0 ? "+" : "−"}${Math.abs(Math.round(margin))}%`);
+        rows.push(["Margen", `${margin >= 0 ? "+" : "−"}${Math.abs(Math.round(margin))}%`]);
       }
     }
   } else if (kind === "PUJA") {
-    if (typeof info?.market_value === "number") bits.push(`Valor: ${eurShort(info.market_value)}`);
+    if (typeof info?.market_value === "number") rows.push(["Valor de mercado", eurShort(info.market_value)]);
     const cap = info?.puja_maxima ?? info?.max_bid ?? info?.own_max_bid ?? null;
-    if (typeof cap === "number") bits.push(`Puja máx: ${eurShort(cap)}`);
+    if (typeof cap === "number") rows.push(["Puja máxima", eurShort(cap)]);
     const rivals = rivalsWithCash(amount);
-    if (rivals !== null) bits.push(`${rivals} ${rivals === 1 ? "rival" : "rivales"} con saldo`);
+    if (rivals !== null) rows.push(["Rivales con saldo", String(rivals)]);
   }
-  const preview = bits.length ? bits.join(" · ") : leadLine(move.detail);
-
+  if (move.pointsImpact !== null) rows.push(["Puntos esperados", `${points(move.pointsImpact)} xP`]);
   const ceiling = info?.own_ceiling_points ?? info?.af_ceiling_points ?? null;
-  const sale = kind === "VENDE";
+  if (typeof ceiling === "number" && ceiling > 10) rows.push(["Techo", `${points(ceiling)} pts`]);
+
   return (
     <li className="row-in" style={{ animationDelay: `${index * 30}ms` }}>
+      {first ? null : <div className="ml-[4.5rem] mr-4 h-px bg-white/[0.06]" />}
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-white/[0.02]"
+        className="flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-white/[0.02]"
         onClick={onToggle}
         aria-expanded={open}
       >
-        <span className="flex min-w-0 items-center gap-3">
-          <PlayerAvatar
-            player={{ name, image_url: move.imageUrl }}
-            size="sm"
-            className="!h-9 !w-9 !text-[10px] !ring-0 border border-white/[0.12]"
-          />
-          <span className="min-w-0">
-            <span className="flex items-center gap-1.5">
-              <span className="truncate text-sm font-medium text-white">{kind === "BUSCA" ? `Buscar ${name}` : name}</span>
-              {move.position && kind !== "BUSCA" ? (
-                <span className="shrink-0 text-[10px] uppercase text-[#8B9EB0]">{move.position.slice(0, 3)}</span>
-              ) : null}
-              <span className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase ${style.className}`}>{style.label}</span>
-              {later ? <span className="shrink-0 text-[10px] text-[#4B6075]">luego</span> : null}
-            </span>
-            {preview && !open ? <span className="mt-0.5 block truncate text-[11px] text-[#8B9EB0]">{preview}</span> : null}
+        <PlayerAvatar player={{ name, image_url: move.imageUrl }} size="sm" className="!h-11 !w-11 !text-[11px] !ring-0" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[16px] font-medium leading-tight text-white">
+            {kind === "BUSCA" ? `Buscar ${name}` : name}
+          </span>
+          <span className="mt-0.5 block truncate text-[13.5px] text-[#8B9EB0]">
+            {KIND_LABEL[kind]}
+            {move.position && kind !== "BUSCA" ? ` · ${move.position.slice(0, 3).toUpperCase()}` : ""}
           </span>
         </span>
-        <span className="shrink-0 text-right font-mono tabular-nums">
-          {move.cashLabel ? (
-            <span className={`block text-[13px] font-semibold ${sale ? "text-[#10B981]" : "text-[#F0F6FC]"}`}>
-              {sale ? "+" : ""}
-              {move.cashLabel}
-            </span>
-          ) : null}
-          {move.pointsLabel ? (
-            <span className="block text-[11px] text-[#0297DE]">
-              {move.pointsLabel}
-              {typeof ceiling === "number" && ceiling > 10 ? <span className="ml-1 text-[#FC734D]">Techo {points(ceiling)}</span> : null}
-            </span>
-          ) : null}
+        <span className={`shrink-0 text-[16px] font-medium tabular-nums ${sale ? "text-[#34D399]" : "text-white"}`}>
+          {move.cashLabel ? `${sale ? "+" : ""}${move.cashLabel}` : ""}
         </span>
+        <Chevron open={open} />
       </button>
       {open ? (
-        <div className="border-t border-white/[0.05] bg-white/[0.015] px-3.5 py-3 pl-[3.6rem]">
-          {bits.length ? <p className="mb-1.5 text-[11.5px] leading-4 text-[#8B9EB0]">{bits.join(" · ")}</p> : null}
-          {move.detail ? <p className="text-[12.5px] leading-5 text-[#C5D4E2]">{move.detail}</p> : null}
-          <Link href={move.href} className="mt-2 inline-flex text-xs font-medium text-[#0297DE]">
-            Ver en {move.guide} →
+        <div className="px-4 pb-4 pl-[4.5rem]">
+          {rows.length ? (
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+              {rows.map(([label, value]) => (
+                <div key={label} className="min-w-0">
+                  <dt className="truncate text-[12.5px] text-[#8B9EB0]">{label}</dt>
+                  <dd className="mt-0.5 truncate text-[15px] font-medium tabular-nums text-white">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+          {move.detail ? <p className="mt-3 text-[14px] leading-5 text-[#8B9EB0]">{move.detail}</p> : null}
+          <Link href={move.href} className="mt-3 inline-flex text-[14px] font-medium text-[#0297DE]">
+            Ver en {move.guide}
           </Link>
         </div>
       ) : null}

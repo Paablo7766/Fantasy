@@ -28,7 +28,7 @@
   --sidebar-muted: #8b9eb0;
   --sidebar-line: rgba(2, 151, 222, 0.14);
   color-scheme: dark;
-  --font-sans-app: "Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-sans-app: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono-app: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
@@ -61,7 +61,7 @@ body {
   font-family: var(--font-sans), var(--font-sans-app);
   font-feature-settings: normal;
   font-synthesis: none;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.011em;
   background: #02070a;
 }
 
@@ -1859,49 +1859,36 @@ body {
   margin-inline: auto;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 1rem;
 }
 
 .desk-switch {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.35rem;
-  padding: 0.28rem;
-  border-radius: 0.85rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: #07121a;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .desk-switch__btn {
-  transition: all 200ms ease-out;
   display: flex;
-  min-height: 2.7rem;
+  min-height: 2.4rem;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
   border: 0;
-  border-radius: 0.75rem;
+  border-radius: 9999px;
   background: transparent;
-  padding: 0 0.35rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  padding: 0 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
   color: var(--muted);
-}
-
-.desk-switch__btn span {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.68rem;
-  color: var(--faint);
+  transition: all 200ms ease-out;
 }
 
 .desk-switch__btn--on {
-  background: rgba(2, 151, 222, 0.16);
-  color: #f0f6fc;
-}
-
-.desk-switch__btn--on span {
-  color: #0297de;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
 }
 
 .desk-hero {
@@ -2135,9 +2122,10 @@ body {
 
 .home-stack {
   width: 100%;
-  max-width: 52rem;
+  max-width: 40rem;
   margin-inline: auto;
-  gap: 0.85rem;
+  gap: 2rem;
+  padding-top: 0.5rem;
 }
 
 @keyframes row-in {
