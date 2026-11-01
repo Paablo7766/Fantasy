@@ -40,6 +40,23 @@ class RefreshStatusTests(unittest.TestCase):
         self.assertFalse(payload["running"])
         self.assertEqual(payload["calls"], 0)
 
+    def test_core_saved_marker_appears_only_once_the_quick_photo_is_stored(self) -> None:
+        server._refresh_status_start("full", None)
+        self.assertIsNone(self.client.get("/api/refresh-status").json()["core_saved_at"])
+
+        server._refresh_status_core_saved()
+        payload = self.client.get("/api/refresh-status").json()
+        self.assertTrue(payload["running"])
+        self.assertIsInstance(payload["core_saved_at"], str)
+
+        # Un clic nuevo borra la marca: no se pinta la foto rápida del anterior.
+        server._refresh_status_start("full", None)
+        self.assertIsNone(self.client.get("/api/refresh-status").json()["core_saved_at"])
+
+    def test_core_saved_marker_is_ignored_when_nothing_is_running(self) -> None:
+        server._refresh_status_core_saved()
+        self.assertNotIn("core_saved_at", server._refresh_status)
+
     def test_running_refresh_reports_phase_calls_and_current_source(self) -> None:
         server._refresh_status_start("full", None)
         api_meter.record_call(url="https://fantasy-api.llt-services.com/api/v1/x", status=200)

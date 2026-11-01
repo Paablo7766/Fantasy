@@ -58,6 +58,8 @@ export type RefreshStatusPayload = ApiError & {
   last_activity_seconds?: number | null;
   /** Resultado de la pasada. ``null`` mientras corre o si nunca corrió. */
   result_ok?: boolean | null;
+  /** Cuándo quedó guardada la foto rápida. Permite pintarla antes de que acabe la completa. */
+  core_saved_at?: string | null;
   error?: ApiError["error"];
 };
 

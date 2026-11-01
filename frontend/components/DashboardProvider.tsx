@@ -294,10 +294,18 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     setRefreshError(null);
     setRefreshStatus(null);
     let beating = false;
+    // La foto rápida (mercado, plantillas, once) queda guardada mucho antes que
+    // la completa: se pinta en cuanto el latido lo dice, sin otra petición a
+    // las fuentes (``GET /api/plan`` solo lee disco). La barra sigue hasta el final.
+    let paintedCore = false;
     const beat = async () => {
       try {
         const status = await getJson<RefreshStatusPayload>(apiUrl("/api/refresh-status"));
         setRefreshStatus(status);
+        if (!paintedCore && status.running === true && status.core_saved_at) {
+          paintedCore = true;
+          void refreshPlan();
+        }
         return status;
       } catch {
         // Un fallo del latido no cancela la descarga ni inventa un estado:
@@ -350,7 +358,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       refreshLeadRef.current = false;
       setRefreshing(false);
     }
-  }, [load]);
+  }, [load, refreshPlan]);
 
   useEffect(() => {
     if (!shellReady) return;

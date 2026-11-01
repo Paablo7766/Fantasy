@@ -182,6 +182,7 @@ def _refresh_status_start(tier: str, league: str | None) -> dict[str, Any]:
         # fallido se pintara como correcto, porque el snapshot reescribía ``ok``.
         "result_ok": None,
         "error": None,
+        "core_saved_at": None,
     }
     with _refresh_status_lock:
         _refresh_status.clear()
@@ -195,6 +196,14 @@ def _refresh_status_phase(phase: str, label: str) -> None:
             return
         _refresh_status["phase"] = phase
         _refresh_status["phase_label"] = label
+
+
+def _refresh_status_core_saved() -> None:
+    """La foto rápida ya está en disco: el panel puede pintarla sin esperar a la completa."""
+    with _refresh_status_lock:
+        if not _refresh_status.get("running"):
+            return
+        _refresh_status["core_saved_at"] = datetime.now(timezone.utc).isoformat()
 
 
 def _refresh_status_finish(*, ok: bool, error: Any = None) -> None:
@@ -3776,6 +3785,7 @@ def _plan_refresh_passes(league: str | None, *, force_rivals: bool = False) -> A
         _refresh_status_finish(ok=False, error=None)
         return core
     core_document = _plan_document(core)
+    _refresh_status_core_saved()
 
     def _full_failed(error: Any) -> Any:
         """La foto rápida ya está guardada: se sirve con el aviso del fallo."""
