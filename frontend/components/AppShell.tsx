@@ -109,6 +109,21 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function DockLink({ item, active, href }: { item: NavItem; active: boolean; href: string }) {
+  return (
+    <Link
+      href={href}
+      className={`flex min-w-0 flex-col items-center gap-0.5 text-[10px] font-semibold tracking-tight ${
+        active ? "text-[#0297DE]" : "text-[#8B9EB0]"
+      }`}
+      aria-current={active ? "page" : undefined}
+    >
+      <Icon name={item.label} />
+      <span>{item.label === "Recomendaciones" ? "Inicio" : item.label}</span>
+    </Link>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const {
     trends,
@@ -214,7 +229,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => void refresh()}
               disabled={connecting || refreshing}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#0297DE] px-3.5 py-2 text-sm font-semibold text-[#02070A] shadow-[0_0_20px_rgba(2,151,222,0.35)] hover:bg-[#0284c7] disabled:opacity-50"
+              className="hidden shrink-0 items-center gap-1.5 rounded-xl bg-[#0297DE] px-3.5 py-2 text-sm font-semibold text-[#02070A] shadow-[0_0_20px_rgba(2,151,222,0.35)] hover:bg-[#0284c7] disabled:opacity-50 lg:inline-flex"
               title="Descarga una foto nueva de LALIGA y los scrapers"
             >
               <svg
@@ -245,7 +260,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           ) : null}
         </header>
         {toolsOpen ? (
-          <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/55 px-4 pt-16" onClick={() => setToolsOpen(false)}>
+          <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/55 px-4 pt-16" onClick={() => setToolsOpen(false)}>
             <div
               role="dialog"
               aria-modal="true"
@@ -283,21 +298,36 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <div className="app-page min-w-0 app-page--dock">{children}</div>
 
-        <nav className="app-dock lg:hidden" aria-label="Navegación principal">
-          {SECTIONS.map((item) => {
-            const active = isActive(pathname, item.href);
-            return (
-              <Link
-                key={item.label}
-                href={withQuery(item.href)}
-                className={active ? "app-dock__link app-dock__link--active" : "app-dock__link"}
-                aria-current={active ? "page" : undefined}
-              >
-                <Icon name={item.label} />
-                <span>{item.label === "Recomendaciones" ? "Inicio" : item.label}</span>
-              </Link>
-            );
-          })}
+        <nav
+          className="fixed inset-x-4 bottom-4 z-50 flex h-16 items-center justify-between rounded-full border border-white/10 bg-[#07121A]/90 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.6)] backdrop-blur-2xl lg:hidden"
+          aria-label="Navegación principal"
+        >
+          {SECTIONS.slice(0, 2).map((item) => (
+            <DockLink key={item.label} item={item} active={isActive(pathname, item.href)} href={withQuery(item.href)} />
+          ))}
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={connecting || refreshing}
+            aria-label={refreshing ? "Actualizando" : "Actualizar"}
+            title="Descarga una foto nueva de LALIGA y los scrapers"
+            className="grid h-14 w-14 shrink-0 -translate-y-3 place-items-center rounded-full bg-[#0297DE] text-[#02070A] shadow-[0_0_24px_rgba(2,151,222,0.45)] ring-4 ring-[#02070A] disabled:opacity-50"
+          >
+            <svg
+              viewBox="0 0 20 20"
+              className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              aria-hidden="true"
+            >
+              <path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.1" strokeLinecap="round" />
+              <path d="M16.4 3.6v3.2h-3.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          {SECTIONS.slice(2).map((item) => (
+            <DockLink key={item.label} item={item} active={isActive(pathname, item.href)} href={withQuery(item.href)} />
+          ))}
         </nav>
 
         <footer className="mx-auto w-full max-w-[1240px] px-4 pb-24 text-xs leading-5 text-faint md:px-7 md:pb-8 lg:pb-8">

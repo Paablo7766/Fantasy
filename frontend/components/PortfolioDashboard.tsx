@@ -183,7 +183,7 @@ export function PortfolioDashboard({ squads, loading }: { squads: SquadsPayload 
               ))}
             </div>
           </div>
-          <div className="flex flex-col gap-2.5 md:hidden">
+          <div className="flex flex-col gap-2.5 lg:hidden">
             {players.length ? (
               players.map((player) => (
                 <PlayerQuantCard
@@ -192,7 +192,6 @@ export function PortfolioDashboard({ squads, loading }: { squads: SquadsPayload 
                   variation={player.prevision_7d_pct}
                   xp={player.own_expected_points ?? player.average_points}
                   ifStarts={player.own_expected_points}
-                  ceiling={player.own_expected_points}
                   rightTitle="Impacto en once"
                   rightValue={
                     typeof player.tu_once_pierde_sin_el === "number" ? `−${points(player.tu_once_pierde_sin_el)}` : "s/d"
@@ -204,8 +203,8 @@ export function PortfolioDashboard({ squads, loading }: { squads: SquadsPayload 
               <p className="text-sm text-muted">La plantilla no trae jugadores.</p>
             )}
           </div>
-          <div className="scroll-thin hidden overflow-x-auto md:block">
-            <table className="table-dense hidden w-full min-w-[720px] text-left text-sm md:table">
+          <div className="scroll-thin hidden overflow-x-auto lg:block">
+            <table className="table-dense hidden w-full min-w-[720px] text-left text-sm lg:table">
               <thead>
                 <tr>
                   <th>Jugador</th>

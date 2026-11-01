@@ -28,8 +28,8 @@
   --sidebar-muted: #8b9eb0;
   --sidebar-line: rgba(2, 151, 222, 0.14);
   color-scheme: dark;
-  --font-sans-app: "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-mono-app: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-sans-app: "Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono-app: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
 @theme inline {
@@ -62,10 +62,7 @@ body {
   font-feature-settings: normal;
   font-synthesis: none;
   letter-spacing: 0.01em;
-  background:
-    radial-gradient(ellipse 80% 42% at 0% -8%, rgba(2, 151, 222, 0.1), transparent 52%),
-    radial-gradient(ellipse 55% 36% at 100% 0%, rgba(252, 115, 77, 0.07), transparent 48%),
-    var(--background);
+  background: #02070a;
 }
 
 .font-mono,
@@ -87,10 +84,7 @@ body {
 @layer components {
 .app-shell {
   min-height: 100vh;
-  background:
-    radial-gradient(ellipse 70% 36% at 12% -12%, rgba(2, 151, 222, 0.1), transparent 50%),
-    radial-gradient(ellipse 46% 28% at 100% -6%, rgba(252, 115, 77, 0.07), transparent 46%),
-    var(--background);
+  background: #02070a;
   color: var(--foreground);
 }
 
@@ -147,7 +141,7 @@ body {
 }
 
 .app-page--dock {
-  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(7.25rem + env(safe-area-inset-bottom, 0px));
 }
 
 @media (min-width: 1024px) {
@@ -226,7 +220,7 @@ body {
   background:
     linear-gradient(160deg, #67c6f5 0%, #0297de 58%, #026896 100%);
   color: #02070a;
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -298,21 +292,29 @@ body {
 }
 
 .card {
-  border: 1px solid var(--line);
-  border-radius: 1.05rem;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 42%),
-    var(--surface);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 18px 40px -28px rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(16px);
-  transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  border: 1px solid rgba(2, 151, 222, 0.15);
+  border-radius: 1.5rem;
+  background: rgba(7, 18, 26, 0.85);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .card:hover {
   border-color: rgba(2, 151, 222, 0.32);
-  background-color: #0c1d29;
+}
+
+.glow-metric {
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 24px rgba(2, 151, 222, 0.18);
+}
+
+.glow-alert {
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 24px rgba(252, 115, 77, 0.18);
 }
 
 .panel-divider {
@@ -402,7 +404,7 @@ body {
 }
 
 .metric-value {
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-weight: 600;
   letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
@@ -747,7 +749,7 @@ body {
   border-radius: 0.95rem;
   background: rgba(243, 239, 230, 0.05);
   color: var(--muted-strong);
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: -0.04em;
@@ -1001,7 +1003,7 @@ body {
 }
 
 .token .delta {
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: clamp(8px, 2.4cqw, 10px);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
@@ -1102,18 +1104,7 @@ body {
 }
 
 .hoy-root::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.5;
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 20%, transparent 78%);
-  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 20%, transparent 78%);
+  content: none;
 }
 
 
@@ -1145,7 +1136,7 @@ body {
 }
 
 .hoy-clock {
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.06em;
   line-height: 0.92;
@@ -1293,7 +1284,7 @@ body {
 }
 
 .hoy-digit {
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   font-size: clamp(2.6rem, 7.2vw, 4.15rem);
   font-weight: 600;
@@ -1421,7 +1412,7 @@ body {
 .hoy-act--once::before { background: linear-gradient(180deg, rgba(158, 200, 255, 0.85), transparent 78%); }
 
 .hoy-act__amount {
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   font-size: 1.5rem;
   font-weight: 600;
@@ -1451,7 +1442,7 @@ body {
   border-radius: 0.5rem;
   border: 1px solid var(--hoy-line-strong);
   background: rgba(250, 250, 250, 0.04);
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--hoy-ink);
@@ -1597,7 +1588,7 @@ body {
 }
 
 .board-delta__num {
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 2.7rem;
   font-weight: 600;
   letter-spacing: -0.06em;
@@ -1616,7 +1607,7 @@ body {
 
 .board-value {
   margin: 0.55rem 0 0;
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--gold);
@@ -1668,7 +1659,7 @@ body {
 }
 
 .board-jump__link span {
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.68rem;
   color: var(--gold);
 }
@@ -1681,7 +1672,7 @@ body {
 }
 
 .board-section__index {
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.68rem;
   font-weight: 600;
   color: var(--faint);
@@ -1782,7 +1773,7 @@ body {
   align-items: flex-end;
   gap: 0.15rem;
   margin-left: auto;
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.82rem;
   font-weight: 600;
   letter-spacing: -0.03em;
@@ -1851,7 +1842,7 @@ body {
 }
 
 .board-xi strong {
-  font-family: var(--font-mono-app), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 1.35rem;
   font-weight: 600;
   letter-spacing: -0.04em;

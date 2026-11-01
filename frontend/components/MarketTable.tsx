@@ -95,7 +95,7 @@ function Sparkline({ points }: { points: Array<{ market_value?: number | null }>
 function UniverseTable({ rows }: { rows: CatalogPlayer[] }) {
   return (
     <>
-    <ul className="flex flex-col gap-2.5 md:hidden">
+    <ul className="flex flex-col gap-2.5 lg:hidden">
       {rows.length ? (
         rows.map((player) => {
           const days = player.price_points?.length ?? 0;
@@ -120,7 +120,7 @@ function UniverseTable({ rows }: { rows: CatalogPlayer[] }) {
         <li className="text-sm text-muted">Ningún jugador en este filtro.</li>
       )}
     </ul>
-    <table className="table-dense table-sticky hidden w-full min-w-[760px] text-left text-sm md:table">
+    <table className="table-dense table-sticky hidden w-full min-w-[760px] text-left text-sm lg:table">
       <thead>
         <tr>
           <th>Jugador</th>
@@ -356,7 +356,7 @@ export function MarketTable({
             ))}
           </ul>
         ) : null}
-        <div className="flex flex-col gap-2.5 md:hidden">
+        <div className="flex flex-col gap-2.5 lg:hidden">
           {sections.map((section) => (
             <section key={`cards-${section.title}`}>
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#8B9EB0]">
@@ -379,11 +379,12 @@ export function MarketTable({
                       <PlayerQuantCard
                         key={`${marketAction(player)}-${player.player_id}`}
                         player={player}
-                        price={player.market_value}
+                        price={typeof player.market_value === "number" ? player.market_value : player.sale_price}
                         variation={player.prevision_7d_pct}
                         xp={jornadaEv(player)}
                         ifStarts={typeof player.points_if_starts === "number" ? player.points_if_starts : player.expected_points}
                         ceiling={player.own_ceiling_points ?? player.af_ceiling_points}
+                        glow={marketAction(player) === "PUJAR" ? "alert" : undefined}
                         rightTitle="Puja smart"
                         rightValue={typeof bid === "number" ? eurShort(bid) : "Sin puja"}
                         rightHint={impact}
@@ -399,7 +400,7 @@ export function MarketTable({
             </section>
           ))}
         </div>
-        <table className="table-dense table-sticky hidden w-full min-w-[640px] text-left text-sm md:table">
+        <table className="table-dense table-sticky hidden w-full min-w-[640px] text-left text-sm lg:table">
           <thead>
             <tr>
               <th>Jugador</th>
@@ -590,10 +591,10 @@ function PickCard({
         type="button"
         onClick={onOpen}
         aria-expanded={open}
-        className={`w-full rounded-xl border px-3 py-2.5 text-left ${
+        className={`w-full rounded-2xl border px-3.5 py-3 text-left backdrop-blur-xl ${
           open
-            ? "border-[color:var(--mint)] bg-[color:var(--mint-soft)]"
-            : "border-[color:var(--line)] bg-[color:var(--surface-strong)]"
+            ? "border-[#0297DE]/40 bg-[#07121A]/90 shadow-[0_0_24px_rgba(2,151,222,0.18)]"
+            : "border-[#0297DE]/15 bg-[#07121A]/85 shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
         }`}
       >
         <div className="flex items-baseline justify-between gap-2">

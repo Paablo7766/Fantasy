@@ -106,7 +106,7 @@ function ClauseCards({
   onOpenTeam: (teamId: string) => void;
 }) {
   return (
-    <div className="flex flex-col gap-2.5 md:hidden">
+    <div className="flex flex-col gap-2.5 lg:hidden">
       {rows.map((row) => {
         const affordable = typeof cash === "number" && typeof row.buyout_clause_eur === "number" && row.buyout_clause_eur <= cash;
         return (
@@ -139,8 +139,8 @@ function ClauseTable({
   onOpenTeam: (teamId: string) => void;
 }) {
   return (
-    <div className="hidden md:block">
-      <table className="table-dense hidden w-full text-left text-sm md:table">
+    <div className="hidden lg:block">
+      <table className="table-dense hidden w-full text-left text-sm lg:table">
         <thead>
           <tr>
             <th>Jugador</th>
