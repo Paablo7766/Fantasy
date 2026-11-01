@@ -3,6 +3,7 @@
 import { useDashboard } from "@/components/DashboardProvider";
 import { SigningBoard } from "@/components/hoy/SigningBoard";
 import { eurShort, points, stamp } from "@/lib/format";
+import { signedPoints } from "@/lib/hoy";
 import type { NeedsPayload, OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
 export function RecommendationsScreen() {
@@ -30,13 +31,31 @@ export function RecommendationsScreen() {
         ? optimize.expected_points
         : null;
   const kickoff = typeof plan?.kickoff === "string" ? plan.kickoff : null;
+  const saved = typeof plan?.lineup?.saved_points === "number" ? plan.lineup.saved_points : null;
+  const delta =
+    typeof plan?.lineup?.points_delta === "number"
+      ? plan.lineup.points_delta
+      : expected !== null && saved !== null
+        ? Math.round((expected - saved) * 10) / 10
+        : typeof plan?.plan_fichajes?.mejora_puntos_jornada === "number"
+          ? plan.plan_fichajes.mejora_puntos_jornada
+          : null;
 
   return (
     <div className="hoy-root rec-home">
       <div className="rec-stats" aria-label="Cifras de la foto">
-        <Stat label="Saldo" value={cash !== null ? eurShort(cash) : loading ? "…" : "—"} />
+        <Stat
+          label="Saldo"
+          value={cash !== null ? eurShort(cash) : loading ? "…" : "—"}
+          tone={cash !== null && cash < 0 ? "text-[#FC734D]" : "text-[#0297DE]"}
+        />
         <Stat label="Posición" value={rank !== null ? `${rank}º` : loading ? "…" : "—"} />
-        <Stat label="Puntos" value={expected !== null ? points(expected) : loading ? "…" : "—"} />
+        <Stat
+          label="Puntos esperados"
+          value={expected !== null ? points(expected) : loading ? "…" : "—"}
+          hint={delta !== null ? `${signedPoints(delta) || "0,0"} pts` : undefined}
+          hintTone={delta !== null && delta < 0 ? "text-[#FC734D]" : "text-[#0297DE]"}
+        />
         <Stat label="Jornada" value={kickoff ? stamp(kickoff) : loading ? "…" : "—"} />
       </div>
       <SigningBoard
@@ -53,11 +72,24 @@ export function RecommendationsScreen() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  tone,
+  hint,
+  hintTone,
+}: {
+  label: string;
+  value: string;
+  tone?: string;
+  hint?: string;
+  hintTone?: string;
+}) {
   return (
     <div className="rec-stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
+      <span className="!text-[11px] !tracking-wider !text-[#8B9EB0]">{label}</span>
+      <strong className={`!font-mono !text-xl !font-bold ${tone || ""}`}>{value}</strong>
+      {hint ? <span className={`!normal-case !tracking-normal font-mono text-[11px] font-semibold ${hintTone || ""}`}>{hint}</span> : null}
     </div>
   );
 }

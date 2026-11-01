@@ -118,8 +118,8 @@ def _fresh_rate_limits() -> None:
     Sin esto, un hueco reservado por una prueba se arrastraría a la siguiente
     y el espaciado dependería del orden de ejecución. El ``HUMAN_PACER`` se
     reinicia por el mismo motivo: su contador decide cuándo toca la pausa de
-    actividad de 45–90 s y, compartido entre pruebas, una espera cambiaría de
-    rango según lo que hubiera corrido antes.
+    plantilla rival (5–9 s cada 5) y, compartido entre pruebas, una espera
+    cambiaría de rango según lo que hubiera corrido antes.
     """
     net.reset_rate_limits()
     net.reset_human_pacer()
@@ -145,10 +145,9 @@ def _fresh_kill_switch() -> None:
 def _fresh_human_pacer() -> None:
     """El contador de cadencia humana también es de proceso.
 
-    ``HUMAN_PACER`` cuenta peticiones servidas y cada 3–4 dispara una pausa de
-    actividad de 45–90 s. Sin reiniciarlo, el contador se arrastra entre
-    pruebas y una que espera un jitter de 12–25 s recibe la pausa de actividad
-    acumulada de todas las anteriores (87 s en la suite completa).
+    ``HUMAN_PACER`` cuenta las plantillas rivales y cada 5 dispara una pausa de
+    5–9 s. Sin reiniciarlo, el contador se arrastra entre pruebas y una que
+    espera 1,5–3,5 s recibe la pausa larga acumulada de las anteriores.
     """
     net.reset_human_pacer()
     yield

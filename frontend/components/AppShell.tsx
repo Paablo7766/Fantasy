@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { DataHealthPanel } from "@/components/DataHealthPanel";
 import { ApiUsagePanel } from "@/components/ApiUsagePanel";
 import { useDashboard } from "@/components/DashboardProvider";
@@ -130,6 +130,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   } = useDashboard();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [toolsOpen, setToolsOpen] = useState(false);
   const section = sectionFromPath(pathname);
   const query = searchParams.toString();
   const withQuery = (href: string) => (query ? `${href}?${query}` : href);
@@ -186,89 +187,99 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="app-frame">
-        <header className="app-topbar">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-7">
-            <div className="flex min-w-0 items-center gap-3 lg:block">
-              <span className="brand-mark lg:hidden">LF</span>
-              <div className="min-w-0">
-                <p className="eyebrow hidden sm:block">Mesa de decisión</p>
-                <h1 className="truncate text-lg font-semibold tracking-[-0.03em] text-ink md:text-xl">{section.title}</h1>
-                <p className="hidden truncate text-sm text-muted sm:block">{section.hint}</p>
-              </div>
-            </div>
-
-            <div className="flex w-full min-w-0 items-center gap-1.5 overflow-x-auto sm:w-auto sm:justify-end sm:gap-2">
-              {refreshing ? (
-                <span className="status-dot status-dot--pulse" aria-live="polite">
-                  Descargando {refreshPct}%
-                </span>
-              ) : busy ? (
-                <span className="status-dot status-dot--pulse" aria-live="polite">
-                  Leyendo {progress.pct}%
-                </span>
-              ) : stale ? (
-                <span className="status-dot status-dot--warn" title="La foto guardada tiene más de 15 minutos">
-                  {photoAge ? `Foto de ${photoAge}` : "Foto antigua"}
-                </span>
-              ) : null}
-              {refreshError ? (
-                <span className="status-dot status-dot--warn" role="alert" title={refreshError}>
-                  Sin actualizar
-                </span>
-              ) : null}
-              {trends?.partial ? <span className="status-dot status-dot--warn">Lectura parcial</span> : null}
-              <ApiUsagePanel />
-              <DataHealthPanel />
+        <header className="app-topbar relative">
+          <div className="flex h-14 items-center justify-between gap-3 px-4 lg:px-7">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <h1 className="truncate text-lg font-bold tracking-tight text-ink">{section.title}</h1>
               <button
                 type="button"
-                onClick={() => void connectAccount()}
-                disabled={connecting || busy}
-                className="btn btn-secondary"
-                title="Abre Chrome para elegir la cuenta de Google de LALIGA Fantasy"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[rgba(2,151,222,0.28)] bg-[rgba(2,151,222,0.08)] px-2 py-1 text-[11px] font-semibold text-[#8B9EB0]"
+                onClick={() => setToolsOpen(true)}
+                aria-haspopup="dialog"
+                aria-expanded={toolsOpen}
+                title={photoLine}
               >
-                {connecting ? "Chrome…" : "Conectar"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void refresh()}
-                disabled={connecting || refreshing}
-                className="btn btn-primary"
-                title="Descarga una foto nueva de LALIGA y los scrapers"
-              >
-                {refreshing ? "Actualizando…" : "Actualizar"}
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    refreshing || busy ? "animate-pulse bg-[#0297DE]" : stale || refreshError ? "bg-[#FC734D]" : "bg-[#10B981]"
+                  }`}
+                  style={{ boxShadow: "0 0 8px currentColor" }}
+                />
+                <span className="font-mono tabular-nums">
+                  {refreshing ? `${refreshPct}%` : busy ? `${progress.pct}%` : photoAge || "sin foto"}
+                </span>
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              disabled={connecting || refreshing}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#0297DE] px-3.5 py-2 text-sm font-semibold text-[#02070A] shadow-[0_0_20px_rgba(2,151,222,0.35)] hover:bg-[#0284c7] disabled:opacity-50"
+              title="Descarga una foto nueva de LALIGA y los scrapers"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                aria-hidden="true"
+              >
+                <path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.1" strokeLinecap="round" />
+                <path d="M16.4 3.6v3.2h-3.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Actualizar
+            </button>
           </div>
           {refreshing ? (
-            <div className="px-4 pb-3 md:px-7" role="status" aria-live="polite">
-              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-muted">
-                <span className="font-mono tabular-nums">{refreshLine}</span>
-                <span className="font-mono tabular-nums">{refreshPct}%</span>
-              </div>
+            <div className="absolute inset-x-0 bottom-0" role="status" aria-live="polite" aria-label={refreshLine}>
               <div className="load-progress">
                 <div className="load-progress__bar" style={{ width: `${Math.max(refreshPct, 4)}%` }} />
               </div>
             </div>
           ) : null}
           {connectMessage ? (
-            <div className="px-4 pb-3 md:px-7" role={connecting ? "status" : "alert"} aria-live="polite">
+            <div className="px-4 pb-3 lg:px-7" role={connecting ? "status" : "alert"} aria-live="polite">
               <div className="status-note">{connectMessage}</div>
             </div>
           ) : null}
         </header>
-
-        <nav className="app-tabs scroll-thin" aria-label="Secciones">
-          {SECTIONS.map((item) => (
-            <Link
-              key={item.label}
-              href={withQuery(item.href)}
-              className={isActive(pathname, item.href) ? "tab-link tab-link--active" : "tab-link"}
-              aria-current={isActive(pathname, item.href) ? "page" : undefined}
+        {toolsOpen ? (
+          <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/55 px-4 pt-16" onClick={() => setToolsOpen(false)}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Foto, uso de API y conexión"
+              className="card w-full max-w-sm p-4"
+              onClick={(event) => event.stopPropagation()}
             >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8B9EB0]">Foto</p>
+                  <p className="mt-1 font-mono text-xs text-[#F0F6FC]">{photoLine}</p>
+                  {refreshError ? <p className="mt-1 text-xs text-[#FC734D]">{refreshError}</p> : null}
+                  {trends?.partial ? <p className="mt-1 text-xs text-[#FC734D]">Lectura parcial</p> : null}
+                </div>
+                <button type="button" className="btn btn-secondary !px-2.5 !py-1 text-xs" onClick={() => setToolsOpen(false)}>
+                  Cerrar
+                </button>
+              </div>
+              <div className="flex flex-col items-start gap-2">
+                <ApiUsagePanel />
+                <DataHealthPanel />
+                <button
+                  type="button"
+                  onClick={() => void connectAccount()}
+                  disabled={connecting || busy}
+                  className="btn btn-secondary w-full"
+                  title="Abre Chrome para elegir la cuenta de Google de LALIGA Fantasy"
+                >
+                  {connecting ? "Elige tu cuenta en Chrome…" : "Conectar cuenta"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="app-page min-w-0 app-page--dock">{children}</div>
 

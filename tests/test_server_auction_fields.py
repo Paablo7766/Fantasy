@@ -18,9 +18,18 @@ class ServerAuctionFieldsTests(unittest.TestCase):
                 "expected_surplus_eur": 95_000,
                 "rival_knockout_targets": ["Ana", ""],
                 "intent": "FLIP",
+                "app_bid_eur": 1_000_000,
+                "financial_max_bid_eur": 1_250_000,
+                "smart_bid_eur": 1_100_000,
+                "smart_bid_success_pct": 95,
+                "smart_bid_analysis": "Ningún rival tiene saldo o necesidad crítica en esta posición.",
+                "smart_bid_rivals": ["", "Ana"],
             }
         )
         self.assertEqual(row["optimal_bid_eur"], 1_200_000)
+        self.assertEqual(row["smart_bid_eur"], 1_100_000)
+        self.assertEqual(row["smart_bid_success_pct"], 95)
+        self.assertEqual(row["smart_bid_rivals"], ["Ana"])
         self.assertEqual(row["win_probability"], 0.6123)
         self.assertEqual(row["intrinsic_valuation_eur"], 1_450_000)
         self.assertEqual(row["expected_surplus_eur"], 95_000)

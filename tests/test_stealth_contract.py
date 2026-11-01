@@ -5,7 +5,8 @@ clase cubre una capa y falla si alguien relaja el diseño:
 
 1. ``AirGapTests``      — en development/test no se abre un socket, ni con
                           ``fresh=True``; sin copia en disco, ``offline_miss``.
-2. ``PacingTests``      — 12–25 s por GET y una pausa de 45–90 s cada 3–4.
+2. ``PacingTests``      — 1,5–3,5 s por GET real y, en plantillas rivales,
+                          una pausa de 5–9 s cada 5. La caché no espera.
 3. ``MimicryTests``     — una sola sesión ``curl_cffi`` con ``chrome110`` y
                           cabeceras inmutables y coherentes con el perfil.
 4. ``KillSwitchTests``  — un 401/403/429/5xx mata el proceso sin reintentar y
@@ -37,6 +38,7 @@ from toolbox.net import (
     HUMAN_DELAY_MIN_SECONDS,
     HUMAN_REQUESTS_PER_REFRESH,
     KILL_SWITCH_STATUSES,
+    RIVAL_SQUAD_TTL_SECONDS,
     REQUIRED_HEADERS,
     TLS_IMPERSONATE,
     HumanPacer,
@@ -145,24 +147,25 @@ class AirGapTests(_Fixture):
 
 
 # ---------------------------------------------------------------------------
-# Capa 2: cadencia de ultra-baja frecuencia
+# Capa 2: cadencia humana
 # ---------------------------------------------------------------------------
 class PacingTests(unittest.TestCase):
-    def test_the_base_wait_is_twelve_to_twentyfive_seconds(self) -> None:
-        self.assertEqual(HUMAN_DELAY_MIN_SECONDS, 12.0)
-        self.assertEqual(HUMAN_DELAY_MAX_SECONDS, 25.0)
+    def test_the_base_wait_is_one_and_a_half_to_three_and_a_half_seconds(self) -> None:
+        self.assertEqual(HUMAN_DELAY_MIN_SECONDS, 1.5)
+        self.assertEqual(HUMAN_DELAY_MAX_SECONDS, 3.5)
 
-    def test_the_activity_pause_is_three_to_four_requests_of_45_to_90s(self) -> None:
-        self.assertEqual((ACTIVITY_PAUSE_EVERY_MIN, ACTIVITY_PAUSE_EVERY_MAX), (3, 4))
-        self.assertEqual(ACTIVITY_PAUSE_MIN_SECONDS, 45.0)
-        self.assertEqual(ACTIVITY_PAUSE_MAX_SECONDS, 90.0)
+    def test_rival_templates_pause_every_five_requests_for_five_to_nine_seconds(self) -> None:
+        self.assertEqual((ACTIVITY_PAUSE_EVERY_MIN, ACTIVITY_PAUSE_EVERY_MAX), (5, 5))
+        self.assertEqual(ACTIVITY_PAUSE_MIN_SECONDS, 5.0)
+        self.assertEqual(ACTIVITY_PAUSE_MAX_SECONDS, 9.0)
+        self.assertEqual(RIVAL_SQUAD_TTL_SECONDS, 4 * 60 * 60)
 
     def test_every_draw_stays_inside_its_band(self) -> None:
         pacer = HumanPacer()
         normal: list[float] = []
         pauses: list[float] = []
         for _ in range(400):
-            delay, is_pause = pacer.next_delay()
+            delay, is_pause = pacer.next_delay(rival_templates=True)
             (pauses if is_pause else normal).append(delay)
         self.assertTrue(normal and pauses)
         self.assertGreaterEqual(min(normal), HUMAN_DELAY_MIN_SECONDS)
@@ -170,12 +173,20 @@ class PacingTests(unittest.TestCase):
         self.assertGreaterEqual(min(pauses), ACTIVITY_PAUSE_MIN_SECONDS)
         self.assertLessEqual(max(pauses), ACTIVITY_PAUSE_MAX_SECONDS)
 
-    def test_a_pause_lands_every_three_or_four_requests(self) -> None:
+    def test_ordinary_requests_never_take_the_rival_pause(self) -> None:
+        pacer = HumanPacer()
+        for _ in range(40):
+            delay, is_pause = pacer.next_delay()
+            self.assertFalse(is_pause)
+            self.assertGreaterEqual(delay, HUMAN_DELAY_MIN_SECONDS)
+            self.assertLessEqual(delay, HUMAN_DELAY_MAX_SECONDS)
+
+    def test_a_pause_lands_every_five_rival_templates(self) -> None:
         pacer = HumanPacer()
         gaps: list[int] = []
         served = 0
         for _ in range(400):
-            _delay, is_pause = pacer.next_delay()
+            _delay, is_pause = pacer.next_delay(rival_templates=True)
             served += 1
             if is_pause:
                 gaps.append(served)
@@ -184,42 +195,29 @@ class PacingTests(unittest.TestCase):
         self.assertGreaterEqual(min(gaps), ACTIVITY_PAUSE_EVERY_MIN)
         self.assertLessEqual(max(gaps), ACTIVITY_PAUSE_EVERY_MAX)
 
-    def test_a_pass_of_thirty_gets_takes_the_fifteen_to_twenty_minute_budget(self) -> None:
-        """Con estas bandas, 15–20 min dan para ~27–37 GET (≈33 s por petición).
-
-        Las bandas mandadas no caben 50 GET en 20 minutos: 50 × 12–25 s ya son
-        10–21 min **sin** contar las pausas, y con una de 45–90 s cada 3–4 el
-        suelo real son 18,8 min y la media ~33 s por GET. La pasada rápida
-        (``core``, ~25–30 GET) es la que cae en el presupuesto de 15–20 min; la
-        completa (``full``, ~60 GET) tarda unos 33 min, y es aceptable porque el
-        refresco es nocturno y nadie lo espera.
-        """
+    def test_a_rival_burst_stays_inside_the_short_bands(self) -> None:
+        """30 plantillas rivales: 6 pausas de 5–9 s y 24 esperas de 1,5–3,5 s."""
         pacer = HumanPacer(rng=random.Random(11))
-        total = sum(pacer.next_delay()[0] for _ in range(30))
-        self.assertGreaterEqual(total, 12 * 60)
-        self.assertLessEqual(total, 21 * 60)
+        total = sum(pacer.next_delay(rival_templates=True)[0] for _ in range(30))
+        self.assertGreaterEqual(total, 24 * HUMAN_DELAY_MIN_SECONDS + 6 * ACTIVITY_PAUSE_MIN_SECONDS)
+        self.assertLessEqual(total, 24 * HUMAN_DELAY_MAX_SECONDS + 6 * ACTIVITY_PAUSE_MAX_SECONDS)
 
-    def test_the_full_pass_is_slower_and_nothing_compresses_it(self) -> None:
-        """~60 GET (tier ``full``) ronda la media hora larga: es lo esperado."""
+    def test_the_full_pass_uses_the_short_gap_when_rivals_are_cached(self) -> None:
+        """Sin plantillas rivales, ~60 GET se quedan en 1,5–3,5 s cada uno."""
         pacer = HumanPacer(rng=random.Random(11))
         total = sum(pacer.next_delay()[0] for _ in range(HUMAN_REQUESTS_PER_REFRESH))
-        self.assertGreaterEqual(total, 26 * 60)
-        self.assertLessEqual(total, 45 * 60)
+        self.assertGreaterEqual(total, HUMAN_REQUESTS_PER_REFRESH * HUMAN_DELAY_MIN_SECONDS)
+        self.assertLessEqual(total, HUMAN_REQUESTS_PER_REFRESH * HUMAN_DELAY_MAX_SECONDS)
 
     def test_the_slowest_possible_configuration_is_still_the_floor(self) -> None:
-        """Ni con todos los mínimos a la vez se baja del suelo: no hay atajo.
-
-        La pausa de actividad *sustituye* la espera de esa petición (no se
-        suma) y con ``pause_every=3`` cae en los GET 3, 6, 9…: 16 pausas y 34
-        esperas normales en 50 peticiones, es decir 18,8 min de suelo físico.
-        """
+        """La pausa de plantilla sustituye la espera de esa petición: no se suma."""
         pacer = HumanPacer(
             minimum=HUMAN_DELAY_MIN_SECONDS,
             maximum=HUMAN_DELAY_MIN_SECONDS,
             pause_every=(ACTIVITY_PAUSE_EVERY_MIN, ACTIVITY_PAUSE_EVERY_MIN),
             pause_seconds=(ACTIVITY_PAUSE_MIN_SECONDS, ACTIVITY_PAUSE_MIN_SECONDS),
         )
-        total = sum(pacer.next_delay()[0] for _ in range(50))
+        total = sum(pacer.next_delay(rival_templates=True)[0] for _ in range(50))
         pauses = 50 // ACTIVITY_PAUSE_EVERY_MIN
         normal = 50 - pauses
         self.assertAlmostEqual(
@@ -227,7 +225,6 @@ class PacingTests(unittest.TestCase):
             normal * HUMAN_DELAY_MIN_SECONDS + pauses * ACTIVITY_PAUSE_MIN_SECONDS,
             delta=1.0,
         )
-        self.assertGreaterEqual(total, 18 * 60)
 
     def test_the_first_request_also_waits(self) -> None:
         """No hay «primer GET gratis»: el patrón es el mismo desde el socket 1."""
@@ -239,8 +236,8 @@ class PacingTests(unittest.TestCase):
         """La cadencia se paga una vez: dormirla también en ``pace_domain`` la duplicaba.
 
         El bug era invisible en las pruebas porque todas usan un ``sleeper``
-        nulo; solo se veía en producción, donde cada GET habría esperado 12–25 s
-        dos veces y la pasada completa se habría ido al doble del presupuesto.
+        nulo; solo se veía en producción, donde cada GET habría esperado la
+        pausa humana dos veces.
         """
         slept: list[float] = []
 
@@ -261,11 +258,11 @@ class PacingTests(unittest.TestCase):
         with patch.dict("os.environ", {"FANTASY_NET_PACING": "1"}):
             net.reset_rate_limits()
             client.get_json(URL, ttl=0, fresh=True)
-        # Exactamente una espera, y dentro de la banda humana: la pausa de
-        # actividad de 45–90 s también es válida aquí (cae cada 3–4 GET).
+        # Exactamente una espera, y dentro de la banda corta: esta URL no es
+        # una plantilla rival, así que no toca la pausa de 5–9 s.
         self.assertEqual(len(slept), 1, slept)
         self.assertGreaterEqual(slept[0], HUMAN_DELAY_MIN_SECONDS)
-        self.assertLessEqual(slept[0], ACTIVITY_PAUSE_MAX_SECONDS)
+        self.assertLessEqual(slept[0], HUMAN_DELAY_MAX_SECONDS)
 
     def test_production_cannot_turn_the_pacing_off(self) -> None:
         with patch.dict("os.environ", {"LALIGA_ENV": "production", "FANTASY_NET_PACING": "0"}):
@@ -280,12 +277,13 @@ class PacingTests(unittest.TestCase):
         self.assertIs(traffic_pacer(), traffic_pacer())
         self.assertIs(traffic_pacer(), net.HUMAN_PACER)
 
-    def test_the_estimate_counts_the_activity_pauses(self) -> None:
-        """Estimar 18,5 s/GET se dejaba fuera la pausa y erraba por casi 2×."""
+    def test_the_estimate_counts_rival_template_pauses_only(self) -> None:
+        """La pausa de 5–9 s solo entra cuando hay plantillas rivales."""
         estimate = expected_pass_seconds(HUMAN_REQUESTS_PER_REFRESH)
-        # ~33 s/GET con las pausas incluidas, no 18,5 s.
-        self.assertGreater(estimate / HUMAN_REQUESTS_PER_REFRESH, 30.0)
-        self.assertLess(estimate / HUMAN_REQUESTS_PER_REFRESH, 35.0)
+        self.assertAlmostEqual(estimate / HUMAN_REQUESTS_PER_REFRESH, 2.5, places=2)
+        rivals = expected_pass_seconds(20, rival_templates=20)
+        self.assertAlmostEqual(rivals, 16 * 2.5 + 4 * 7.0, places=2)
+        self.assertGreater(rivals, expected_pass_seconds(20))
 
     def test_a_generous_budget_lands_on_the_target_instead_of_doubling_it(self) -> None:
         """Un presupuesto de 60 min tiene que dar 60 min, no 106."""
@@ -340,7 +338,9 @@ class MimicryTests(_Fixture):
         self.assertIn("Windows NT 10.0", ua)
         self.assertIn("Chrome/110.0.0.0", ua)
         self.assertNotIn("python", ua.lower())
-        self.assertIn("es-ES", REQUIRED_HEADERS["Accept-Language"])
+        self.assertEqual(REQUIRED_HEADERS["Accept-Language"], "es-ES,es;q=0.9")
+        self.assertEqual(REQUIRED_HEADERS["Origin"], "https://fantasy.laliga.com")
+        self.assertEqual(REQUIRED_HEADERS["Referer"], "https://fantasy.laliga.com/")
         self.assertIn("br", REQUIRED_HEADERS["Accept-Encoding"])
 
     def test_the_official_session_uses_curl_with_the_chrome_profile(self) -> None:
@@ -419,6 +419,73 @@ class KillSwitchTests(_Fixture):
             net.trip_kill_switch(status=403, url=URL)
         with self.assertRaises(SystemExit):
             net.trip_kill_switch(status=403, url=URL)
+
+
+class CacheAndRivalTests(_Fixture):
+    """La caché no espera, y las plantillas rivales duran 4 h salvo force_rivals."""
+
+    def _http(self, handler) -> httpx.Client:
+        http = httpx.Client(transport=httpx.MockTransport(handler))
+        self.addCleanup(http.close)
+        return http
+
+    def test_a_cache_hit_does_not_run_the_pacer(self) -> None:
+        calls = {"n": 0}
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            return httpx.Response(200, json={"ok": True})
+
+        client = self._client(self._http(handler), jitter=True)
+        with patch.object(net.HUMAN_PACER, "next_delay", wraps=net.HUMAN_PACER.next_delay) as paced:
+            with patch.dict("os.environ", {"FANTASY_NET_PACING": "1"}):
+                net.reset_rate_limits()
+                self.assertEqual(client.get_json(URL, ttl=60, fresh=True), {"ok": True})
+                self.assertEqual(paced.call_count, 1)
+                self.assertEqual(client.get_json(URL, ttl=60, fresh=False), {"ok": True})
+                self.assertEqual(paced.call_count, 1)
+        self.assertEqual(calls["n"], 1)
+
+    def test_refresh_keeps_rival_squads_for_four_hours_unless_forced(self) -> None:
+        team_hits = {"own": 0, "rival": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            if "/standing" in url:
+                return httpx.Response(
+                    200,
+                    json=[
+                        {"position": 1, "points": 50, "team": {"id": "3", "name": "Mio", "manager": {"managerName": "Yo"}}},
+                        {"position": 2, "points": 40, "team": {"id": "44", "name": "Rival", "manager": {"managerName": "Nuria"}}},
+                    ],
+                )
+            if "/teams/3" in url and "/lineup" not in url:
+                team_hits["own"] += 1
+                return httpx.Response(200, json={"teamMoney": 1, "players": []})
+            if "/teams/44" in url:
+                team_hits["rival"] += 1
+                return httpx.Response(200, json={"teamMoney": 0, "players": []})
+            if url.rstrip("/").endswith("/players") or "/players?" in url:
+                return httpx.Response(404, json={})
+            return httpx.Response(200, json=[{"id": "7", "name": "Mi liga", "team": {"id": "3"}}])
+
+        client = self._client(self._http(handler), jitter=True)
+        seen: list[bool] = []
+        real_delay = net.HUMAN_PACER.next_delay
+
+        def spy(*args, **kwargs):
+            seen.append(bool(kwargs.get("rival_templates")))
+            return real_delay(*args, **kwargs)
+
+        with patch.object(net.HUMAN_PACER, "next_delay", side_effect=spy):
+            client.squads_document("7", fresh=True)
+        self.assertEqual(team_hits, {"own": 1, "rival": 1})
+        self.assertIn(True, seen)
+        self.assertIn(False, seen)
+        client.squads_document("7", fresh=True)
+        self.assertEqual(team_hits, {"own": 2, "rival": 1})
+        client.squads_document("7", fresh=True, force_rivals=True)
+        self.assertEqual(team_hits, {"own": 3, "rival": 2})
 
 
 if __name__ == "__main__":

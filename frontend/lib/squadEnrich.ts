@@ -50,6 +50,10 @@ function mergePlayer(base: RivalPlayer, trend: Player | undefined): RivalPlayer 
     own_predicted_delta: base.own_predicted_delta ?? trend.own_predicted_delta ?? undefined,
     own_expected_points: base.own_expected_points ?? trend.own_expected_points ?? trend.expected_points ?? undefined,
     p_titular: pTitular ?? undefined,
+    prevision_7d_pct: base.prevision_7d_pct ?? trend.prevision_7d_pct ?? undefined,
+    valor_en_7d: base.valor_en_7d ?? trend.valor_en_7d ?? undefined,
+    venta_forzada_rival: base.venta_forzada_rival || trend.venta_forzada_rival || undefined,
+    venta_forzada_detalle: base.venta_forzada_detalle ?? trend.venta_forzada_detalle ?? undefined,
   };
 }
 

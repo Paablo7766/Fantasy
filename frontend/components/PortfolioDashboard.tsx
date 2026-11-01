@@ -4,12 +4,16 @@ import { useMemo, useState } from "react";
 import { ComputerOffersPanel } from "@/components/ComputerOffersPanel";
 import { ErrorCard, Skeleton } from "@/components/Feedback";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerQuantCard } from "@/components/PlayerQuantCard";
+import { CaptainMarks, ForecastPct, SigningPlanCard, WarChip, captainRoles } from "@/components/StrategyBits";
 import {
   deltaEur,
   deltaTone,
   eur,
+  eurShort,
   glass,
   playerName,
+  points,
   roiPct,
   stamp,
 } from "@/lib/format";
@@ -151,6 +155,8 @@ export function PortfolioDashboard({ squads, loading }: { squads: SquadsPayload 
         </div>
       </article>
 
+      <SigningPlanCard plan={squads.plan_fichajes} />
+
       <ComputerOffersPanel players={players} />
 
       <div className="grid gap-5 xl:grid-cols-[1.4fr_0.9fr]">
@@ -177,8 +183,29 @@ export function PortfolioDashboard({ squads, loading }: { squads: SquadsPayload 
               ))}
             </div>
           </div>
-          <div className="scroll-thin overflow-x-auto">
-            <table className="table-dense w-full min-w-[720px] text-left text-sm">
+          <div className="flex flex-col gap-2.5 md:hidden">
+            {players.length ? (
+              players.map((player) => (
+                <PlayerQuantCard
+                  key={`card-${player.player_id}`}
+                  player={player}
+                  variation={player.prevision_7d_pct}
+                  xp={player.own_expected_points ?? player.average_points}
+                  ifStarts={player.own_expected_points}
+                  ceiling={player.own_expected_points}
+                  rightTitle="Impacto en once"
+                  rightValue={
+                    typeof player.tu_once_pierde_sin_el === "number" ? `−${points(player.tu_once_pierde_sin_el)}` : "s/d"
+                  }
+                  rightHint={typeof player.gain_eur === "number" ? eurShort(player.gain_eur) : roiPct(player.roi)}
+                />
+              ))
+            ) : (
+              <p className="text-sm text-muted">La plantilla no trae jugadores.</p>
+            )}
+          </div>
+          <div className="scroll-thin hidden overflow-x-auto md:block">
+            <table className="table-dense hidden w-full min-w-[720px] text-left text-sm md:table">
               <thead>
                 <tr>
                   <th>Jugador</th>
@@ -197,16 +224,27 @@ export function PortfolioDashboard({ squads, loading }: { squads: SquadsPayload 
                         <div className="flex items-center gap-2.5">
                           <PlayerAvatar player={player} size="sm" />
                           <div className="min-w-0">
-                            <p className="truncate font-medium tracking-tight">{playerName(player)}</p>
-                            <p className="text-[11px] text-faint">
-                              {player.position}
-                              {player.club ? ` · ${player.club}` : ""}
+                            <p className="flex min-w-0 items-center gap-1.5">
+                              <span className="truncate font-medium tracking-tight">{playerName(player)}</span>
+                              <CaptainMarks roles={captainRoles(player.player_id, squads.capitan_seguro, squads.capitan_remontada)} />
+                            </p>
+                            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-faint">
+                              <span>
+                                {player.position}
+                                {player.club ? ` · ${player.club}` : ""}
+                              </span>
+                              <WarChip value={player.tu_once_pierde_sin_el} />
                             </p>
                           </div>
                         </div>
                       </td>
                       <td className="metric-value text-right">{eur(player.cost_eur)}</td>
-                      <td className="metric-value text-right text-ink">{eur(player.market_value)}</td>
+                      <td className="text-right">
+                        <span className="metric-value text-ink">{eur(player.market_value)}</span>
+                        <span className="mt-0.5 block">
+                          <ForecastPct value={player.prevision_7d_pct} className="text-[11px]" />
+                        </span>
+                      </td>
                       <td className={`metric-value text-right ${deltaTone(player.gain_eur)}`}>
                         {deltaEur(player.gain_eur)}
                       </td>

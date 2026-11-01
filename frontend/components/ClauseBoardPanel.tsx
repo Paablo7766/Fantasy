@@ -5,9 +5,10 @@ import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { ErrorCard, Skeleton } from "@/components/Feedback";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerQuantCard } from "@/components/PlayerQuantCard";
 import { endpoint, getJson } from "@/lib/api";
 import { eur, eurShort, glass, multiple, playerName, points } from "@/lib/format";
-import type { ClauseBoardPayload, ClauseBoardRow, SquadsPayload } from "@/lib/types";
+import type { ClauseBoardPayload, ClauseBoardRow, Player, SquadsPayload } from "@/lib/types";
 
 type Filter = "todos" | "oro" | "pagadas" | "subidas" | "asequibles";
 type Group = "desbloqueo" | "equipo";
@@ -88,59 +89,106 @@ function RaiseBadge({ row }: { row: ClauseBoardRow }) {
   return null;
 }
 
-function Row({
-  row,
+function clauseMove(row: ClauseBoardRow): string | null {
+  if (typeof row.clause_delta_pct !== "number") return null;
+  const pctValue = row.clause_delta_pct * 100;
+  const text = Math.abs(pctValue).toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return `${pctValue > 0 ? "+" : pctValue < 0 ? "-" : ""}${text}%`;
+}
+
+function ClauseCards({
+  rows,
   cash,
   onOpenTeam,
 }: {
-  row: ClauseBoardRow;
+  rows: ClauseBoardRow[];
   cash: number | null;
   onOpenTeam: (teamId: string) => void;
 }) {
-  const rule = ruleBadge(row);
-  const affordable = typeof cash === "number" && typeof row.buyout_clause_eur === "number" && row.buyout_clause_eur <= cash;
   return (
-    <li className="border-b border-[color:var(--line)] py-2.5 last:border-0">
-      <div className="flex items-center gap-3">
-        <PlayerAvatar player={row} size="sm" />
-        <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-ink">
-            <span className="truncate">{playerName(row)}</span>
-            {rule ? <span className={`${rule.tone} !px-1.5 !py-0 text-[10px]`}>{rule.label}</span> : null}
-            <RaiseBadge row={row} />
-            {row.is_shielded ? <span className="badge badge--good !px-1.5 !py-0 text-[10px]">blindado</span> : null}
-          </p>
-          <p className="mt-0.5 truncate text-[11px] text-muted">
-            <button
-              type="button"
-              className="underline decoration-dotted underline-offset-2 hover:text-ink"
-              onClick={() => row.team_id && onOpenTeam(String(row.team_id))}
-            >
-              {row.manager_name || "Rival"}
-            </button>
-            {row.position ? ` · ${row.position}` : ""}
-            {row.club ? ` · ${row.club}` : ""}
-            {typeof row.average_points === "number" ? ` · ${points(row.average_points)} pts` : ""}
-          </p>
-        </div>
-        <div className="shrink-0 text-right">
-          <p className={`metric-value text-sm ${affordable ? "text-gold" : "text-ink"}`}>{eur(row.buyout_clause_eur)}</p>
-          <p className="text-[10px] text-faint">
-            {multiple(row.clause_multiple)}
-            {affordable ? " · te cabe" : ""}
-          </p>
-        </div>
-        <div className="hidden w-28 shrink-0 text-right sm:block">
-          <p className="font-mono text-[11px] text-muted">{unlockLabel(row)}</p>
-          <p className="text-[10px] text-faint">
-            {row.is_locked === false ? "abierta" : "bloqueada"}
-            {typeof row.prev_clause_eur === "number" && row.raised_since_photo
-              ? ` · antes ${eurShort(row.prev_clause_eur)}`
-              : ""}
-          </p>
-        </div>
-      </div>
-    </li>
+    <div className="flex flex-col gap-2.5 md:hidden">
+      {rows.map((row) => {
+        const affordable = typeof cash === "number" && typeof row.buyout_clause_eur === "number" && row.buyout_clause_eur <= cash;
+        return (
+          <PlayerQuantCard
+            key={`${row.team_id}-${row.player_id}`}
+            player={row as Player}
+            price={row.market_value}
+            variation={clauseMove(row)}
+            xp={row.average_points}
+            ifStarts={row.average_points}
+            ceiling={null}
+            rightTitle="Cláusula"
+            rightValue={eurShort(row.buyout_clause_eur)}
+            rightHint={affordable ? "te cabe" : unlockLabel(row)}
+            onClick={() => row.team_id && onOpenTeam(String(row.team_id))}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function ClauseTable({
+  rows,
+  cash,
+  onOpenTeam,
+}: {
+  rows: ClauseBoardRow[];
+  cash: number | null;
+  onOpenTeam: (teamId: string) => void;
+}) {
+  return (
+    <div className="hidden md:block">
+      <table className="table-dense hidden w-full text-left text-sm md:table">
+        <thead>
+          <tr>
+            <th>Jugador</th>
+            <th>Rival</th>
+            <th className="text-right">Cláusula</th>
+            <th className="text-right">Abre</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const affordable = typeof cash === "number" && typeof row.buyout_clause_eur === "number" && row.buyout_clause_eur <= cash;
+            const rule = ruleBadge(row);
+            return (
+              <tr key={`${row.team_id}-${row.player_id}`}>
+                <td>
+                  <div className="flex items-center gap-2.5">
+                    <PlayerAvatar player={row} size="sm" />
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5">
+                        <span className="truncate font-medium">{playerName(row)}</span>
+                        {rule ? <span className={`${rule.tone} !px-1.5 !py-0 text-[10px]`}>{rule.label}</span> : null}
+                        <RaiseBadge row={row} />
+                      </p>
+                      <p className="text-[11px] text-muted">
+                        {row.position || ""}
+                        {row.club ? ` · ${row.club}` : ""}
+                        {typeof row.average_points === "number" ? ` · ${points(row.average_points)} pts` : ""}
+                      </p>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="text-sm text-muted-strong underline decoration-dotted underline-offset-2"
+                    onClick={() => row.team_id && onOpenTeam(String(row.team_id))}
+                  >
+                    {row.manager_name || "Rival"}
+                  </button>
+                </td>
+                <td className={`metric-value text-right ${affordable ? "text-[#0297DE]" : ""}`}>{eur(row.buyout_clause_eur)}</td>
+                <td className="text-right font-mono text-[11px] text-muted">{unlockLabel(row)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -324,30 +372,16 @@ export function ClauseBoardPanel({ onOpenTeam }: { onOpenTeam?: (teamId: string)
                 <span className="font-mono font-normal">{list.length}</span>
                 <span className="font-normal normal-case text-faint">· abre {unlockLabel(list[0])}</span>
               </p>
-              <ul>
-                {list.map((row) => (
-                  <Row
-                    key={`${row.team_id}-${row.player_id}`}
-                    row={row}
-                    cash={cash}
-                    onOpenTeam={(teamId) => onOpenTeam?.(teamId)}
-                  />
-                ))}
-              </ul>
+              <ClauseCards rows={list} cash={cash} onOpenTeam={(teamId) => onOpenTeam?.(teamId)} />
+              <ClauseTable rows={list} cash={cash} onOpenTeam={(teamId) => onOpenTeam?.(teamId)} />
             </section>
           ))}
         </div>
       ) : (
-        <ul className="mt-4">
-          {rows.map((row) => (
-            <Row
-              key={`${row.team_id}-${row.player_id}`}
-              row={row}
-              cash={cash}
-              onOpenTeam={(teamId) => onOpenTeam?.(teamId)}
-            />
-          ))}
-        </ul>
+        <div className="mt-4">
+          <ClauseCards rows={rows} cash={cash} onOpenTeam={(teamId) => onOpenTeam?.(teamId)} />
+          <ClauseTable rows={rows} cash={cash} onOpenTeam={(teamId) => onOpenTeam?.(teamId)} />
+        </div>
       )}
 
       <p className="mt-4 text-[11px] leading-4 text-faint">

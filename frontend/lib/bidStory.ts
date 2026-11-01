@@ -402,6 +402,36 @@ function theoryText(player: MarketDecision): string {
 function facts(player: MarketDecision): BidFact[] {
   const rows: BidFact[] = [];
   const pts = player.own_expected_points ?? player.af_expected_points ?? player.expected_points;
+  if (typeof player.smart_bid_eur === "number") {
+    rows.push({
+      label: "Puja smart",
+      value: eur(player.smart_bid_eur),
+      note: player.smart_bid_analysis || "Supera la caja del rival interesado, con tope del +25 %",
+    });
+  }
+  if (typeof player.app_bid_eur === "number") {
+    rows.push({
+      label: "Base app",
+      value: eur(player.app_bid_eur),
+      note: "Valor de mercado +4,7 %, el estilo de La Pizarra",
+    });
+  }
+  if (typeof player.financial_max_bid_eur === "number") {
+    rows.push({
+      label: "Tope financiero",
+      value: eur(player.financial_max_bid_eur),
+      note: "No pagar más de un 25 % sobre el valor",
+    });
+  }
+  if (typeof player.smart_bid_success_pct === "number") {
+    rows.push({
+      label: "Éxito smart",
+      value: `${player.smart_bid_success_pct}%`,
+      note: (player.smart_bid_rivals || []).length
+        ? `Rivales con caja y hueco: ${player.smart_bid_rivals!.join(", ")}`
+        : "Ningún rival cubre el valor y necesita la posición",
+    });
+  }
   if (typeof player.optimal_bid_eur === "number") {
     rows.push({
       label: "Puja óptima v2",

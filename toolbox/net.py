@@ -15,16 +15,17 @@ WAF de LaLiga. Cuatro capas, de fuera hacia dentro:
    las pruebas usan un transporte simulado: no hay red real y el air-gap sigue
    vigente para cualquier cliente que se construya por su cuenta.
 
-2. Cadencia de ultra-baja frecuencia (``HumanPacer``)
-   Cada GET paga una espera uniforme de 12–25 s y, cada 3–4 peticiones, una
-   «pausa de actividad» de 45–90 s (el móvil se queda en la mesa). La pausa
-   sustituye a la espera de esa petición, no se suma: la media ronda los 33 s
-   por GET. La concurrencia contra LaLiga es **1**: un lock de proceso envuelve
-   la pausa y la petición, así que no existe un instante con dos sockets
-   abiertos al dominio. La foto rápida (``core``, ~25–30 GET) tarda 14–18 min y
-   la completa (``full``, ~60 GET) unos 32 min; no se corre, porque el refresco
-   es nocturno y el presupuesto aceptado es de 15–20 min como mínimo, no como
-   techo. ``FANTASY_NET_PACING=0`` solo se honra fuera de producción.
+2. Cadencia humana (``HumanPacer``)
+   Cada GET real paga una espera uniforme de 1,5–3,5 s. Una lectura servida
+   desde ``.cache/`` no espera nada: ``get_json`` vuelve antes de tocar el
+   pacer. Cuando la petición es la plantilla de un rival, cada 5 descargas la
+   espera de esa petición pasa a ser de 5–9 s (sustituye a la de 1,5–3,5 s, no
+   se suma). La concurrencia contra LaLiga es **1**: un lock de proceso
+   envuelve la pausa y la petición, así que no existe un instante con dos
+   sockets abiertos al dominio. Un refresco normal no vuelve a bajar las
+   plantillas rivales si tienen menos de 4 h, así que la pasada se queda en
+   el equipo propio, el once, el mercado y la clasificación.
+   ``FANTASY_NET_PACING=0`` solo se honra fuera de producción.
 
 3. Mimicry con ``curl_cffi``
    La sesión de proceso usa ``impersonate="chrome110"`` (huella TLS/JA3 y
@@ -369,19 +370,17 @@ MAX_ATTEMPTS = 1
 MAX_RETRY_AFTER_SECONDS = 180.0
 MAX_SQUADS = 40
 
-# --- Cadencia de ultra-baja frecuencia -------------------------------------
-# El objetivo ya no es «parecer humano durante un refresco corto», es que una
-# pasada completa (15–20 min como mínimo, sin techo) sea indistinguible de
-# alguien que consulta la app a ratos. Cada GET paga 12–25 s de espera y, cada
-# 3–4 peticiones, una pausa de actividad de 45–90 s (el móvil se queda en la
-# mesa) que sustituye la espera de esa petición. No hay «primera petición
-# gratis»: el patrón tiene que ser el mismo desde el primer socket.
-HUMAN_DELAY_MIN_SECONDS = 12.0
-HUMAN_DELAY_MAX_SECONDS = 25.0
-ACTIVITY_PAUSE_EVERY_MIN = 3
-ACTIVITY_PAUSE_EVERY_MAX = 4
-ACTIVITY_PAUSE_MIN_SECONDS = 45.0
-ACTIVITY_PAUSE_MAX_SECONDS = 90.0
+# --- Cadencia humana -------------------------------------------------------
+# Cada GET real espera 1,5–3,5 s, también el primero: un refresco no debe
+# abrir el socket en el mismo milisegundo en que arranca. La pausa larga solo
+# aplica a las plantillas rivales y sustituye la espera de esa petición: cada
+# 5 descargas, 5–9 s. Una lectura de ``.cache/`` no entra aquí.
+HUMAN_DELAY_MIN_SECONDS = 1.5
+HUMAN_DELAY_MAX_SECONDS = 3.5
+ACTIVITY_PAUSE_EVERY_MIN = 5
+ACTIVITY_PAUSE_EVERY_MAX = 5
+ACTIVITY_PAUSE_MIN_SECONDS = 5.0
+ACTIVITY_PAUSE_MAX_SECONDS = 9.0
 # Alias históricos: las pruebas y la documentación antigua hablaban de jitter.
 JITTER_MIN_SECONDS = HUMAN_DELAY_MIN_SECONDS
 JITTER_MAX_SECONDS = HUMAN_DELAY_MAX_SECONDS
@@ -435,6 +434,9 @@ _PACING_CLOCK: Callable[[], float] = time.monotonic
 LEAGUE_TTL_SECONDS = 30 * 60
 MARKET_TTL_SECONDS = 2 * 60
 SQUAD_TTL_SECONDS = 10 * 60
+# Las plantillas rivales casi no se mueven en el día, salvo un clausulazo.
+# Cuatro horas: un refresco normal no las vuelve a pedir.
+RIVAL_SQUAD_TTL_SECONDS = 4 * 60 * 60
 ACTIVITY_TTL_SECONDS = 5 * 60
 ACTIVITY_CONCAT_TTL_SECONDS = 30 * 60
 # Aunque llegue fresh=True, un concat de menos de 2 h se sirve tal cual:
@@ -641,19 +643,20 @@ def is_laliga_netloc(netloc: str) -> bool:
 # se cierra por petición HTTP del panel, y una cadencia por instancia
 # reiniciaría el contador cada vez (nunca llegaría la pausa de actividad). Lo
 # que tiene que parecer humano es la sesión del móvil, y esa es una sola.
-def expected_pass_seconds(expected_requests: int) -> float:
+def expected_pass_seconds(expected_requests: int, *, rival_templates: int = 0) -> float:
     """Duración media de una pasada con la cadencia de fábrica.
 
-    No es ``peticiones × media(12, 25)``: cada 3–4 GET, la pausa de actividad
-    (45–90 s) **sustituye** la espera normal de esa petición. Ignorarla dejaba
-    la estimación en 18,5 s/GET cuando la real es ~33 s, y con ella el reparto
-    del presupuesto remoto se quedaba corto por un factor de casi dos.
+    La espera normal es la media de 1,5–3,5 s. ``rival_templates`` cuenta
+    cuántas de esas peticiones son plantillas de rivales: cada 5, la pausa de
+    5–9 s **sustituye** la espera de esa descarga y no se suma. El resto de
+    los GET (equipo propio, once, mercado, clasificación) no pagan esa pausa.
     """
     requests = max(1, int(expected_requests))
+    rivals = max(0, min(int(rival_templates), requests))
     mean_delay = (HUMAN_DELAY_MIN_SECONDS + HUMAN_DELAY_MAX_SECONDS) / 2.0
     mean_pause = (ACTIVITY_PAUSE_MIN_SECONDS + ACTIVITY_PAUSE_MAX_SECONDS) / 2.0
     mean_every = (ACTIVITY_PAUSE_EVERY_MIN + ACTIVITY_PAUSE_EVERY_MAX) / 2.0
-    pauses = requests / mean_every
+    pauses = rivals / mean_every if mean_every else 0.0
     normal = requests - pauses
     return normal * mean_delay + pauses * mean_pause
 
@@ -671,21 +674,25 @@ def pace_stretch_for(target_seconds: float, *, expected_requests: int) -> float:
     return max(1.0, float(target_seconds) / default_seconds)
 
 
+# El worker que baja una plantilla rival lo activa justo antes del GET. Una
+# lectura de caché no llega a ``next_delay``, así que el flag no importa ahí.
+_RIVAL_TEMPLATE_FETCH: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "fantasy_rival_template_fetch",
+    default=False,
+)
+
+
 class HumanPacer:
-    """Espacia los GET como alguien que consulta la app a ratos.
+    """Espacia los GET reales como alguien que consulta la app a ratos.
 
     Dos decisiones deliberadas:
 
-    * **La primera petición también espera.** El contrato anterior dejaba pasar
-      el primer GET sin pausa («alguien que acaba de abrir la app»), pero eso
-      convierte cada refresco en un disparo inmediato al arrancar. Con 12–25 s
-      desde el primer socket, el patrón es el mismo siempre y un reinicio
-      accidental no se traduce en una petición instantánea.
-    * **La pausa de actividad es geométrica:** cada 3 o 4 peticiones, 45–90 s,
-      y sustituye la espera de esa petición (no se suma). La media sale a ~33 s
-      por GET: la foto rápida (~25–30 GET) cae en 14–18 min y la completa
-      (~60 GET) ronda los 32 min. El presupuesto de 15–20 min es un suelo, no
-      un techo: el refresco es nocturno y nadie lo espera en pantalla.
+    * **La primera petición también espera.** No hay un GET gratis al arrancar:
+      desde el primer socket la espera es 1,5–3,5 s. Un acierto de ``.cache/``
+      no llama a este pacer.
+    * **La pausa larga es solo de plantillas rivales:** cada 5 descargas, 5–9 s,
+      y sustituye la espera de esa petición (no se suma). Mercado, once propio
+      y clasificación se quedan en 1,5–3,5 s.
 
     El contador y el umbral de la próxima pausa viven bajo un lock, pero el
     ``sleep`` ocurre fuera: dormir con el cerrojo tomado convertiría la espera
@@ -720,20 +727,23 @@ class HumanPacer:
     def _normal_delay(self) -> float:
         return self._rng.uniform(self._min, self._max)
 
-    def next_delay(self) -> tuple[float, bool]:
-        """Segundos a esperar antes del próximo GET y si toca pausa de actividad.
+    def next_delay(self, *, rival_templates: bool = False) -> tuple[float, bool]:
+        """Segundos a esperar antes del próximo GET real y si toca la pausa larga.
 
-        La espera es uniforme (no una normal truncada): con un rango de 12–25 s,
-        una normal centrada en 18,5 s produciría huecos demasiado regulares.
+        La espera normal es uniforme entre 1,5 y 3,5 s. Con
+        ``rival_templates=True`` el contador avanza y, cada 5 descargas de
+        plantilla rival, esa espera pasa a ser de 5–9 s en lugar de sumarse.
+        Las demás peticiones no mueven ese contador.
         """
         with self._lock:
-            self._served += 1
-            if self._served >= self._pause_at:
-                low, high = self._pause_seconds
-                delay = self._rng.uniform(low, high)
-                self._served = 0
-                self._pause_at = self._draw_pause_at()
-                return delay * self._stretch, True
+            if rival_templates:
+                self._served += 1
+                if self._served >= self._pause_at:
+                    low, high = self._pause_seconds
+                    delay = self._rng.uniform(low, high)
+                    self._served = 0
+                    self._pause_at = self._draw_pause_at()
+                    return delay * self._stretch, True
             return self._normal_delay() * self._stretch, False
 
     def stretch_to(self, target_seconds: float, *, expected_requests: int) -> float:
@@ -747,9 +757,9 @@ class HumanPacer:
         actividad, y por eso el reparto se quedaba corto).
 
         Devuelve el factor aplicado (``1.0`` = cadencia de fábrica). El suelo
-        de 12–25 s y las pausas de 45–90 s no se tocan: un presupuesto corto
-        **no** comprime la cadencia, porque el suelo existe para no despertar
-        al WAF. Si no cabe, el refresco tardará lo que tarde.
+        de 1,5–3,5 s y las pausas de plantilla de 5–9 s no se tocan: un
+        presupuesto corto **no** comprime la cadencia. Si no cabe, el refresco
+        tardará lo que tarde.
         """
         requests = max(1, int(expected_requests))
         factor = pace_stretch_for(target_seconds, expected_requests=requests)
@@ -1107,6 +1117,10 @@ def _build_curl_session() -> Any:
             "antes de arrancar con LALIGA_ENV=production.",
             code="missing_dependency",
         ) from exc
+    # Una sola sesión de proceso: libcurl reutiliza el socket (keep-alive) y no
+    # abre un handshake TLS nuevo en cada GET. La huella es la de Chrome 110;
+    # no se añade ``Connection: keep-alive`` porque ese perfil va por HTTP/2,
+    # donde el navegador no manda esa cabecera.
     session = curl_requests.Session(
         impersonate=TLS_IMPERSONATE,
         headers=dict(REQUIRED_HEADERS),
@@ -1477,7 +1491,13 @@ class LaligaClient:
         if index:
             attach_image_urls(rows, index)
 
-    def squads_document(self, league: str | None, *, fresh: bool) -> dict[str, Any]:
+    def squads_document(
+        self,
+        league: str | None,
+        *,
+        fresh: bool,
+        force_rivals: bool = False,
+    ) -> dict[str, Any]:
         ref, _leagues_url = self.resolve_league(league, fresh=fresh)
         index_url, index_payload = self._first_matching(
             team_index_urls(ref["league_id"]),
@@ -1500,15 +1520,25 @@ class LaligaClient:
                     own_team_id=own_team_id,
                     source_url=index_url,
                 )
+            team_id = str(seed["team_id"])
+            is_own = own_team_id is not None and team_id == str(own_team_id)
+            # El equipo propio se refresca con el resto de la foto. El de un
+            # rival respeta las 4 h salvo ``force_rivals``.
+            squad_ttl = SQUAD_TTL_SECONDS if is_own else RIVAL_SQUAD_TTL_SECONDS
+            squad_fresh = fresh if is_own else bool(fresh and force_rivals)
+            pacing = None if is_own else _RIVAL_TEMPLATE_FETCH.set(True)
             try:
                 source, payload = self._first_matching(
-                    team_urls(league_key, str(seed["team_id"])),
-                    ttl=SQUAD_TTL_SECONDS,
-                    fresh=fresh,
+                    team_urls(league_key, team_id),
+                    ttl=squad_ttl,
+                    fresh=squad_fresh,
                     accept=lambda body: isinstance(body, dict) and isinstance(body.get("players"), list),
                 )
             except FantasyHttpError as exc:
                 return empty_squad(seed, own_team_id=own_team_id, message=str(exc))
+            finally:
+                if pacing is not None:
+                    _RIVAL_TEMPLATE_FETCH.reset(pacing)
             if not isinstance(payload, dict):
                 return empty_squad(seed, own_team_id=own_team_id, message="La plantilla no es un objeto.")
             return normalize_squad(
@@ -1520,7 +1550,7 @@ class LaligaClient:
 
         slots: list[dict[str, Any] | None] = [None] * len(seeds)
         # 3 conexiones como máximo: 8 peticiones simultáneas idénticas es un
-        # patrón de bot y no aporta nada frente a TTLs de 10 min.
+        # patrón de bot. Las plantillas rivales además duran 4 h en caché.
         workers = min(3, max(1, len(seeds)))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(inherited(_one_squad), seed): index for index, seed in enumerate(seeds)}
@@ -1994,10 +2024,10 @@ class LaligaClient:
     def _human_pause(self) -> float:
         """Segundos que debe esperar la próxima petición. **No duerme.**
 
-        La pausa la decide el ``HUMAN_PACER`` de proceso, no una instancia: con
-        un rango de 12–25 s y una pausa de actividad cada 3–4 peticiones, la
-        media ronda los 33 s por GET (la pausa sustituye a la espera de esa
-        petición, no se suma).
+        La pausa la decide el ``HUMAN_PACER`` de proceso, no una instancia: 1,5–3,5 s
+        por GET real y, si esta llamada es una plantilla rival, 5–9 s cada 5
+        descargas (esa pausa sustituye a la espera de esa petición, no se suma).
+        Un acierto de ``.cache/`` no llega aquí.
 
         Devuelve lo sorteado para pasárselo a ``pace_domain`` como
         ``minimum_wait``, que es quien duerme una sola vez: así el suelo por
@@ -2012,7 +2042,7 @@ class LaligaClient:
         """
         if not self._jitter:
             return 0.0
-        delay, _pause = HUMAN_PACER.next_delay()
+        delay, _pause = HUMAN_PACER.next_delay(rival_templates=_RIVAL_TEMPLATE_FETCH.get())
         return delay
 
     def _send(self, url: str, *, retry: bool = False) -> tuple[Any, str]:
@@ -2039,7 +2069,7 @@ class LaligaClient:
             # El suelo duro por dominio y la cadencia humana se funden en una
             # sola espera: ``minimum_wait`` es la pausa ya sorteada, no una
             # espera extra, y ``pace_domain`` es quien duerme. Dormirla aquí
-            # además pagaba 12–25 s dos veces por petición.
+            # además pagaba la pausa humana dos veces por petición.
             waited = pace_domain(url, sleeper=self._sleeper, minimum_wait=pause)
             if pause > 0 and waited <= 0:
                 # ``FANTASY_NET_PACING=0`` apaga el controlador por dominio (y

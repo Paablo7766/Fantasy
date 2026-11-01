@@ -6,8 +6,10 @@ import { AuctionV2Panel } from "@/components/AuctionV2Panel";
 import { ErrorCard, Skeleton } from "@/components/Feedback";
 import { ModelConfidenceBadge } from "@/components/ModelConfidenceBadge";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerQuantCard } from "@/components/PlayerQuantCard";
+import { BidTrio, ForcedSaleBadge, ForecastPct } from "@/components/StrategyBits";
 import { bidCapLine, bidStory } from "@/lib/bidStory";
-import { accel, eur, glass, pct, playerName } from "@/lib/format";
+import { accel, eur, eurShort, glass, jornadaEv, pct, playerName, points } from "@/lib/format";
 import { actionReason, actionTone, executableBid, isVetoed, marketAction } from "@/lib/marketAction";
 import type { CatalogPlayer, JornadaClub, MarketDecision, MarketDecisionSummary, TrendsPayload } from "@/lib/types";
 
@@ -92,7 +94,33 @@ function Sparkline({ points }: { points: Array<{ market_value?: number | null }>
 
 function UniverseTable({ rows }: { rows: CatalogPlayer[] }) {
   return (
-    <table className="table-dense table-sticky w-full min-w-[760px] text-left text-sm">
+    <>
+    <ul className="flex flex-col gap-2.5 md:hidden">
+      {rows.length ? (
+        rows.map((player) => {
+          const days = player.price_points?.length ?? 0;
+          const forecast =
+            days >= 3 && typeof player.own_predicted_delta === "number" ? accel(player.own_predicted_delta) : null;
+          return (
+            <li key={String(player.player_id)}>
+              <PlayerQuantCard
+                player={player}
+                variation={player.prevision_7d_pct || null}
+                xp={jornadaEv(player)}
+                ifStarts={player.points_if_starts}
+                ceiling={player.own_ceiling_points ?? player.af_ceiling_points}
+                rightTitle="Dueño"
+                rightValue={OWNER_LABEL[player.owner || ""] || player.owner || "Libre"}
+                rightHint={forecast}
+              />
+            </li>
+          );
+        })
+      ) : (
+        <li className="text-sm text-muted">Ningún jugador en este filtro.</li>
+      )}
+    </ul>
+    <table className="table-dense table-sticky hidden w-full min-w-[760px] text-left text-sm md:table">
       <thead>
         <tr>
           <th>Jugador</th>
@@ -146,6 +174,7 @@ function UniverseTable({ rows }: { rows: CatalogPlayer[] }) {
         )}
       </tbody>
     </table>
+    </>
   );
 }
 
@@ -327,7 +356,50 @@ export function MarketTable({
             ))}
           </ul>
         ) : null}
-        <table className="table-dense table-sticky w-full min-w-[640px] text-left text-sm">
+        <div className="flex flex-col gap-2.5 md:hidden">
+          {sections.map((section) => (
+            <section key={`cards-${section.title}`}>
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#8B9EB0]">
+                {section.title}
+                <span className="ml-2 font-mono font-normal">{section.rows.length}</span>
+              </p>
+              {section.rows.length ? (
+                <div className="flex flex-col gap-2.5">
+                  {section.rows.map((player) => {
+                    const id = String(player.player_id);
+                    const open = selectedId === id;
+                    const bid = typeof player.puja_smart === "number" ? player.puja_smart : executableBid(player);
+                    const impact =
+                      typeof player.points_delta === "number"
+                        ? `${player.points_delta > 0 ? "+" : ""}${points(player.points_delta)} once`
+                        : typeof player.tu_once_pierde_sin_el === "number"
+                          ? `−${points(player.tu_once_pierde_sin_el)} once`
+                          : null;
+                    return (
+                      <PlayerQuantCard
+                        key={`${marketAction(player)}-${player.player_id}`}
+                        player={player}
+                        price={player.market_value}
+                        variation={player.prevision_7d_pct}
+                        xp={jornadaEv(player)}
+                        ifStarts={typeof player.points_if_starts === "number" ? player.points_if_starts : player.expected_points}
+                        ceiling={player.own_ceiling_points ?? player.af_ceiling_points}
+                        rightTitle="Puja smart"
+                        rightValue={typeof bid === "number" ? eurShort(bid) : "Sin puja"}
+                        rightHint={impact}
+                        pressed={open}
+                        onClick={() => setSelectedId((current) => (current === id ? null : id))}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted">{section.empty}</p>
+              )}
+            </section>
+          ))}
+        </div>
+        <table className="table-dense table-sticky hidden w-full min-w-[640px] text-left text-sm md:table">
           <thead>
             <tr>
               <th>Jugador</th>
@@ -395,6 +467,19 @@ export function MarketTable({
                               </span>
                             ) : null}
                           </div>
+                          {player.venta_forzada_rival ? (
+                            <div className="mt-1">
+                              <ForcedSaleBadge />
+                            </div>
+                          ) : null}
+                          {player.prevision_7d_pct ? (
+                            <div className="mt-0.5 text-[11px]">
+                              {typeof player.market_value === "number" ? (
+                                <span className="text-muted">{eur(player.market_value)} </span>
+                              ) : null}
+                              <ForecastPct value={player.prevision_7d_pct} />
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </td>
@@ -409,13 +494,14 @@ export function MarketTable({
                       <span className="metric-value text-sm">
                         {typeof bid === "number" ? eur(bid) : "Sin puja"}
                       </span>
-                      {typeof player.optimal_bid_eur === "number" &&
+                      {typeof bid === "number" &&
                       typeof player.suggested_bid === "number" &&
-                      player.optimal_bid_eur !== player.suggested_bid &&
+                      bid !== player.suggested_bid &&
                       !isVetoed(player) ? (
                         <span className="mt-0.5 block text-[11px] text-faint">operativa {eur(player.suggested_bid)}</span>
                       ) : null}
                       {cap ? <span className="mt-0.5 block text-[11px] text-muted">{cap}</span> : null}
+                      {player.offer_source !== "propio" ? <BidTrio player={player} /> : null}
                       <AuctionV2Panel player={player} variant="compact" />
                     </td>
                     <td>
@@ -529,7 +615,7 @@ function PickCard({
         <p className="mt-1.5 text-sm">
           {typeof bid === "number" ? (
             <>
-              {typeof player.optimal_bid_eur === "number" ? "Óptima v2" : "Puja"}{" "}
+              {typeof player.smart_bid_eur === "number" ? "Puja smart" : typeof player.optimal_bid_eur === "number" ? "Óptima v2" : "Puja"}{" "}
               <span className="metric-value text-gold">{eur(bid)}</span>
             </>
           ) : (
@@ -546,6 +632,12 @@ function PickCard({
           ) : null}
         </p>
         <AuctionV2Panel player={player} variant="compact" />
+        {player.venta_forzada_rival ? (
+          <p className="mt-1.5">
+            <ForcedSaleBadge />
+          </p>
+        ) : null}
+        {player.offer_source !== "propio" ? <BidTrio player={player} /> : null}
         <p className="mt-1 text-[11px] leading-4 text-muted">{reason || story.glance}</p>
         <p className="mt-1 text-[11px] text-info">Ver por qué</p>
       </button>

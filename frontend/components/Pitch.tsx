@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { ErrorCard, Skeleton } from "@/components/Feedback";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
-import { accel, eur, glass, jornadaEv, pct, playerName, points, projectedLineupPoints, titularShare } from "@/lib/format";
+import { CaptainMarks, ForecastPct, SigningPlanCard, WarChip, captainRoles, type CaptainRole } from "@/components/StrategyBits";
+import { accel, eur, eurShort, glass, jornadaEv, pct, playerName, points, projectedLineupPoints, titularShare } from "@/lib/format";
 import type { Gap, OptimizePayload, Player, SquadsPayload } from "@/lib/types";
 
 const ROW_Y: Record<string, number> = { DEL: 16, MC: 40, DEF: 66, POR: 88 };
@@ -72,9 +73,11 @@ function voidCopy(reasons: string[] | undefined): string {
 }
 
 function starterRing(value: number | null | undefined): string {
-  const normalized = titularShare(value);
-  const share = normalized !== null ? Math.max(0, Math.min(100, Math.round(normalized * 100))) : 0;
-  return `conic-gradient(#f3e2b0 ${share}%, rgba(255,255,255,0.22) ${share}%)`;
+  const share = titularShare(value);
+  if (share === null) return "rgba(139, 158, 176, 0.55)";
+  if (share >= 0.75) return "#0297DE";
+  if (share < 0.5) return "#FC734D";
+  return "#67C6F5";
 }
 
 function tokenKey(player: Token, index: number): string {
@@ -86,6 +89,19 @@ function applySquadDelta(player: Player, deltas: Map<string, number>): Player {
   const delta = deltas.get(String(player.player_id));
   if (typeof delta !== "number") return player;
   return { ...player, price_delta: delta };
+}
+
+function applySquadIntel(player: Player, squad: Map<string, Player>): Player {
+  if (!player.player_id) return player;
+  const source = squad.get(String(player.player_id));
+  if (!source) return player;
+  return {
+    ...player,
+    market_value: player.market_value ?? source.market_value,
+    prevision_7d_pct: player.prevision_7d_pct ?? source.prevision_7d_pct,
+    valor_en_7d: player.valor_en_7d ?? source.valor_en_7d,
+    tu_once_pierde_sin_el: player.tu_once_pierde_sin_el ?? source.tu_once_pierde_sin_el,
+  };
 }
 
 function priceMove(value: number | null | undefined): { text: string; tone: string } | null {
@@ -159,10 +175,12 @@ function Silhouette() {
 function TokenView({
   player,
   active,
+  captain,
   onSelect,
 }: {
   player: Token;
   active: boolean;
+  captain: CaptainRole[];
   onSelect: () => void;
 }) {
   if (player.gap) {
@@ -180,7 +198,7 @@ function TokenView({
         aria-pressed={active}
         onClick={onSelect}
       >
-        <div className="ring">
+        <div className="token-ring">
           <div className="avatar">
             <Silhouette />
           </div>
@@ -229,20 +247,28 @@ function TokenView({
       data-token
       data-position={player.position || ""}
       data-name={name}
-      style={{ left: `${player.x}%`, top: `${player.y}%` }}
+      style={{ left: `${player.x}%`, top: `${player.y}%`, "--ring": starterRing(player.p_titular) } as CSSProperties}
       title={`${name} · ${player.position || ""} · ${points(ev)} pts jornada · titular ${pct(player.p_titular)}${tooltipIfStarts}${estimated}${tooltipDelta}${tooltipWindows}`}
       aria-pressed={active}
       onClick={onSelect}
     >
-      <div className="ring" style={{ background: starterRing(player.p_titular) }}>
-        <PlayerAvatar player={player} />
+      <div className="relative">
+        <div className="token-ring">
+          <PlayerAvatar player={player} />
+        </div>
+        {captain.length ? (
+          <span className="absolute -right-1 -top-1 flex flex-col gap-0.5">
+            <CaptainMarks roles={captain} compact />
+          </span>
+        ) : null}
       </div>
       <div className="name">{name}</div>
-      <div className="meta">
-        {points(ev)}
+      <div className="token-xp">{points(ev)}</div>
+      <div className={`token-price ${move?.tone === "text-coral" ? "!text-[#FC734D]" : move?.tone === "text-mint" ? "!text-[#10B981]" : ""}`}>
+        {typeof player.market_value === "number" ? eurShort(player.market_value) : "s/d"}
+        {player.prevision_7d_pct ? ` ${player.prevision_7d_pct}` : ""}
         {flag ? ` · ${flag}` : ""}
       </div>
-      {move ? <div className={move.tone === "text-coral" ? "delta delta--down" : "delta delta--up"}>{move.text}</div> : null}
     </button>
   );
 }
@@ -259,9 +285,11 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
 
 function PlayerSheet({
   player,
+  captain,
   onClose,
 }: {
   player: Token;
+  captain: CaptainRole[];
   onClose: () => void;
 }) {
   if (player.gap) {
@@ -303,6 +331,11 @@ function PlayerSheet({
               <p className="eyebrow">{player.position || "Jugador"}</p>
               <h3 className="truncate text-lg font-semibold tracking-tight">{name}</h3>
               <p className="truncate text-sm text-muted">{player.club || "Club sin dato"}</p>
+              {captain.length ? (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  <CaptainMarks roles={captain} />
+                </div>
+              ) : null}
             </div>
             <button type="button" className="btn btn-secondary shrink-0 !px-2.5 !py-1 text-xs" onClick={onClose}>
               Cerrar
@@ -323,8 +356,12 @@ function PlayerSheet({
           <p className="metric-value mt-1 text-2xl text-ink">{pct(player.p_titular)}</p>
         </div>
         <div>
-          <p className="metric-label">Precio hoy</p>
-          <p className={`metric-value mt-1 text-2xl ${priceDeltaView(player)?.tone || "text-muted"}`}>
+          <p className="metric-label">Valor</p>
+          <p className="metric-value mt-1 text-2xl text-ink">{eur(player.market_value)}</p>
+          <p className="mt-0.5">
+            <ForecastPct value={player.prevision_7d_pct} className="text-[11px]" />
+          </p>
+          <p className={`metric-value mt-1 text-xs ${priceDeltaView(player)?.tone || "text-muted"}`}>
             {priceDeltaView(player)?.text || "s/d"}
           </p>
           {priceDeltaView(player)?.text.startsWith("≈") ? (
@@ -342,6 +379,7 @@ function PlayerSheet({
       <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
         {flag ? <span className="badge badge--warn">{flag}</span> : <span className="badge badge--good">Disponible</span>}
         {player.p_titular_source === "week_points" ? <span className="badge badge--warn">Titularidad estimada</span> : null}
+        <WarChip value={player.tu_once_pierde_sin_el} />
       </div>
     </div>
   );
@@ -366,9 +404,16 @@ export function Pitch({
     }
     return map;
   }, [squads]);
+  const squadIntel = useMemo(() => {
+    const map = new Map<string, Player>();
+    for (const player of squads?.self?.players || []) {
+      if (player.player_id) map.set(String(player.player_id), player);
+    }
+    return map;
+  }, [squads]);
 
   const xi = (optimize && optimize.ok !== false && Array.isArray(optimize.xi) ? optimize.xi : []).map((player) =>
-    applySquadDelta(player, deltas),
+    applySquadIntel(applySquadDelta(player, deltas), squadIntel),
   );
   const gaps = optimize && Array.isArray(optimize.gaps) ? optimize.gaps : [];
   const placed = useMemo(() => layoutXi(xi, gaps), [xi, gaps]);
@@ -381,7 +426,10 @@ export function Pitch({
   const counts = optimize.partial ? optimize.eligible_counts || optimize.counts || {} : optimize.counts || {};
   const countLine = LINES.map((pos) => `${pos} ${counts[pos] ?? 0}`).join(" · ");
   const title = optimize.partial ? "Mejor once posible" : "Once óptimo";
-  const bench = (Array.isArray(optimize.benched) ? optimize.benched : []).map((player) => applySquadDelta(player, deltas));
+  const bench = (Array.isArray(optimize.benched) ? optimize.benched : []).map((player) =>
+    applySquadIntel(applySquadDelta(player, deltas), squadIntel),
+  );
+  const roleOf = (player: Player) => captainRoles(player.player_id, optimize.capitan_seguro, optimize.capitan_remontada);
   const excluded = Array.isArray(optimize.excluded) ? optimize.excluded : [];
   const fills = Array.isArray(optimize.market_fills) ? optimize.market_fills : [];
   const saved = optimize.saved_lineup && optimize.saved_lineup.ok ? optimize.saved_lineup : null;
@@ -429,6 +477,10 @@ export function Pitch({
         <Stat label="Huecos" value={String(gapCount)} hint={gapCount ? "plazas por cubrir" : "once cerrado"} />
       </div>
 
+      <div className="mt-4">
+        <SigningPlanCard plan={optimize.plan_fichajes} />
+      </div>
+
       {optimize.matchday_void ? (
         <p className="callout mt-4">
           Jornada a 0 · {voidCopy(optimize.void_reasons)}. El borde discontinuo marca el fichaje que falta.
@@ -440,19 +492,19 @@ export function Pitch({
           <div className="flex justify-center">
             <div className="pitch">
               <svg viewBox="0 0 68 105" preserveAspectRatio="none" aria-hidden="true">
-                <g fill="none" stroke="rgba(255,255,255,0.78)" strokeWidth="0.4">
+                <g fill="none" stroke="rgba(2,151,222,0.22)" strokeWidth="0.45">
                   <rect x="1.2" y="1.2" width="65.6" height="102.6" rx="0.6" />
                   <line x1="1.2" y1="52.5" x2="66.8" y2="52.5" />
                   <circle cx="34" cy="52.5" r="9.15" />
-                  <circle cx="34" cy="52.5" r="0.55" fill="rgba(255,255,255,0.78)" stroke="none" />
+                  <circle cx="34" cy="52.5" r="0.55" fill="rgba(2,151,222,0.45)" stroke="none" />
                   <rect x="13.84" y="1.2" width="40.32" height="16.5" />
                   <rect x="24.84" y="1.2" width="18.32" height="5.5" />
                   <rect x="13.84" y="87.3" width="40.32" height="16.5" />
                   <rect x="24.84" y="98.3" width="18.32" height="5.5" />
                   <path d="M24.8 17.7a9.2 9.2 0 0 0 18.4 0" />
                   <path d="M24.8 87.3a9.2 9.2 0 0 1 18.4 0" />
-                  <circle cx="34" cy="12" r="0.5" fill="rgba(255,255,255,0.78)" stroke="none" />
-                  <circle cx="34" cy="93" r="0.5" fill="rgba(255,255,255,0.78)" stroke="none" />
+                  <circle cx="34" cy="12" r="0.5" fill="rgba(2,151,222,0.45)" stroke="none" />
+                  <circle cx="34" cy="93" r="0.5" fill="rgba(2,151,222,0.45)" stroke="none" />
                 </g>
               </svg>
               <div className="pitch-xi">
@@ -463,6 +515,7 @@ export function Pitch({
                       key={key}
                       player={player}
                       active={selected === key}
+                      captain={player.gap ? [] : roleOf(player)}
                       onSelect={() => setSelected((current) => (current === key ? null : key))}
                     />
                   );
@@ -470,11 +523,11 @@ export function Pitch({
               </div>
             </div>
           </div>
-          <p className="mt-2 text-center text-[11px] text-faint">El aro dorado es la probabilidad de ser titular.</p>
+          <p className="mt-2 text-center text-[11px] text-faint">Anillo azul si es titular probable. Naranja si baja del 50%.</p>
         </div>
 
         <div className="min-w-0 space-y-4">
-          {active ? <PlayerSheet player={active} onClose={() => setSelected(null)} /> : null}
+          {active ? <PlayerSheet player={active} captain={active.gap ? [] : roleOf(active)} onClose={() => setSelected(null)} /> : null}
 
           {LINES.map((position) => {
             const line = placed.filter((player) => player.position === position);
@@ -515,7 +568,22 @@ export function Pitch({
                             )}
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium">{name}</span>
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className="truncate text-sm font-medium">{name}</span>
+                              {!player.gap ? <CaptainMarks roles={roleOf(player)} /> : null}
+                            </span>
+                            {!player.gap ? (
+                              <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <WarChip value={player.tu_once_pierde_sin_el} />
+                                {typeof player.market_value === "number" ? (
+                                  <span className="text-[11px] text-muted">
+                                    {eur(player.market_value)} <ForecastPct value={player.prevision_7d_pct} />
+                                  </span>
+                                ) : (
+                                  <ForecastPct value={player.prevision_7d_pct} className="text-[11px]" />
+                                )}
+                              </span>
+                            ) : null}
                             <span className="mt-1 block h-1 overflow-hidden rounded-full bg-ink/10">
                               <span className="block h-full rounded-full bg-mint/80" style={{ width: `${width}%` }} />
                             </span>
@@ -612,7 +680,11 @@ export function Pitch({
                     <PlayerAvatar player={player} size="sm" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{playerName(player)}</span>
-                      <span className="text-[11px] text-muted">{player.position || ""}</span>
+                      <span className="text-[11px] text-muted">
+                        {player.position || ""}
+                        {typeof player.market_value === "number" ? ` · ${eur(player.market_value)}` : ""}{" "}
+                        <ForecastPct value={player.prevision_7d_pct} />
+                      </span>
                     </span>
                     <span className="text-right">
                       <span className="metric-value block text-xs text-gold">{points(jornadaEv(player))}</span>

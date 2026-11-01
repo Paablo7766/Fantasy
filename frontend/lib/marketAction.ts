@@ -41,6 +41,7 @@ export function actionReason(
 /** Cifra ejecutable: con veto no hay puja que ofrecer. */
 export function executableBid(player: Partial<MarketDecision> | null | undefined): number | null {
   if (isVetoed(player)) return null;
+  if (typeof player?.smart_bid_eur === "number") return player.smart_bid_eur;
   if (typeof player?.optimal_bid_eur === "number") return player.optimal_bid_eur;
   if (typeof player?.suggested_bid === "number") return player.suggested_bid;
   return null;

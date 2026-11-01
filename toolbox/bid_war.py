@@ -26,6 +26,13 @@ from toolbox.league_history import RivalProfile, apply_league_clearing, clearing
 PREMIUM_SCALE = 0.03
 PREMIUM_PERSISTENCE = 0.05
 
+# Puja genérica al estilo de La Pizarra y tope racional de sobrepuja.
+APP_BID_PREMIUM = 1.047
+FINANCIAL_OVERBID_CAP = 1.25
+# Las cifras de esta medida se expresan al décimo de millón (100 k€).
+SMART_BID_STEP_EUR = 100_000
+DEFAULT_SAFETY_MARGIN_EUR = 100_000
+
 
 def _int(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
@@ -527,6 +534,178 @@ def rivals_state_for_auction(
     return states
 
 
+def _round_tenth_million(amount: float) -> int:
+    """Redondeo al décimo de millón, el mismo grano que ``round(millones, 1)``."""
+    return int(round(amount / SMART_BID_STEP_EUR) * SMART_BID_STEP_EUR)
+
+
+def _within_cash(amount: int, cash: float) -> int:
+    """Una puja recomendada no puede dejar la caja en negativo."""
+    if cash <= 0:
+        return 0
+    if amount <= cash:
+        return amount
+    floored = int(math.floor(cash / SMART_BID_STEP_EUR) * SMART_BID_STEP_EUR)
+    return floored if floored > 0 else int(cash)
+
+
+def _rival_cash(rival: dict[str, Any]) -> float | None:
+    for key in ("dineroEstimado", "cash_eur", "reconstructed_cash_eur"):
+        value = rival.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        return float(value)
+    return None
+
+
+def _weak_positions(rival: dict[str, Any]) -> set[str]:
+    positions: set[str] = set()
+    for key in ("posiciones_debiles", "thin_positions", "xi_gaps"):
+        raw = rival.get(key)
+        if not isinstance(raw, list):
+            continue
+        positions.update(item for item in raw if isinstance(item, str) and item)
+    return positions
+
+
+def _rival_name(rival: dict[str, Any]) -> str:
+    for key in ("nombre", "manager_name", "team_id"):
+        value = rival.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return "rival"
+
+
+def calcular_puja_optima(
+    jugador: dict[str, Any],
+    rivales: list[dict[str, Any]],
+    tu_saldo: float,
+    margen_seguridad: float = DEFAULT_SAFETY_MARGIN_EUR,
+) -> dict[str, Any]:
+    """Puja smart: base +4,7 %, tope +25 % y knockout de la caja rival.
+
+    Un rival cuenta si tiene saldo positivo, cubre el valor de mercado y
+    necesita la posición (hueco de titular o línea floja). Si nadie llega,
+    se puja la base. Si alguien llega, se supera su saldo en el margen
+    siempre que eso no pase del +25 % ni de la caja propia.
+    """
+    raw_value = jugador.get("valor", jugador.get("market_value"))
+    if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)) or raw_value <= 0:
+        return {
+            "puja_base_app": None,
+            "puja_maxima": None,
+            "puja_smart": None,
+            "probabilidad_exito": None,
+            "analisis": "Sin valor de mercado para calcular la puja.",
+            "rivales_peligrosos": [],
+        }
+
+    valor_mercado = float(raw_value)
+    posicion = jugador.get("posicion", jugador.get("position"))
+    posicion = posicion if isinstance(posicion, str) else ""
+    saldo = float(tu_saldo) if isinstance(tu_saldo, (int, float)) and not isinstance(tu_saldo, bool) else 0.0
+    margen = float(margen_seguridad) if isinstance(margen_seguridad, (int, float)) and not isinstance(margen_seguridad, bool) else DEFAULT_SAFETY_MARGIN_EUR
+
+    puja_base_app = _round_tenth_million(valor_mercado * APP_BID_PREMIUM)
+    puja_max_financiera = _round_tenth_million(valor_mercado * FINANCIAL_OVERBID_CAP)
+
+    rivales_peligrosos: list[str] = []
+    max_saldo_rival_interesado = 0.0
+    for rival in rivales:
+        if not isinstance(rival, dict):
+            continue
+        saldo_rival = _rival_cash(rival)
+        if saldo_rival is None or saldo_rival <= 0:
+            continue
+        necesita_posicion = bool(posicion) and posicion in _weak_positions(rival)
+        if necesita_posicion and saldo_rival >= valor_mercado:
+            rivales_peligrosos.append(_rival_name(rival))
+            if saldo_rival > max_saldo_rival_interesado:
+                max_saldo_rival_interesado = saldo_rival
+
+    if not rivales_peligrosos:
+        objetivo = _round_tenth_million(max(valor_mercado + DEFAULT_SAFETY_MARGIN_EUR, float(puja_base_app)))
+        puja_smart = _within_cash(objetivo, saldo)
+        if puja_smart <= 0:
+            probabilidad = 0
+            motivo = "Sin caja para la puja base."
+        elif puja_smart < objetivo:
+            probabilidad = 20
+            motivo = "All-in. La puja base supera tu saldo y ningún rival necesita la posición."
+        else:
+            probabilidad = 95
+            motivo = "Ningún rival tiene saldo o necesidad crítica en esta posición."
+    else:
+        puja_necesaria = max_saldo_rival_interesado + margen
+        puja_necesaria_redondeada = _round_tenth_million(puja_necesaria)
+        if puja_necesaria_redondeada <= max_saldo_rival_interesado:
+            puja_necesaria_redondeada += SMART_BID_STEP_EUR
+        nombres = ", ".join(rivales_peligrosos)
+        saldo_txt = f"{max_saldo_rival_interesado / 1_000_000:.1f}"
+        if saldo >= puja_necesaria_redondeada:
+            if puja_necesaria_redondeada <= puja_max_financiera:
+                puja_smart = puja_necesaria_redondeada
+                probabilidad = 99
+                motivo = f"Supera el saldo máximo de {nombres} ({saldo_txt}M)."
+            else:
+                puja_smart = _within_cash(puja_max_financiera, saldo)
+                probabilidad = 40
+                motivo = (
+                    f"Riesgo de sobrepuja. {nombres} tienen más dinero ({saldo_txt}M) "
+                    "que el valor sensato del jugador."
+                )
+        else:
+            puja_smart = _within_cash(int(saldo), saldo)
+            probabilidad = 20 if puja_smart > 0 else 0
+            motivo = f"All-in. Tienes menos saldo que {nombres}."
+
+    return {
+        "puja_base_app": puja_base_app,
+        "puja_maxima": puja_max_financiera,
+        "puja_smart": int(puja_smart) if puja_smart else None,
+        "probabilidad_exito": probabilidad,
+        "analisis": motivo,
+        "rivales_peligrosos": rivales_peligrosos,
+    }
+
+
+def _rivals_for_smart_bid(
+    profiles: list[RivalProfile],
+    rivals: list[dict[str, Any]] | None,
+    position: str,
+) -> list[dict[str, Any]]:
+    """Adapta perfiles o snapshots al contrato de ``calcular_puja_optima``."""
+    if profiles:
+        rows: list[dict[str, Any]] = []
+        for profile in profiles:
+            weak = [*profile.thin_positions, *profile.xi_gaps]
+            if profile.already_bidding and position:
+                weak.append(position)
+            rows.append(
+                {
+                    "nombre": profile.manager_name or profile.team_id,
+                    "dineroEstimado": profile.cash_eur,
+                    "posiciones_debiles": weak,
+                }
+            )
+        return rows
+    adapted: list[dict[str, Any]] = []
+    for row in rivals or []:
+        if not isinstance(row, dict):
+            continue
+        weak = list(_weak_positions(row))
+        if row.get("already_bidding") is True and position:
+            weak.append(position)
+        adapted.append(
+            {
+                "nombre": _rival_name(row),
+                "dineroEstimado": _rival_cash(row),
+                "posiciones_debiles": weak,
+            }
+        )
+    return adapted
+
+
 def _projected_deltas(trend: dict[str, Any], *, usable: bool) -> tuple[list[float], float]:
     own_pred = trend.get("own_predicted_delta")
     accel = trend.get("acceleration")
@@ -615,6 +794,18 @@ def plan_market_auction_bid(
     caps["expected_surplus_eur"] = v2.expected_surplus_eur if v2.optimal_bid_eur > 0 else None
     caps["rival_knockout_targets"] = v2.rival_knockout_targets
     caps["auction_decision"] = v2.decision
+
+    smart = calcular_puja_optima(
+        {"valor": mv, "posicion": pos},
+        _rivals_for_smart_bid(profiles, rivals, pos),
+        own_cash,
+    )
+    caps["app_bid_eur"] = smart["puja_base_app"]
+    caps["financial_max_bid_eur"] = smart["puja_maxima"]
+    caps["smart_bid_eur"] = smart["puja_smart"]
+    caps["smart_bid_success_pct"] = smart["probabilidad_exito"]
+    caps["smart_bid_analysis"] = smart["analisis"]
+    caps["smart_bid_rivals"] = smart["rivales_peligrosos"]
 
     if caps.get("suggested_bid") is not None and isinstance(v2.optimal_bid_eur, int) and v2.optimal_bid_eur > 0:
         ceiling = caps.get("value_ceiling")

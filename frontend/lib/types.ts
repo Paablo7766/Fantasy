@@ -167,6 +167,22 @@ export type Player = {
     recommendation_pct?: number;
     difficulty?: string;
   }> | null;
+  /** Variación de valor a 7 días, con signo: ``+10.9%`` o ``-2.1%``. */
+  prevision_7d_pct?: string | null;
+  valor_en_7d?: number | null;
+  valor_justo?: number | null;
+  xp_4_jornadas?: number | null;
+  /** Puntos que pierde el once óptimo si este titular sale hoy. */
+  tu_once_pierde_sin_el?: number | null;
+  consejo_oferta?: {
+    acepta?: boolean;
+    explicacion?: string | null;
+  } | null;
+  puja_recomendada?: number | null;
+  puja_maxima?: number | null;
+  puja_smart?: number | null;
+  venta_forzada_rival?: boolean | null;
+  venta_forzada_detalle?: string | null;
   snipe?: {
     fire_local_clock?: string | null;
     fire_local_time?: string | null;
@@ -228,6 +244,65 @@ export type OptimizePayload = ApiError & PhotoMeta & {
     formation?: string | null;
     xi?: Player[];
   } | null;
+  ratio_mercado?: number | null;
+  capitan_seguro?: CapitanPick | null;
+  capitan_remontada?: CapitanPick | null;
+  plan_fichajes?: PlanFichajes | null;
+  ventas_forzadas?: VentaForzada[];
+};
+
+export type CapitanPick = {
+  player_id?: string | null;
+  nombre?: string | null;
+  posicion?: string | null;
+  jornada?: number | null;
+  si_titular?: number | null;
+  techo?: number | null;
+  p_titular?: number | null;
+  criterio?: "jornada" | "techo" | string | null;
+};
+
+export type PlanFichajeAccion = {
+  tipo?: "VENDE" | "PUJA" | "CLAUSULAZO" | "BUSCA" | string;
+  momento?: "hoy" | "luego" | string;
+  player_id?: string | null;
+  nombre?: string | null;
+  posicion?: string | null;
+  jornada?: number | null;
+  euros?: number | null;
+  detalle?: string | null;
+};
+
+export type PlanFichajes = {
+  ok?: boolean;
+  mejora_puntos_jornada?: number | null;
+  saldo_al_final?: number | null;
+  nota?: number | null;
+  veredicto?: "Hazlo ya" | "Recomendable" | "Opcional" | string | null;
+  acciones?: PlanFichajeAccion[];
+  formacion?: string | null;
+  puntos_once?: number | null;
+  puntos_once_actual?: number | null;
+  ratio_mercado?: number | null;
+  once?: Array<{
+    player_id?: string | null;
+    nombre?: string | null;
+    posicion?: string | null;
+    jornada?: number | null;
+    origen?: string | null;
+  }>;
+};
+
+export type VentaForzada = {
+  player_id?: string | null;
+  nombre?: string | null;
+  team_id?: string | null;
+  manager?: string | null;
+  posicion?: string | null;
+  prevision_7d_pct?: string | null;
+  en_mercado?: boolean;
+  venta_forzada_rival?: boolean;
+  detalle?: string | null;
 };
 
 export type RivalBid = {
@@ -317,6 +392,15 @@ export type MarketDecision = Player & {
   seller_team_id?: string | null;
   seller_manager?: string | null;
   optimal_bid_eur?: number | null;
+  /** Puja genérica al estilo de La Pizarra: valor × 1,047. */
+  app_bid_eur?: number | null;
+  /** Tope racional: valor × 1,25. */
+  financial_max_bid_eur?: number | null;
+  /** Puja que supera la caja del rival interesado sin pasar el tope. */
+  smart_bid_eur?: number | null;
+  smart_bid_success_pct?: number | null;
+  smart_bid_analysis?: string | null;
+  smart_bid_rivals?: string[];
   win_probability?: number | null;
   intrinsic_valuation_eur?: number | null;
   expected_surplus_eur?: number | null;
@@ -389,6 +473,11 @@ export type TrendsPayload = ApiError & PhotoMeta & {
     listings?: Player[];
   } | null;
   catalog?: CatalogPlayer[];
+  ratio_mercado?: number | null;
+  capitan_seguro?: CapitanPick | null;
+  capitan_remontada?: CapitanPick | null;
+  plan_fichajes?: PlanFichajes | null;
+  ventas_forzadas?: VentaForzada[];
 };
 
 export type CatalogPlayer = Player & {
@@ -447,6 +536,11 @@ export type RivalPlayer = {
   own_expected_points?: number | null;
   af_price_delta?: number | null;
   p_titular?: number | null;
+  prevision_7d_pct?: string | null;
+  valor_en_7d?: number | null;
+  tu_once_pierde_sin_el?: number | null;
+  venta_forzada_rival?: boolean | null;
+  venta_forzada_detalle?: string | null;
   clause_lock?: ClauseLock | null;
   is_shielded?: boolean | null;
   cost_eur?: number | null;
@@ -620,6 +714,11 @@ export type SquadsPayload = ApiError & PhotoMeta & {
   activity_feed?: ActivityEvent[];
   clause_lock_timezone?: string | null;
   clause_lock_note?: string | null;
+  ratio_mercado?: number | null;
+  capitan_seguro?: CapitanPick | null;
+  capitan_remontada?: CapitanPick | null;
+  plan_fichajes?: PlanFichajes | null;
+  ventas_forzadas?: VentaForzada[];
 };
 
 export type NeedRival = {
@@ -1164,6 +1263,11 @@ export type PlanPayload = ApiError & PhotoMeta & {
   clause_offers?: Array<Record<string, unknown>>;
   /** Planes conjuntos: mercado + cláusulas + ventas que maximizan el once. */
   strategies?: PlanStrategy[];
+  ratio_mercado?: number | null;
+  capitan_seguro?: CapitanPick | null;
+  capitan_remontada?: CapitanPick | null;
+  plan_fichajes?: PlanFichajes | null;
+  ventas_forzadas?: VentaForzada[];
   strategy_baseline_points?: number | null;
   audit?: {
     complete?: boolean;

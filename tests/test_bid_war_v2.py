@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from toolbox.bid_war import probability_of_winning_bid, solve_optimal_bid_v2
+from toolbox.bid_war import calcular_puja_optima, probability_of_winning_bid, solve_optimal_bid_v2
 from toolbox.league_history import RivalProfile, fit_rival_profiles_eb
 
 
@@ -142,6 +142,52 @@ class OptimalBidTests(unittest.TestCase):
         )
         self.assertLessEqual(result.optimal_bid_eur, 1_100_000)
         self.assertEqual(result.win_probability, 1.0)
+
+
+class SmartBidTests(unittest.TestCase):
+    """Puja smart: +4,7 % de base, tope +25 % y knockout de caja rival."""
+
+    def _player(self) -> dict:
+        return {"valor": 48_700_000, "posicion": "DEL"}
+
+    def test_no_rival_bids_the_app_base(self) -> None:
+        result = calcular_puja_optima(self._player(), [], 116_600_000)
+        self.assertEqual(result["puja_base_app"], 51_000_000)
+        self.assertEqual(result["puja_maxima"], 60_900_000)
+        self.assertEqual(result["puja_smart"], 51_000_000)
+        self.assertEqual(result["probabilidad_exito"], 95)
+        self.assertEqual(result["rivales_peligrosos"], [])
+
+    def test_knockout_stays_inside_the_financial_cap(self) -> None:
+        rivals = [
+            {"nombre": "Pobre", "dineroEstimado": -1_000_000, "posiciones_debiles": ["DEL"]},
+            {"nombre": "Lleno", "dineroEstimado": 80_000_000, "posiciones_debiles": ["MC"]},
+            {"nombre": "Ana", "dineroEstimado": 55_000_000, "posiciones_debiles": ["DEL"]},
+            {"nombre": "Corto", "dineroEstimado": 40_000_000, "posiciones_debiles": ["DEL"]},
+        ]
+        result = calcular_puja_optima(self._player(), rivals, 116_600_000)
+        self.assertEqual(result["rivales_peligrosos"], ["Ana"])
+        self.assertEqual(result["puja_smart"], 55_100_000)
+        self.assertEqual(result["probabilidad_exito"], 99)
+        self.assertIn("Ana", result["analisis"])
+
+    def test_rich_rival_stops_at_the_25_percent_cap(self) -> None:
+        rivals = [{"nombre": "Rico", "dineroEstimado": 80_000_000, "posiciones_debiles": ["DEL"]}]
+        result = calcular_puja_optima(self._player(), rivals, 116_600_000)
+        self.assertEqual(result["puja_smart"], 60_900_000)
+        self.assertEqual(result["probabilidad_exito"], 40)
+
+    def test_poorer_manager_goes_all_in(self) -> None:
+        rivals = [{"nombre": "Rico", "dineroEstimado": 200_000_000, "posiciones_debiles": ["DEL"]}]
+        result = calcular_puja_optima(self._player(), rivals, 116_600_000)
+        self.assertEqual(result["puja_smart"], 116_600_000)
+        self.assertEqual(result["probabilidad_exito"], 20)
+
+    def test_rounding_still_clears_the_rival_cash(self) -> None:
+        rivals = [{"nombre": "Ana", "dineroEstimado": 12_340_000, "posiciones_debiles": ["MC"]}]
+        result = calcular_puja_optima({"valor": 10_000_000, "posicion": "MC"}, rivals, 30_000_000)
+        self.assertGreater(result["puja_smart"], 12_340_000)
+        self.assertLessEqual(result["puja_smart"], 12_500_000)
 
 
 if __name__ == "__main__":

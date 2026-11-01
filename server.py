@@ -68,6 +68,7 @@ from toolbox.jornada_plan import (
     read_expert_note,
     write_expert_note,
 )
+from toolbox.engine.strategy_layer import publish_strategy
 from toolbox.engine_calibration import build_calibration_report, persist_market_decisions
 from toolbox.market_maker import get_market_recommendations
 from toolbox.data_health import build_field_health
@@ -103,11 +104,11 @@ STATIC_DIR = project_root() / "static"
 PHOTO_STALE_AFTER_SECONDS = 15 * 60.0
 # Un refresco fresh (plantillas + scrapers) puede pasar de 3 min; los waiters
 # deben aguantar al dueño del vuelo en lugar de devolver 504 mientras sigue vivo.
-# Con la cadencia de ultra-baja frecuencia la foto completa (tier ``full``,
-# ~60 GET a ~33 s de media) ronda los 32 min, así que 10 min se quedaban cortos
-# y un segundo clic devolvía 504 con el dueño del vuelo aún trabajando. El
-# margen cubre la pasada más lenta (todos los máximos: ~41 min) sin colgar una
-# petición HTTP para siempre.
+# La cadencia de LaLiga es corta (1,5–3,5 s, y 5–9 s cada 5 plantillas rivales),
+# pero los scrapers externos y un ``force_rivals`` con la liga entera siguen
+# pudiendo alargar el vuelo. 10 min se quedaban cortos y un segundo clic
+# devolvía 504 con el dueño aún trabajando. El margen cubre esa pasada larga
+# sin colgar una petición HTTP para siempre.
 SNAPSHOT_WAIT_SECONDS = 45 * 60.0
 
 _VOID_COPY = {
@@ -146,8 +147,8 @@ _inflight: dict[str, _Flight] = {}
 # ---------------------------------------------------------------------------
 # Estado visible del refresco
 # ---------------------------------------------------------------------------
-# Un POST /api/plan/refresh puede tardar media hora (cadencia humana de 12–25 s
-# por GET). Sin un sitio donde mirar, el usuario solo ve «Actualizando…» y no
+# Un POST /api/plan/refresh puede alargarse cuando toca bajar plantillas rivales
+# o scrapers. Sin un sitio donde mirar, el usuario solo ve «Actualizando…» y no
 # sabe si avanza o está colgado: exactamente la ceguera que este bloque evita.
 # Es RAM y solo lo escribe ``refresh_board``; ningún GET lo modifica.
 _refresh_status_lock = threading.Lock()
@@ -631,13 +632,18 @@ def _empty_trends(*, league_id: Any = None, league_name: Any = None) -> dict[str
     }
 
 
-def load_core_snapshot(league: str | None, fresh: bool) -> dict[str, Any]:
+def load_core_snapshot(
+    league: str | None,
+    fresh: bool,
+    *,
+    force_rivals: bool = False,
+) -> dict[str, Any]:
     """Foto rápida: mercado, plantillas, once y caja. Sin scrapers externos."""
     with LaligaClient() as client:
         _refresh_status_phase("mercado", "Mercado de LALIGA")
         market = client.market_document(league, fresh=fresh)
         _refresh_status_phase("plantillas", "Plantillas de la liga")
-        squads = client.squads_document(league, fresh=fresh)
+        squads = client.squads_document(league, fresh=fresh, force_rivals=force_rivals)
         trends = _empty_trends(league_id=squads.get("league_id"), league_name=squads.get("league_name"))
         store = ResponseCache()
         try:
@@ -685,13 +691,18 @@ def load_core_snapshot(league: str | None, fresh: bool) -> dict[str, Any]:
         return ensure_board_images(board, index=client.image_index(fresh=fresh))
 
 
-def load_snapshot(league: str | None, fresh: bool) -> dict[str, Any]:
+def load_snapshot(
+    league: str | None,
+    fresh: bool,
+    *,
+    force_rivals: bool = False,
+) -> dict[str, Any]:
     """Foto completa: incluye scrapers de mercado, titularidad y valor."""
     with LaligaClient() as client:
         _refresh_status_phase("mercado", "Mercado de LALIGA")
         market = client.market_document(league, fresh=fresh)
         _refresh_status_phase("plantillas", "Plantillas de la liga")
-        squads = client.squads_document(league, fresh=fresh)
+        squads = client.squads_document(league, fresh=fresh, force_rivals=force_rivals)
         _refresh_status_phase("scrapers", "Scrapers: puntos, forma y valor")
         trends = build_trends(
             league=league,
@@ -1305,7 +1316,13 @@ def _board_saved_unix(board: dict[str, Any]) -> float | None:
     return None
 
 
-def refresh_board(league: str | None, *, tier: str = "full", track_status: bool = True) -> dict[str, Any]:
+def refresh_board(
+    league: str | None,
+    *,
+    tier: str = "full",
+    track_status: bool = True,
+    force_rivals: bool = False,
+) -> dict[str, Any]:
     """Descarga una foto nueva y sobrescribe la caché. **Única vía con red.**
 
     Solo se llama desde ``POST /api/plan/refresh``. Comparte un único vuelo por
@@ -1342,7 +1359,11 @@ def refresh_board(league: str | None, *, tier: str = "full", track_status: bool 
     if track_status:
         _refresh_status_start(tier, league)
     try:
-        value = load_core_snapshot(league, True) if kind == "core" else load_snapshot(league, True)
+        value = (
+            load_core_snapshot(league, True, force_rivals=force_rivals)
+            if kind == "core"
+            else load_snapshot(league, True, force_rivals=force_rivals)
+        )
     except Exception as exc:
         holder.error = exc
         if track_status:
@@ -1440,7 +1461,7 @@ def shape_trends(board: dict[str, Any]) -> dict[str, Any]:
         if isinstance(calibration_report.get("engine_confidence"), dict)
         else _engine_confidence_snapshot(board)
     )
-    return {
+    payload = {
         "ok": trends.get("ok", False) is not False and bool(trends),
         "schema_version": trends.get("schema_version") or SCHEMA_VERSION,
         "command": "trends",
@@ -1515,6 +1536,8 @@ def shape_trends(board: dict[str, Any]) -> dict[str, Any]:
         "calibration": _calibration_for_client(calibration_report),
         "error": trends.get("error") if trends.get("ok") is False else None,
     }
+    publish_strategy(board, payload)
+    return payload
 
 
 def shape_squads(board: dict[str, Any]) -> dict[str, Any]:
@@ -1578,7 +1601,7 @@ def shape_squads(board: dict[str, Any]) -> dict[str, Any]:
         else 0
     )
     activity_feed = league_activity_feed(ledger_rows, roster_raw, names, limit=28)
-    return {
+    payload = {
         "ok": document.get("ok", True) is not False,
         "schema_version": document.get("schema_version") or SCHEMA_VERSION,
         "command": "squads",
@@ -1606,6 +1629,8 @@ def shape_squads(board: dict[str, Any]) -> dict[str, Any]:
         "sell": [player for player in own_players if player.get("sell_signal") is True],
         "error": document.get("error") if document.get("ok") is False else None,
     }
+    publish_strategy(board, payload)
+    return payload
 
 
 def clause_intel_from_board(board: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
@@ -2123,9 +2148,20 @@ def _normalize_market_decision(row: dict[str, Any]) -> dict[str, Any]:
         "optimal_bid_eur",
         "intrinsic_valuation_eur",
         "expected_surplus_eur",
+        "app_bid_eur",
+        "financial_max_bid_eur",
+        "smart_bid_eur",
+        "smart_bid_success_pct",
     ):
         value = item.get(key)
         item[key] = value if isinstance(value, int) and not isinstance(value, bool) else None
+    analysis = item.get("smart_bid_analysis")
+    item["smart_bid_analysis"] = analysis.strip() if isinstance(analysis, str) and analysis.strip() else None
+    rivals = item.get("smart_bid_rivals")
+    if not isinstance(rivals, list):
+        item["smart_bid_rivals"] = []
+    else:
+        item["smart_bid_rivals"] = [str(name) for name in rivals if isinstance(name, str) and name.strip()]
     win = item.get("win_probability")
     if isinstance(win, bool) or not isinstance(win, (int, float)):
         item["win_probability"] = None
@@ -2312,10 +2348,22 @@ def _board(
         return error_response(command, exc)
 
 
-def _refresh(command: str, league: str | None, *, tier: str = "full", track_status: bool = True) -> dict[str, Any] | JSONResponse:
+def _refresh(
+    command: str,
+    league: str | None,
+    *,
+    tier: str = "full",
+    track_status: bool = True,
+    force_rivals: bool = False,
+) -> dict[str, Any] | JSONResponse:
     """Descarga real. Único camino con red; solo lo usa ``POST /api/plan/refresh``."""
     try:
-        return refresh_board(_league(league), tier=tier, track_status=track_status)
+        return refresh_board(
+            _league(league),
+            tier=tier,
+            track_status=track_status,
+            force_rivals=force_rivals,
+        )
     except Exception as exc:
         return error_response(command, exc)
 
@@ -2539,6 +2587,7 @@ def api_optimize(
     _stamp_squad_price_delta(body, board)
     body["dashboard_at"] = board.get("dashboard_at")
     body.update(_photo_fields(board))
+    publish_strategy(board, body)
     return body
 
 
@@ -2962,6 +3011,7 @@ def _plan_document(board: dict[str, Any]) -> dict[str, Any]:
     plan_decisions = document.get("decisions")
     if isinstance(plan_decisions, list):
         document["decisions"] = [_normalize_market_decision(row) for row in plan_decisions if isinstance(row, dict)]
+    publish_strategy(board, document)
     return document
 
 
@@ -3135,7 +3185,7 @@ def api_remote_refresh(
     Cuerpo: ``{"target_minutes": 60}``. ``target_minutes`` es el presupuesto de
     la pasada completa: si sobra respecto a la cadencia de fábrica, las esperas
     se estiran proporcionalmente; si falta, la cadencia no se acelera (el suelo
-    de 12–25 s existe para no despertar al WAF) y el refresco tardará lo suyo.
+    de 1,5–3,5 s existe para no despertar al WAF) y el refresco tardará lo suyo.
 
     Opcionales: ``league`` (id o slug) y ``tier`` (``full`` por defecto, ``core``
     para la foto rápida sin scrapers externos).
@@ -3551,11 +3601,11 @@ def _plan_refresh_busy() -> bool:
     return refresh_status_snapshot().get("running") is True
 
 
-def _run_plan_refresh_job(league: str | None) -> None:
+def _run_plan_refresh_job(league: str | None, force_rivals: bool = False) -> None:
     """Descarga en segundo plano (``?async=1``): el proxy de Vercel no espera media hora."""
     try:
         with production_window():
-            _plan_refresh_download(league)
+            _plan_refresh_download(league, force_rivals=force_rivals)
     except SystemExit:
         close_official_session()
         marker = kill_switch_state()
@@ -3570,12 +3620,14 @@ def _run_plan_refresh_job(league: str | None) -> None:
 def api_plan_refresh(
     league: str | None = Query(default=None),
     respond_async: bool = Query(default=False, alias="async"),
+    force_rivals: bool = Query(default=False),
     x_remote_token: str | None = Header(default=None, alias=REMOTE_TOKEN_HEADER),
 ) -> Any:
     """Baja todo, sobrescribe la caché y devuelve la foto nueva.
 
     Aquí y solo aquí se llama a LALIGA y a los scrapers (``fresh=True`` hacia
-    ``net.py``). El GET de la portada nunca descarga.
+    ``net.py``). El GET de la portada nunca descarga. Las plantillas de los
+    rivales respetan su caché de 4 h salvo ``force_rivals=true``.
 
     Orden: primero la foto rápida (mercado, plantillas, once, caja) y después la
     completa (tendencias y scrapers). Si la completa falla, se devuelve la rápida
@@ -3616,7 +3668,7 @@ def api_plan_refresh(
             _refresh_status_start("full", _league(league))
             thread = threading.Thread(
                 target=_run_plan_refresh_job,
-                args=(_league(league),),
+                args=(_league(league), force_rivals),
                 name="plan-refresh-async",
                 daemon=True,
             )
@@ -3638,7 +3690,7 @@ def api_plan_refresh(
     _refresh_status_start("full", _league(league))
     try:
         with production_window():
-            return _plan_refresh_download(league)
+            return _plan_refresh_download(league, force_rivals=force_rivals)
     except SystemExit:
         # El kill switch de ``net.py`` sale con ``SystemExit``: un 401/403/429
         # de LaLiga mata el proceso. Sin esta rama, el ``SystemExit`` escapaba
@@ -3658,7 +3710,7 @@ def api_plan_refresh(
         )
 
 
-def _plan_refresh_download(league: str | None) -> Any:
+def _plan_refresh_download(league: str | None, *, force_rivals: bool = False) -> Any:
     """Las dos pasadas (rápida y completa) con la ventana de producción abierta.
 
     Vive aparte porque **tiene que** ejecutarse dentro de ``production_window``:
@@ -3668,7 +3720,7 @@ def _plan_refresh_download(league: str | None) -> Any:
     la foto de ayer con la fecha de hoy. ``GET /api/plan`` no descarga nunca;
     la única puerta es este POST y, por tanto, la ventana se abre aquí.
     """
-    core = _refresh("plan", league, tier="core", track_status=False)
+    core = _refresh("plan", league, tier="core", track_status=False, force_rivals=force_rivals)
     if isinstance(core, JSONResponse):
         _refresh_status_finish(ok=False, error=None)
         return core
@@ -3682,7 +3734,7 @@ def _plan_refresh_download(league: str | None) -> Any:
 
     _refresh_status_phase("scrapers", "Foto completa: scrapers")
     try:
-        full = refresh_board(_league(league), tier="full", track_status=False)
+        full = refresh_board(_league(league), tier="full", track_status=False, force_rivals=force_rivals)
     except Exception as exc:  # noqa: BLE001 — la foto rápida ya está guardada
         logger.exception("La foto completa falló tras la rápida")
         payload = error_payload("plan-refresh", exc).get("error")

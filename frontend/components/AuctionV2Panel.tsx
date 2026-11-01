@@ -74,12 +74,17 @@ export function AuctionV2Panel({
   variant?: Variant;
 }) {
   const optimal = player.optimal_bid_eur;
+  const smart = player.smart_bid_eur;
   const hasAuction =
     typeof optimal === "number" ||
+    typeof smart === "number" ||
+    typeof player.app_bid_eur === "number" ||
+    typeof player.financial_max_bid_eur === "number" ||
     typeof player.win_probability === "number" ||
     typeof player.intrinsic_valuation_eur === "number" ||
     typeof player.expected_surplus_eur === "number" ||
     (player.rival_knockout_targets?.length ?? 0) > 0 ||
+    (player.smart_bid_rivals?.length ?? 0) > 0 ||
     Boolean(player.bid_intent);
 
   if (!hasAuction) return null;
@@ -90,7 +95,13 @@ export function AuctionV2Panel({
   if (variant === "compact") {
     return (
       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-        {typeof optimal === "number" ? (
+        {typeof smart === "number" ? (
+          <span className="rounded-md bg-[color:var(--gold-soft)] px-1.5 py-0.5 font-medium text-gold">
+            Smart {eur(smart)}
+            {typeof player.smart_bid_success_pct === "number" ? ` · ${player.smart_bid_success_pct}%` : ""}
+          </span>
+        ) : null}
+        {typeof optimal === "number" && optimal !== smart ? (
           <span className="rounded-md bg-[color:var(--gold-soft)] px-1.5 py-0.5 font-medium text-gold">
             Óptima v2 {eur(optimal)}
           </span>
@@ -115,6 +126,40 @@ export function AuctionV2Panel({
         <p className="eyebrow">Subasta v2.0</p>
         {intent ? <span className={intentTone(intent)}>{INTENT_LABEL[intent] || intent}</span> : null}
       </div>
+      {typeof smart === "number" || typeof player.app_bid_eur === "number" ? (
+        <div className="mt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Puja smart</p>
+          <dl className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {typeof smart === "number" ? (
+              <div className="rounded-lg bg-[color:var(--gold-soft)] px-3 py-2">
+                <dt className="text-[11px] text-faint">Qué pujar</dt>
+                <dd className="metric-value mt-0.5 text-sm text-gold">{eur(smart)}</dd>
+              </div>
+            ) : null}
+            {typeof player.smart_bid_success_pct === "number" ? (
+              <div className="rounded-lg bg-[color:var(--surface)] px-3 py-2">
+                <dt className="text-[11px] text-faint">Prob. éxito</dt>
+                <dd className="metric-value mt-0.5 text-sm">{player.smart_bid_success_pct}%</dd>
+              </div>
+            ) : null}
+            {typeof player.app_bid_eur === "number" ? (
+              <div className="rounded-lg bg-[color:var(--surface)] px-3 py-2">
+                <dt className="text-[11px] text-faint">Base app +4,7%</dt>
+                <dd className="metric-value mt-0.5 text-sm">{eur(player.app_bid_eur)}</dd>
+              </div>
+            ) : null}
+            {typeof player.financial_max_bid_eur === "number" ? (
+              <div className="rounded-lg bg-[color:var(--surface)] px-3 py-2">
+                <dt className="text-[11px] text-faint">Tope +25%</dt>
+                <dd className="metric-value mt-0.5 text-sm">{eur(player.financial_max_bid_eur)}</dd>
+              </div>
+            ) : null}
+          </dl>
+          {player.smart_bid_analysis ? (
+            <p className="mt-2 text-sm leading-5 text-ink">{player.smart_bid_analysis}</p>
+          ) : null}
+        </div>
+      ) : null}
       <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {typeof optimal === "number" ? (
           <div className="rounded-lg bg-[color:var(--gold-soft)] px-3 py-2">

@@ -565,6 +565,12 @@ class DashboardApiTests(unittest.TestCase):
         row = decisions[0]
         for key in (
             "optimal_bid_eur",
+            "app_bid_eur",
+            "financial_max_bid_eur",
+            "smart_bid_eur",
+            "smart_bid_success_pct",
+            "smart_bid_analysis",
+            "smart_bid_rivals",
             "win_probability",
             "intrinsic_valuation_eur",
             "expected_surplus_eur",

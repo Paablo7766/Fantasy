@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ErrorCard, Skeleton } from "@/components/Feedback";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { DebtBanner, ForcedSaleBadge, ForecastPct } from "@/components/StrategyBits";
 import {
   clockLabel,
   deltaEur,
@@ -390,6 +391,11 @@ function listMetric(squad: RivalSquad, sort: RivalSort): { label: string; value:
   return { label: "Δ hoy", value: deltaEur(totals.price_delta_day), tone: deltaTone(totals.price_delta_day) };
 }
 
+function rivalInDebt(squad: RivalSquad, read: LiquidityRead): boolean {
+  const shown = read.calibratedCash ?? read.cash ?? squad.cash_eur;
+  return typeof shown === "number" && shown < 0;
+}
+
 function RivalCard({
   squad,
   isSelf,
@@ -405,8 +411,13 @@ function RivalCard({
   const teamName = squad.fantasy_team_name && squad.fantasy_team_name !== name ? squad.fantasy_team_name : null;
   const metric = listMetric(squad, sort);
   const read = liquidityRead(squad);
+  const inDebt = !isSelf && rivalInDebt(squad, read);
   return (
-    <button type="button" onClick={onOpen} className={`rival-card group w-full px-4 py-3.5 text-left ${isSelf ? "rival-card--self" : ""}`}>
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`rival-card group w-full px-4 py-3.5 text-left ${isSelf ? "rival-card--self" : ""} ${inDebt ? "rival-card--debt" : ""}`}
+    >
       <div className="flex items-center gap-3">
         <div className={rankTone(squad.rank, isSelf)}>
           {typeof squad.rank === "number" ? squad.rank : initials(name).slice(0, 2)}
@@ -415,6 +426,7 @@ function RivalCard({
           <div className="flex items-center gap-2">
             <span className="truncate text-[15px] font-semibold tracking-tight text-ink">{name}</span>
             {isSelf ? <span className="badge badge--good text-[10px]">Tú</span> : null}
+            {inDebt ? <span className="badge badge--bad text-[10px]">Saldo negativo</span> : null}
             <CalibratedBadge read={read} compact />
           </div>
           <p className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[12px] text-muted">
@@ -428,6 +440,7 @@ function RivalCard({
               </span>
             ) : null}
           </p>
+          {inDebt ? <DebtBanner /> : null}
         </div>
         <div className="shrink-0 text-right">
           <p className={`metric-value text-sm ${metric.tone || "text-ink"}`}>{metric.value}</p>
@@ -465,6 +478,8 @@ function PlayerDeal({
             <span className="rival-pos">{player.position || "?"}</span>
             {player.club ? <span>{player.club}</span> : null}
             {player.acquisition_kind ? <span>{acquisitionLabel(player.acquisition_kind)}</span> : null}
+            {player.venta_forzada_rival ? <ForcedSaleBadge /> : null}
+            <ForecastPct value={player.prevision_7d_pct} />
           </p>
         </div>
         <div className="shrink-0 text-right">
