@@ -27,7 +27,7 @@ from toolbox.engine.market_predictor import (
     ratio_mercado_liga,
     valor_justo_jugador,
 )
-from toolbox.engine.signing_plan import build_plan_fichajes
+from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes
 from toolbox.market_intel import _jornada_kickoff, _parse_kickoff
 from toolbox.normalize import exclusion_from_status, parse_clause_lock
 
@@ -352,6 +352,8 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
                 row["excluded"] = True
             if not row.get("recientes"):
                 row["recientes"] = _recientes(player)
+            if player.get("tiene_oferta_laliga") is True:
+                row["tiene_oferta_laliga"] = True
 
     market = board.get("market") if isinstance(board.get("market"), dict) else {}
     for listing in market.get("listings") or []:
@@ -376,6 +378,8 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
             row["leading_bid"] = leading
         if _expires_today(listing.get("listing_expires_at"), now):
             row["caduca_hoy"] = True
+        if listing.get("tiene_oferta_laliga") is True:
+            row["tiene_oferta_laliga"] = True
 
     optimize = board.get("optimize") if isinstance(board.get("optimize"), dict) else {}
     excluded_ids = {
@@ -486,6 +490,11 @@ def _empty_plan(cash: int | None, ratio: float) -> dict[str, Any]:
         "puntos_once_actual": 0.0,
         "ratio_mercado": round(ratio, 2) if ratio else None,
         "once": [],
+        "en_radar": [],
+        "dias_al_cierre": None,
+        "penalizacion_liquidez": 0.0,
+        "factor_ajuste": round(FACTOR_AJUSTE, 4),
+        "modo_liquidez": "SIN_RELOJ",
     }
 
 
@@ -598,7 +607,18 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
             }
         )
 
-    plan = _plan(records, xi, war, saldo, ratio, rivales, board if isinstance(board, dict) else {}, current, own_id)
+    plan = _plan(
+        records,
+        xi,
+        war,
+        saldo,
+        ratio,
+        rivales,
+        board if isinstance(board, dict) else {},
+        current,
+        own_id,
+        previsiones,
+    )
     consejos = _consejos(records, war, plan, own_id)
     return {
         "ratio_mercado": round(ratio, 2),
@@ -622,6 +642,16 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
     }
 
 
+def _pct_previsto(previsiones: dict[str, dict[str, Any]], player_id: str) -> float | None:
+    previsto = previsiones.get(player_id)
+    if not isinstance(previsto, dict):
+        return None
+    pct = previsto.get("pct")
+    if isinstance(pct, bool) or not isinstance(pct, (int, float)):
+        return None
+    return float(pct)
+
+
 def _plan(
     records: dict[str, dict[str, Any]],
     xi: list[dict[str, Any]],
@@ -632,8 +662,10 @@ def _plan(
     board: dict[str, Any],
     now: datetime,
     own_id: str | None,
+    previsiones: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     del rivales
+    previsto = previsiones or {}
     owned_rows: list[dict[str, Any]] = []
     for row in records.values():
         if row.get("is_self") is not True or not isinstance(row.get("player_id"), str):
@@ -650,6 +682,9 @@ def _plan(
                 "elegible": row.get("excluded") is not True and row.get("position") in POSITIONS,
                 "venta_eur": venta if isinstance(venta, int) and venta > 0 else None,
                 "war": war.get(row["player_id"]),
+                "pct": _pct_previsto(previsto, row["player_id"]),
+                "valor": row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None,
+                "tiene_oferta_laliga": row.get("tiene_oferta_laliga") is True,
             }
         )
     if saldo is not None and saldo < 0:
@@ -699,6 +734,8 @@ def _plan(
                 "jornada": float(jornada),
                 "euros": int(coste),
                 "caduca_hoy": row.get("caduca_hoy") is True and not row.get("seller_team_id"),
+                "pct": _pct_previsto(previsto, player_id),
+                "valor": row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None,
             }
         )
     mercado.sort(key=lambda item: float(item["jornada"]), reverse=True)
@@ -730,6 +767,7 @@ def _plan(
                 "jornada": float(jornada),
                 "euros": clause,
                 "eficiencia": float(jornada) / clause,
+                "pct": _pct_previsto(previsto, player_id),
             }
         )
     clausulas.sort(key=lambda item: float(item["eficiencia"]), reverse=True)
@@ -742,6 +780,7 @@ def _plan(
             mercado=mercado,
             clausulas=clausulas,
             ratio=ratio,
+            # Días hasta el inicio de jornada: primer silbato del día con más partidos.
             dias_para_jornada=_days_to_kickoff(trends, now),
             baseline_puntos=baseline,
         )
