@@ -27,6 +27,7 @@ from toolbox.engine.market_predictor import (
     ratio_mercado_liga,
     valor_justo_jugador,
 )
+from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
 from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes
 from toolbox.market_intel import _jornada_kickoff, _parse_kickoff
 from toolbox.normalize import exclusion_from_status, parse_clause_lock
@@ -54,6 +55,8 @@ _CLAUSE_MIN_XP = 3.5
 _MAX_PUJAS = 20
 _MAX_CLAUSULAS = 12
 _TITULAR_RATIO = 0.60
+# Campos con los que una fila propia puede traer la oferta del sistema.
+_OFERTA_KEYS = ("oferta_sistema", "offer_eur", "system_offer", "offer", "offer_amount")
 
 
 def _num(value: Any) -> float | None:
@@ -354,6 +357,12 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
                 row["recientes"] = _recientes(player)
             if player.get("tiene_oferta_laliga") is True:
                 row["tiene_oferta_laliga"] = True
+            if is_self:
+                for key in _OFERTA_KEYS:
+                    importe = _int(player.get(key))
+                    if importe is not None and importe > 0:
+                        row.setdefault("ofertas_directas", []).append({"comprador": LALIGA, "importe": importe})
+                        break
 
     market = board.get("market") if isinstance(board.get("market"), dict) else {}
     for listing in market.get("listings") or []:
@@ -367,6 +376,7 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
         _set_points(row, listing, prefer=False)
         _set_price(row, listing)
         row["on_market"] = True
+        row["bids"] = [bid for bid in listing.get("bids") or [] if isinstance(bid, dict)]
         seller = _pid(listing.get("seller_team_id"))
         if seller:
             row["seller_team_id"] = seller
@@ -405,6 +415,32 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
             if key == "excluded" or player_id in excluded_ids or player.get("excluded_reason"):
                 row["excluded"] = True
     return records
+
+
+def _ofertas_propias(
+    row: dict[str, Any],
+    own_id: str | None,
+    nombres: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Ofertas que recibe un jugador mío: directas, pujas de su anuncio y la marca de LaLiga."""
+    ofertas = [dict(oferta) for oferta in row.get("ofertas_directas") or []]
+    en_mi_anuncio = row.get("on_market") is True and (row.get("seller_team_id") in {None, own_id} or row.get("is_self") is True)
+    if en_mi_anuncio:
+        for bid in row.get("bids") or []:
+            importe = _int(bid.get("amount"))
+            if importe is None or importe <= 0:
+                continue
+            equipo = _pid(bid.get("team_id"))
+            if equipo is not None and equipo == own_id:
+                continue
+            if equipo is None:
+                comprador = LALIGA
+            else:
+                comprador = nombres.get(equipo) or (bid.get("manager_name") if isinstance(bid.get("manager_name"), str) else None) or "Rival"
+            ofertas.append({"comprador": comprador, "importe": importe})
+    if row.get("tiene_oferta_laliga") is True and not any(oferta["comprador"] == LALIGA for oferta in ofertas):
+        ofertas.append({"comprador": LALIGA, "importe": None})
+    return ofertas
 
 
 def _xi_and_bench(records: dict[str, dict[str, Any]], board: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -620,6 +656,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         previsiones,
     )
     consejos = _consejos(records, war, plan, own_id)
+    auditoria = _auditar_ventas(records, war, plan, previsiones, saldo, own_id)
     return {
         "ratio_mercado": round(ratio, 2),
         "ratio_detalle": {
@@ -639,6 +676,65 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         "capitan_seguro": caps.get("capitan_seguro"),
         "capitan_remontada": caps.get("capitan_remontada"),
         "plan_fichajes": plan,
+        "auditoria_ventas": auditoria["filas"],
+        "resumen_ventas": auditoria["resumen"],
+    }
+
+
+def _auditar_ventas(
+    records: dict[str, dict[str, Any]],
+    war: dict[str, float],
+    plan: dict[str, Any],
+    previsiones: dict[str, dict[str, Any]],
+    saldo: int | None,
+    own_id: str | None,
+) -> dict[str, Any]:
+    nombres = {
+        row["team_id"]: row["manager"]
+        for row in records.values()
+        if isinstance(row.get("team_id"), str) and isinstance(row.get("manager"), str) and row.get("is_self") is not True
+    }
+    jugadores: list[dict[str, Any]] = []
+    for row in records.values():
+        player_id = row.get("player_id")
+        if row.get("is_self") is not True or not isinstance(player_id, str):
+            continue
+        valor = row.get("valor")
+        previsto = previsiones.get(player_id) or {}
+        jugadores.append(
+            {
+                "player_id": player_id,
+                "nombre": row.get("nombre"),
+                "position": row.get("position") if row.get("position") in POSITIONS else None,
+                "valor": valor if isinstance(valor, int) and not isinstance(valor, bool) else None,
+                "valor_justo": previsto.get("valor_justo"),
+                "jornada": row.get("jornada"),
+                "pct": _pct_previsto(previsiones, player_id),
+                "tu_once_pierde_sin_el": war.get(player_id),
+                "elegible": row.get("excluded") is not True and row.get("position") in POSITIONS,
+                "en_mercado": row.get("on_market") is True and row.get("seller_team_id") in {None, own_id},
+                "ofertas": _ofertas_propias(row, own_id, nombres),
+            }
+        )
+    try:
+        return evaluar_ventas_y_ofertas(
+            jugadores,
+            plan=plan,
+            saldo=saldo,
+            dias_al_cierre=_num(plan.get("dias_al_cierre")) if isinstance(plan, dict) else None,
+        )
+    except Exception:
+        logger.exception("auditoría de ventas")
+        return {"resumen": _resumen_vacio(), "filas": []}
+
+
+def _resumen_vacio() -> dict[str, Any]:
+    return {
+        "ofertas_activas": 0,
+        "total_ofertas_eur": 0,
+        "spread_medio_laliga_pct": None,
+        "ventas_recomendadas_hoy": 0,
+        "jugadores": 0,
     }
 
 
@@ -905,6 +1001,8 @@ def stamp_strategy(payload: dict[str, Any], report: dict[str, Any]) -> None:
     payload["capitan_remontada"] = report.get("capitan_remontada")
     payload["plan_fichajes"] = report.get("plan_fichajes")
     payload["ventas_forzadas"] = report.get("ventas_forzadas") or []
+    payload["auditoria_ventas"] = report.get("auditoria_ventas") or []
+    payload["resumen_ventas"] = report.get("resumen_ventas") or _resumen_vacio()
 
 
 def publish_strategy(board: dict[str, Any], payload: dict[str, Any], *, now: datetime | None = None) -> None:
@@ -933,5 +1031,7 @@ def publish_strategy(board: dict[str, Any], payload: dict[str, Any], *, now: dat
             "capitan_seguro": None,
             "capitan_remontada": None,
             "plan_fichajes": _empty_plan(None, ratio),
+            "auditoria_ventas": [],
+            "resumen_ventas": _resumen_vacio(),
         }
     stamp_strategy(payload, report)

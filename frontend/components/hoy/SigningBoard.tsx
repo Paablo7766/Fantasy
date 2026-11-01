@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { SalesAdvisor } from "@/components/hoy/SalesAdvisor";
 import { eurShort, jornadaEv, points, titularShare } from "@/lib/format";
 import { signedPoints } from "@/lib/hoy";
 import { factsFor, photoFor, type PhotoIndex, type PlayerIndex } from "@/lib/photoIndex";
@@ -186,6 +187,20 @@ export function SigningBoard({
   const fichajes = plan?.plan_fichajes;
   const actions = useMemo(() => fichajes?.acciones || [], [fichajes?.acciones]);
   const radar = useMemo(() => fichajes?.en_radar || [], [fichajes?.en_radar]);
+  const audit = useMemo(() => plan?.auditoria_ventas || [], [plan?.auditoria_ventas]);
+  // Pestaña Ventas: ofertas y jugadores auditados, más las ventas del plan que la auditoría no trae.
+  const salesCount = useMemo(() => {
+    const ventasView = views.find((item) => item.id === "ventas");
+    const audited = new Set(audit.map((row) => row.player_id));
+    const names = new Set(audit.map((row) => row.nombre.toLowerCase()));
+    const extra = (ventasView?.groups.flatMap((group) => group.moves) || []).filter(
+      (move) => !(move.playerId && audited.has(move.playerId)) && !names.has(move.title.toLowerCase()),
+    );
+    const planSales = (plan?.plan_fichajes?.acciones || []).filter(
+      (action) => (action.tipo === "VENDE" || action.tipo === "VENDER HOY") && !(action.player_id && audited.has(action.player_id)),
+    );
+    return audit.length + Math.max(extra.length, planSales.length);
+  }, [views, audit, plan?.plan_fichajes?.acciones]);
   const planMoves = useMemo(() => actions.map((action, index) => moveFromAction(action, index, photos)), [actions, photos]);
   const usePlan = desk === "estrategia" && planMoves.length > 0;
   const listed = (usePlan ? planMoves : view.groups.flatMap((group) => group.moves)).map((move) =>
@@ -231,7 +246,8 @@ export function SigningBoard({
     return squads.rivals.filter((rival) => typeof rival.cash_eur === "number" && rival.cash_eur >= amount).length;
   };
 
-  const total = sales.length + showcase.length + buys.length;
+  const advisor = desk === "ventas" && audit.length > 0;
+  const total = advisor ? salesCount : sales.length + showcase.length + buys.length;
   const today = [...sales, ...buys].filter((move) => !laterIds.has(move.id));
   const later = [...sales, ...buys].filter((move) => laterIds.has(move.id));
 
@@ -292,6 +308,9 @@ export function SigningBoard({
               }}
             >
               {TAB_LABEL[item.id]}
+              {item.id === "ventas" && salesCount > 0 ? (
+                <span className={`ml-1.5 text-[12px] tabular-nums ${active ? "text-[#120C09]/60" : "text-white/35"}`}>{salesCount}</span>
+              ) : null}
             </button>
           );
         })}
@@ -299,6 +318,10 @@ export function SigningBoard({
 
       {loading && !plan ? (
         <div className="desk-skel" aria-hidden="true" />
+      ) : advisor ? (
+        <div key={desk}>
+          <SalesAdvisor rows={audit} summary={plan?.resumen_ventas} photos={photos} />
+        </div>
       ) : total ? (
         <div key={desk} className="flex flex-col gap-6">
           <MoveList

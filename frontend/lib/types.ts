@@ -301,6 +301,53 @@ export type PlanFichajes = {
   }>;
 };
 
+export type VeredictoVenta =
+  | "ACEPTAR_YA"
+  | "RECHAZAR_ESPERAR"
+  | "RECHAZAR_RIVAL"
+  | "PONER_ESCAPARATE"
+  | "MANTENER_INTOCABLE";
+
+export type AuditoriaVenta = {
+  player_id: string;
+  nombre: string;
+  posicion?: string | null;
+  valor_mercado: number;
+  valor_justo?: number | null;
+  xp_jornada?: number | null;
+  prevision_7d_pct?: number | null;
+  tu_once_pierde_sin_el: number;
+  relevo_banquillo?: { player_id?: string | null; nombre?: string | null; jornada?: number | null } | null;
+  financia_must_buy_hoy?: boolean;
+  plan_vende_hoy?: boolean;
+  en_mercado?: boolean;
+  dias_al_cierre?: number | null;
+  oferta_activa: {
+    comprador: string | null;
+    importe_oferta: number | null;
+    spread_pct: number | null;
+    calidad_oferta: "Excelente" | "Justa" | "Baja" | null;
+  };
+  ganancia_esperar_jueves?: {
+    pct: number | null;
+    eur: number | null;
+    valor_proyectado_jueves: number | null;
+  };
+  alerta_refuerzo_rival?: boolean;
+  veredicto_codigo: VeredictoVenta;
+  veredicto_titulo: string;
+  motivo_detallado: string;
+  prioridad: number;
+};
+
+export type ResumenVentas = {
+  ofertas_activas: number;
+  total_ofertas_eur: number;
+  spread_medio_laliga_pct: number | null;
+  ventas_recomendadas_hoy: number;
+  jugadores: number;
+};
+
 export type VentaForzada = {
   player_id?: string | null;
   nombre?: string | null;
@@ -1276,6 +1323,9 @@ export type PlanPayload = ApiError & PhotoMeta & {
   capitan_remontada?: CapitanPick | null;
   plan_fichajes?: PlanFichajes | null;
   ventas_forzadas?: VentaForzada[];
+  /** Una auditoría por jugador susceptible de venta (ofertas de LaLiga y rivales). */
+  auditoria_ventas?: AuditoriaVenta[];
+  resumen_ventas?: ResumenVentas | null;
   strategy_baseline_points?: number | null;
   audit?: {
     complete?: boolean;
