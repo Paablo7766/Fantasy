@@ -18,7 +18,7 @@ const SECTIONS: readonly NavItem[] = [
   {
     href: "/",
     label: "Recomendaciones",
-    title: "Recomendaciones",
+    title: "Hoy",
     hint: "Qué hacer primero: vender, pujar, clausular o alinear",
   },
   {
