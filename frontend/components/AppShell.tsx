@@ -25,13 +25,19 @@ const SECTIONS: readonly NavItem[] = [
     href: "/equipo",
     label: "Equipo",
     title: "Equipo",
-    hint: "Once, cartera y cláusulas en un solo sitio",
+    hint: "Tu once y tu cartera",
   },
   {
     href: "/mercado",
     label: "Mercado",
     title: "Mercado",
     hint: "Pujas, radar cuantitativo y catálogo",
+  },
+  {
+    href: "/clausulas",
+    label: "Cláusulas",
+    title: "Cláusulas",
+    hint: "Defiende las tuyas y ataca las rivales",
   },
   {
     href: "/liga",
@@ -74,6 +80,14 @@ function Icon({ name }: { name: SectionLabel }) {
       <svg {...common}>
         <path d="M3.5 8.2h13l-1.1 7.2H4.6L3.5 8.2Z" strokeLinejoin="round" />
         <path d="M7 8.1 8.2 4.8h3.6L13 8.1" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (name === "Cláusulas") {
+    return (
+      <svg {...common}>
+        <rect x="4.5" y="9" width="11" height="7.5" rx="1.6" strokeLinejoin="round" />
+        <path d="M7 9V6.8a3 3 0 0 1 6 0V9" strokeLinecap="round" />
       </svg>
     );
   }
@@ -153,7 +167,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="brand-mark">LF</span>
           <div className="min-w-0">
             <p className="text-[0.95rem] font-semibold leading-none tracking-[-0.03em] text-white">LALIGA Fantasy</p>
-            <p className="mt-1 text-[11px] text-[color:var(--sidebar-muted)]">4 pantallas · decisión clara</p>
+            <p className="mt-1 text-[11px] text-[color:var(--sidebar-muted)]">5 pantallas · decisión clara</p>
           </div>
         </div>
 

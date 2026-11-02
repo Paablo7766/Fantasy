@@ -78,7 +78,7 @@ function moveFromAction(action: PlanFichajeAccion, index: number, photos: PhotoI
     forecastPct: typeof action.prevision_7d_pct === "number" ? action.prevision_7d_pct : null,
     later: action.momento === "luego" || condicional,
     detail: action.detalle || null,
-    href: aceptar || escaparate || condicional ? "/equipo?tab=cartera" : tipo === "CLAUSULAZO" ? "/equipo?tab=clausulas" : "/mercado",
+    href: aceptar || escaparate || condicional ? "/equipo?tab=cartera" : tipo === "CLAUSULAZO" ? "/clausulas" : "/mercado",
     guide: aceptar || escaparate || condicional ? "Cartera" : tipo === "CLAUSULAZO" ? "Cláusulas" : "Mercado",
   };
 }

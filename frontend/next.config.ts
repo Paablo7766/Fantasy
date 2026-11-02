@@ -5,7 +5,8 @@ const nextConfig: NextConfig = {
     return [
       { source: "/once", destination: "/equipo", permanent: false },
       { source: "/cartera", destination: "/equipo?tab=cartera", permanent: false },
-      { source: "/clausulazos", destination: "/equipo?tab=clausulas", permanent: false },
+      { source: "/clausulazos", destination: "/clausulas", permanent: false },
+      { source: "/equipo", has: [{ type: "query", key: "tab", value: "clausulas" }], destination: "/clausulas", permanent: false },
       { source: "/rivales", destination: "/liga", permanent: false },
     ];
   },

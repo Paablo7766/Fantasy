@@ -4,22 +4,20 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { CarteraTab } from "@/components/equipo/CarteraTab";
-import { ClausulasTab } from "@/components/equipo/ClausulasTab";
 import { OnceTab } from "@/components/equipo/OnceTab";
 import { Skeleton } from "@/components/equipo/ui";
 import { buildPhotoIndex } from "@/lib/photoIndex";
-import type { NeedsPayload, OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
+import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
-type Tab = "once" | "cartera" | "clausulas";
+type Tab = "once" | "cartera";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "once", label: "Once" },
   { id: "cartera", label: "Cartera" },
-  { id: "clausulas", label: "Cláusulas" },
 ];
 
 function asTab(value: string | null): Tab {
-  return value === "cartera" || value === "clausulas" ? value : "once";
+  return value === "cartera" ? value : "once";
 }
 
 function EquipoContent() {
@@ -33,7 +31,6 @@ function EquipoContent() {
   const optimize = state.optimize as OptimizePayload | null;
   const squads = state.squads as SquadsPayload | null;
   const trends = state.trends as TrendsPayload | null;
-  const needs = state.needs as NeedsPayload | null;
   const photos = useMemo(() => buildPhotoIndex(plan, optimize, squads, trends), [plan, optimize, squads, trends]);
 
   const select = (next: Tab) => {
@@ -69,16 +66,8 @@ function EquipoContent() {
       <div key={tab} id={`eq-panel-${tab}`} role="tabpanel" aria-labelledby={`eq-tab-${tab}`} className="row-in min-w-0">
         {tab === "once" ? (
           <OnceTab plan={plan} optimize={optimize} squads={squads} photos={photos} loading={(pending.optimize || busy) && !optimize} />
-        ) : tab === "cartera" ? (
-          <CarteraTab plan={plan} squads={squads} photos={photos} loading={(pending.squads || busy) && !squads} />
         ) : (
-          <ClausulasTab
-            plan={plan}
-            squads={squads}
-            needs={needs}
-            photos={photos}
-            loading={(pending.plan || busy) && !plan}
-          />
+          <CarteraTab plan={plan} squads={squads} photos={photos} loading={(pending.squads || busy) && !squads} />
         )}
       </div>
     </div>

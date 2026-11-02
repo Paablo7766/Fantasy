@@ -314,18 +314,23 @@ function Calendar({ timeline, photos }: { timeline: DateBucket[]; photos: PhotoI
   );
 }
 
+/** «Mías» defiende tu plantilla; «Clausulazos» ataca la de los rivales. */
+export type ClausulasView = "mias" | "clausulazos";
+
 export function ClausulasTab({
   plan,
   squads,
   needs,
   photos,
   loading,
+  view,
 }: {
   plan: PlanPayload | null;
   squads: SquadsPayload | null;
   needs: NeedsPayload | null;
   photos: PhotoIndex;
   loading: boolean;
+  view: ClausulasView;
 }) {
   const league = useSearchParams().get("league");
   const nowMs = useNow();
@@ -374,9 +379,7 @@ export function ClausulasTab({
   const parts = open && Number.isFinite(closeMs) && nowMs > 0 ? countdownParts(closeMs, nowMs) : null;
   const danger = resumen?.en_peligro ?? proteger.length;
 
-  return (
-    <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] min-[1100px]:items-start">
-      <div className="flex min-w-0 flex-col gap-4">
+  const heroBlock = (
         <section className="home-feature" aria-label="Resumen de cláusulas">
           <div className="relative flex items-center justify-between gap-3">
             <p className="text-[13px] font-medium text-white/60">Tus cláusulas</p>
@@ -412,7 +415,45 @@ export function ClausulasTab({
             </div>
           ) : null}
         </section>
+  );
+  const rulesBlock = (
+        <Disclosure title="Reglas clave">
+          <ul className="space-y-2">
+            {RULES.map((rule) => (
+              <li key={rule} className="flex gap-2.5 text-[13.5px] leading-snug text-white/60">
+                <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-[#FF9A5A]" aria-hidden="true" />
+                {rule}
+              </li>
+            ))}
+          </ul>
+        </Disclosure>
+  );
 
+  if (view === "clausulazos") {
+    return (
+      <div className="flex min-w-0 flex-col gap-4">
+        {heroBlock}
+        <section aria-label="Clausulazos disponibles" className="flex flex-col gap-3">
+          <SectionHead title="Clausulazos" meta={clausulazos.length ? `${clausulazos.length}` : undefined} />
+          {clausulazos.length ? (
+            <ul className="home-glass overflow-hidden">
+              {clausulazos.map((row, index) => (
+                <RaidRow key={row.player_id} row={row} photos={photos} index={index} />
+              ))}
+            </ul>
+          ) : (
+            <p className="home-glass px-4 py-4 text-[14px] text-white/60">Hoy ningún clausulazo mejora tu once ni sale barato.</p>
+          )}
+        </section>
+        {rulesBlock}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] min-[1100px]:items-start">
+      <div className="flex min-w-0 flex-col gap-4">
+        {heroBlock}
         {radar.length ? (
           <section aria-label="Radar anti-robo" className="flex flex-col gap-3">
             <SectionHead title="Radar anti-robo" meta={`${radar.length}`} />
@@ -464,19 +505,6 @@ export function ClausulasTab({
       </div>
 
       <div className="flex min-w-0 flex-col gap-4">
-        <section aria-label="Clausulazos disponibles" className="flex flex-col gap-3">
-          <SectionHead title="Clausulazos" meta={clausulazos.length ? `${clausulazos.length}` : undefined} />
-          {clausulazos.length ? (
-            <ul className="home-glass overflow-hidden">
-              {clausulazos.map((row, index) => (
-                <RaidRow key={row.player_id} row={row} photos={photos} index={index} />
-              ))}
-            </ul>
-          ) : (
-            <p className="home-glass px-4 py-4 text-[14px] text-white/60">Hoy ningún clausulazo mejora tu once ni sale barato.</p>
-          )}
-        </section>
-
         {timeline.length ? (
           <section aria-label="Calendario de desbloqueos" className="flex flex-col gap-3">
             <SectionHead title="Desbloqueos" meta={`${timeline.reduce((sum, bucket) => sum + bucket.locked_count, 0)} candados`} />
@@ -485,17 +513,7 @@ export function ClausulasTab({
             </div>
           </section>
         ) : null}
-
-        <Disclosure title="Reglas clave">
-          <ul className="space-y-2">
-            {RULES.map((rule) => (
-              <li key={rule} className="flex gap-2.5 text-[13.5px] leading-snug text-white/60">
-                <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-[#FF9A5A]" aria-hidden="true" />
-                {rule}
-              </li>
-            ))}
-          </ul>
-        </Disclosure>
+        {rulesBlock}
       </div>
     </div>
   );

@@ -255,7 +255,7 @@ function rivalBuys(plan: PlanPayload | null): StrategyMove[] {
         pointsLabel: pts.label,
         pointsTone: pts.tone,
         detail: manager ? `Cláusula de ${manager}` : "Cláusula de un rival",
-        href: "/equipo?tab=clausulas",
+        href: "/clausulas",
         guide: "Abrir cláusulas",
       };
       return move;
@@ -285,7 +285,7 @@ function raises(plan: PlanPayload | null): StrategyMove[] {
         pointsLabel: null,
         pointsTone: "none",
         detail: target !== null ? `La dejas en ${eurShort(target)}` : "Fuera del alcance del rival",
-        href: "/equipo?tab=clausulas",
+        href: "/clausulas",
         guide: "Abrir cláusulas",
       };
       return move;
@@ -427,7 +427,7 @@ function shields(plan: PlanPayload | null, optimize: OptimizePayload | null): St
         pointsLabel: null,
         pointsTone: "none" as MoveTone,
         detail: [rival ? `${rival} puede pagarla` : null, `Cláusula ${eurShort(clause)}`].filter(Boolean).join(" · "),
-        href: "/equipo?tab=clausulas",
+        href: "/clausulas",
         guide: "Abrir cláusulas",
       };
     });
@@ -498,7 +498,7 @@ function strategyMove(row: PlanStrategyMove, planIndex: number, index: number): 
   const replaces = text(row.replaces_name);
   const replacedBy = text(row.replaced_by_name);
   const verb = kind === "vender" ? "Poner en venta" : kind === "clausular" ? "Fichar de un rival" : "Pujar en el mercado";
-  const href = kind === "pujar" ? "/mercado" : kind === "vender" ? "/equipo?tab=cartera" : "/equipo?tab=clausulas";
+  const href = kind === "pujar" ? "/mercado" : kind === "vender" ? "/equipo?tab=cartera" : "/clausulas";
   const guide = kind === "pujar" ? "Abrir mercado" : kind === "vender" ? "Abrir cartera" : "Abrir cláusulas";
   const where =
     kind === "clausular"
