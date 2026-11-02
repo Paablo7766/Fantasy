@@ -18,7 +18,6 @@ import {
   signedMoney,
   toneOf,
 } from "@/components/equipo/ui";
-import { CompararButton } from "@/components/comparador/ComparadorReal";
 import { endpoint, getJson } from "@/lib/api";
 import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
 import { playerName, points, roiPct } from "@/lib/format";
@@ -114,7 +113,6 @@ function QuantRow({ player, photo, tone, index }: { player: QuantPlayer; photo: 
         </span>
         <ScoreRing score={player.score} />
       </button>
-      {player.owner === "propio" ? null : <CompararButton objetivoId={player.player_id} posicion={player.position} className="mr-3" />}
       </div>
       {open ? (
         <div className="row-in px-4 pb-4 pt-1">

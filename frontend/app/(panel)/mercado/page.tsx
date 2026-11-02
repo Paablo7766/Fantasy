@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/equipo/ui";
 import { RadarTab } from "@/components/mercado/RadarTab";
 import { FichajesTab } from "@/components/mercado/FichajesTab";
 import { UniversoTab } from "@/components/mercado/UniversoTab";
+import { ComparadorLauncher } from "@/components/comparador/ComparadorReal";
 import { buildPhotoIndex } from "@/lib/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
@@ -18,9 +19,9 @@ type Tab = "fichajes" | "radar" | "universo";
  * ninguna fuente de decisión tape a la otra.
  */
 const TABS: { id: Tab; label: string }[] = [
-  { id: "fichajes", label: "Fichajes" },
+  { id: "fichajes", label: "Hoy" },
   { id: "radar", label: "Radar" },
-  { id: "universo", label: "Universo" },
+  { id: "universo", label: "Todos" },
 ];
 
 function asTab(value: string | null): Tab {
@@ -52,7 +53,10 @@ function MercadoContent() {
   return (
     <div className="eq-stack reveal min-w-0">
       <div className="flex flex-col gap-3 px-1">
-        <h1 className="text-[1.6rem] font-semibold leading-tight tracking-tight text-white">Mercado</h1>
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-[1.6rem] font-semibold leading-tight tracking-tight text-white">Mercado</h1>
+          <ComparadorLauncher />
+        </div>
         <div className="desk-switch" role="tablist" aria-label="Secciones del mercado">
           {TABS.map((item) => (
             <button

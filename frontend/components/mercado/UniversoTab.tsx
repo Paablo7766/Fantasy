@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CompararButton } from "@/components/comparador/ComparadorReal";
 import { LabSection } from "@/components/mercado/LabSection";
 import { Empty, Face, SectionHead, Skeleton, TONE, money, signedMoney, toneOf } from "@/components/equipo/ui";
 import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
@@ -108,7 +107,6 @@ export function UniversoTab({ trends, photos, loading }: { trends: TrendsPayload
                     </span>
                   </span>
                   <MiniSpark points={player.price_points} />
-                  {player.owner !== "propio" ? <CompararButton objetivoId={player.player_id} posicion={player.position} /> : null}
                   <span className="shrink-0 text-right">
                     <span className="block text-[15px] font-semibold tabular-nums text-white">{money(player.market_value)}</span>
                     <span className="block text-[12px] font-medium tabular-nums" style={{ color: toneOf(forecast) }}>

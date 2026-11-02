@@ -5,8 +5,8 @@ import { createPortal } from "react-dom";
 import { useDashboard } from "@/components/DashboardProvider";
 import { Face } from "@/components/equipo/ui";
 import { apiUrl, getJson } from "@/lib/api";
-import { playerName, points } from "@/lib/format";
-import { buildPhotoIndex, photoFor } from "@/lib/photoIndex";
+import { playerName } from "@/lib/format";
+import { buildPhotoIndex, photoFor, type PhotoIndex } from "@/lib/photoIndex";
 import type { OptimizePayload, Player, SquadsPayload, TrendsPayload } from "@/lib/types";
 
 type Lado = {
@@ -172,36 +172,142 @@ function Cara({
   );
 }
 
-function Drawer({
-  objetivoId,
-  posicion,
+type Opcion = { id: string; nombre: string; posicion: string; club: string; foto: string | null; dueno: string };
+
+/** Todos los jugadores de la foto: tu plantilla, el mercado, los rivales y el catálogo. */
+function universo(optimize: OptimizePayload | null, squads: SquadsPayload | null, trends: TrendsPayload | null): Opcion[] {
+  const out = new Map<string, Opcion>();
+  const add = (player: Player | null | undefined, dueno: string) => {
+    const id = player?.player_id ? String(player.player_id) : "";
+    if (!id || out.has(id)) return;
+    out.set(id, {
+      id,
+      nombre: playerName(player),
+      posicion: player?.position || "",
+      club: player?.club || "",
+      foto: player?.image_url || null,
+      dueno,
+    });
+  };
+  roster(optimize, squads).forEach((player) => add(player, "Tu equipo"));
+  (trends?.market_decisions || []).forEach((player) => add(player, "Mercado"));
+  (squads?.rivals || []).forEach((rival) => (rival.players || []).forEach((player) => add(player as Player, rival.manager_name || "Rival")));
+  (trends?.catalog || []).forEach((player) => add(player, player.owner === "libre" ? "Libre" : ""));
+  return [...out.values()];
+}
+
+function Selector({
+  etiqueta,
+  color,
+  opciones,
+  valor,
+  excluir,
+  onChange,
+  photos,
+}: {
+  etiqueta: string;
+  color: string;
+  opciones: Opcion[];
+  valor: string | null;
+  excluir: string | null;
+  onChange: (id: string) => void;
+  photos: PhotoIndex;
+}) {
+  const [abierto, setAbierto] = useState(!valor);
+  const [texto, setTexto] = useState("");
+  const elegido = opciones.find((opcion) => opcion.id === valor) || null;
+  const filtradas = useMemo(() => {
+    const aguja = texto.trim().toLowerCase();
+    return opciones
+      .filter((opcion) => opcion.id !== excluir)
+      .filter((opcion) => !aguja || `${opcion.nombre} ${opcion.club}`.toLowerCase().includes(aguja))
+      .slice(0, 30);
+  }, [opciones, texto, excluir]);
+  const foto = (opcion: Opcion) => opcion.foto || photoFor(photos, opcion.id, opcion.nombre);
+
+  if (!abierto && elegido) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAbierto(true)}
+        className="flex w-full items-center gap-3 rounded-2xl border bg-white/[0.03] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.06]"
+        style={{ borderColor: `${color}55` }}
+      >
+        <Face name={elegido.nombre} src={foto(elegido)} size={40} ring={color} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[10.5px] font-semibold uppercase tracking-[0.16em]" style={{ color }}>
+            {etiqueta}
+          </span>
+          <span className="block truncate text-[15px] font-semibold text-white">{elegido.nombre}</span>
+          <span className="block truncate text-[12px] text-white/45">{[elegido.posicion, elegido.club, elegido.dueno].filter(Boolean).join(" · ")}</span>
+        </span>
+        <span className="text-[12px] font-medium text-white/50">Cambiar</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border bg-white/[0.03] p-3" style={{ borderColor: `${color}55` }}>
+      <p className="text-[10.5px] font-semibold uppercase tracking-[0.16em]" style={{ color }}>
+        {etiqueta}
+      </p>
+      <input
+        value={texto}
+        onChange={(event) => setTexto(event.target.value)}
+        placeholder="Busca un jugador o un equipo"
+        aria-label={`Buscar ${etiqueta}`}
+        className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-[14px] text-white outline-none placeholder:text-white/30"
+      />
+      <ul className="mt-2 max-h-56 overflow-y-auto">
+        {filtradas.map((opcion) => (
+          <li key={opcion.id}>
+            <button
+              type="button"
+              onClick={() => {
+                onChange(opcion.id);
+                setTexto("");
+                setAbierto(false);
+              }}
+              className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/[0.06]"
+            >
+              <Face name={opcion.nombre} src={foto(opcion)} size={32} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-medium text-white">{opcion.nombre}</span>
+                <span className="block truncate text-[11.5px] text-white/40">{[opcion.posicion, opcion.club].filter(Boolean).join(" · ")}</span>
+              </span>
+              {opcion.dueno ? <span className="shrink-0 text-[11px] text-white/40">{opcion.dueno}</span> : null}
+            </button>
+          </li>
+        ))}
+        {!filtradas.length ? <li className="px-2 py-3 text-[13px] text-white/40">Nadie coincide con la búsqueda.</li> : null}
+      </ul>
+    </div>
+  );
+}
+
+/** Cara a cara libre: eliges los dos jugadores y la app pone el coste real de la liga. */
+export function ComparadorModal({
+  inicialA = null,
+  inicialB = null,
   onClose,
 }: {
-  objetivoId: string;
-  posicion?: string | null;
+  inicialA?: string | null;
+  inicialB?: string | null;
   onClose: () => void;
 }) {
   const { state } = useDashboard();
   const optimize = state.optimize as OptimizePayload | null;
   const squads = state.squads as SquadsPayload | null;
-  const plantilla = useMemo(() => roster(optimize, squads), [optimize, squads]);
-  const xi = useMemo(() => (optimize?.xi || []).filter((player) => player.player_id), [optimize]);
-  const candidatos = useMemo(
-    () => plantilla.filter((player) => String(player.player_id) !== objetivoId),
-    [plantilla, objetivoId],
-  );
-  const sugerido = useMemo(() => {
-    const pool = (xi.length ? xi : candidatos).filter((player) => String(player.player_id) !== objetivoId);
-    return titularMasFlojo(pool, posicion);
-  }, [xi, candidatos, objetivoId, posicion]);
-  const [actualId, setActualId] = useState<string | null>(null);
-  const chosen = actualId && candidatos.some((player) => String(player.player_id) === actualId) ? actualId : sugerido?.player_id ? String(sugerido.player_id) : null;
+  const trends = state.trends as TrendsPayload | null;
+  const opciones = useMemo(() => universo(optimize, squads, trends), [optimize, squads, trends]);
+  const [chosen, setChosen] = useState<string | null>(inicialA);
+  const [objetivoId, setObjetivoId] = useState<string | null>(inicialB);
   const [data, setData] = useState<ComparacionLiga | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const photos = useMemo(
-    () => buildPhotoIndex(state.plan, optimize, squads, state.trends as TrendsPayload | null),
-    [state.plan, optimize, squads, state.trends],
+    () => buildPhotoIndex(state.plan, optimize, squads, trends),
+    [state.plan, optimize, squads, trends],
   );
 
   useEffect(() => {
@@ -213,7 +319,7 @@ function Drawer({
   }, [onClose]);
 
   useEffect(() => {
-    if (!chosen) return;
+    if (!chosen || !objetivoId) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -269,23 +375,15 @@ function Drawer({
           </button>
         </div>
 
-        <label className="mb-4 block text-[11px] uppercase tracking-wide text-white/40">
-          Sale de tu plantilla
-          <select
-            value={chosen || ""}
-            onChange={(event) => setActualId(event.target.value)}
-            className="mt-1 h-11 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-3 text-[14px] normal-case tracking-normal text-white outline-none"
-          >
-            {candidatos.map((player) => (
-              <option key={String(player.player_id)} value={String(player.player_id)} className="bg-[#02070A]">
-                {playerName(player)} · {player.position || "—"} · {points(xpOf(player) === Number.POSITIVE_INFINITY ? null : xpOf(player))}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="mb-5 flex flex-col gap-2">
+          <Selector etiqueta="Jugador A" color="#FC734D" opciones={opciones} valor={chosen} excluir={objetivoId} onChange={setChosen} photos={photos} />
+          <Selector etiqueta="Jugador B" color="#0297DE" opciones={opciones} valor={objetivoId} excluir={chosen} onChange={setObjetivoId} photos={photos} />
+        </div>
 
-        {!candidatos.length ? (
-          <p className="text-[14px] text-white/60">Tu plantilla todavía no está en la foto. Actualiza y vuelve a comparar.</p>
+        {!opciones.length ? (
+          <p className="text-[14px] text-white/60">Todavía no hay jugadores en la foto. Actualiza y vuelve a comparar.</p>
+        ) : !chosen || !objetivoId ? (
+          <p className="py-6 text-center text-[14px] text-white/45">Elige los dos jugadores para ver el cara a cara.</p>
         ) : loading && !data ? (
           <p className="py-10 text-center text-[14px] text-white/50">Calculando el coste real…</p>
         ) : error ? (
@@ -395,6 +493,39 @@ function Drawer({
   return createPortal(body, document.body);
 }
 
+/** Botón suelto: abre el comparador vacío para elegir los dos jugadores. */
+export function ComparadorLauncher({ className = "" }: { className?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-[#0297DE]/40 bg-[#0297DE]/10 px-4 text-[13.5px] font-semibold text-[#7fd4ff] transition-colors hover:bg-[#0297DE]/20 ${className}`}
+      >
+        <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+          <path d="M5 3 2 6l3 3M2 6h9M11 13l3-3-3-3M14 10H5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Comparar
+      </button>
+      {open ? <ComparadorModal onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+/** Abre el comparador con el jugador como B y tu titular más flojo de su puesto como A. */
+export function CompararConSugerido({ objetivoId, posicion, onClose }: { objetivoId: string; posicion?: string | null; onClose: () => void }) {
+  const { state } = useDashboard();
+  const optimize = state.optimize as OptimizePayload | null;
+  const squads = state.squads as SquadsPayload | null;
+  const sugerido = useMemo(() => {
+    const xi = (optimize?.xi || []).filter((player) => player.player_id && String(player.player_id) !== objetivoId);
+    const pool = xi.length ? xi : roster(optimize, squads).filter((player) => String(player.player_id) !== objetivoId);
+    return titularMasFlojo(pool, posicion);
+  }, [optimize, squads, objetivoId, posicion]);
+  return <ComparadorModal inicialA={sugerido?.player_id ? String(sugerido.player_id) : null} inicialB={objetivoId} onClose={onClose} />;
+}
+
 export function CompararButton({
   objetivoId,
   posicion,
@@ -419,7 +550,7 @@ export function CompararButton({
       >
         Comparar
       </button>
-      {open ? <Drawer objetivoId={objetivoId} posicion={posicion} onClose={() => setOpen(false)} /> : null}
+      {open ? <CompararConSugerido objetivoId={objetivoId} posicion={posicion} onClose={() => setOpen(false)} /> : null}
     </>
   );
 }

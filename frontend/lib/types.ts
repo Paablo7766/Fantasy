@@ -174,6 +174,10 @@ export type Player = {
   valor_en_7d?: number | null;
   valor_justo?: number | null;
   xp_4_jornadas?: number | null;
+  /** Puntos oficiales de las últimas jornadas, de la más antigua a la última. */
+  week_points?: number[] | null;
+  lineup_status?: string | null;
+  listing_expires_at?: string | null;
   /** Puntos que pierde el once óptimo si este titular sale hoy. */
   tu_once_pierde_sin_el?: number | null;
   consejo_oferta?: {

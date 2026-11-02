@@ -1501,6 +1501,7 @@ def shape_trends(board: dict[str, Any]) -> dict[str, Any]:
     intel = decisions_from_board(board)
     raw_decisions = intel.get("decisions") if isinstance(intel.get("decisions"), list) else []
     decisions = [_normalize_market_decision(row) for row in raw_decisions if isinstance(row, dict)]
+    _attach_player_card(decisions, board)
     summary = intel.get("summary") if isinstance(intel.get("summary"), dict) else {}
     league_for_track = trends.get("league_id") if isinstance(trends.get("league_id"), str) else None
     try:
@@ -2180,6 +2181,45 @@ def _lock_view(lock: dict[str, Any]) -> dict[str, Any]:
         "expires_at": lock.get("expires_at") if isinstance(lock.get("expires_at"), str) else None,
         "timezone": lock.get("timezone") if isinstance(lock.get("timezone"), str) else None,
     }
+
+
+def _attach_player_card(decisions: list[dict[str, Any]], board: dict[str, Any]) -> None:
+    """Datos de la ficha del jugador: jornadas jugadas, media, valor y calendario.
+
+    Las jornadas salen del catálogo en disco; el calendario y la forma, de la
+    fila de tendencias del mismo jugador. Nada sale a red.
+    """
+    if not decisions:
+        return
+    try:
+        catalog = {str(row.get("player_id")): row for row in _catalog_players() if row.get("player_id")}
+    except Exception:
+        logger.debug("Sin catálogo para la ficha del mercado", exc_info=True)
+        catalog = {}
+    trends = board.get("trends") if isinstance(board.get("trends"), dict) else {}
+    rows = trends.get("players") if isinstance(trends.get("players"), list) else []
+    trend_by_id = {str(row.get("player_id")): row for row in rows if isinstance(row, dict) and row.get("player_id")}
+    market = board.get("market") if isinstance(board.get("market"), dict) else {}
+    listings = market.get("listings") if isinstance(market.get("listings"), list) else []
+    listing_by_id = {str(row.get("player_id")): row for row in listings if isinstance(row, dict) and row.get("player_id")}
+    for item in decisions:
+        player_id = str(item.get("player_id") or "")
+        cat = catalog.get(player_id) or {}
+        trend = trend_by_id.get(player_id) or {}
+        listing = listing_by_id.get(player_id) or {}
+        weeks = cat.get("week_points")
+        item["week_points"] = [float(value) for value in weeks if isinstance(value, (int, float))] if isinstance(weeks, list) else []
+        if not item.get("club"):
+            item["club"] = cat.get("club") or trend.get("club") or listing.get("club")
+        if item.get("average_points") is None:
+            item["average_points"] = cat.get("average_points")
+        if item.get("market_value") is None:
+            item["market_value"] = listing.get("market_value") or cat.get("market_value") or trend.get("market_value")
+        if item.get("listing_expires_at") is None:
+            item["listing_expires_at"] = listing.get("listing_expires_at")
+        for key in ("af_calendar", "own_calendar", "af_form", "af_ceiling_points", "own_ceiling_points", "fitness", "lineup_status"):
+            if item.get(key) is None and trend.get(key) is not None:
+                item[key] = trend.get(key)
 
 
 def _normalize_market_decision(row: dict[str, Any]) -> dict[str, Any]:
