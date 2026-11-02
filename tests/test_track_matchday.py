@@ -179,5 +179,69 @@ class TrackMatchdayTest(unittest.TestCase):
             self.assertIn("Snapshot jornada 9", buf.getvalue())
 
 
+class JornadaRealTest(unittest.TestCase):
+    """La jornada sale de ``weekNumber``, no de la posición en el calendario."""
+
+    def _with_rounds(self, players: list[dict], last_round: int) -> list[dict]:
+        for player in players:
+            # El calendario dice «el próximo partido» (0), no la jornada.
+            player["own_calendar"] = [{"matchday": 0, "opponent": "RIVAL"}]
+            player["week_points_by_round"] = {str(last_round - 1): 3.0, str(last_round): 5.0}
+            player["fixture"] = {"kickoff": "2026-11-08T17:30:00+00:00"}
+        return players
+
+    def test_next_round_is_last_played_plus_one(self) -> None:
+        self.assertEqual(track.next_round_for({"week_points_by_round": {"9": 2.0, "10": 4.0}}), "11")
+        self.assertIsNone(track.next_round_for({"week_points": [2.0, 4.0]}))
+
+    def test_snapshot_uses_real_round_and_includes_rival_squads(self) -> None:
+        own = self._with_rounds(_full_squad(), 10)
+        rival = self._with_rounds([_player("rival1", "DEL", expected=7.0)], 10)
+        squads = {
+            "ok": True,
+            "league_id": "7",
+            "squads": [_squad(own), {"team_id": "2", "is_self": False, "players": rival}],
+        }
+        trends = {"ok": True, "players": [dict(row) for row in own + rival]}
+        jornada, rows, meta = track.snapshot_rows_from_documents(squads, trends)
+        self.assertEqual(jornada, "11")
+        self.assertEqual({row["jornada_id"] for row in rows}, {"11"})
+        self.assertEqual(meta["league_count"], 15)
+        self.assertEqual(meta["squad_count"], 14)
+        rival_row = next(row for row in rows if row["player_id"] == "rival1")
+        self.assertEqual(rival_row["in_once_optimo"], 0)
+        self.assertEqual(rival_row["team_id"], "2")
+        self.assertEqual(rival_row["kickoff"], "2026-11-08T17:30:00+00:00")
+
+    def test_snapshot_is_frozen_once_the_match_kicked_off(self) -> None:
+        from datetime import datetime, timezone
+
+        row = {
+            "jornada_id": "11",
+            "player_id": "p",
+            "expected_points": 6.0,
+            "kickoff": "2026-11-08T17:30:00+00:00",
+            "snapshot_day": "2026-11-07",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = sqlite3.connect(Path(tmp) / "db.sqlite")
+            try:
+                track._ensure_schema(conn)
+                before = datetime(2026, 11, 8, 10, tzinfo=timezone.utc)
+                after = datetime(2026, 11, 9, 10, tzinfo=timezone.utc)
+                self.assertEqual(track.persist_snapshot(conn, [row], now=before), 1)
+                self.assertEqual(track.persist_snapshot(conn, [{**row, "expected_points": 4.0}], now=before), 1)
+                # Pasado el saque, una previsión tardía no pisa la que había.
+                self.assertEqual(track.persist_snapshot(conn, [{**row, "expected_points": 9.0}], now=after), 0)
+                stored = conn.execute("select expected_points from matchday_snapshots").fetchone()[0]
+            finally:
+                conn.close()
+        self.assertEqual(stored, 4.0)
+
+    def test_evaluate_reads_the_normalized_round_map(self) -> None:
+        mapping = track.week_points_by_round({"week_points": [1.0], "week_points_by_round": {"11": 7.0}})
+        self.assertEqual(mapping, {"11": 7.0})
+
+
 if __name__ == "__main__":
     unittest.main()

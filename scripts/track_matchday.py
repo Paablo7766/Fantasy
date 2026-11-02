@@ -17,6 +17,7 @@ import sqlite3
 import sys
 import time
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -56,6 +57,10 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "create index if not exists matchday_snapshots_stored_idx on matchday_snapshots (stored_at)"
     )
+    have = {str(row[1]) for row in conn.execute("pragma table_info(matchday_snapshots)").fetchall()}
+    for column in ("kickoff", "position", "team_id"):
+        if column not in have:
+            conn.execute(f"alter table matchday_snapshots add column {column} text")
     conn.commit()
 
 
@@ -134,6 +139,13 @@ def week_points_by_round(player: dict[str, Any]) -> dict[str, float]:
         master = player.get("player_master")
     if isinstance(master, dict):
         sources.append(master)
+    stored = player.get("week_points_by_round")
+    if isinstance(stored, dict):
+        for week, points in stored.items():
+            value = _as_float(points)
+            number = _as_int(week)
+            if value is not None and number is not None:
+                mapping[str(number)] = value
     for source in sources:
         for key in ("lastStats", "last_stats", "weekPoints", "week_points"):
             raw = source.get(key)
@@ -198,6 +210,24 @@ def _xi_ids(optimized: dict[str, Any]) -> set[str]:
     return ids
 
 
+def next_round_for(player: dict[str, Any]) -> str | None:
+    """Jornada del próximo partido: la última con ``weekNumber`` más uno.
+
+    Va por jugador. Un miércoles de jornada a medias, quien ya jugó apunta a la
+    siguiente y quien no, a la actual. Las dos cosas son ciertas a la vez.
+    """
+    rounds = [_as_int(week) for week in week_points_by_round(player)]
+    played = [week for week in rounds if week is not None and week > 0]
+    return str(max(played) + 1) if played else None
+
+
+def _kickoff(trend: dict[str, Any]) -> str | None:
+    fixture = trend.get("fixture")
+    if isinstance(fixture, dict) and isinstance(fixture.get("kickoff"), str):
+        return fixture["kickoff"]
+    return None
+
+
 def snapshot_rows_from_documents(
     squads: dict[str, Any],
     trends: dict[str, Any] | None,
@@ -206,66 +236,114 @@ def snapshot_rows_from_documents(
     jornada_id: str | None = None,
     snapshot_day: str | None = None,
 ) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    """Previsión de todos los jugadores de la liga, no solo de la plantilla propia.
+
+    Con 20 jugadores por jornada el error medio no dice nada en un mes; con
+    las plantillas rivales y el mercado salen unas 180 muestras por jornada.
+    """
     squad = own_squad(squads)
     if squad is None:
         raise ValueError("La plantilla propia no está en squads. Sin ella no hay snapshot.")
     optimized = optimize_from_documents(squads, trends, cache=None, fresh=True, market=market)
-    jornada = str(jornada_id or infer_jornada_id(trends, squads))
+    fallback = str(jornada_id or infer_jornada_id(trends, squads))
     day = snapshot_day or madrid_day()
     league_id = squads.get("league_id") if isinstance(squads.get("league_id"), str) else None
     trends_index = index_trends(trends)
     xi_ids = _xi_ids(optimized)
+    own_team = squad.get("team_id")
+
+    owners: list[tuple[Any, dict[str, Any]]] = [(own_team, row) for row in squad.get("players") or []]
+    for team in squads.get("squads") or []:
+        if isinstance(team, dict) and team is not squad:
+            owners.extend((team.get("team_id"), row) for row in team.get("players") or [])
+    if isinstance(market, dict):
+        owners.extend((row.get("seller_team_id"), row) for row in market.get("listings") or [] if isinstance(row, dict))
+
     rows: list[dict[str, Any]] = []
-    players = squad.get("players") if isinstance(squad.get("players"), list) else []
-    for player in players:
+    seen: set[str] = set()
+    for team_id, player in owners:
         if not isinstance(player, dict):
             continue
         player_id = player.get("player_id")
-        if not isinstance(player_id, str) or not player_id:
+        if not isinstance(player_id, str) or not player_id or player_id in seen:
             continue
         trend = trends_index.get(player_id) or {}
         expected = _first_number(trend, _EXPECTED_KEYS)
         if expected is None:
             expected = _first_number(player, _EXPECTED_KEYS)
+        is_own = team_id == own_team
+        # Fuera de la plantilla propia, una fila sin previsión no mide nada.
+        if expected is None and not is_own:
+            continue
+        seen.add(player_id)
         ceiling = _first_number(trend, _CEILING_KEYS)
         if ceiling is None:
             ceiling = _first_number(player, _CEILING_KEYS)
         name = player.get("nickname") or player.get("name") or trend.get("nickname") or trend.get("name")
+        position = player.get("position") or trend.get("position")
         rows.append(
             {
-                "jornada_id": jornada,
+                "jornada_id": str(jornada_id) if jornada_id else (next_round_for(player) or fallback),
                 "player_id": player_id,
                 "name": name if isinstance(name, str) else None,
                 "expected_points": expected,
                 "ceiling_points": ceiling,
-                "in_once_optimo": 1 if player_id in xi_ids else 0,
+                "in_once_optimo": 1 if is_own and player_id in xi_ids else 0,
                 "league_id": league_id,
                 "snapshot_day": day,
+                "kickoff": _kickoff(trend),
+                "position": position if isinstance(position, str) else None,
+                "team_id": team_id if isinstance(team_id, str) else None,
             }
         )
+    counts = Counter(row["jornada_id"] for row in rows)
+    jornada = counts.most_common(1)[0][0] if counts else fallback
     meta = {
         "ok": bool(optimized.get("ok")),
         "formation": optimized.get("formation"),
         "matchday_void": bool(optimized.get("matchday_void")),
         "xi_count": len(xi_ids),
-        "squad_count": len(rows),
+        "squad_count": sum(1 for row in rows if row["team_id"] == own_team),
+        "league_count": len(rows),
+        "jornadas": dict(counts),
         "league_id": league_id,
-        "team_id": squad.get("team_id"),
+        "team_id": own_team,
     }
     return jornada, rows, meta
 
 
-def persist_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> int:
+def persist_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any]], *, now: datetime | None = None) -> int:
+    """Guarda la última previsión antes del saque.
+
+    Una fila cuyo partido ya empezó no se pisa: si la API tarda en publicar la
+    jornada, el jugador seguiría apuntando a ella y la previsión del partido
+    siguiente se colaría como si fuera la de este.
+    """
     if not rows:
         return 0
     stamp = time.time()
+    moment = (now or datetime.now(timezone.utc)).isoformat()
+    before = conn.total_changes
     conn.executemany(
         """
-        insert or replace into matchday_snapshots (
+        insert into matchday_snapshots (
             jornada_id, player_id, name, expected_points, ceiling_points,
             in_once_optimo, league_id, snapshot_day, stored_at,
-            actual_points, evaluated_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, null)
+            actual_points, evaluated_at, kickoff, position, team_id
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, null, ?, ?, ?)
+        on conflict(jornada_id, player_id) do update set
+            name = excluded.name,
+            expected_points = excluded.expected_points,
+            ceiling_points = excluded.ceiling_points,
+            in_once_optimo = excluded.in_once_optimo,
+            league_id = excluded.league_id,
+            snapshot_day = excluded.snapshot_day,
+            stored_at = excluded.stored_at,
+            kickoff = coalesce(excluded.kickoff, matchday_snapshots.kickoff),
+            position = coalesce(excluded.position, matchday_snapshots.position),
+            team_id = excluded.team_id
+        where matchday_snapshots.actual_points is null
+          and (matchday_snapshots.kickoff is null or matchday_snapshots.kickoff > ?)
         """,
         [
             (
@@ -278,12 +356,16 @@ def persist_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> in
                 row.get("league_id"),
                 row.get("snapshot_day"),
                 stamp,
+                row.get("kickoff"),
+                row.get("position"),
+                row.get("team_id"),
+                moment,
             )
             for row in rows
         ],
     )
     conn.commit()
-    return len(rows)
+    return conn.total_changes - before
 
 
 def latest_jornada_id(conn: sqlite3.Connection) -> str | None:

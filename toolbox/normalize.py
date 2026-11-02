@@ -682,6 +682,35 @@ def official_week_points(player: dict[str, Any]) -> list[float]:
     return []
 
 
+def week_points_by_round(player: dict[str, Any]) -> dict[str, float]:
+    """Jornada → puntos oficiales, con el ``weekNumber`` que trae la API.
+
+    ``week_points`` es solo la serie de valores y pierde a qué jornada
+    pertenece cada uno. Sin el número no se puede cruzar una previsión con
+    los puntos reales de su jornada.
+    """
+    if not isinstance(player, dict):
+        return {}
+    mapping: dict[str, float] = {}
+    master = _player_master(player)
+    for source in (player, master):
+        if not isinstance(source, dict):
+            continue
+        for key in ("weekPoints", "lastStats", "last_stats"):
+            raw = source.get(key)
+            if not isinstance(raw, list):
+                continue
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                week = item.get("weekNumber", item.get("week"))
+                points = _as_real(_first(item, "weekPoints", "totalPoints", "points"))
+                if isinstance(week, bool) or not isinstance(week, int) or points is None:
+                    continue
+                mapping[str(week)] = points
+    return mapping
+
+
 # ---------------------------------------------------------------------------
 # Catálogo global de la competición (``/competition/1/players``)
 # ---------------------------------------------------------------------------
@@ -777,6 +806,7 @@ def normalize_catalog_player(row: dict[str, Any], *, now: datetime | None = None
         "market_value_change": _market_value_change(master, row),
         "average_points": _as_real(_first(master, "averagePoints", "average_points")),
         "week_points": _catalog_week_series(row),
+        "week_points_by_round": week_points_by_round(row),
     }
 
 
@@ -814,6 +844,7 @@ def normalize_player(item: dict[str, Any], *, now: datetime | None = None) -> di
         "market_value_change": _market_value_change(master, item),
         "average_points": _as_real(_first(master, "averagePoints", "average_points")),
         "week_points": official_week_points(item),
+        "week_points_by_round": week_points_by_round(item),
         "buyout_clause": _as_int(_first(item, "buyoutClause", "clause", "buyout")),
         "is_shielded": shielded,
         "clause_lock": clause_lock_from(item, now=now),
