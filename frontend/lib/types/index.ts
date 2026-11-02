@@ -1,0 +1,10 @@
+export type * from "./common";
+export type * from "./once";
+export type * from "./fichajes";
+export type * from "./clausulas";
+export type * from "./mercado";
+export type * from "./liga";
+export type * from "./rivales";
+export type * from "./laboratorio";
+export type * from "./plan";
+export type * from "./radar";
