@@ -57,9 +57,20 @@ _CLUB_ALIASES = {
     "real sociedad": "real sociedad",
     "deportivo la coruna": "deportivo",
     "rc deportivo": "deportivo",
+    "rc deportivo la coruna": "deportivo",
     "racing santander": "racing",
+    "r racing": "racing",
+    "real racing de santander": "racing",
     "atletico de madrid": "atletico madrid",
     "atletico madrid": "atletico madrid",
+    "c a osasuna": "osasuna",
+    "ca osasuna": "osasuna",
+    "rc celta de vigo": "celta",
+    "espanyol de barcelona": "espanyol",
+    "rayo vallecano de madrid": "rayo",
+    "real betis balompie": "betis",
+    # «Real Sociedad de Fútbol»: «futbol» es ruido y deja el «de» colgando.
+    "real sociedad de": "real sociedad",
 }
 
 _POSITION_EXACT = {

@@ -6,9 +6,11 @@ import unittest
 from datetime import datetime, timezone
 
 from toolbox.jornada_perfecta import parse_market_caching
+from toolbox.matching import normalize_club
 from toolbox.understat import (
     fdr_from_opponent_xga,
     next_fixtures,
+    parse_openfootball_matchdays,
     parse_understat_payload,
     points_multiplier,
 )
@@ -82,6 +84,30 @@ class IntelSourcesTest(unittest.TestCase):
         self.assertEqual(rows[0]["jp_tip"], "apuesta")
         self.assertEqual(rows[0]["jp_projected_points"], 5.5)
         self.assertEqual(rows[0]["jp_multiplier"], 1.0)
+
+    def test_openfootball_names_share_the_understat_key(self) -> None:
+        self.assertEqual(normalize_club("CA Osasuna"), "osasuna")
+        self.assertEqual(normalize_club("C.A. Osasuna"), "osasuna")
+        self.assertEqual(normalize_club("R. Racing Club"), "racing")
+        self.assertEqual(normalize_club("Real Racing Club de Santander"), "racing")
+        self.assertEqual(normalize_club("RC Celta de Vigo"), "celta")
+        self.assertEqual(normalize_club("Rayo Vallecano de Madrid"), "rayo")
+        self.assertEqual(normalize_club("Real Sociedad de Fútbol"), "real sociedad")
+
+    def test_split_matchday_keeps_the_official_number(self) -> None:
+        text = """
+Matchday 1
+  Sat Aug 15 2026
+    19:30  Deportivo Alavés v Getafe CF 3-0
+Matchday 2
+    21:00  Rayo Vallecano de Madrid v Deportivo Alavés 1-1
+Matchday 1
+    21:00  FC Barcelona v Athletic Club 2-0
+"""
+        table = parse_openfootball_matchdays(text)
+        self.assertEqual(table[("alaves", "getafe")], 1)
+        self.assertEqual(table[("rayo", "alaves")], 2)
+        self.assertEqual(table[("barcelona", "athletic")], 1)
 
 
 if __name__ == "__main__":

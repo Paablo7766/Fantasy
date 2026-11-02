@@ -1427,6 +1427,11 @@ def refresh_board(
         clean = dict(value)
         clean["photo_saved_unix"] = saved_unix
         _store_snapshot(kind, league, True, clean, cache_dir=root)
+        if kind == "full":
+            # Sin red: lee el historial que acaba de bajar y afina p_titular.
+            from toolbox.p_titular_refit import maybe_refit
+
+            maybe_refit()
         served = _stamp_photo(clean, saved_unix)
         holder.value = served
         if track_status:

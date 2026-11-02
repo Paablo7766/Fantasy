@@ -9,6 +9,7 @@ from toolbox.engine.xp_calculator import (
     ContextoEquipo,
     FantasyXPEngine,
     PartidoHistorico,
+    lambdas_de_fuerzas,
     predecir_desde_jugador,
 )
 from toolbox.opta_points_v2 import compute_expected_opta_points_v2
@@ -139,6 +140,39 @@ class BayesianShrinkageTests(unittest.TestCase):
         self.assertEqual(inferred["n_titular"], 1.0)
         self.assertGreater(inferred["base_titular"], 4.0)
 
+    def test_goalkeeper_prior_is_a_starter_score(self) -> None:
+        propio, rival = _neutral()
+        result = FantasyXPEngine.calcular_prediccion_completa(
+            "POR",
+            [],
+            1.0,
+            propio,
+            rival,
+            lambda_favor=1.25,
+            lambda_contra=1.25,
+        )
+        self.assertGreater(result["base_titular"], 7.5)
+        self.assertLess(result["base_titular"], 8.5)
+
+    def test_forward_prior_sits_on_the_prewindow_mean(self) -> None:
+        propio, rival = _neutral()
+        result = FantasyXPEngine.calcular_prediccion_completa(
+            "DEL",
+            [],
+            1.0,
+            propio,
+            rival,
+            lambda_favor=1.25,
+            lambda_contra=1.25,
+        )
+        self.assertGreater(result["base_titular"], 5.5)
+        self.assertLess(result["base_titular"], 6.2)
+
+    def test_home_lambda_is_higher_than_away_for_the_same_rates(self) -> None:
+        home, _ = lambdas_de_fuerzas(1.4, 1.1, 1.2, 1.3, es_local=True)
+        away, _ = lambdas_de_fuerzas(1.4, 1.1, 1.2, 1.3, es_local=False)
+        self.assertGreater(home, away)
+
 
 class MatchupTests(unittest.TestCase):
     def test_weak_attack_raises_a_defender_against_a_strong_one(self) -> None:
@@ -232,6 +266,18 @@ class BimodalTests(unittest.TestCase):
         assert available is not None
         self.assertGreaterEqual(available, 0.15)
         self.assertLessEqual(available, 0.90)
+
+    def test_titular_probability_separates_bench_from_absent(self) -> None:
+        def historial(minutes: list[int]) -> list[PartidoHistorico]:
+            return [PartidoHistorico(puntos=2.0, minutos=m, jornada=i + 1) for i, m in enumerate(minutes)]
+
+        titular = FantasyXPEngine.prob_titular_heuristica(historial([90, 90, 90]))
+        revulsivo = FantasyXPEngine.prob_titular_heuristica(historial([20, 25, 15]))
+        ausente = FantasyXPEngine.prob_titular_heuristica(historial([0, 0, 0]))
+        assert titular is not None and revulsivo is not None and ausente is not None
+        self.assertGreater(titular, revulsivo)
+        self.assertGreater(revulsivo, ausente)
+        self.assertGreater(revulsivo, 0.25)
 
 
 class PipelineTests(unittest.TestCase):

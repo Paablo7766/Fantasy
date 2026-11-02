@@ -340,6 +340,72 @@ def fdr_from_opponent_xga(opponent_xga: float, league_avg_xga: float) -> int:
     return 1
 
 
+_MATCHDAY = re.compile(r"Matchday\s+(\d+)", re.IGNORECASE)
+_KICKOFF = re.compile(r"^\s*\d{1,2}:\d{2}\s+")
+_SCORE = re.compile(r"\s+\d+\s*-\s*\d+.*$")
+
+
+def parse_openfootball_matchdays(text: str) -> dict[tuple[str, str], int]:
+    """``(club local, club visitante)`` normalizados → jornada oficial.
+
+    Understat guarda fecha, local, visitante y xG, pero no el número de
+    jornada. En esta temporada las jornadas se solapan (la 1 termina cuando
+    la 2 ya ha empezado), así que la fecha no alcanza para numerarlas. El
+    calendario abierto trae el rótulo ``Matchday N`` y cada pareja local/
+    visitante solo ocurre una vez.
+    """
+    current: int | None = None
+    table: dict[tuple[str, str], int] = {}
+    for raw in text.splitlines():
+        header = _MATCHDAY.search(raw)
+        if header:
+            current = int(header.group(1))
+            continue
+        if current is None or " v " not in raw:
+            continue
+        body = _KICKOFF.sub("", raw)
+        body = _SCORE.sub("", body)
+        home, away = body.split(" v ", 1)
+        home_key = normalize_club(home)
+        away_key = normalize_club(away)
+        if home_key and away_key:
+            table[(home_key, away_key)] = current
+    return table
+
+
+def _is_played(row: dict[str, Any]) -> bool:
+    return row.get("isResult") in (True, "true", "True", 1, "1")
+
+
+def understat_played_matches(dates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Partidos con resultado y xG. Sin jornada: eso lo pone el calendario."""
+    played: list[dict[str, Any]] = []
+    for row in dates:
+        if not isinstance(row, dict) or not _is_played(row):
+            continue
+        home = row.get("h") if isinstance(row.get("h"), dict) else {}
+        away = row.get("a") if isinstance(row.get("a"), dict) else {}
+        xg = row.get("xG") if isinstance(row.get("xG"), dict) else {}
+        home_title = home.get("title") if isinstance(home.get("title"), str) else None
+        away_title = away.get("title") if isinstance(away.get("title"), str) else None
+        xh = _as_float(xg.get("h"))
+        xa = _as_float(xg.get("a"))
+        if not home_title or not away_title or xh is None or xa is None:
+            continue
+        played.append(
+            {
+                "home": home_title,
+                "away": away_title,
+                "home_key": normalize_club(home_title),
+                "away_key": normalize_club(away_title),
+                "xg_home": xh,
+                "xg_away": xa,
+                "kickoff": str(row.get("datetime") or ""),
+            }
+        )
+    return played
+
+
 def _parse_kickoff(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         return None

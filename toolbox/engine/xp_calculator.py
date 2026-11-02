@@ -12,10 +12,18 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
+from toolbox.engine.p_titular_model import STARTER_MINUTES, current_weights, features_from_minutes, predict
+
 # Priors de un titular estándar de LaLiga (>=45') y de un revulsivo (<45').
-PRIORS_TITULAR = {"PT": 4.4, "DF": 4.3, "MC": 4.8, "DL": 5.0}
+# El portero no puede compartir cifra con un defensa: quien juega de inicio
+# ronda los 8 pts (portería, paradas y valla). El 4,4 anterior absorbía el
+# 65 % de la base con solo dos partidos y dejaba el xP ~2 pts corto.
+# El delantero sale de la media de titulares anterior a la ventana J9–J11
+# (5,9 sobre 32 partidos). Defensa y medio ya coincidían con esa ventana.
+PRIORS_TITULAR = {"PT": 8.0, "DF": 4.3, "MC": 4.8, "DL": 5.8}
 PRIORS_SUPLENTE = {"PT": 0.5, "DF": 1.6, "MC": 2.1, "DL": 2.3}
 STD_DEFAULT = {"PT": 2.8, "DF": 3.1, "MC": 3.8, "DL": 4.5}
+
 LIGA_AVG_XG = 1.25
 # Partidos de titular que vale el prior. Con n=0 manda el puesto; con n grande, el jugador.
 K_PRIOR = 4.0
@@ -25,7 +33,6 @@ EWMA_DECAY = 0.25
 # En el reglamento, jugar ya suma 1 y llegar a 60' suma otro. Sin minutos por
 # jornada, 2 o más puntos es la firma de quien cumplió minutos de titular.
 TITULAR_POINTS_FLOOR = 2.0
-STARTER_MINUTES = 45
 CS_BASELINE = 0.28
 
 
@@ -63,6 +70,27 @@ def canonical_slot(position: str | None) -> str:
     """``POR``/``DEF``/``MC``/``DEL`` de la app → hueco del motor."""
     key = str(position or "MC").strip().upper()
     return _POSITION.get(key, "MC")
+
+
+def lambdas_de_fuerzas(
+    xg_propio: float,
+    xga_propio: float,
+    xg_rival: float,
+    xga_rival: float,
+    *,
+    es_local: bool,
+    liga_xg: float = LIGA_AVG_XG,
+) -> tuple[float, float]:
+    """λ a favor y en contra a partir de las medias previas al partido.
+
+    La localía entra una sola vez. Quien ya traiga los λ del calendario no
+    debe volver a multiplicar este bono.
+    """
+    liga = liga_xg if liga_xg > 0 else LIGA_AVG_XG
+    bono = 1.08 if es_local else 0.94
+    en_contra = (xga_propio * (xg_rival / liga)) / bono
+    a_favor = (xg_propio * (xga_rival / liga)) * bono
+    return a_favor, en_contra
 
 
 def _number(value: Any) -> float | None:
@@ -230,8 +258,16 @@ class FantasyXPEngine:
     ) -> float | None:
         """Titularidad interna cuando no hay un once publicado.
 
-        Lesión o sanción → 0. Duda → 0,25. Disponible → peso 50/30/20 de si
-        fue titular en las tres últimas jornadas, entre 15 % y 90 %.
+        Lesión o sanción → 0. Duda → 0,25. Disponible → logística sobre la
+        fracción de partidos de titular de la temporada y los minutos
+        recientes (media de las tres últimas jornadas, sobre 90').
+
+        Los pesos los gestiona ``toolbox.engine.p_titular_model`` y se
+        reajustan solos con cada actualización (``toolbox.p_titular_refit``).
+        Los iniciales salen de J9–J11 (n=334) con validación dejando una
+        jornada fuera: Brier 0,201 → 0,180. La regla anterior («fue titular
+        las 3 últimas») daba 22 % a quien luego jugaba el 44 % de las veces:
+        no distinguía al que entra desde el banquillo del que no pisa el campo.
         """
         status = (player_status or "").strip().lower()
         if status in {"injured", "suspended", "out", "lesionado", "baja", "sancionado"}:
@@ -240,14 +276,12 @@ class FantasyXPEngine:
             return 0.25
         if not historial:
             return None
-        recent = sorted(historial, key=lambda partido: partido.jornada)[-3:]
-        weights = (0.20, 0.30, 0.50)[-len(recent) :]
-        weight_total = sum(weights)
-        share = sum(
-            weight * (1.0 if partido.minutos >= STARTER_MINUTES else 0.0)
-            for weight, partido in zip(weights, recent)
-        ) / weight_total
-        return round(min(0.90, max(0.15, share)), 4)
+        ordered = sorted(historial, key=lambda partido: partido.jornada)
+        features = features_from_minutes([partido.minutos for partido in ordered])
+        if features is None:
+            return None
+        probability = predict(current_weights(), features)
+        return round(min(0.95, max(0.05, probability)), 4)
 
     @classmethod
     def calcular_prediccion_completa(
@@ -287,13 +321,13 @@ class FantasyXPEngine:
             lambda_goles_favor = max(0.05, float(lambda_favor))
             lambda_goles_contra = max(0.05, float(lambda_contra))
         else:
-            bono_local = 1.08 if equipo_propio.es_local else 0.94
-            lambda_goles_contra = (
-                equipo_propio.xg_contra_90 * (equipo_rival.xg_favor_90 / LIGA_AVG_XG)
-            ) / bono_local
-            lambda_goles_favor = (
-                equipo_propio.xg_favor_90 * (equipo_rival.xg_contra_90 / LIGA_AVG_XG)
-            ) * bono_local
+            lambda_goles_favor, lambda_goles_contra = lambdas_de_fuerzas(
+                equipo_propio.xg_favor_90,
+                equipo_propio.xg_contra_90,
+                equipo_rival.xg_favor_90,
+                equipo_rival.xg_contra_90,
+                es_local=equipo_propio.es_local,
+            )
 
         if prob_clean_sheet is None:
             prob_clean_sheet = math.exp(-max(0.0, lambda_goles_contra))
