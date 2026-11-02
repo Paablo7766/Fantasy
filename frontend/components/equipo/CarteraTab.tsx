@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { playerName, points, stamp, titularShare } from "@/lib/format";
-import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
+import { playerName, points, stamp, titularShare } from "@/lib/core/format";
+import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { AuditoriaVenta, PlanPayload, RivalPlayer, SquadsPayload, VeredictoVenta } from "@/lib/types";
 import {
   Chevron,
@@ -22,7 +22,7 @@ import {
   signedMoney,
   signedPct,
   toneOf,
-} from "@/components/equipo/ui";
+} from "@/components/ui/kit";
 
 const VERDICT: Record<VeredictoVenta, { label: string; color: string }> = {
   ACEPTAR_YA: { label: "Acepta ya", color: TONE.green },

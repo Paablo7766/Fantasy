@@ -5,8 +5,8 @@ import { Suspense, useMemo } from "react";
 import { ClausulasTab, type ClausulasView } from "@/components/clausulas/ClausulasTab";
 import { ComparadorLauncher } from "@/components/comparador/ComparadorReal";
 import { useDashboard } from "@/components/DashboardProvider";
-import { Skeleton } from "@/components/equipo/ui";
-import { buildPhotoIndex } from "@/lib/photoIndex";
+import { Skeleton } from "@/components/ui/kit";
+import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { NeedsPayload, OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
 const TABS: { id: ClausulasView; label: string }[] = [

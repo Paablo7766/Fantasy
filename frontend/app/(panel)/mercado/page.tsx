@@ -3,13 +3,13 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
-import { Skeleton } from "@/components/equipo/ui";
+import { Skeleton } from "@/components/ui/kit";
 import { BuscadorTab } from "@/components/mercado/BuscadorTab";
 import { HoyTab } from "@/components/mercado/HoyTab";
 import { LabSection } from "@/components/mercado/LabSection";
 import { OportunidadesTab } from "@/components/mercado/OportunidadesTab";
 import { ComparadorLauncher } from "@/components/comparador/ComparadorReal";
-import { buildPhotoIndex } from "@/lib/photoIndex";
+import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
 type Tab = "hoy" | "oportunidades" | "buscador";

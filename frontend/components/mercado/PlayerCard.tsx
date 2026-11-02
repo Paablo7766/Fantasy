@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { gradeColor } from "@/components/MarketGrade";
+import { gradeColor } from "@/components/mercado/MarketGrade";
 import { CompararConSugerido } from "@/components/comparador/ComparadorReal";
-import { Face, TONE, money, parsePct, signedPct } from "@/components/equipo/ui";
+import { Face, TONE, money, parsePct, signedPct } from "@/components/ui/kit";
 import { ACTION_VERDICT, sourceLabel, winShare } from "@/components/mercado/shared";
-import { bidStory } from "@/lib/bidStory";
-import { MONTHS, playerName } from "@/lib/format";
-import { actionReason, executableBid, isVetoed, marketAction } from "@/lib/marketAction";
+import { bidStory } from "@/lib/mercado/bidStory";
+import { MONTHS, playerName } from "@/lib/core/format";
+import { actionReason, executableBid, isVetoed, marketAction } from "@/lib/mercado/marketAction";
 import type { MarketDecision } from "@/lib/types";
 
 type Match = { opponent: string; home: boolean | null; difficulty: string | null };

@@ -5,8 +5,8 @@ import { Suspense, useMemo } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { CarteraTab } from "@/components/equipo/CarteraTab";
 import { OnceTab } from "@/components/equipo/OnceTab";
-import { Skeleton } from "@/components/equipo/ui";
-import { buildPhotoIndex } from "@/lib/photoIndex";
+import { Skeleton } from "@/components/ui/kit";
+import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
 type Tab = "once" | "cartera";

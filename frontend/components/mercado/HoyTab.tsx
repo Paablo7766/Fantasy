@@ -1,13 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { gradeColor } from "@/components/MarketGrade";
+import { gradeColor } from "@/components/mercado/MarketGrade";
 import { PlayerCard } from "@/components/mercado/PlayerCard";
 import { ACTION_VERDICT, budgetLine, difficultyLabel, historyLine } from "@/components/mercado/shared";
-import { Disclosure, Empty, Face, HeroStat, Skeleton, TONE, compact, money, parsePct, signedPct, toneOf } from "@/components/equipo/ui";
-import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
-import { errorMessage, playerName } from "@/lib/format";
-import { executableBid, marketAction } from "@/lib/marketAction";
+import { Disclosure, Empty, Face, HeroStat, Skeleton, TONE, compact, money, parsePct, signedPct, toneOf } from "@/components/ui/kit";
+import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
+import { errorMessage, playerName } from "@/lib/core/format";
+import { executableBid, marketAction } from "@/lib/mercado/marketAction";
 import type { JornadaClub, MarketDecision, PlanFichajeAccion, PlanFichajes, TrendsPayload } from "@/lib/types";
 
 type Source = "liga" | "rival" | "todos";

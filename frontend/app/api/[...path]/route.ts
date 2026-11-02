@@ -1,4 +1,4 @@
-import { backendProxyTarget, normalizeBackendOrigin } from "@/lib/backendUrl";
+import { backendProxyTarget, normalizeBackendOrigin } from "@/lib/core/backendUrl";
 import { connection, NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 300;

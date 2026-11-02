@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Empty, Face, SectionHead, Skeleton, TONE, money, signedMoney, toneOf } from "@/components/equipo/ui";
-import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
-import { playerName } from "@/lib/format";
+import { Empty, Face, SectionHead, Skeleton, TONE, money, signedMoney, toneOf } from "@/components/ui/kit";
+import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
+import { playerName } from "@/lib/core/format";
 import type { CatalogPlayer, TrendsPayload } from "@/lib/types";
 
 type Owner = "all" | "libre" | "rival" | "propio";

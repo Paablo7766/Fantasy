@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Face, Fact, SectionHead, TONE, Verdict, compact, money, signedMoney, toneOf } from "@/components/equipo/ui";
-import { endpoint, getJson } from "@/lib/api";
-import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
-import { points } from "@/lib/format";
+import { Face, Fact, SectionHead, TONE, Verdict, compact, money, signedMoney, toneOf } from "@/components/ui/kit";
+import { endpoint, getJson } from "@/lib/core/api";
+import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
+import { points } from "@/lib/core/format";
 import type { ArbitragePayload, CatalogProfilePlayer, FreeAgentsPayload } from "@/lib/types";
 
 type Vista = "libres" | "suelo" | "refugio" | "riesgo";

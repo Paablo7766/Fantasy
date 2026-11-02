@@ -1,7 +1,7 @@
 "use client";
 
-import { RecommendationsScreen } from "@/components/RecommendationsScreen";
+import { InicioScreen } from "@/components/inicio/InicioScreen";
 
-export default function RecomendacionesPage() {
-  return <RecommendationsScreen />;
+export default function InicioPage() {
+  return <InicioScreen />;
 }

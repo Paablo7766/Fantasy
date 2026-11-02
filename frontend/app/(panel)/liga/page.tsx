@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
-import { ClauseBoardPanel } from "@/components/ClauseBoardPanel";
-import { LeagueRacePanel } from "@/components/LeagueRacePanel";
-import { RivalIntelPanel } from "@/components/RivalIntelPanel";
-import { RivalsDashboard } from "@/components/RivalsDashboard";
-import { endpoint, getJson } from "@/lib/api";
+import { ClauseBoardPanel } from "@/components/liga/ClauseBoardPanel";
+import { LeagueRacePanel } from "@/components/liga/LeagueRacePanel";
+import { RivalIntelPanel } from "@/components/liga/RivalIntelPanel";
+import { RivalsDashboard } from "@/components/liga/RivalsDashboard";
+import { endpoint, getJson } from "@/lib/core/api";
 import type {
   ClauseIntelPayload,
   NeedsPayload,

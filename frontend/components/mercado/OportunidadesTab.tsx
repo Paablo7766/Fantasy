@@ -17,10 +17,10 @@ import {
   money,
   signedMoney,
   toneOf,
-} from "@/components/equipo/ui";
-import { endpoint, getJson } from "@/lib/api";
-import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
-import { playerName, points, roiPct } from "@/lib/format";
+} from "@/components/ui/kit";
+import { endpoint, getJson } from "@/lib/core/api";
+import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
+import { playerName, points, roiPct } from "@/lib/core/format";
 import type { QuantPlayer, QuantRadarPayload } from "@/lib/types";
 
 export type Tone = "buy" | "watch" | "toxic";

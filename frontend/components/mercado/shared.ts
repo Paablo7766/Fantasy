@@ -1,6 +1,6 @@
-import { TONE } from "@/components/equipo/ui";
-import { eur, pct } from "@/lib/format";
-import type { MarketAction } from "@/lib/marketAction";
+import { TONE } from "@/components/ui/kit";
+import { eur, pct } from "@/lib/core/format";
+import type { MarketAction } from "@/lib/mercado/marketAction";
 import type { MarketDecision, MarketDecisionSummary } from "@/lib/types";
 
 export const ACTION_VERDICT: Record<MarketAction, { label: string; color: string }> = {

@@ -2,16 +2,16 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
-import { AfIntel } from "@/components/AfIntel";
-import { ApiUsagePanel } from "@/components/ApiUsagePanel";
-import { CalibrationDashboard } from "@/components/CalibrationDashboard";
-import { DataHealthPanel } from "@/components/DataHealthPanel";
+import { AfIntel } from "@/components/laboratorio/AfIntel";
+import { ApiUsagePanel } from "@/components/laboratorio/ApiUsagePanel";
+import { CalibrationDashboard } from "@/components/laboratorio/CalibrationDashboard";
+import { DataHealthPanel } from "@/components/laboratorio/DataHealthPanel";
 import { useDashboard } from "@/components/DashboardProvider";
-import { ExpertNotePanel } from "@/components/ExpertNotePanel";
-import { SignalDiscrepanciesPanel } from "@/components/SignalDiscrepanciesPanel";
-import { Skeleton } from "@/components/equipo/ui";
+import { ExpertNotePanel } from "@/components/laboratorio/ExpertNotePanel";
+import { SignalDiscrepanciesPanel } from "@/components/laboratorio/SignalDiscrepanciesPanel";
+import { Skeleton } from "@/components/ui/kit";
 import { RadarTecnico } from "@/components/laboratorio/RadarTecnico";
-import { buildPhotoIndex } from "@/lib/photoIndex";
+import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
 type Tab = "radar" | "calibracion" | "senales" | "datos";

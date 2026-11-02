@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDashboard } from "@/components/DashboardProvider";
-import { Face, TONE, money } from "@/components/equipo/ui";
-import { apiUrl, getJson } from "@/lib/api";
-import { playerName } from "@/lib/format";
-import { buildPhotoIndex, photoFor, type PhotoIndex } from "@/lib/photoIndex";
+import { Face, TONE, money } from "@/components/ui/kit";
+import { apiUrl, getJson } from "@/lib/core/api";
+import { playerName } from "@/lib/core/format";
+import { buildPhotoIndex, photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, Player, SquadsPayload, TrendsPayload } from "@/lib/types";
 
 type Precio = {

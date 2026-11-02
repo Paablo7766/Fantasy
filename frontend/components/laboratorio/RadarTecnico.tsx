@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Disclosure, Empty, SectionHead, Skeleton, money } from "@/components/equipo/ui";
+import { Disclosure, Empty, SectionHead, Skeleton, money } from "@/components/ui/kit";
 import { QuantList } from "@/components/mercado/OportunidadesTab";
-import { endpoint, getJson } from "@/lib/api";
-import { points } from "@/lib/format";
-import type { PhotoIndex } from "@/lib/photoIndex";
+import { endpoint, getJson } from "@/lib/core/api";
+import { points } from "@/lib/core/format";
+import type { PhotoIndex } from "@/lib/core/photoIndex";
 import type { QuantRadarPayload } from "@/lib/types";
 
 /**

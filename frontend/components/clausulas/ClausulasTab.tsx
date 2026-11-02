@@ -3,12 +3,12 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { CompararButton } from "@/components/comparador/ComparadorReal";
-import { endpoint, getJson } from "@/lib/api";
-import { buildClausulazosGuide, type DateBucket } from "@/lib/clausulazosGuide";
-import { playerName, points } from "@/lib/format";
-import { countdownClock, countdownParts } from "@/lib/hoy";
-import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
-import { useNow } from "@/lib/useClock";
+import { endpoint, getJson } from "@/lib/core/api";
+import { buildClausulazosGuide, type DateBucket } from "@/lib/clausulas/clausulazosGuide";
+import { playerName, points } from "@/lib/core/format";
+import { countdownClock, countdownParts } from "@/lib/inicio/hoy";
+import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
+import { useNow } from "@/lib/core/useClock";
 import type {
   ClauseBoardPayload,
   ClausulaEnPeligro,
@@ -35,7 +35,7 @@ import {
   money,
   signedPct,
   toneOf,
-} from "@/components/equipo/ui";
+} from "@/components/ui/kit";
 
 const RIESGO = {
   ALTO: { label: "Riesgo alto", color: TONE.red },

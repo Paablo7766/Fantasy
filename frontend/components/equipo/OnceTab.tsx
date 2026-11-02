@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { jornadaEv, playerName, points, projectedLineupPoints, titularShare } from "@/lib/format";
-import { signedPoints } from "@/lib/hoy";
-import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
+import { jornadaEv, playerName, points, projectedLineupPoints, titularShare } from "@/lib/core/format";
+import { signedPoints } from "@/lib/inicio/hoy";
+import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { CapitanPick, Gap, OptimizePayload, PlanPayload, Player, SquadsPayload } from "@/lib/types";
 import {
   Disclosure,
@@ -21,7 +21,7 @@ import {
   ringColor,
   signedPct,
   toneOf,
-} from "@/components/equipo/ui";
+} from "@/components/ui/kit";
 
 const ROW_Y: Record<string, number> = { DEL: 15, MC: 39, DEF: 63, POR: 86 };
 const LINES = ["DEL", "MC", "DEF", "POR"] as const;

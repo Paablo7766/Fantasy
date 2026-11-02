@@ -1,11 +1,11 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { apiUrl, endpoint, getJson, postJson } from "@/lib/api";
-import { readDashboardSnapshot, writeDashboardBlock } from "@/lib/dashboardCache";
-import { durationAgo, liveAge, stamp } from "@/lib/format";
-import { refreshPhaseLabel, refreshPct, refreshSummary } from "@/lib/refreshStatus";
-import { useNow } from "@/lib/useClock";
+import { apiUrl, endpoint, getJson, postJson } from "@/lib/core/api";
+import { readDashboardSnapshot, writeDashboardBlock } from "@/lib/core/dashboardCache";
+import { durationAgo, liveAge, stamp } from "@/lib/core/format";
+import { refreshPhaseLabel, refreshPct, refreshSummary } from "@/lib/core/refreshStatus";
+import { useNow } from "@/lib/core/useClock";
 import type {
   ApiError,
   DashboardState,
