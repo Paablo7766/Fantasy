@@ -26,6 +26,11 @@ MEJORA_MINIMA = 0.1
 # Seguir con los objetivos de ayer solo exige MEJORA_MINIMA. Valor inicial,
 # pendiente de calibrar con plan_snapshots y los puntos reales.
 UMBRAL_CAMBIO_XP = 0.5
+# Peso de cada una de las tres jornadas siguientes (campo ``futuro``, su suma)
+# frente a la próxima, que pesa 1. La mitad: el once de dentro de dos semanas no
+# es seguro (rotaciones, lesiones, otro mercado) y la proyección de J2-J4 es más
+# gruesa. Con 0,5 la próxima jornada pesa el 40 % y las otras tres el 60 %.
+PESO_FUTURO = 0.5
 # Prima en el objetivo por fichar a quien ya recomendó el plan anterior. Un
 # objetivo nuevo tiene que ganarle por más que esto para desplazarlo.
 CONTINUIDAD_XP = 0.4
@@ -213,6 +218,26 @@ def _accion(
         "prevision_7d_pct": None if prevision_7d_pct is None else round(prevision_7d_pct, 2),
         "detalle": detalle,
     }
+
+
+def _futuro(row: dict[str, Any]) -> float:
+    value = row.get("futuro")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    return float(value)
+
+
+def _valor_horizonte(row: dict[str, Any]) -> float:
+    """Media ponderada por jornada: la próxima pesa 1 y cada una de las tres siguientes, PESO_FUTURO.
+
+    Queda en puntos de una jornada, la escala en la que están el peaje, la
+    prima de continuidad y el umbral. Sin calendario es la jornada sin más.
+    """
+    jornada = float(row.get("jornada") or 0.0)
+    futuro = _futuro(row)
+    if futuro <= 0:
+        return jornada
+    return (jornada + PESO_FUTURO * futuro) / (1.0 + 3.0 * PESO_FUTURO)
 
 
 def _leer_pct(row: dict[str, Any]) -> float | None:
@@ -867,14 +892,17 @@ def build_plan_fichajes(
         # El chollo de banquillo solo gasta la caja que sobra después de poder alinear 11.
         problem += pulp.lpSum(especulativos) <= holgura
 
-    puntos = pulp.lpSum(float(row.get("jornada") or 0.0) * en_once[f"own:{row['player_id']}"] for row in plantilla)
+    # El once se elige por esta jornada y las tres siguientes: un fichaje con
+    # buen calendario no pierde contra otro que solo rinde el próximo partido.
+    # Busca no tiene calendario: cuenta como BUSCA_PUNTOS en cada jornada.
+    puntos = pulp.lpSum(_valor_horizonte(row) * en_once[f"own:{row['player_id']}"] for row in plantilla)
     puntos += pulp.lpSum(
-        float(row.get("jornada") or 0.0) * en_once[f"bid:{row['player_id']}"]
+        _valor_horizonte(row) * en_once[f"bid:{row['player_id']}"]
         for row in compras
         if f"bid:{row['player_id']}" in en_once
     )
     puntos += pulp.lpSum(
-        float(row.get("jornada") or 0.0) * en_once[f"clause:{row['player_id']}"]
+        _valor_horizonte(row) * en_once[f"clause:{row['player_id']}"]
         for row in raids
         if f"clause:{row['player_id']}" in en_once
     )
@@ -1196,6 +1224,15 @@ def build_plan_fichajes(
             )
 
     mejora = round(puntos_once - float(baseline_puntos), 2)
+    # La misma mejora, medida en la media ponderada de las cuatro jornadas.
+    horizonte_once = sum(
+        _valor_horizonte(row)
+        for origen, filas in (("own", plantilla), ("bid", compras), ("clause", raids))
+        for row in filas
+        if _on(en_once.get(f"{origen}:{row['player_id']}"))
+    )
+    horizonte_base = sum(_valor_horizonte(row) for row in plantilla if row["player_id"] in xi_ids)
+    mejora_horizonte = round(horizonte_once - horizonte_base, 2)
     hay_urgente = any(accion.get("impulso") in {"MUST-BUY", "CHOLLO"} for accion in acciones)
     vende_baja = any(row["player_id"] in bajas for row in ventas_sel)
     cubre_deuda = saldo < 0 and bool(ventas_hoy)
@@ -1206,7 +1243,7 @@ def build_plan_fichajes(
     # Mantener lo de ayer es barato; cambiar de objetivo tiene que merecer la pena.
     solo_continua = bool(fichados) and all(player_id in previos for player_id in fichados)
     umbral = MEJORA_MINIMA if solo_continua else UMBRAL_CAMBIO_XP
-    if mejora < umbral and not hay_urgente and not vende_baja and not cubre_deuda:
+    if mejora_horizonte < umbral and not hay_urgente and not vende_baja and not cubre_deuda:
         vacio = _vacio(saldo, ratio, baseline_puntos, meta)
         vacio["en_radar"] = radar
         vacio["acciones"] = _escaparate(set())
@@ -1234,6 +1271,7 @@ def build_plan_fichajes(
         "ratio_mercado": round(ratio, 2) if ratio else None,
         "once": once,
         "en_radar": radar,
+        "mejora_horizonte": mejora_horizonte,
         "objetivos_previos": sorted(previos),
         "umbral_cambio_xp": umbral,
         **meta,

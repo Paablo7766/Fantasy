@@ -264,6 +264,29 @@ def _set_difficulty(row: dict[str, Any], source: dict[str, Any]) -> None:
             return
 
 
+def _set_calendar(row: dict[str, Any], source: dict[str, Any]) -> None:
+    """Próximos partidos: el propio da el próximo y AnalíticaFantasy los siguientes."""
+    from toolbox.engine.comparador_liga import calendario_combinado
+
+    if row.get("calendario"):
+        return
+    calendar = calendario_combinado(source)
+    if len(calendar) >= 2:
+        row["calendario"] = calendar
+
+
+def _futuro(row: dict[str, Any]) -> float:
+    """xP de las tres jornadas siguientes a la próxima, o 0 sin calendario."""
+    # comparador_liga importa de este módulo: el import va aquí para no cerrar el ciclo.
+    from toolbox.engine.comparador_liga import xp_jornadas_siguientes
+
+    jornada = row.get("jornada")
+    if not isinstance(jornada, (int, float)) or isinstance(jornada, bool) or not row.get("calendario"):
+        return 0.0
+    valor = xp_jornadas_siguientes({"jornada": float(jornada), "calendario": row["calendario"]})
+    return round(float(valor), 3) if valor is not None else 0.0
+
+
 def _en_forma(row: dict[str, Any]) -> bool:
     recientes = row.get("recientes") if isinstance(row.get("recientes"), list) else []
     if len(recientes) >= 2:
@@ -348,6 +371,7 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
         _set_points(row, player, prefer=False)
         _set_price(row, player)
         _set_difficulty(row, player)
+        _set_calendar(row, player)
         if exclusion_from_status(player.get("player_status") if isinstance(player.get("player_status"), str) else None):
             row["excluded"] = True
 
@@ -1078,6 +1102,7 @@ def _plan(
                 "valor": row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None,
                 "p_titular": row.get("p_titular") if isinstance(row.get("p_titular"), (int, float)) and not isinstance(row.get("p_titular"), bool) else row.get("prob_titular"),
                 "tiene_oferta_laliga": row.get("tiene_oferta_laliga") is True,
+                "futuro": _futuro(row),
             }
         )
     if saldo is not None and saldo < 0:
@@ -1136,6 +1161,7 @@ def _plan(
                 "jornada": float(jornada),
                 "euros": int(coste),
                 "caduca_hoy": row.get("caduca_hoy") is True and not row.get("seller_team_id"),
+                "futuro": _futuro(row),
                 "pct": _pct_previsto(previsto, player_id),
                 "valor": row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None,
             }
@@ -1172,6 +1198,7 @@ def _plan(
                 "jornada": float(jornada),
                 "euros": clause,
                 "eficiencia": float(jornada) / clause,
+                "futuro": _futuro(row),
                 "pct": _pct_previsto(previsto, player_id),
                 "valor": valor if isinstance(valor, int) and valor > 0 else None,
             }

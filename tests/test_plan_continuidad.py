@@ -89,6 +89,52 @@ class ContinuidadTests(unittest.TestCase):
         self.assertEqual(plan["umbral_cambio_xp"], 0.1)
 
 
+class HorizonteTests(unittest.TestCase):
+    def test_a_igual_jornada_gana_el_de_mejor_calendario(self) -> None:
+        mercado = [
+            _jugador("duro", "DEL", 6.0, euros=3_000_000, futuro=12.0),
+            _jugador("blando", "DEL", 6.0, euros=3_000_000, futuro=18.0),
+        ]
+        plan = _viernes(mercado)
+        self.assertEqual(_pujas(plan), ["blando"])
+
+    def test_el_calendario_compensa_una_jornada_algo_peor(self) -> None:
+        mercado = [
+            _jugador("hoy", "DEL", 6.2, euros=3_000_000, futuro=12.0),
+            _jugador("despues", "DEL", 5.8, euros=3_000_000, futuro=18.0),
+        ]
+        plan = _viernes(mercado)
+        self.assertEqual(_pujas(plan), ["despues"])
+        self.assertGreater(plan["mejora_horizonte"], plan["mejora_puntos_jornada"])
+
+    def test_las_tres_siguientes_se_reescalan_por_dificultad(self) -> None:
+        from toolbox.engine.comparador_liga import xp_jornadas_siguientes
+
+        calendario = [{"difficulty": "media"}, {"difficulty": "facil"}, {"difficulty": "dificil"}, {"difficulty": "media"}]
+        self.assertAlmostEqual(xp_jornadas_siguientes({"jornada": 5.0, "calendario": calendario}), 5.3 + 4.6 + 5.0)
+        self.assertIsNone(xp_jornadas_siguientes({"jornada": 5.0, "calendario": calendario[:1]}))
+
+
+class CalendarioCombinadoTests(unittest.TestCase):
+    def test_el_propio_da_la_proxima_y_af_las_siguientes(self) -> None:
+        from toolbox.engine.comparador_liga import calendario_combinado
+
+        jugador = {
+            "own_calendar": [{"matchday": 0, "opponent": "Getafe"}],
+            "af_calendar": [{"matchday": 2, "opponent": "Espanyol"}, {"matchday": 1, "opponent": "Real Madrid"}],
+        }
+        rivales = [cell["opponent"] for cell in calendario_combinado(jugador)]
+        self.assertEqual(rivales, ["Getafe", "Real Madrid", "Espanyol"])
+
+    def test_sin_celda_propia_af_no_se_toma_por_la_proxima(self) -> None:
+        from toolbox.engine.comparador_liga import calendario_combinado
+
+        jugador = {"af_calendar": [{"matchday": 1, "opponent": "Real Madrid", "difficulty": "very_hard"}]}
+        calendario = calendario_combinado(jugador)
+        self.assertEqual(calendario[0], {"difficulty": "media"})
+        self.assertEqual(calendario[1]["opponent"], "Real Madrid")
+
+
 class MemoriaTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -160,6 +206,36 @@ class ProbabilidadDeGanarTests(unittest.TestCase):
         self.assertEqual(report["samples"], 2)
         self.assertAlmostEqual(report["brier"], ((0.8 - 1) ** 2 + 0.6**2) / 2, places=4)
         self.assertFalse(report["suficiente"])
+
+
+class PujaPropiaTests(unittest.TestCase):
+    def test_la_puja_propia_sale_del_anuncio(self) -> None:
+        from toolbox.normalize import normalize_listing
+
+        listing = normalize_listing({"id": "m1", "playerMaster": {"id": "p1"}, "salePrice": 100, "bid": {"money": 1_500_000}})
+        self.assertEqual(listing["own_bid"], 1_500_000)
+        self.assertIsNone(normalize_listing({"id": "m2", "playerMaster": {"id": "p2"}})["own_bid"])
+
+    def test_con_pujas_propias_solo_cuentan_esas(self) -> None:
+        from toolbox.engine_calibration import _ensure_tracking_schema, win_probability_calibration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = sqlite3.connect(Path(tmp) / "db.sqlite")
+            try:
+                _ensure_tracking_schema(conn)
+                conn.executemany(
+                    """
+                    insert into market_decision_snapshots
+                    (snapshot_day, player_id, decision, win_probability, outcome, stored_at, own_bid)
+                    values (?, ?, 'PUJAR', ?, ?, 0, ?)
+                    """,
+                    [("2026-11-01", "a", 0.9, "hit", 2_000_000), ("2026-11-01", "b", 0.9, "lost", None)],
+                )
+                report = win_probability_calibration(conn)
+            finally:
+                conn.close()
+        self.assertTrue(report["solo_pujas_propias"])
+        self.assertEqual(report["samples"], 1)
 
 
 class ComprasSinReferenciaTests(unittest.TestCase):

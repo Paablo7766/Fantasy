@@ -101,12 +101,37 @@ def _factor(dificultad: Any) -> float:
     return _FACTOR_DIFICULTAD.get(_clave(dificultad), 1.0)
 
 
+def _matchday(cell: Any) -> int | None:
+    value = cell.get("matchday") if isinstance(cell, dict) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def calendario_combinado(jugador: dict[str, Any]) -> list[Any]:
+    """Próximos cuatro partidos en orden, con la próxima jornada primero.
+
+    ``own_calendar`` solo trae el próximo partido (``matchday`` 0) y
+    ``af_calendar`` empieza en el siguiente (``matchday`` 1, 2…). Leer solo
+    ``af_calendar`` tomaba la jornada siguiente por la próxima y desfasaba
+    toda la ventana. Sin celda propia, la próxima se da por media: su rival ya
+    va dentro del xP de la jornada.
+    """
+    raw = jugador.get("calendario")
+    if isinstance(raw, list) and raw:
+        return raw[:4]
+    own = [cell for cell in jugador.get("own_calendar") or [] if isinstance(cell, dict)]
+    af = [cell for cell in jugador.get("af_calendar") or [] if isinstance(cell, dict)]
+    proxima = next((cell for cell in own if (_matchday(cell) or 0) == 0), None)
+    siguientes = sorted(
+        (cell for cell in af if (_matchday(cell) or 0) >= 1),
+        key=lambda cell: _matchday(cell) or 0,
+    )
+    if not siguientes:
+        return [proxima] if proxima is not None else []
+    return [proxima if proxima is not None else {"difficulty": "media"}, *siguientes][:4]
+
+
 def _calendario(jugador: dict[str, Any]) -> list[Any]:
-    for key in ("calendario", "own_calendar", "af_calendar"):
-        raw = jugador.get(key)
-        if isinstance(raw, list) and raw:
-            return raw[:4]
-    return []
+    return calendario_combinado(jugador)
 
 
 def _xp_j1(jugador: dict[str, Any]) -> float | None:
@@ -140,6 +165,27 @@ def xp_4_jornadas(jugador: dict[str, Any]) -> float | None:
     origen = factores[0] or 1.0
     ajustados = [base * (factor / origen) for factor in factores[:4]]
     return sum(ajustados) / len(ajustados)
+
+
+def xp_jornadas_siguientes(jugador: dict[str, Any]) -> float | None:
+    """Puntos esperados sumados de las tres jornadas después de la próxima.
+
+    Misma escala que ``xp_4_jornadas``: el xP de la próxima se reescala por la
+    dificultad de cada partido respecto a la del primero. Sin calendario de
+    al menos dos partidos no hay nada que proyectar y devuelve ``None``.
+    """
+    base = _xp_j1(jugador)
+    fechas = _calendario(jugador)
+    if base is None or len(fechas) < 2:
+        return None
+    factores = [
+        _factor((fecha.get("difficulty") or fecha.get("dificultad")) if isinstance(fecha, dict) else fecha)
+        for fecha in fechas
+    ]
+    while len(factores) < 4:
+        factores.append(factores[-1])
+    origen = factores[0] or 1.0
+    return sum(base * (factor / origen) for factor in factores[1:4])
 
 
 # Una racha de calendario que mejora más de esto tras un partido duro es un valle de pánico.
