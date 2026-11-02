@@ -2318,7 +2318,8 @@ EXTERNAL_HOSTS = frozenset(
         "tmapi.transfermarkt.technology",
         "tmapi-alpha.transfermarkt.technology",
         "transfermarkt-api.fly.dev",
-        "api.the-odds-api.com",
+        "api.oddspapi.io",
+        "api.sportsgameodds.com",
     }
 )
 
@@ -2646,6 +2647,15 @@ class ExternalClient:
                 "Origin": "https://www.sofascore.com",
                 "Accept": "application/json, text/plain, */*",
             }
+        if host.endswith("oddspapi.io"):
+            # La clave va en la URL (``apiKey``); con cabecera responde 401.
+            return {"Accept": "application/json"}
+        if host.endswith("sportsgameodds.com"):
+            api_key = os.getenv("SPORTSGAMEODDS_API_KEY", "").strip()
+            headers = {"Accept": "application/json"}
+            if api_key:
+                headers["x-api-key"] = api_key
+            return headers
         return None
 
     def _request(self, url: str) -> str:

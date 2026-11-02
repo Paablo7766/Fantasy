@@ -69,6 +69,11 @@ _CLUB_ALIASES = {
     "espanyol de barcelona": "espanyol",
     "rayo vallecano de madrid": "rayo",
     "real betis balompie": "betis",
+    # Nombres con los que OddsPapi etiqueta a estos clubes.
+    "espanyol barcelona": "espanyol",
+    "rc deportivo de a coruna": "deportivo",
+    "real betis seville": "betis",
+    "real sociedad san sebastian": "real sociedad",
     # «Real Sociedad de Fútbol»: «futbol» es ruido y deja el «de» colgando.
     "real sociedad de": "real sociedad",
 }

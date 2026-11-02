@@ -79,7 +79,8 @@ _HOST_RULES: tuple[tuple[str, str], ...] = (
     ("analiticafantasy.com", "analiticafantasy"),
     ("jornadaperfecta.com", "jornadaperfecta"),
     ("predicted11.com", "predicted11"),
-    ("the-odds-api.com", "odds"),
+    ("oddspapi.io", "odds"),
+    ("sportsgameodds.com", "odds"),
 )
 
 RISK_RULES: tuple[str, ...] = (

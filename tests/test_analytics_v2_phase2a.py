@@ -8,7 +8,7 @@ from toolbox.scrapers import (
     MatchOddsBundle,
     build_simulated_match_odds_index,
     match_odds_key,
-    parse_the_odds_api_payload,
+    parse_oddspapi_payload,
 )
 from toolbox.own_intel import build_team_calendar_cell
 from toolbox.understat import (
@@ -121,52 +121,39 @@ class RollingOddsPipelineTests(unittest.TestCase):
         self.assertIsNotNone(cell.get("market_weight"))
         self.assertGreater(cell["recommendation_pct"], 0)
 
-    def test_parse_the_odds_api_payload(self) -> None:
+    def test_parse_oddspapi_payload(self) -> None:
+        def line(price: float) -> dict:
+            return {"players": {"0": {"active": True, "price": price}}}
+
         payload = [
             {
-                "home_team": "Barcelona",
-                "away_team": "Sevilla",
-                "bookmakers": [
-                    {
-                        "markets": [
-                            {
-                                "key": "h2h",
-                                "outcomes": [
-                                    {"name": "Barcelona", "price": 1.55},
-                                    {"name": "Sevilla", "price": 5.5},
-                                    {"name": "Draw", "price": 4.2},
-                                ],
-                            },
-                            {
-                                "key": "totals",
-                                "outcomes": [
-                                    {"name": "Over", "price": 1.85, "point": 2.5},
-                                    {"name": "Under", "price": 2.0, "point": 2.5},
-                                ],
-                            },
-                            {
-                                "key": "btts",
-                                "outcomes": [
-                                    {"name": "Yes", "price": 1.72},
-                                    {"name": "No", "price": 2.1},
-                                ],
-                            },
-                        ]
+                "participant1Name": "Barcelona",
+                "participant2Name": "Sevilla",
+                "statusId": 0,
+                "startTime": "2999-01-01T20:00:00.000Z",
+                "bookmakerOdds": {
+                    "pinnacle": {
+                        "suspended": False,
+                        "markets": {
+                            "101": {"outcomes": {"101": line(1.55), "102": line(4.2), "103": line(5.5)}},
+                            "1010": {"outcomes": {"1010": line(1.85), "1011": line(2.0)}},
+                            "104": {"outcomes": {"104": line(1.72), "105": line(2.1)}},
+                        },
                     }
-                ],
+                },
             }
         ]
-        index = parse_the_odds_api_payload(payload)
+        index = parse_oddspapi_payload(payload)
         key = match_odds_key("Barcelona", "Sevilla")
         self.assertIn(key, index)
         row = index[key]
-        self.assertEqual(row["source"], "the_odds_api")
+        self.assertEqual(row["source"], "oddspapi")
         bundle = MatchOddsBundle(
             match_key=key,
             odds_1x2=tuple(row["odds_1x2"]),
             odds_ou25=tuple(row["odds_ou25"]) if row.get("odds_ou25") else None,
             odds_btts=tuple(row["odds_btts"]) if row.get("odds_btts") else None,
-            source="the_odds_api",
+            source="oddspapi",
         )
         proj = build_hybrid_match_projection(1.5, 1.1, odds_1x2=bundle.odds_1x2, hours_to_kickoff=24.0)
         self.assertGreater(proj.lambda_home, 0.2)

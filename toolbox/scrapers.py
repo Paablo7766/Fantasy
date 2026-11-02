@@ -20,7 +20,7 @@ import urllib.parse
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 from toolbox.cache import EntityStore, madrid_day
@@ -127,11 +127,32 @@ class ScrapeTTL:
         )
 
 
-THE_ODDS_API_URL = (
-    "https://api.the-odds-api.com/v4/sports/soccer_spain_la_liga/odds"
-    "?regions=eu&markets=h2h,totals,btts&oddsFormat=decimal"
-)
+# OddsPapi v4. La clave va como parámetro ``apiKey``: con una cabecera responde
+# 401. Fútbol es el deporte 10 y LaLiga el torneo 8. Pinnacle es la casa de
+# referencia; sin filtrar, una sola consulta trae 268 casas (varios MB).
+ODDSPAPI_BASE = "https://api.oddspapi.io/v4"
+SOCCER_SPORT_ID = 10
+LALIGA_TOURNAMENT_ID = 8
+# SportsGameOdds pide tres semanas de calendario.
+ODDS_LOOKAHEAD_SECONDS = 21 * 24 * 3600
+# El listado de OddsPapi admite como mucho 10 días entre ``from`` y ``to``.
+ODDS_LOOKAHEAD_DAYS = 9
+# Cuotas por partido = una consulta cada una; el plan gratuito da 250 al mes.
+ODDSPAPI_MAX_FIXTURES = 12
+PREFERRED_BOOKMAKER = "pinnacle"
 LALIGA_ODDS_SIM_CACHE_KEY = "laliga_odds_sim:v1"
+# 1X2, ambos marcan y más/menos 2,5 goles a tiempo completo. El id de mercado
+# es el del primer resultado: 101/102/103 = local/empate/visitante.
+_MARKET_1X2 = "101"
+_MARKET_BTTS = "104"
+_MARKET_OU_25 = "1010"
+_OUTCOME_HOME = 101
+_OUTCOME_DRAW = 102
+_OUTCOME_AWAY = 103
+_OUTCOME_BTTS_YES = 104
+_OUTCOME_BTTS_NO = 105
+_OUTCOME_OVER_25 = 1010
+_OUTCOME_UNDER_25 = 1011
 
 
 @dataclass(frozen=True)
@@ -246,87 +267,359 @@ def build_simulated_match_odds_index(
     return index
 
 
-def parse_the_odds_api_payload(payload: Any) -> dict[str, dict[str, Any]]:
-    """Normaliza eventos The Odds API → índice ``home|away``."""
-    if not isinstance(payload, list):
+def _oddspapi_key() -> str:
+    return os.getenv("ODDSPAPI_API_KEY", "").strip()
+
+
+def _oddspapi_url(path: str, **params: Any) -> str:
+    query = {**params, "apiKey": _oddspapi_key()}
+    return f"{ODDSPAPI_BASE}{path}?{urllib.parse.urlencode(query)}"
+
+
+def oddspapi_fixtures_url(now: datetime) -> str:
+    """Partidos de LaLiga entre hoy y ``ODDS_LOOKAHEAD_DAYS`` días."""
+    end = now + timedelta(days=ODDS_LOOKAHEAD_DAYS)
+    return _oddspapi_url(
+        "/fixtures",
+        sportId=SOCCER_SPORT_ID,
+        tournamentId=LALIGA_TOURNAMENT_ID,
+        **{"from": now.strftime("%Y-%m-%d"), "to": end.strftime("%Y-%m-%d")},
+    )
+
+
+def oddspapi_odds_url(fixture_id: str) -> str:
+    """Cuotas de un partido, solo de la casa de referencia."""
+    return _oddspapi_url("/odds", fixtureId=fixture_id, bookmakers=PREFERRED_BOOKMAKER)
+
+
+def _kickoff(fixture: dict[str, Any]) -> datetime | None:
+    raw = fixture.get("startTime")
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return datetime.fromtimestamp(float(raw), tz=timezone.utc)
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    return None
+
+
+def _already_started(fixture: dict[str, Any], now: datetime) -> bool:
+    """Pitado o terminado: esas cuotas no son una probabilidad previa."""
+    status_id = fixture.get("statusId")
+    if isinstance(status_id, int) and not isinstance(status_id, bool) and status_id != 0:
+        return True
+    kickoff = _kickoff(fixture)
+    return kickoff is not None and kickoff <= now
+
+
+def oddspapi_upcoming_fixtures(payload: Any, now: datetime) -> list[dict[str, Any]]:
+    """Partidos con cuotas y sin empezar, por orden de inicio y con tope de consultas."""
+    rows = payload if isinstance(payload, list) else []
+    upcoming = [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and row.get("hasOdds") is True
+        and isinstance(row.get("fixtureId"), str)
+        and row["fixtureId"].strip()
+        and not _already_started(row, now)
+    ]
+    upcoming.sort(key=lambda row: _kickoff(row) or datetime.max.replace(tzinfo=timezone.utc))
+    return upcoming[:ODDSPAPI_MAX_FIXTURES]
+
+
+def _decimal_price(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    price = float(value)
+    return price if price > 1.0 else None
+
+
+def _market_prices(book: dict[str, Any], market_id: str) -> dict[int, float]:
+    """``outcomeId`` → cuota decimal de las líneas activas de un mercado de partido."""
+    markets = book.get("markets") if isinstance(book.get("markets"), dict) else {}
+    market = markets.get(market_id)
+    if not isinstance(market, dict) or market.get("marketActive") is False:
         return {}
-    index: dict[str, dict[str, Any]] = {}
-    for event in payload:
-        if not isinstance(event, dict):
+    outcomes = market.get("outcomes") if isinstance(market.get("outcomes"), dict) else {}
+    found: dict[int, float] = {}
+    for outcome_id, outcome in outcomes.items():
+        players = outcome.get("players") if isinstance(outcome, dict) else None
+        line = players.get("0") if isinstance(players, dict) else None
+        if not isinstance(line, dict) or line.get("active") is False:
             continue
-        home_name = event.get("home_team")
-        away_name = event.get("away_team")
+        price = _decimal_price(line.get("price"))
+        try:
+            identifier = int(outcome_id)
+        except (TypeError, ValueError):
+            continue
+        if price is not None:
+            found[identifier] = price
+    return found
+
+
+def parse_oddspapi_payload(payload: Any, *, now: datetime | None = None) -> dict[str, dict[str, Any]]:
+    """Normaliza partidos de OddsPapi v4 → índice ``local|visitante``.
+
+    Cada elemento es la respuesta de ``/odds`` con los nombres de los equipos
+    del listado de partidos. El 1X2 es el mercado 101 (resultados 101/102/103),
+    el más/menos 2,5 es 1010 (1010/1011) y ambos marcan 104 (104/105). Sin 1X2
+    el partido no entra.
+    """
+    rows = payload if isinstance(payload, list) else []
+    moment = now or datetime.now(timezone.utc)
+    index: dict[str, dict[str, Any]] = {}
+    for fixture in rows:
+        if not isinstance(fixture, dict) or _already_started(fixture, moment):
+            continue
+        home_name = fixture.get("participant1Name")
+        away_name = fixture.get("participant2Name")
         if not isinstance(home_name, str) or not isinstance(away_name, str):
             continue
+        books = fixture.get("bookmakerOdds") if isinstance(fixture.get("bookmakerOdds"), dict) else {}
+        book = books.get(PREFERRED_BOOKMAKER)
+        if not isinstance(book, dict) or book.get("suspended") is True:
+            continue
+        match = _market_prices(book, _MARKET_1X2)
+        home_odds = match.get(_OUTCOME_HOME)
+        draw_odds = match.get(_OUTCOME_DRAW)
+        away_odds = match.get(_OUTCOME_AWAY)
+        if home_odds is None or draw_odds is None or away_odds is None:
+            continue
+        totals = _market_prices(book, _MARKET_OU_25)
+        btts = _market_prices(book, _MARKET_BTTS)
+        over, under = totals.get(_OUTCOME_OVER_25), totals.get(_OUTCOME_UNDER_25)
+        btts_yes, btts_no = btts.get(_OUTCOME_BTTS_YES), btts.get(_OUTCOME_BTTS_NO)
         key = match_odds_key(home_name, away_name)
-        bookmakers = event.get("bookmakers") if isinstance(event.get("bookmakers"), list) else []
-        if not bookmakers:
-            continue
-        book = bookmakers[0] if isinstance(bookmakers[0], dict) else {}
-        markets = book.get("markets") if isinstance(book.get("markets"), list) else []
-        h2h: dict[str, float] = {}
-        over: float | None = None
-        under: float | None = None
-        btts_yes: float | None = None
-        btts_no: float | None = None
-        for market in markets:
-            if not isinstance(market, dict):
-                continue
-            mkey = market.get("key")
-            outcomes = market.get("outcomes") if isinstance(market.get("outcomes"), list) else []
-            if mkey == "h2h":
-                for outcome in outcomes:
-                    if not isinstance(outcome, dict):
-                        continue
-                    name = outcome.get("name")
-                    price = outcome.get("price")
-                    if isinstance(name, str) and isinstance(price, (int, float)) and float(price) > 1.0:
-                        h2h[name] = float(price)
-            elif mkey == "totals":
-                for outcome in outcomes:
-                    if not isinstance(outcome, dict):
-                        continue
-                    point = outcome.get("point")
-                    if point is not None and float(point) != 2.5:
-                        continue
-                    name = str(outcome.get("name") or "").lower()
-                    price = outcome.get("price")
-                    if not isinstance(price, (int, float)) or float(price) <= 1.0:
-                        continue
-                    if name == "over":
-                        over = float(price)
-                    elif name == "under":
-                        under = float(price)
-            elif mkey == "btts":
-                for outcome in outcomes:
-                    if not isinstance(outcome, dict):
-                        continue
-                    name = str(outcome.get("name") or "").lower()
-                    price = outcome.get("price")
-                    if not isinstance(price, (int, float)) or float(price) <= 1.0:
-                        continue
-                    if name in {"yes", "si", "sí"}:
-                        btts_yes = float(price)
-                    elif name == "no":
-                        btts_no = float(price)
-        home_odds = h2h.get(home_name)
-        away_odds = h2h.get(away_name)
-        draw_odds = None
-        for name, price in h2h.items():
-            if name not in {home_name, away_name}:
-                draw_odds = price
-                break
-        if home_odds is None or away_odds is None or draw_odds is None:
-            continue
         bundle = MatchOddsBundle(
             match_key=key,
             odds_1x2=(home_odds, draw_odds, away_odds),
             odds_ou25=(over, under) if over is not None and under is not None else None,
             odds_btts=(btts_yes, btts_no) if btts_yes is not None and btts_no is not None else None,
-            source="the_odds_api",
+            source="oddspapi",
         )
         index[key] = bundle.as_dict()
     return index
+
+
+SPORTSGAMEODDS_BASE = "https://api.sportsgameodds.com/v2"
+SGO_LEAGUE_ID = "LA_LIGA"
+SGO_ODD_HOME = "points-home-reg-ml3way-home"
+SGO_ODD_DRAW = "points-all-reg-ml3way-draw"
+SGO_ODD_AWAY = "points-away-reg-ml3way-away"
+SGO_ODD_OVER = "points-all-reg-ou-over"
+SGO_ODD_UNDER = "points-all-reg-ou-under"
+SGO_ODD_BTTS_YES = "bothTeamsScored-all-game-yn-yes"
+SGO_ODD_BTTS_NO = "bothTeamsScored-all-game-yn-no"
+_SGO_ODD_IDS = (
+    SGO_ODD_HOME,
+    SGO_ODD_DRAW,
+    SGO_ODD_AWAY,
+    SGO_ODD_OVER,
+    SGO_ODD_UNDER,
+    SGO_ODD_BTTS_YES,
+    SGO_ODD_BTTS_NO,
+)
+
+
+def sportsgameodds_events_url(now: datetime) -> str:
+    """LaLiga aún no empezada, con 1X2, más/menos y ambos marcan. La clave va en la cabecera."""
+    start = (now - timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    end = (now + timedelta(seconds=ODDS_LOOKAHEAD_SECONDS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    odds = urllib.parse.quote(",".join(_SGO_ODD_IDS), safe=",")
+    return (
+        f"{SPORTSGAMEODDS_BASE}/events"
+        f"?leagueID={SGO_LEAGUE_ID}&oddsAvailable=true&started=false&live=false"
+        f"&startsAfter={urllib.parse.quote(start)}&startsBefore={urllib.parse.quote(end)}"
+        f"&limit=50&oddID={odds}"
+    )
+
+
+def _american_to_decimal(value: Any) -> float | None:
+    """+150 → 2,50 y −200 → 1,50. Un decimal ya mayor que 1 se deja igual."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        text = value.strip().replace("−", "-")
+        if not text:
+            return None
+        try:
+            number = float(text)
+        except ValueError:
+            return None
+    else:
+        return None
+    if abs(number) >= 100:
+        decimal = 1 + number / 100 if number > 0 else 1 + 100 / abs(number)
+    elif number > 1:
+        decimal = number
+    else:
+        return None
+    return decimal if decimal > 1 else None
+
+
+def _sgo_line(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.replace("+", "").replace("−", "-"))
+        except ValueError:
+            return None
+    return None
+
+
+def _sgo_team_name(team: Any) -> str | None:
+    if not isinstance(team, dict):
+        return None
+    names = team.get("names") if isinstance(team.get("names"), dict) else {}
+    for key in ("medium", "long", "short"):
+        value = names.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _sgo_started(event: dict[str, Any], now: datetime) -> bool:
+    status = event.get("status") if isinstance(event.get("status"), dict) else {}
+    if any(status.get(flag) is True for flag in ("live", "started", "ended", "completed", "cancelled")):
+        return True
+    raw = status.get("startsAt") or event.get("startsAt")
+    if not isinstance(raw, str) or not raw.strip():
+        return False
+    try:
+        kickoff = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if kickoff.tzinfo is None:
+        kickoff = kickoff.replace(tzinfo=timezone.utc)
+    return kickoff <= now
+
+
+def _sgo_price(odd: Any) -> tuple[float | None, float | None]:
+    """Precio decimal y línea. Pinnacle manda; si no está, vale el consenso con margen."""
+    if not isinstance(odd, dict) or odd.get("ended") is True or odd.get("cancelled") is True:
+        return None, None
+    books = odd.get("byBookmaker") if isinstance(odd.get("byBookmaker"), dict) else {}
+    chosen = books.get(PREFERRED_BOOKMAKER) if isinstance(books.get(PREFERRED_BOOKMAKER), dict) else None
+    if isinstance(chosen, dict) and chosen.get("available") is False:
+        chosen = None
+    if chosen is None:
+        for book in books.values():
+            if isinstance(book, dict) and book.get("available") is not False and book.get("odds") is not None:
+                chosen = book
+                break
+    if isinstance(chosen, dict):
+        price = _american_to_decimal(chosen.get("odds"))
+        line = _sgo_line(chosen.get("overUnder"))
+        if price is not None:
+            return price, line
+    return _american_to_decimal(odd.get("bookOdds")), _sgo_line(odd.get("bookOverUnder"))
+
+
+def parse_sportsgameodds_payload(payload: Any, *, now: datetime | None = None) -> dict[str, dict[str, Any]]:
+    """Normaliza eventos de SportsGameOdds → índice ``local|visitante``.
+
+    El 1X2 es el tres vías de los 90 minutos. El más/menos solo entra si la
+    línea es 2,5. Las cuotas americanas pasan a decimal.
+    """
+    rows = payload.get("data") if isinstance(payload, dict) and isinstance(payload.get("data"), list) else payload
+    if not isinstance(rows, list):
+        return {}
+    moment = now or datetime.now(timezone.utc)
+    index: dict[str, dict[str, Any]] = {}
+    for event in rows:
+        if not isinstance(event, dict) or _sgo_started(event, moment):
+            continue
+        teams = event.get("teams") if isinstance(event.get("teams"), dict) else {}
+        home_name = _sgo_team_name(teams.get("home"))
+        away_name = _sgo_team_name(teams.get("away"))
+        if not home_name or not away_name:
+            continue
+        odds = event.get("odds") if isinstance(event.get("odds"), dict) else {}
+        home_odds, _home_line = _sgo_price(odds.get(SGO_ODD_HOME))
+        draw_odds, _draw_line = _sgo_price(odds.get(SGO_ODD_DRAW))
+        away_odds, _away_line = _sgo_price(odds.get(SGO_ODD_AWAY))
+        if home_odds is None or draw_odds is None or away_odds is None:
+            continue
+        over, over_line = _sgo_price(odds.get(SGO_ODD_OVER))
+        under, under_line = _sgo_price(odds.get(SGO_ODD_UNDER))
+        line = over_line if over_line is not None else under_line
+        totals = (over, under) if over is not None and under is not None and line is not None and abs(line - 2.5) < 0.01 else None
+        btts_yes, _yes_line = _sgo_price(odds.get(SGO_ODD_BTTS_YES))
+        btts_no, _no_line = _sgo_price(odds.get(SGO_ODD_BTTS_NO))
+        key = match_odds_key(home_name, away_name)
+        bundle = MatchOddsBundle(
+            match_key=key,
+            odds_1x2=(home_odds, draw_odds, away_odds),
+            odds_ou25=totals,
+            odds_btts=(btts_yes, btts_no) if btts_yes is not None and btts_no is not None else None,
+            source="sportsgameodds",
+        )
+        index[key] = bundle.as_dict()
+    return index
+
+
+def _fetch_oddspapi(
+    client: ExternalClient,
+    *,
+    ttl: float,
+    fresh: bool,
+    now: datetime,
+) -> tuple[dict[str, dict[str, Any]], bool, str | None]:
+    if not _oddspapi_key():
+        return {}, False, None
+    try:
+        listed, listed_cached = client.get_json(oddspapi_fixtures_url(now), ttl=ttl, fresh=fresh)
+    except ExternalHttpError as exc:
+        return {}, False, str(exc)
+    with_odds: list[dict[str, Any]] = []
+    cached_flags = [listed_cached]
+    last_error: str | None = None
+    for fixture in oddspapi_upcoming_fixtures(listed, now):
+        try:
+            odds, cached = client.get_json(oddspapi_odds_url(fixture["fixtureId"]), ttl=ttl, fresh=fresh)
+        except ExternalHttpError as exc:
+            last_error = str(exc)
+            continue
+        if isinstance(odds, dict):
+            with_odds.append(
+                {
+                    **odds,
+                    "participant1Name": fixture.get("participant1Name"),
+                    "participant2Name": fixture.get("participant2Name"),
+                    "startTime": fixture.get("startTime"),
+                    "statusId": fixture.get("statusId"),
+                }
+            )
+            cached_flags.append(cached)
+    index = parse_oddspapi_payload(with_odds, now=now)
+    return index, all(cached_flags), None if index else (last_error or "oddspapi_sin_eventos")
+
+
+def _fetch_sportsgameodds(
+    client: ExternalClient,
+    *,
+    ttl: float,
+    fresh: bool,
+    now: datetime,
+) -> tuple[dict[str, dict[str, Any]], bool, str | None]:
+    if not os.getenv("SPORTSGAMEODDS_API_KEY", "").strip():
+        return {}, False, None
+    try:
+        payload, cached = client.get_json(sportsgameodds_events_url(now), ttl=ttl, fresh=fresh)
+    except ExternalHttpError as exc:
+        return {}, False, str(exc)
+    index = parse_sportsgameodds_payload(payload, now=now)
+    return index, cached, None if index else "sportsgameodds_sin_eventos"
 
 
 def load_laliga_match_odds(
@@ -339,27 +632,33 @@ def load_laliga_match_odds(
     fresh: bool,
     league_avg_xg: float = 1.32,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
-    """Ingesta cuotas LaLiga (API o simulación) con caché de 6 h por defecto."""
-    api_key = os.getenv("THE_ODDS_API_KEY", "").strip()
-    if api_key:
-        url = f"{THE_ODDS_API_URL}&apiKey={urllib.parse.quote(api_key)}"
-        try:
-            payload, cached = client.get_json(url, ttl=ttl, fresh=fresh)
-            index = parse_the_odds_api_payload(payload)
-            if index:
-                return index, {
-                    "ok": True,
-                    "count": len(index),
-                    "error": None,
-                    "from_cache": cached,
-                    "source": "the_odds_api",
-                }
-        except ExternalHttpError as exc:
-            api_error = str(exc)
-        else:
-            api_error = "the_odds_api_sin_eventos"
-    else:
-        api_error = "sin_api_key"
+    """Ingesta cuotas LaLiga (OddsPapi, SportsGameOdds o simulación) con caché de 6 h."""
+    moment = datetime.now(timezone.utc)
+    oddspapi_index, oddspapi_cached, oddspapi_error = _fetch_oddspapi(client, ttl=ttl, fresh=fresh, now=moment)
+    sgo_index, sgo_cached, sgo_error = _fetch_sportsgameodds(client, ttl=ttl, fresh=fresh, now=moment)
+    index = dict(oddspapi_index)
+    filled = False
+    for key, row in sgo_index.items():
+        if key not in index:
+            index[key] = row
+            filled = True
+    sources = []
+    cached_flags = []
+    if oddspapi_index:
+        sources.append("oddspapi")
+        cached_flags.append(oddspapi_cached)
+    if filled:
+        sources.append("sportsgameodds")
+        cached_flags.append(sgo_cached)
+    if index:
+        return index, {
+            "ok": True,
+            "count": len(index),
+            "error": None,
+            "from_cache": all(cached_flags) if cached_flags else False,
+            "source": "+".join(sources),
+        }
+    api_error = oddspapi_error or sgo_error or "sin_api_key"
 
     if not fresh and ttl > 0:
         cached_sim = client._cache.get_json(LALIGA_ODDS_SIM_CACHE_KEY)
