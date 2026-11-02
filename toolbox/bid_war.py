@@ -864,4 +864,15 @@ def plan_market_auction_bid(
             if caps.get("raise_to") is not None and isinstance(caps["raise_to"], int) and merged > caps["raise_to"]:
                 caps["raise_to"] = merged
 
+    # P(ganar) de la puja que se recomienda de verdad. La de v2 es la de su
+    # óptimo, y cuando v2 no encuentra hueco vale 0 aunque haya puja sugerida:
+    # salían PUJAR con un 0 % que no medía esa puja.
+    final_bid = caps.get("suggested_bid")
+    if isinstance(final_bid, int) and not isinstance(final_bid, bool) and final_bid > 0:
+        min_legal = max(sale_price, lead + 1.0 if lead > 0 else sale_price)
+        caps["win_probability"] = round(
+            probability_of_winning_bid(float(final_bid), max(mv, sale_price), min_legal, pos, pts, profiles),
+            4,
+        )
+
     return caps

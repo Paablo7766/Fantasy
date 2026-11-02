@@ -537,6 +537,14 @@ def attach_image_urls(rows: Any, index: dict[str, str] | None) -> None:
             row["image_url"] = index[player_id]
 
 
+def _own_bid(item: dict[str, Any]) -> int | None:
+    """Tu puja en el anuncio. La API la manda en ``bid`` solo si has pujado."""
+    raw = item.get("bid")
+    if isinstance(raw, dict):
+        return _as_int(_first(raw, "money", "amount", "value"))
+    return _as_int(raw)
+
+
 def normalize_listing(item: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
     master = _player_master(item)
     position_id, position = _position(_first(master, "positionId", "position", "role"))
@@ -563,6 +571,7 @@ def normalize_listing(item: dict[str, Any], *, now: datetime | None = None) -> d
         "seller_manager": _coalesce(_manager_name(seller), _manager_name(seller_team)),
         "bids": bids,
         "leading_bid": max(amounts) if amounts else None,
+        "own_bid": _own_bid(item),
         "listing_expires_at": expires_at,
         "listing_expires_local_time": expires_local,
         "clause_lock": clause_lock_from(item, now=now),

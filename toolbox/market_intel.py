@@ -950,6 +950,7 @@ def _decide_listing(
         "aggressive_ceiling": econ.get("aggressive_ceiling"),
         "aggressive_ceiling_source": econ.get("aggressive_ceiling_source"),
         "leading_bid": leading,
+        "own_bid": listing.get("own_bid") if isinstance(listing.get("own_bid"), int) else None,
         "optimal_bid_eur": econ.get("optimal_bid_eur"),
         "app_bid_eur": econ.get("app_bid_eur") if isinstance(econ.get("app_bid_eur"), int) else None,
         "financial_max_bid_eur": econ.get("financial_max_bid_eur") if isinstance(econ.get("financial_max_bid_eur"), int) else None,

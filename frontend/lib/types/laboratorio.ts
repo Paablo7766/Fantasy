@@ -42,6 +42,8 @@ export type CalibrationPayload = ApiError & PhotoMeta & {
   win_probability?: {
     samples?: number;
     brier?: number | null;
+    suficiente?: boolean;
+    solo_pujas_propias?: boolean;
     bins?: Array<{
       lo?: number;
       hi?: number;
@@ -49,6 +51,12 @@ export type CalibrationPayload = ApiError & PhotoMeta & {
       mean_predicted?: number | null;
       observed_rate?: number | null;
     }>;
+  } | null;
+  plan_stability?: {
+    dias_con_plan?: number;
+    pares_comparados?: number;
+    cambio_medio?: number | null;
+    planes_nuevos_enteros?: number;
   } | null;
   coverage?: {
     price_snapshots?: number;

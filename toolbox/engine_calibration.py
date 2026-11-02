@@ -36,6 +36,11 @@ def _ensure_predicted_win_column(conn: sqlite3.Connection) -> None:
     if "predicted_win" not in have:
         conn.execute("alter table market_decision_snapshots add column predicted_win real")
         conn.commit()
+    if "own_bid" not in have:
+        # Tu puja real, si la API la trae. Sin ella «lost» no distingue entre
+        # perder la puja y no haber pujado.
+        conn.execute("alter table market_decision_snapshots add column own_bid integer")
+        conn.commit()
 
 
 def _ensure_tracking_schema(conn: sqlite3.Connection) -> None:
@@ -120,6 +125,7 @@ def persist_market_decisions(
                 None,
                 None,
                 _predicted_win(row),
+                row.get("own_bid") if isinstance(row.get("own_bid"), int) and not isinstance(row.get("own_bid"), bool) else None,
             )
             for row in decisions
             if isinstance(row, dict) and isinstance(row.get("player_id"), str) and row.get("player_id")
@@ -131,15 +137,16 @@ def persist_market_decisions(
             insert into market_decision_snapshots (
                 snapshot_day, league_id, player_id, decision, suggested_bid,
                 win_probability, primary_motive, stored_at, outcome, outcome_at,
-                predicted_win
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                predicted_win, own_bid
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             on conflict(snapshot_day, player_id) do update set
                 decision=excluded.decision,
                 suggested_bid=excluded.suggested_bid,
                 win_probability=excluded.win_probability,
                 primary_motive=excluded.primary_motive,
                 stored_at=excluded.stored_at,
-                predicted_win=coalesce(excluded.predicted_win, market_decision_snapshots.predicted_win)
+                predicted_win=coalesce(excluded.predicted_win, market_decision_snapshots.predicted_win),
+                own_bid=coalesce(excluded.own_bid, market_decision_snapshots.own_bid)
             """,
             rows,
         )
@@ -323,15 +330,23 @@ def win_probability_calibration(conn: sqlite3.Connection, *, limit: int = 120) -
     construcción, así que el Brier salía malo midiera lo que midiera. Aquí
     solo cuentan recomendaciones reales con resultado conocido.
 
-    Límite: «lost» significa que otro se llevó al jugador, aunque no conste
-    que tú pujaras. Mientras no se guarde la puja propia, mide la
-    recomendación más que la puja.
+    Mientras no conste ninguna puja propia (``own_bid``), «lost» significa
+    que otro se llevó al jugador aunque tú no pujaras, y mide la
+    recomendación más que la puja. En cuanto la API trae tu puja, solo
+    cuentan las filas con puja.
     """
+    # En cuanto hay pujas propias registradas, solo cuentan esas: miden la puja
+    # y no la recomendación.
+    propias = conn.execute(
+        "select count(*) from market_decision_snapshots where own_bid is not null"
+    ).fetchone()[0] > 0
+    filtro = "and own_bid is not null" if propias else ""
     rows = conn.execute(
-        """
+        f"""
         select win_probability, outcome
         from market_decision_snapshots
         where decision = 'PUJAR' and outcome in ('hit', 'lost') and win_probability is not null
+          {filtro}
         order by snapshot_day desc
         limit ?
         """,
@@ -345,7 +360,14 @@ def win_probability_calibration(conn: sqlite3.Connection, *, limit: int = 120) -
         samples.append((max(0.0, min(1.0, value)), 1.0 if outcome == "hit" else 0.0))
 
     if not samples:
-        return {"samples": 0, "brier": None, "bins": [], "mean_predicted": None, "suficiente": False}
+        return {
+            "samples": 0,
+            "brier": None,
+            "bins": [],
+            "mean_predicted": None,
+            "suficiente": False,
+            "solo_pujas_propias": propias,
+        }
 
     brier = sum((pred - outcome) ** 2 for pred, outcome in samples) / len(samples)
     mean_pred = sum(pred for pred, _ in samples) / len(samples)
@@ -372,6 +394,7 @@ def win_probability_calibration(conn: sqlite3.Connection, *, limit: int = 120) -
         "mean_predicted": round(mean_pred, 4),
         "bins": bins,
         "suficiente": len(samples) >= MIN_PUJAS_BRIER,
+        "solo_pujas_propias": propias,
     }
 
 

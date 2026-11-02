@@ -117,6 +117,7 @@ export function CalibrationDashboard() {
   const crest = payload.sell_at_crest;
   const pujar = payload.pujar;
   const win = payload.win_probability;
+  const stability = payload.plan_stability;
   const jornadas = pointsBlock?.jornadas || [];
   const snapCount = payload.coverage?.price_snapshots ?? 0;
   const buyCount = payload.coverage?.activity_buys ?? 0;
@@ -131,8 +132,8 @@ export function CalibrationDashboard() {
           <ModelConfidenceBadge confidence={payload.engine_confidence} />
         </div>
         <p className="section-support mt-2">
-          Cruce de snapshots E[pts], veredictos PUJAR guardados, señales SELL_AT_CREST y calibración de P(ganar) sobre
-          compras históricas de la liga. Los datos vienen del mismo backend que Mercado (campo{" "}
+          Cruce de snapshots E[pts] de toda la liga, veredictos PUJAR guardados, señales SELL_AT_CREST, P(ganar) de las
+          pujas recomendadas frente a su resultado y cuánto cambia el plan de un día a otro. Los datos vienen del mismo backend que Mercado (campo{" "}
           <code className="text-xs">calibration</code> en trends). El servidor guarda un snapshot de E[pts] al día
           y cruza puntos reales cuando ya están en plantilla; la confianza se recalcula sola (caché ~5 min).
         </p>
@@ -158,9 +159,9 @@ export function CalibrationDashboard() {
         ) : null}
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Metric
-          label="MAE puntos (plantilla)"
+          label="MAE puntos (liga)"
           value={typeof pointsBlock?.overall_mae === "number" ? points(pointsBlock.overall_mae) : "—"}
           hint={`Tendencia: ${trendLabel(pointsBlock?.trend)}${
             typeof pointsBlock?.delta_mae_recent === "number"
@@ -196,11 +197,22 @@ export function CalibrationDashboard() {
         />
         <Metric
           label="P(ganar) · Brier"
-          value={typeof win?.brier === "number" ? win.brier.toFixed(3) : "—"}
+          value={typeof win?.brier === "number" && win.suficiente ? win.brier.toFixed(3) : "—"}
           hint={
             typeof win?.samples === "number" && win.samples > 0
-              ? `${win.samples} contrastes ganador/rival`
-              : "Hacen falta compras con valor de referencia"
+              ? win.suficiente
+                ? `${win.samples} pujas ${win.solo_pujas_propias ? "tuyas" : "recomendadas"} con resultado`
+                : `Solo ${win.samples} pujas con resultado: aún es ruido (mínimo 10)`
+              : "Se rellena cuando se resuelven las pujas recomendadas"
+          }
+        />
+        <Metric
+          label="Cambio del plan"
+          value={typeof stability?.cambio_medio === "number" ? `${Math.round(stability.cambio_medio * 100)}%` : "—"}
+          hint={
+            stability?.pares_comparados
+              ? `Objetivos que cambian de un día a otro · ${stability.pares_comparados} días comparados`
+              : "Se rellena con dos días de plan guardados"
           }
         />
       </section>
