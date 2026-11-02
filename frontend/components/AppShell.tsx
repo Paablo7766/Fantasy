@@ -131,6 +131,103 @@ function DockLink({ item, active, href }: { item: NavItem; active: boolean; href
   );
 }
 
+const HOUR = 3600;
+
+/**
+ * Frescura de los datos y botón Actualizar en una sola pastilla. El punto pasa
+ * de verde (< 1 h) a ámbar (< 6 h) y a rojo con pulso cuando conviene descargar.
+ */
+function Freshness({
+  ageSeconds,
+  age,
+  refreshing,
+  busy,
+  pct,
+  error,
+  disabled,
+  onRefresh,
+  onOpen,
+  open,
+}: {
+  ageSeconds: number | null;
+  age: string;
+  refreshing: boolean;
+  busy: boolean;
+  pct: number;
+  error: boolean;
+  disabled: boolean;
+  onRefresh: () => void;
+  onOpen: () => void;
+  open: boolean;
+}) {
+  const [justDone, setJustDone] = useState(false);
+  const [wasRefreshing, setWasRefreshing] = useState(refreshing);
+  if (wasRefreshing !== refreshing) {
+    setWasRefreshing(refreshing);
+    if (!refreshing && !error) setJustDone(true);
+  }
+  useEffect(() => {
+    if (!justDone) return;
+    const id = window.setTimeout(() => setJustDone(false), 2400);
+    return () => window.clearTimeout(id);
+  }, [justDone]);
+
+  const old = ageSeconds === null || ageSeconds >= 6 * HOUR;
+  const state = refreshing || busy ? "busy" : error ? "error" : justDone ? "done" : old ? "old" : ageSeconds >= HOUR ? "aging" : "fresh";
+  const color = {
+    busy: "#38bdf8",
+    error: "#ff7d66",
+    done: "#34d399",
+    old: "#ff7d66",
+    aging: "#f5b544",
+    fresh: "#34d399",
+  }[state];
+  const label = refreshing
+    ? `Actualizando · ${pct}%`
+    : busy
+      ? `Cargando · ${pct}%`
+      : error
+        ? "Falló la descarga"
+        : justDone
+          ? "Actualizado ahora"
+          : age
+            ? (
+                <>
+                  <span className="max-[420px]:hidden">Actualizado </span>
+                  {age}
+                </>
+              )
+            : "Sin datos";
+
+  return (
+    <div className={`fresh fresh--${state}`}>
+      <button type="button" className="fresh__label" onClick={onOpen} aria-haspopup="dialog" aria-expanded={open} title="Ver detalle de los datos">
+        <span className="fresh__dot" style={{ color }} aria-hidden="true" />
+        <span aria-live="polite">{label}</span>
+      </button>
+      <button
+        type="button"
+        className="fresh__btn"
+        onClick={onRefresh}
+        disabled={disabled}
+        aria-label={error ? "Reintentar la descarga" : "Actualizar datos"}
+        title="Descarga una foto nueva de LALIGA y los scrapers"
+      >
+        {justDone && !refreshing ? (
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-[#34d399]" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+            <path d="M3.4 8.4 6.3 11.3 12.6 5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 20 20" className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.1" strokeLinecap="round" />
+            <path d="M16.4 3.6v3.2h-3.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const {
     trends,
@@ -138,8 +235,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     busy,
     refreshing,
     refreshError,
-    stale,
     photoAge,
+    photoAgeSeconds,
     photoLine,
     progress,
     refreshLine,
@@ -225,45 +322,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex h-14 items-center justify-between gap-3 px-4 lg:px-7">
             <div className="flex min-w-0 items-center gap-2.5">
               <h1 className="truncate text-lg font-bold tracking-tight text-ink">{section.title}</h1>
-              <button
-                type="button"
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[rgba(2,151,222,0.28)] bg-[rgba(2,151,222,0.08)] px-2 py-1 text-[11px] font-semibold text-[#8B9EB0]"
-                onClick={() => setToolsOpen(true)}
-                aria-haspopup="dialog"
-                aria-expanded={toolsOpen}
-                title={photoLine}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    refreshing || busy ? "animate-pulse bg-[#0297DE]" : stale || refreshError ? "bg-[#FC734D]" : "bg-[#10B981]"
-                  }`}
-                  style={{ boxShadow: "0 0 8px currentColor" }}
-                />
-                <span className="font-mono tabular-nums">
-                  {refreshing ? `${refreshPct}%` : busy ? `${progress.pct}%` : photoAge || "sin foto"}
-                </span>
-              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => void refresh()}
+            <Freshness
+              ageSeconds={photoAgeSeconds}
+              age={photoAge}
+              refreshing={refreshing}
+              busy={busy}
+              pct={refreshing ? refreshPct : progress.pct}
+              error={Boolean(refreshError)}
               disabled={connecting || refreshing}
-              className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-[#0297DE]/40 bg-[#0297DE]/15 px-3 text-xs font-medium text-[#0297DE] transition-all hover:bg-[#0297DE]/25 active:scale-95 disabled:opacity-50"
-              title="Descarga una foto nueva de LALIGA y los scrapers"
-            >
-              <svg
-                viewBox="0 0 20 20"
-                className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                aria-hidden="true"
-              >
-                <path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.1" strokeLinecap="round" />
-                <path d="M16.4 3.6v3.2h-3.2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              {refreshing ? "Actualizando" : "Actualizar"}
-            </button>
+              onRefresh={() => void refresh()}
+              onOpen={() => setToolsOpen(true)}
+              open={toolsOpen}
+            />
           </div>
           {refreshing ? (
             <div className="absolute inset-x-0 bottom-0" role="status" aria-live="polite" aria-label={refreshLine}>
@@ -293,6 +364,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <p className="mt-1 font-mono text-xs text-[#F0F6FC]">{photoLine}</p>
                   {refreshError ? <p className="mt-1 text-xs text-[#FC734D]">{refreshError}</p> : null}
                   {trends?.partial ? <p className="mt-1 text-xs text-[#FC734D]">Lectura parcial</p> : null}
+                  <p className="mt-3 text-xs leading-5 text-[#8B9EB0]">
+                    Solo lectura. Las horas de cláusula salen de la API en Europe/Madrid. Actualiza antes de decidir con dinero real.
+                  </p>
                 </div>
                 <button type="button" className="btn btn-secondary !px-2.5 !py-1 text-xs" onClick={() => setToolsOpen(false)}>
                   Cerrar
@@ -332,10 +406,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           ))}
         </nav>
 
-        <footer className="mx-auto w-full max-w-[1240px] px-4 pb-24 text-xs leading-5 text-faint md:px-7 md:pb-8 lg:pb-8">
-          Solo lectura. Las horas de cláusula salen de la API en Europe/Madrid. Pulsa Actualizar antes de decidir con
-          dinero real.
-        </footer>
+        <div className="pb-24 lg:pb-8" aria-hidden="true" />
       </div>
     </div>
   );
