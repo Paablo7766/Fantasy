@@ -38,6 +38,13 @@ MEJORA_MINIMA = 0.5
 #: Ventaja de valor justo sobre la cláusula para considerarlo jugada de valor.
 MARGEN_VALOR_PCT = 25.0
 MAX_CLAUSULAZOS = 10
+#: Jueves y viernes: cuando queda un día o menos, el rival ya no puede rehacer su once.
+DIAS_GOLPE_RIVAL = 1.0
+#: Solo duele a quien pelea contigo por la liga.
+TOP_RIVALES_GOLPE = 5
+#: Menos de 11 sanos en plantilla obliga a alinear un hueco que puntúa 0.
+TITULARES_MINIMOS = 11
+MENSAJE_GOLPE_RIVAL = "🎯 GOLPE AL RIVAL: Lo dejas sin recambio en su XI"
 MAX_NIVELES = 4
 _DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 
@@ -53,6 +60,7 @@ TITULOS_CLAUSULAZO = {
     "PROGRAMAR": "PROGRAMA",
     "SIN_CAJA": "TE FALTA CAJA",
     "OPORTUNIDAD": "OPORTUNIDAD DE VALOR",
+    "GOLPE_RIVAL": "GOLPE AL RIVAL",
 }
 
 
@@ -341,6 +349,46 @@ def _pts_txt(value: float) -> str:
     return _pts(value)
 
 
+def bono_rosco_rival(
+    jugador: dict[str, Any],
+    rival: dict[str, Any] | None,
+    *,
+    dias_al_cierre: float | None,
+) -> dict[str, Any] | None:
+    """Daño directo al rival del Top 5 cuando el clausulazo le deja un hueco en el once.
+
+    Solo cuenta con ``dias_al_cierre <= 1``. Si al quitarle al titular no le queda otro
+    sano en esa posición, o se queda con menos de 11 sanos, tiene que alinear un hueco con
+    0 pts: el impacto es lo que ese jugador iba a puntuar.
+    """
+    dias = _num(dias_al_cierre)
+    if dias is None or dias > DIAS_GOLPE_RIVAL or not isinstance(rival, dict):
+        return None
+    puesto = _int(rival.get("puesto_liga"))
+    if puesto is None or not 1 <= puesto <= TOP_RIVALES_GOLPE:
+        return None
+    plantilla = [fila for fila in rival.get("plantilla") or [] if isinstance(fila, dict)]
+    objetivo = next((fila for fila in plantilla if fila.get("player_id") == jugador.get("player_id")), None)
+    if objetivo is None or objetivo.get("sano") is not True:
+        return None
+    resto = [fila for fila in plantilla if fila is not objetivo and fila.get("sano") is True]
+    recambios = [fila for fila in resto if fila.get("position") == objetivo.get("position")]
+    if recambios and len(resto) >= TITULARES_MINIMOS:
+        return None
+    xp = _num(objetivo.get("jornada")) or _num(jugador.get("jornada")) or 0.0
+    if xp <= 0:
+        return None
+    return {
+        "activo": True,
+        "rival": rival.get("manager"),
+        "puesto_liga": puesto,
+        "sin_recambio": not recambios,
+        "sanos_tras": len(resto),
+        "impacto_pts": round(xp, 2),
+        "mensaje": MENSAJE_GOLPE_RIVAL,
+    }
+
+
 def _clausulazos(
     candidatos: list[dict[str, Any]],
     elegibles: list[dict[str, Any]],
@@ -351,6 +399,7 @@ def _clausulazos(
     ratio: float,
     ahora: datetime,
     cierre: datetime | None,
+    dias_al_cierre: float | None = None,
 ) -> list[dict[str, Any]]:
     base = solve_best_xi(elegibles)
     base_puntos = float(base["puntos"]) if base["ok"] else 0.0
@@ -381,7 +430,9 @@ def _clausulazos(
         justo = _int(jugador.get("valor_justo"))
         margen_justo = (justo / clausula - 1) * 100.0 if justo else None
         es_valor = margen_justo is not None and margen_justo >= MARGEN_VALOR_PCT
-        if mejora < MEJORA_MINIMA and not es_valor:
+        rival_dueno = next((rival for rival in rivales if rival.get("team_id") == jugador.get("team_id")), None)
+        golpe = bono_rosco_rival(jugador, rival_dueno, dias_al_cierre=dias_al_cierre)
+        if mejora < MEJORA_MINIMA and not es_valor and golpe is None:
             continue
         dueno = jugador.get("manager")
         competencia = [
@@ -399,6 +450,8 @@ def _clausulazos(
             codigo = "PROGRAMAR"
         elif mejora >= MEJORA_MINIMA:
             codigo = "CLAUSULAR_YA"
+        elif golpe is not None:
+            codigo = "GOLPE_RIVAL"
         else:
             codigo = "OPORTUNIDAD"
         cuando = "ahora" if not bloqueada else _cuando(desbloqueo, ahora)
@@ -428,6 +481,8 @@ def _clausulazos(
                 "falta_caja_eur": int(falta) if falta else 0,
                 "caja_tras": int(saldo - clausula) if asequible and saldo is not None else None,
                 "rivales_que_pueden_quitartelo": len(competencia),
+                "bono_rosco_rival": golpe,
+                "prioridad_estrategica": round(mejora + (golpe["impacto_pts"] if golpe else 0.0), 2),
                 "veredicto_codigo": codigo,
                 "veredicto_titulo": TITULOS_CLAUSULAZO[codigo],
                 "motivo_detallado": _motivo_clausulazo(
@@ -442,13 +497,14 @@ def _clausulazos(
                     competencia=len(competencia),
                     falta=falta or 0,
                     pct=_num(jugador.get("pct")),
+                    golpe=golpe,
                 ),
             }
         )
     filas.sort(
         key=lambda fila: (
             0 if fila["asequible"] else 1,
-            -fila["mejora_once"],
+            -fila["prioridad_estrategica"],
             -(fila["margen_valor_justo_pct"] or 0.0),
             fila["clausula_eur"],
         )
@@ -469,6 +525,7 @@ def _motivo_clausulazo(
     competencia: int,
     falta: int,
     pct: float | None,
+    golpe: dict[str, Any] | None = None,
 ) -> str:
     de = f" a {dueno}" if dueno else ""
     partes = [f"Pagar {_m(clausula)}{de}"]
@@ -489,6 +546,11 @@ def _motivo_clausulazo(
         texto += " No mejora el once, pero compras por debajo de su valor."
     if competencia:
         texto += f" {competencia} {'rival' if competencia == 1 else 'rivales'} más pueden pagarla: se te puede escapar."
+    if golpe is not None:
+        texto = (
+            f"{golpe['mensaje']}. {golpe['rival'] or 'Tu rival'} va {golpe['puesto_liga']}º y pierde "
+            f"-{_pts(golpe['impacto_pts'])} pts. {texto}"
+        )
     return texto
 
 
@@ -501,13 +563,16 @@ def evaluar_clausulas(
     ratio: float,
     ahora: datetime,
     cierre: datetime | None,
+    dias_al_cierre: float | None = None,
 ) -> dict[str, Any]:
     """``proteger`` (tus jugadores en peligro) y ``clausulazos`` (a quién pagar y cuándo).
 
     ``propios`` y ``ajenos`` traen ``player_id``, ``nombre``, ``position``, ``valor``,
     ``clausula``, ``blindado``, ``bloqueo``, ``jornada``, ``pct``. Los propios añaden
     ``en_xi``, ``tu_once_pierde_sin_el`` y ``elegible``; los ajenos, ``manager``/``team_id``.
-    ``rivales`` lleva ``team_id``, ``manager``, ``saldo`` y ``posiciones`` flojas.
+    ``rivales`` lleva ``team_id``, ``manager``, ``saldo`` y ``posiciones`` flojas; con
+    ``puesto_liga`` y ``plantilla`` (``player_id``, ``position``, ``sano``, ``jornada``)
+    activa el bono de daño al rival en jueves y viernes.
     """
     proteger, bloqueadas, seguros = _proteger(propios, rivales, saldo=saldo, ratio=ratio, ahora=ahora, cierre=cierre)
     elegibles = [
@@ -521,7 +586,19 @@ def evaluar_clausulas(
         if saldo is not None
         else None
     )
-    clausulazos = _clausulazos(ajenos, elegibles, rivales, liquidez=liquidez, saldo=saldo, ratio=ratio, ahora=ahora, cierre=cierre)
+    if dias_al_cierre is None and cierre is not None:
+        dias_al_cierre = (cierre - ahora).total_seconds() / 86400.0
+    clausulazos = _clausulazos(
+        ajenos,
+        elegibles,
+        rivales,
+        liquidez=liquidez,
+        saldo=saldo,
+        ratio=ratio,
+        ahora=ahora,
+        cierre=cierre,
+        dias_al_cierre=dias_al_cierre,
+    )
     en_peligro = [fila for fila in proteger if fila["riesgo"] != "BAJO"]
     resumen = {
         "en_peligro": len(en_peligro),
@@ -536,8 +613,174 @@ def evaluar_clausulas(
         "seguros": seguros,
         "bloqueadas": bloqueadas,
         "clausulazos_listos": sum(1 for fila in clausulazos if fila["veredicto_codigo"] == "CLAUSULAR_YA"),
+        "golpes_al_rival": sum(1 for fila in clausulazos if fila.get("bono_rosco_rival")),
         "clausulazos": len(clausulazos),
         "ventana_cierra": _cuando(cierre, ahora) if cierre is not None else None,
         "ventana_abierta": cierre is None or ahora < cierre,
     }
     return {"resumen": resumen, "proteger": proteger, "clausulazos": clausulazos}
+
+
+# Por debajo de 1,15× el valor, la cláusula es un chollo. Desde 1,30×, robarlo nos beneficia.
+_UMBRAL_VULNERABLE = 1.15
+_UMBRAL_SOBREPROTEGIDO = 1.30
+_VENTANA_APERTURA_DIAS = 3
+
+
+def _millones_txt(value: float) -> str:
+    return f"{value / 1_000_000:.1f}".replace(".", ",")
+
+
+def _momento_apertura(value: Any, ahora: datetime) -> datetime | None:
+    """Fecha en la que la cláusula se puede pagar. ``ahora`` si ya está abierta."""
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, dict):
+        expira = value.get("expires_at") or value.get("clausulaAbre")
+        if expira:
+            leido = parse_clause_lock(expira, now=ahora)
+            epoch = leido.get("epoch_ms")
+            if isinstance(epoch, (int, float)) and not isinstance(epoch, bool):
+                return datetime.fromtimestamp(float(epoch) / 1000.0, tz=timezone.utc)
+        epoch = value.get("epoch_ms")
+        if isinstance(epoch, (int, float)) and not isinstance(epoch, bool):
+            return datetime.fromtimestamp(float(epoch) / 1000.0, tz=timezone.utc)
+        if value.get("is_locked") is False:
+            return ahora
+        return None
+    if isinstance(value, str) and value.strip():
+        leido = parse_clause_lock(value, now=ahora)
+        epoch = leido.get("epoch_ms")
+        if isinstance(epoch, (int, float)) and not isinstance(epoch, bool):
+            return datetime.fromtimestamp(float(epoch) / 1000.0, tz=timezone.utc)
+    return None
+
+
+def _ventana_clausula(jugador: dict[str, Any], ahora: datetime) -> tuple[bool, bool, float | None]:
+    """(entra en la ventana, ya está abierta, días que faltan).
+
+    Entra si la apertura es pasada o faltan menos de 3 días.
+    """
+    raw = jugador.get("clausulaAbre")
+    if raw is None:
+        raw = jugador.get("clausula_abre")
+    if raw is None:
+        raw = jugador.get("bloqueo") if jugador.get("bloqueo") is not None else jugador.get("clause_lock")
+    if raw is None:
+        return False, False, None
+    momento = _momento_apertura(raw, ahora)
+    if momento is None:
+        return False, False, None
+    dias = (momento - ahora).total_seconds() / 86400.0
+    if dias <= 0 or dias < _VENTANA_APERTURA_DIAS:
+        return True, dias <= 0, dias
+    return False, False, dias
+
+
+def _caja_rival(rival: dict[str, Any]) -> float | None:
+    for key in ("dineroEstimado", "saldo", "cash_eur", "reconstructed_cash_eur"):
+        number = _num(rival.get(key))
+        if number is not None:
+            return number
+    return None
+
+
+def _euros_jugador(jugador: dict[str, Any], *keys: str) -> int | None:
+    for key in keys:
+        number = _int(jugador.get(key))
+        if number is not None and number > 0:
+            return number
+    return None
+
+
+def auditar_clausulas_plantilla(
+    jugadores_plantilla: list[dict[str, Any]],
+    saldo_rivales: list[dict[str, Any]],
+    *,
+    ahora: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Riesgo real de que un rival pague la cláusula de un jugador nuestro.
+
+    Solo mira cláusulas ya abiertas o que se abren en menos de 3 días. Cruza
+    el múltiplo de la cláusula con cuántos rivales tienen ``dineroEstimado``
+    para pagarla hoy.
+    """
+    momento = ahora or datetime.now(timezone.utc)
+    if momento.tzinfo is None:
+        momento = momento.replace(tzinfo=timezone.utc)
+    cajas = [_caja_rival(rival) for rival in saldo_rivales if isinstance(rival, dict)]
+    cajas = [caja for caja in cajas if caja is not None]
+    filas: list[dict[str, Any]] = []
+    for jugador in jugadores_plantilla:
+        if not isinstance(jugador, dict):
+            continue
+        if jugador.get("blindado") is True or jugador.get("is_shielded") is True or jugador.get("shielded") is True:
+            continue
+        en_ventana, abierta, dias = _ventana_clausula(jugador, momento)
+        if not en_ventana:
+            continue
+        clausula = _euros_jugador(jugador, "clausula", "clausula_actual", "buyout_clause", "clause")
+        valor = _euros_jugador(jugador, "valor_mercado", "valor", "market_value")
+        if clausula is None or valor is None:
+            continue
+        player_id = jugador.get("player_id")
+        if not isinstance(player_id, str) or not player_id:
+            continue
+        pct = _num(jugador.get("prevision_7d_pct"))
+        if pct is None and isinstance(jugador.get("prevision_7d_pct"), str):
+            texto = jugador["prevision_7d_pct"].strip().replace("%", "").replace(",", ".")
+            try:
+                pct = float(texto)
+            except ValueError:
+                pct = None
+        subida = valor * (pct / 100.0) if pct is not None else 0.0
+        valor_proyectado = int(round(valor + subida))
+        rivales_con_caja = sum(1 for caja in cajas if caja >= clausula)
+        clausula_txt = _millones_txt(clausula)
+        if clausula >= valor * _UMBRAL_SOBREPROTEGIDO:
+            beneficio = max(0, clausula - valor)
+            estado = "SOBREPROTEGIDO"
+            badge = "verde"
+            consejo = (
+                f"🛡️ SOBREPROTEGIDO: Si pagan {clausula_txt}M, ganas +{_millones_txt(beneficio)}M. "
+                "No subir cláusula."
+            )
+        elif clausula < valor * _UMBRAL_VULNERABLE and rivales_con_caja >= 1:
+            estado = "RIESGO_ALTO"
+            badge = "rojo"
+            consejo = (
+                f"⚠️ RIESGO ALTO: {rivales_con_caja} rivales tienen caja. "
+                f"Su cláusula ({clausula_txt}M) es un chollo. ¡Blíndalo hoy!"
+            )
+            beneficio = max(0, clausula - valor)
+        elif clausula < valor * _UMBRAL_VULNERABLE:
+            estado = "RIESGO_CERO"
+            badge = "gris"
+            consejo = (
+                f"💤 RIESGO CERO: Es un chollo ({clausula_txt}M) pero ningún rival tiene saldo para robarlo hoy."
+            )
+            beneficio = max(0, clausula - valor)
+        else:
+            continue
+        nombre = jugador.get("nombre") or jugador.get("nickname") or jugador.get("name") or player_id
+        filas.append(
+            {
+                "player_id": player_id,
+                "nombre": str(nombre),
+                "posicion": jugador.get("position") or jugador.get("posicion"),
+                "estado": estado,
+                "badge": badge,
+                "consejo": consejo,
+                "clausula": clausula,
+                "valor_mercado": valor,
+                "valor_proyectado_7d": valor_proyectado,
+                "prevision_7d_pct": pct,
+                "beneficio_neto": int(beneficio),
+                "rivales_con_caja": rivales_con_caja,
+                "clausula_abierta": abierta,
+                "dias_para_abrir": None if dias is None else round(dias, 2),
+            }
+        )
+    orden = {"RIESGO_ALTO": 0, "RIESGO_CERO": 1, "SOBREPROTEGIDO": 2}
+    filas.sort(key=lambda fila: (orden[fila["estado"]], -fila["rivales_con_caja"], str(fila["nombre"])))
+    return filas

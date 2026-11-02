@@ -258,7 +258,7 @@ def evaluar_ventas_y_ofertas(
     vende_hoy = {
         accion.get("player_id")
         for accion in acciones
-        if isinstance(accion, dict) and accion.get("tipo") in {"VENDE", "VENDER HOY"}
+        if isinstance(accion, dict) and accion.get("tipo") in {"VENDE", "VENDER HOY"} and accion.get("momento") != "condicional"
     }
     escaparate = {
         accion.get("player_id")

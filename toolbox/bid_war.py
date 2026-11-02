@@ -16,6 +16,7 @@ from scipy.stats import norm
 
 from toolbox.analyzer import POSITIONS, candidates_from_squad, index_trends, own_squad
 from toolbox.bidding import MIN_HEADCOUNT
+from toolbox.engine.auction_intel import techo_puja_dinamico
 from toolbox.league_history import RivalProfile, apply_league_clearing, clearing_quote
 
 
@@ -26,9 +27,10 @@ from toolbox.league_history import RivalProfile, apply_league_clearing, clearing
 PREMIUM_SCALE = 0.03
 PREMIUM_PERSISTENCE = 0.05
 
-# Puja genérica al estilo de La Pizarra y tope racional de sobrepuja.
+# Puja genérica al estilo de La Pizarra. El techo financiero es dinámico
+# (prima +15 %, previsión a 7 días y dificultad) y nunca pasa del +30 %.
 APP_BID_PREMIUM = 1.047
-FINANCIAL_OVERBID_CAP = 1.25
+FINANCIAL_OVERBID_CAP = 1.30
 # Las cifras de esta medida se expresan al décimo de millón (100 k€).
 SMART_BID_STEP_EUR = 100_000
 DEFAULT_SAFETY_MARGIN_EUR = 100_000
@@ -576,18 +578,51 @@ def _rival_name(rival: dict[str, Any]) -> str:
     return "rival"
 
 
+def _dificultad_de(jugador: dict[str, Any]) -> str | None:
+    for key in ("dificultad", "difficulty", "calendar_difficulty"):
+        value = jugador.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    fixture = jugador.get("fixture")
+    if isinstance(fixture, dict):
+        value = fixture.get("difficulty")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _dificultad_calendario(trend: dict[str, Any]) -> str | None:
+    for key in ("own_calendar", "af_calendar"):
+        calendar = trend.get(key)
+        if not isinstance(calendar, list) or not calendar or not isinstance(calendar[0], dict):
+            continue
+        value = calendar[0].get("difficulty")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _prevision_de(jugador: dict[str, Any]) -> Any:
+    for key in ("prevision_7d_pct", "pct"):
+        if jugador.get(key) is not None:
+            return jugador.get(key)
+    return None
+
+
 def calcular_puja_optima(
     jugador: dict[str, Any],
     rivales: list[dict[str, Any]],
     tu_saldo: float,
     margen_seguridad: float = DEFAULT_SAFETY_MARGIN_EUR,
 ) -> dict[str, Any]:
-    """Puja smart: base +4,7 %, tope +25 % y knockout de la caja rival.
+    """Puja smart: base +4,7 %, techo dinámico y knockout de la caja rival.
 
     Un rival cuenta si tiene saldo positivo, cubre el valor de mercado y
     necesita la posición (hueco de titular o línea floja). Si nadie llega,
     se puja la base. Si alguien llega, se supera su saldo en el margen
-    siempre que eso no pase del +25 % ni de la caja propia.
+    siempre que eso no pase del techo dinámico ni de la caja propia.
+    El techo es ``valor × (1,15 + 0,55·previsión_7d + bono de partido)``
+    y nunca supera el +30 %.
     """
     raw_value = jugador.get("valor", jugador.get("market_value"))
     if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)) or raw_value <= 0:
@@ -607,7 +642,12 @@ def calcular_puja_optima(
     margen = float(margen_seguridad) if isinstance(margen_seguridad, (int, float)) and not isinstance(margen_seguridad, bool) else DEFAULT_SAFETY_MARGIN_EUR
 
     puja_base_app = _round_tenth_million(valor_mercado * APP_BID_PREMIUM)
-    puja_max_financiera = _round_tenth_million(valor_mercado * FINANCIAL_OVERBID_CAP)
+    puja_max_financiera = techo_puja_dinamico(
+        valor_mercado,
+        _prevision_de(jugador),
+        _dificultad_de(jugador),
+        paso=SMART_BID_STEP_EUR,
+    )
 
     rivales_peligrosos: list[str] = []
     max_saldo_rival_interesado = 0.0
@@ -796,7 +836,12 @@ def plan_market_auction_bid(
     caps["auction_decision"] = v2.decision
 
     smart = calcular_puja_optima(
-        {"valor": mv, "posicion": pos},
+        {
+            "valor": mv,
+            "posicion": pos,
+            "prevision_7d_pct": _prevision_de(listing) if _prevision_de(listing) is not None else _prevision_de(trend),
+            "dificultad": _dificultad_de(listing) or _dificultad_de(trend) or _dificultad_calendario(trend),
+        },
         _rivals_for_smart_bid(profiles, rivals, pos),
         own_cash,
     )

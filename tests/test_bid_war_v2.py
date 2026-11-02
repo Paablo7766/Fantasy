@@ -145,7 +145,7 @@ class OptimalBidTests(unittest.TestCase):
 
 
 class SmartBidTests(unittest.TestCase):
-    """Puja smart: +4,7 % de base, tope +25 % y knockout de caja rival."""
+    """Puja smart: +4,7 % de base, techo dinámico (suelo +15 %, cap +30 %) y knockout."""
 
     def _player(self) -> dict:
         return {"valor": 48_700_000, "posicion": "DEL"}
@@ -153,7 +153,7 @@ class SmartBidTests(unittest.TestCase):
     def test_no_rival_bids_the_app_base(self) -> None:
         result = calcular_puja_optima(self._player(), [], 116_600_000)
         self.assertEqual(result["puja_base_app"], 51_000_000)
-        self.assertEqual(result["puja_maxima"], 60_900_000)
+        self.assertEqual(result["puja_maxima"], 56_000_000)
         self.assertEqual(result["puja_smart"], 51_000_000)
         self.assertEqual(result["probabilidad_exito"], 95)
         self.assertEqual(result["rivales_peligrosos"], [])
@@ -171,11 +171,22 @@ class SmartBidTests(unittest.TestCase):
         self.assertEqual(result["probabilidad_exito"], 99)
         self.assertIn("Ana", result["analisis"])
 
-    def test_rich_rival_stops_at_the_25_percent_cap(self) -> None:
+    def test_rich_rival_stops_at_the_dynamic_cap(self) -> None:
         rivals = [{"nombre": "Rico", "dineroEstimado": 80_000_000, "posiciones_debiles": ["DEL"]}]
         result = calcular_puja_optima(self._player(), rivals, 116_600_000)
-        self.assertEqual(result["puja_smart"], 60_900_000)
+        self.assertEqual(result["puja_smart"], 56_000_000)
         self.assertEqual(result["probabilidad_exito"], 40)
+
+    def test_forecast_and_easy_fixture_lift_the_ceiling_up_to_30_percent(self) -> None:
+        # +23,2 % a 7 días aporta ~12,76 puntos. Partido fácil suma 2. 1,2976 < 1,30.
+        player = {"valor": 48_700_000, "posicion": "DEL", "prevision_7d_pct": 23.2, "dificultad": "facil"}
+        result = calcular_puja_optima(player, [], 116_600_000)
+        self.assertEqual(result["puja_maxima"], 63_200_000)
+        capped = {"valor": 10_000_000, "posicion": "MC", "prevision_7d_pct": "+80%", "dificultad": "muy_facil"}
+        hard = calcular_puja_optima(capped, [], 50_000_000)
+        self.assertEqual(hard["puja_maxima"], 13_000_000)
+        tough = calcular_puja_optima({"valor": 10_000_000, "posicion": "MC", "dificultad": "dificil"}, [], 50_000_000)
+        self.assertEqual(tough["puja_maxima"], 11_400_000)
 
     def test_poorer_manager_goes_all_in(self) -> None:
         rivals = [{"nombre": "Rico", "dineroEstimado": 200_000_000, "posiciones_debiles": ["DEL"]}]
@@ -185,9 +196,15 @@ class SmartBidTests(unittest.TestCase):
 
     def test_rounding_still_clears_the_rival_cash(self) -> None:
         rivals = [{"nombre": "Ana", "dineroEstimado": 12_340_000, "posiciones_debiles": ["MC"]}]
-        result = calcular_puja_optima({"valor": 10_000_000, "posicion": "MC"}, rivals, 30_000_000)
+        # +20 % a 7 días sube el techo a 1,26×, por encima de la caja de Ana y por debajo del cap.
+        result = calcular_puja_optima(
+            {"valor": 10_000_000, "posicion": "MC", "prevision_7d_pct": 20},
+            rivals,
+            30_000_000,
+        )
         self.assertGreater(result["puja_smart"], 12_340_000)
-        self.assertLessEqual(result["puja_smart"], 12_500_000)
+        self.assertLessEqual(result["puja_smart"], result["puja_maxima"])
+        self.assertEqual(result["puja_maxima"], 12_600_000)
 
 
 if __name__ == "__main__":

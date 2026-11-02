@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from toolbox.engine.clause_advisor import coste_subida, evaluar_clausulas
+from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, coste_subida, evaluar_clausulas
 from toolbox.engine.strategy_layer import build_strategy
 
 AHORA = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
@@ -311,6 +311,73 @@ class IntegracionTests(unittest.TestCase):
         self.assertEqual(joya["propietario"], "Luis")
         self.assertEqual(joya["veredicto_codigo"], "CLAUSULAR_YA")
         self.assertEqual(informe["resumen"]["clausulazos_listos"], 1)
+        radar = {fila["player_id"]: fila for fila in informe["radar_anti_robo"]}
+        self.assertEqual(radar["DEL-0"]["estado"], "RIESGO_ALTO")
+        self.assertEqual(radar["DEL-0"]["badge"], "rojo")
+        self.assertIn("1 rivales tienen caja", radar["DEL-0"]["consejo"])
+        self.assertEqual(radar["DEL-1"]["estado"], "SOBREPROTEGIDO")
+        self.assertEqual(radar["DEL-1"]["badge"], "verde")
+
+
+class RadarAntiRoboTests(unittest.TestCase):
+    def _jugador(self, player_id: str, clausula: int, valor: int, abre: object) -> dict:
+        return {
+            "player_id": player_id,
+            "nombre": player_id,
+            "clausula": clausula,
+            "valor_mercado": valor,
+            "prevision_7d_pct": 10,
+            "clausulaAbre": abre,
+        }
+
+    def test_vulnerable_con_caja_rival_es_riesgo_alto(self) -> None:
+        filas = auditar_clausulas_plantilla(
+            [self._jugador("chollo", 8_000_000, 10_000_000, AHORA - timedelta(days=1))],
+            [{"dineroEstimado": 9_000_000}, {"dineroEstimado": 3_000_000}],
+            ahora=AHORA,
+        )
+        self.assertEqual(len(filas), 1)
+        self.assertEqual(filas[0]["estado"], "RIESGO_ALTO")
+        self.assertEqual(filas[0]["rivales_con_caja"], 1)
+        self.assertIn("¡Blíndalo hoy!", filas[0]["consejo"])
+
+    def test_vulnerable_sin_caja_es_riesgo_cero(self) -> None:
+        filas = auditar_clausulas_plantilla(
+            [self._jugador("chollo", 8_000_000, 10_000_000, {"is_locked": False})],
+            [{"dineroEstimado": 1_000_000, "saldo": 50_000_000}],
+            ahora=AHORA,
+        )
+        self.assertEqual(filas[0]["estado"], "RIESGO_CERO")
+        self.assertEqual(filas[0]["badge"], "gris")
+        self.assertEqual(filas[0]["rivales_con_caja"], 0)
+
+    def test_sobreprotegido_no_depende_de_la_caja(self) -> None:
+        filas = auditar_clausulas_plantilla(
+            [self._jugador("banco", 13_000_000, 10_000_000, AHORA + timedelta(days=2))],
+            [{"dineroEstimado": 40_000_000}],
+            ahora=AHORA,
+        )
+        self.assertEqual(filas[0]["estado"], "SOBREPROTEGIDO")
+        self.assertEqual(filas[0]["badge"], "verde")
+        self.assertIn("ganas +3,0M", filas[0]["consejo"])
+        self.assertIn("No subir cláusula", filas[0]["consejo"])
+
+    def test_candado_a_tres_dias_o_mas_no_entra(self) -> None:
+        lejos = (AHORA + timedelta(days=3)).isoformat()
+        filas = auditar_clausulas_plantilla(
+            [self._jugador("lejos", 8_000_000, 10_000_000, lejos)],
+            [{"dineroEstimado": 20_000_000}],
+            ahora=AHORA,
+        )
+        self.assertEqual(filas, [])
+
+    def test_multiplo_intermedio_no_genera_tarjeta(self) -> None:
+        filas = auditar_clausulas_plantilla(
+            [self._jugador("medio", 12_000_000, 10_000_000, AHORA - timedelta(hours=1))],
+            [{"dineroEstimado": 20_000_000}],
+            ahora=AHORA,
+        )
+        self.assertEqual(filas, [])
 
 
 if __name__ == "__main__":

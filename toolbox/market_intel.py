@@ -25,6 +25,7 @@ from toolbox.bid_war import overbid_risk, plan_market_auction_bid, profiles_for_
 from toolbox.league_history import fit_rival_profiles_eb
 from toolbox.bidding import assess_purchase, bid_amount, schedule_snipe
 from toolbox.cache import ResponseCache
+from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.normalize import SCHEMA_VERSION, titularity_overrides_injury
 
 DECISION_PUJAR = "PUJAR"
@@ -239,31 +240,52 @@ def build_market_decisions(
             peers_by_position[pos] = peers_by_position.get(pos, 0) + 1
 
     decisions: list[dict[str, Any]] = []
+    plantilla = _plantilla_para_nota(optimize, indexed)
     for listing in listings:
         player_id = listing.get("player_id") if isinstance(listing.get("player_id"), str) else None
         if not player_id:
             continue
         trend = indexed.get(player_id) or {}
-        decisions.append(
-            _decide_listing(
-                listing,
-                trend,
-                cash=cash,
-                lineup_void=lineup_void,
-                own_team_id=own_team_id,
-                owned=player_id in owned,
-                gap_positions=gap_positions,
-                gap_player_ids=gap_player_ids,
-                rivals=pressure,
-                xi_margins=xi_margins,
-                history=history,
-                base_rival_profiles=base_rival_profiles,
-                free_tier_peers_count=peers_by_position.get(
-                    listing.get("position") if isinstance(listing.get("position"), str) else "", 0
-                ),
-                now=current,
+        decision = _decide_listing(
+            listing,
+            trend,
+            cash=cash,
+            lineup_void=lineup_void,
+            own_team_id=own_team_id,
+            owned=player_id in owned,
+            gap_positions=gap_positions,
+            gap_player_ids=gap_player_ids,
+            rivals=pressure,
+            xi_margins=xi_margins,
+            history=history,
+            base_rival_profiles=base_rival_profiles,
+            free_tier_peers_count=peers_by_position.get(
+                listing.get("position") if isinstance(listing.get("position"), str) else "", 0
+            ),
+            now=current,
+        )
+        decision.update(
+            calcular_nota_mercado(
+                {
+                    "xp": decision.get("jornada_ev")
+                    if isinstance(decision.get("jornada_ev"), (int, float)) and not isinstance(decision.get("jornada_ev"), bool)
+                    else decision.get("expected_points"),
+                    "position": decision.get("position"),
+                    "prevision_7d_pct": trend.get("prevision_7d_pct"),
+                    "p_titular": decision.get("p_titular"),
+                    "week_points": _puntos_recientes(trend),
+                    "dificultad": decision.get("calendar_difficulty"),
+                    "fixture": decision.get("fixture"),
+                    "precio": listing.get("market_value")
+                    if isinstance(listing.get("market_value"), int) and not isinstance(listing.get("market_value"), bool)
+                    else decision.get("sale_price"),
+                    "nombre": decision.get("nickname") or decision.get("name"),
+                },
+                plantilla,
+                cash,
             )
         )
+        decisions.append(decision)
 
     decisions.sort(
         key=lambda row: (
@@ -1184,6 +1206,46 @@ def _matched_points(trend: dict[str, Any], usable: bool) -> tuple[float | None, 
         if af is not None:
             return af, "af"
     return None, None
+
+
+def _puntos_recientes(trend: dict[str, Any]) -> list[Any]:
+    raw = trend.get("week_points")
+    if not isinstance(raw, list):
+        form = trend.get("form") if isinstance(trend.get("form"), dict) else {}
+        raw = form.get("week_points")
+    return raw if isinstance(raw, list) else []
+
+
+def _plantilla_para_nota(
+    optimize: dict[str, Any] | None,
+    indexed: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Titulares propios, con el mismo xP que usa el margen del once."""
+    if not isinstance(optimize, dict) or optimize.get("ok") is False:
+        return []
+    xi = optimize.get("xi")
+    if not isinstance(xi, list):
+        return []
+    filas: list[dict[str, Any]] = []
+    for row in xi:
+        if not isinstance(row, dict):
+            continue
+        position = row.get("position")
+        if position not in {"POR", "DEF", "MC", "DEL"}:
+            continue
+        player_id = row.get("player_id") if isinstance(row.get("player_id"), str) else None
+        trend = indexed.get(player_id) if player_id else None
+        if not isinstance(trend, dict):
+            trend = {}
+        points, _source = _matched_points(trend, trend_usable(trend))
+        if points is None:
+            for key in ("jornada_ev", "expected_points", "jornada"):
+                candidate = row.get(key)
+                if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
+                    points = float(candidate)
+                    break
+        filas.append({"player_id": player_id, "position": position, "xp": points, "en_xi": True})
+    return filas
 
 
 def _xi_margins(

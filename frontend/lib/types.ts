@@ -266,7 +266,7 @@ export type CapitanPick = {
 
 export type PlanFichajeAccion = {
   tipo?: "VENDE" | "VENDER HOY" | "ESCAPARATE" | "PUJA" | "CLAUSULAZO" | "BUSCA" | string;
-  momento?: "hoy" | "luego" | "radar" | string;
+  momento?: "hoy" | "luego" | "radar" | "condicional" | string;
   impulso?: "MUST-BUY" | "CHOLLO" | "HOLD" | "ALL-IN" | "NORMAL" | "VENTA" | string | null;
   player_id?: string | null;
   nombre?: string | null;
@@ -276,6 +276,11 @@ export type PlanFichajeAccion = {
   mejora_neta?: number | null;
   prevision_7d_pct?: number | null;
   detalle?: string | null;
+  /** Cifra redonda que daría La Pizarra y la nuestra cuando hay demanda alta. */
+  puja_pizarra?: number | null;
+  puja_anti_pizarra?: number | null;
+  diferencial_anti_pizarra_eur?: number | null;
+  alta_demanda?: boolean;
 };
 
 export type PlanFichajes = {
@@ -361,7 +366,17 @@ export type NivelClausula = {
 };
 
 export type VeredictoProteger = "PROTEGER_YA" | "PROTEGER_PARCIAL" | "SIN_CAJA" | "VENDER_ANTES" | "ASUMIR";
-export type VeredictoClausulazo = "CLAUSULAR_YA" | "PROGRAMAR" | "SIN_CAJA" | "OPORTUNIDAD";
+export type VeredictoClausulazo = "CLAUSULAR_YA" | "PROGRAMAR" | "SIN_CAJA" | "OPORTUNIDAD" | "GOLPE_RIVAL";
+
+export type BonoRoscoRival = {
+  activo: boolean;
+  rival?: string | null;
+  puesto_liga: number;
+  sin_recambio: boolean;
+  sanos_tras: number;
+  impacto_pts: number;
+  mensaje: string;
+};
 
 export type ClausulaEnPeligro = {
   player_id: string;
@@ -413,6 +428,8 @@ export type ClausulazoSugerido = {
   falta_caja_eur: number;
   caja_tras?: number | null;
   rivales_que_pueden_quitartelo: number;
+  bono_rosco_rival?: BonoRoscoRival | null;
+  prioridad_estrategica?: number | null;
   veredicto_codigo: VeredictoClausulazo;
   veredicto_titulo: string;
   motivo_detallado: string;

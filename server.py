@@ -70,6 +70,7 @@ from toolbox.jornada_plan import (
     read_expert_note,
     write_expert_note,
 )
+from toolbox.engine.comparador_liga import comparar_jugadores_liga
 from toolbox.engine.strategy_layer import publish_strategy
 from toolbox.engine_calibration import build_calibration_report, persist_market_decisions
 from toolbox.market_maker import get_market_recommendations
@@ -2641,6 +2642,24 @@ def api_optimize(
     body.update(_photo_fields(board))
     publish_strategy(board, body)
     return body
+
+
+@app.get("/api/comparar")
+@_read_only
+def api_comparar(
+    actual: str = Query(...),
+    objetivo: str = Query(...),
+    league: str | None = Query(default=None),
+) -> Any:
+    """Cara a cara con el coste real de la liga. Solo lee la foto guardada."""
+    board = _board("comparar", league, tier="full")
+    if isinstance(board, JSONResponse):
+        return board
+    result = comparar_jugadores_liga(actual, objetivo, board)
+    if result.get("ok") is False:
+        return JSONResponse(status_code=404, content=result)
+    result.update(_photo_fields(board))
+    return result
 
 
 @app.get("/api/trends")

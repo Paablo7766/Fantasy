@@ -406,7 +406,7 @@ function facts(player: MarketDecision): BidFact[] {
     rows.push({
       label: "Puja smart",
       value: eur(player.smart_bid_eur),
-      note: player.smart_bid_analysis || "Supera la caja del rival interesado, con tope del +25 %",
+      note: player.smart_bid_analysis || "Supera la caja del rival interesado, dentro del techo dinámico",
     });
   }
   if (typeof player.app_bid_eur === "number") {
@@ -420,7 +420,7 @@ function facts(player: MarketDecision): BidFact[] {
     rows.push({
       label: "Tope financiero",
       value: eur(player.financial_max_bid_eur),
-      note: "No pagar más de un 25 % sobre el valor",
+      note: "Techo dinámico: +15 % más la previsión a 7 días y la dificultad, con cap del +30 %",
     });
   }
   if (typeof player.smart_bid_success_pct === "number") {

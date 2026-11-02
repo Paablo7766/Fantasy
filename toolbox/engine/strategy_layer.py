@@ -19,6 +19,7 @@ from toolbox.engine.auction_intel import (
     UMBRAL_WAR_OFERTA,
     calcular_pujas,
     capitanes,
+    puja_anti_pizarra,
 )
 from toolbox.engine.lineup_math import solve_best_xi, war_del_once
 from toolbox.engine.market_predictor import (
@@ -27,7 +28,8 @@ from toolbox.engine.market_predictor import (
     ratio_mercado_liga,
     valor_justo_jugador,
 )
-from toolbox.engine.clause_advisor import evaluar_clausulas
+from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, evaluar_clausulas
+from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
 from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes
 from toolbox.market_intel import _jornada_kickoff, _parse_kickoff
@@ -130,6 +132,7 @@ def _blank() -> dict[str, Any]:
         "clause": None,
         "shielded": False,
         "clause_lock": None,
+        "dificultad": None,
         "on_market": False,
         "seller_team_id": None,
         "sale_price": None,
@@ -235,7 +238,29 @@ def _recientes(source: dict[str, Any]) -> list[float]:
         number = _num(value)
         if number is not None:
             numeros.append(number)
-    return numeros[-3:]
+    return numeros[-5:]
+
+
+def _set_difficulty(row: dict[str, Any], source: dict[str, Any]) -> None:
+    if isinstance(row.get("dificultad"), str) and row["dificultad"].strip():
+        return
+    fixture = source.get("fixture")
+    if isinstance(fixture, dict) and isinstance(fixture.get("difficulty"), str) and fixture["difficulty"].strip():
+        row["dificultad"] = fixture["difficulty"].strip()
+        return
+    for key in ("calendar_difficulty", "difficulty", "dificultad"):
+        value = source.get(key)
+        if isinstance(value, str) and value.strip():
+            row["dificultad"] = value.strip()
+            return
+    for key in ("own_calendar", "af_calendar"):
+        calendar = source.get(key)
+        if not isinstance(calendar, list) or not calendar or not isinstance(calendar[0], dict):
+            continue
+        value = calendar[0].get("difficulty")
+        if isinstance(value, str) and value.strip():
+            row["dificultad"] = value.strip()
+            return
 
 
 def _en_forma(row: dict[str, Any]) -> bool:
@@ -321,6 +346,7 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
         _set_name(row, player)
         _set_points(row, player, prefer=False)
         _set_price(row, player)
+        _set_difficulty(row, player)
         if exclusion_from_status(player.get("player_status") if isinstance(player.get("player_status"), str) else None):
             row["excluded"] = True
 
@@ -376,6 +402,7 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
         _set_name(row, listing)
         _set_points(row, listing, prefer=False)
         _set_price(row, listing)
+        _set_difficulty(row, listing)
         row["on_market"] = True
         row["bids"] = [bid for bid in listing.get("bids") or [] if isinstance(bid, dict)]
         seller = _pid(listing.get("seller_team_id"))
@@ -589,7 +616,9 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
     if own_id and own_id in cajas:
         saldo = cajas[own_id]
 
-    pujas: dict[str, dict[str, int | None]] = {}
+    notas = _notas_mercado(records, previsiones, saldo)
+
+    pujas: dict[str, dict[str, Any]] = {}
     for row in records.values():
         player_id = row.get("player_id")
         valor = row.get("valor")
@@ -599,6 +628,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         if not isinstance(justo, int):
             jornada = row.get("jornada")
             justo = valor_justo_jugador(float(jornada), ratio) if isinstance(jornada, (int, float)) and not isinstance(jornada, bool) else 0
+        previsto_pct = previsiones.get(player_id, {}).get("pct") if isinstance(previsiones.get(player_id), dict) else None
         pujas[player_id] = calcular_pujas(
             valor,
             float(row.get("delta_hoy") or 0.0),
@@ -606,7 +636,10 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
             tu_saldo=saldo,
             rivales=rivales,
             posicion=row.get("position") if isinstance(row.get("position"), str) else None,
+            prevision_7d_pct=previsto_pct,
+            dificultad=row.get("dificultad") if isinstance(row.get("dificultad"), str) else None,
         )
+        _aplicar_anti_pizarra(pujas[player_id], row, notas.get(player_id), previsto_pct, saldo)
 
     forzadas: dict[str, str] = {}
     ventas: list[dict[str, Any]] = []
@@ -655,10 +688,22 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         current,
         own_id,
         previsiones,
+        notas,
     )
+    _sellar_pujas_plan(plan, pujas)
     consejos = _consejos(records, war, plan, own_id)
     auditoria = _auditar_ventas(records, war, plan, previsiones, saldo, own_id)
-    clausulas = _asesorar_clausulas(records, war, previsiones, rivales, saldo, ratio, board if isinstance(board, dict) else {}, current)
+    clausulas = _asesorar_clausulas(
+        records,
+        war,
+        previsiones,
+        rivales,
+        saldo,
+        ratio,
+        board if isinstance(board, dict) else {},
+        current,
+        dias_al_cierre=_num(plan.get("dias_al_cierre")) if isinstance(plan, dict) else None,
+    )
     return {
         "ratio_mercado": round(ratio, 2),
         "ratio_detalle": {
@@ -681,6 +726,8 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         "auditoria_ventas": auditoria["filas"],
         "resumen_ventas": auditoria["resumen"],
         "asesor_clausulas": clausulas,
+        "radar_anti_robo": clausulas.get("radar_anti_robo") or [],
+        "notas_mercado": notas,
     }
 
 
@@ -767,7 +814,42 @@ def _clausulas_vacias() -> dict[str, Any]:
         },
         "proteger": [],
         "clausulazos": [],
+        "radar_anti_robo": [],
     }
+
+
+def _puestos_liga(board: dict[str, Any]) -> dict[str, int]:
+    """``team_id`` → puesto en la clasificación, si la foto lo trae."""
+    squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
+    puestos: dict[str, int] = {}
+    for squad in squads.get("squads") or []:
+        if not isinstance(squad, dict):
+            continue
+        team_id = _pid(squad.get("team_id"))
+        puesto = _int(squad.get("rank"))
+        if team_id and puesto is not None and puesto > 0:
+            puestos[team_id] = puesto
+    return puestos
+
+
+def _plantillas_rivales(records: dict[str, dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Plantilla de cada rival con puesto, sanidad y puntos esperados."""
+    plantillas: dict[str, list[dict[str, Any]]] = {}
+    for row in records.values():
+        team_id = row.get("team_id")
+        if row.get("is_self") is True or not isinstance(team_id, str) or not team_id:
+            continue
+        if not isinstance(row.get("player_id"), str):
+            continue
+        plantillas.setdefault(team_id, []).append(
+            {
+                "player_id": row["player_id"],
+                "position": row.get("position"),
+                "sano": row.get("excluded") is not True,
+                "jornada": row.get("jornada"),
+            }
+        )
+    return plantillas
 
 
 def _asesorar_clausulas(
@@ -779,9 +861,13 @@ def _asesorar_clausulas(
     ratio: float,
     board: dict[str, Any],
     now: datetime,
+    *,
+    dias_al_cierre: float | None = None,
 ) -> dict[str, Any]:
     propios: list[dict[str, Any]] = []
     ajenos: list[dict[str, Any]] = []
+    puestos = _puestos_liga(board)
+    plantillas = _plantillas_rivales(records)
     for row in records.values():
         player_id = row.get("player_id")
         if not isinstance(player_id, str):
@@ -818,22 +904,53 @@ def _asesorar_clausulas(
                     "valor_justo": (previsiones.get(player_id) or {}).get("valor_justo"),
                 }
             )
+    radar = auditar_clausulas_plantilla(
+        [
+            {
+                "player_id": fila.get("player_id"),
+                "nombre": fila.get("nombre"),
+                "position": fila.get("position"),
+                "clausula": fila.get("clausula"),
+                "valor_mercado": fila.get("valor"),
+                "prevision_7d_pct": fila.get("pct"),
+                "clausulaAbre": fila.get("bloqueo"),
+                "blindado": fila.get("blindado") is True,
+            }
+            for fila in propios
+        ],
+        [
+            {"dineroEstimado": rival.get("saldo"), "manager": rival.get("manager"), "team_id": rival.get("team_id")}
+            for rival in rivales
+            if isinstance(rival, dict)
+        ],
+        ahora=now,
+    )
     try:
-        return evaluar_clausulas(
+        informe = evaluar_clausulas(
             propios=propios,
             ajenos=ajenos,
             rivales=[
-                {"team_id": rival.get("team_id"), "manager": rival.get("manager"), "saldo": rival.get("saldo"), "posiciones": rival.get("posiciones")}
+                {
+                    "team_id": rival.get("team_id"),
+                    "manager": rival.get("manager"),
+                    "saldo": rival.get("saldo"),
+                    "posiciones": rival.get("posiciones"),
+                    "puesto_liga": puestos.get(str(rival.get("team_id"))),
+                    "plantilla": plantillas.get(str(rival.get("team_id")), []),
+                }
                 for rival in rivales
             ],
             saldo=saldo,
             ratio=ratio,
             ahora=now,
             cierre=_cierre_ventana(board, now),
+            dias_al_cierre=dias_al_cierre,
         )
     except Exception:
         logger.exception("asesor de cláusulas")
-        return _clausulas_vacias()
+        informe = _clausulas_vacias()
+    informe["radar_anti_robo"] = radar
+    return informe
 
 
 def _resumen_vacio() -> dict[str, Any]:
@@ -856,6 +973,50 @@ def _pct_previsto(previsiones: dict[str, dict[str, Any]], player_id: str) -> flo
     return float(pct)
 
 
+def _aplicar_anti_pizarra(
+    puja: dict[str, Any],
+    row: dict[str, Any],
+    nota: dict[str, Any] | None,
+    pct: float | None,
+    saldo: int | None,
+) -> None:
+    """Con demanda alta sube ``puja_recomendada`` por encima del escalón de La Pizarra."""
+    valor = row.get("valor") or row.get("sale_price") or 0
+    info = puja_anti_pizarra(
+        valor,
+        row.get("delta_hoy"),
+        nota_mercado=nota.get("nota_mercado") if isinstance(nota, dict) else None,
+        prevision_7d_pct=pct,
+        clave=row.get("player_id"),
+        maxima=puja.get("puja_maxima") if isinstance(puja.get("puja_maxima"), int) else None,
+        saldo=saldo,
+    )
+    puja["puja_pizarra"] = info["puja_pizarra"]
+    puja["puja_anti_pizarra"] = info["puja_anti_pizarra"]
+    puja["diferencial_anti_pizarra_eur"] = info["diferencial_anti_pizarra_eur"]
+    puja["alta_demanda"] = info["alta_demanda"]
+    anti = info["puja_anti_pizarra"]
+    if isinstance(anti, int):
+        puja["puja_recomendada"] = anti
+        smart = puja.get("puja_smart")
+        if not isinstance(smart, int) or smart < anti:
+            puja["puja_smart"] = anti
+
+
+def _sellar_pujas_plan(plan: dict[str, Any], pujas: dict[str, dict[str, Any]]) -> None:
+    """Las acciones PUJA del plan llevan la cifra de La Pizarra y la nuestra."""
+    for accion in plan.get("acciones") or [] if isinstance(plan, dict) else []:
+        if not isinstance(accion, dict) or accion.get("tipo") != "PUJA":
+            continue
+        puja = pujas.get(accion.get("player_id")) if isinstance(accion.get("player_id"), str) else None
+        if not isinstance(puja, dict):
+            continue
+        accion["puja_pizarra"] = puja.get("puja_pizarra")
+        accion["puja_anti_pizarra"] = puja.get("puja_anti_pizarra")
+        accion["diferencial_anti_pizarra_eur"] = puja.get("diferencial_anti_pizarra_eur") or 0
+        accion["alta_demanda"] = puja.get("alta_demanda") is True
+
+
 def _plan(
     records: dict[str, dict[str, Any]],
     xi: list[dict[str, Any]],
@@ -867,9 +1028,11 @@ def _plan(
     now: datetime,
     own_id: str | None,
     previsiones: dict[str, dict[str, Any]] | None = None,
+    notas: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     del rivales
     previsto = previsiones or {}
+    notas_mercado = notas or {}
     owned_rows: list[dict[str, Any]] = []
     for row in records.values():
         if row.get("is_self") is not True or not isinstance(row.get("player_id"), str):
@@ -888,6 +1051,7 @@ def _plan(
                 "war": war.get(row["player_id"]),
                 "pct": _pct_previsto(previsto, row["player_id"]),
                 "valor": row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None,
+                "p_titular": row.get("p_titular") if isinstance(row.get("p_titular"), (int, float)) and not isinstance(row.get("p_titular"), bool) else row.get("prob_titular"),
                 "tiene_oferta_laliga": row.get("tiene_oferta_laliga") is True,
             }
         )
@@ -920,6 +1084,15 @@ def _plan(
             tu_saldo=saldo,
             rivales=[],
             posicion=row.get("position"),
+            prevision_7d_pct=_pct_previsto(previsto, player_id),
+            dificultad=row.get("dificultad") if isinstance(row.get("dificultad"), str) else None,
+        )
+        _aplicar_anti_pizarra(
+            puja,
+            row,
+            notas_mercado.get(player_id),
+            _pct_previsto(previsto, player_id),
+            saldo,
         )
         recomendada = puja.get("puja_recomendada")
         maxima = puja.get("puja_maxima")
@@ -963,6 +1136,9 @@ def _plan(
             continue
         if any(item["player_id"] == player_id for item in mercado):
             continue
+        valor = row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None
+        if not valor and isinstance(row.get("market_value"), int) and not isinstance(row.get("market_value"), bool):
+            valor = row["market_value"] if row["market_value"] > 0 else None
         clausulas.append(
             {
                 "player_id": player_id,
@@ -972,6 +1148,7 @@ def _plan(
                 "euros": clause,
                 "eficiencia": float(jornada) / clause,
                 "pct": _pct_previsto(previsto, player_id),
+                "valor": valor if isinstance(valor, int) and valor > 0 else None,
             }
         )
     clausulas.sort(key=lambda item: float(item["eficiencia"]), reverse=True)
@@ -991,6 +1168,48 @@ def _plan(
     except Exception:
         logger.exception("plan de fichajes")
         return _empty_plan(saldo, ratio)
+
+
+def _notas_mercado(
+    records: dict[str, dict[str, Any]],
+    previsiones: dict[str, dict[str, Any]],
+    saldo: int | None,
+) -> dict[str, dict[str, Any]]:
+    plantilla = [
+        {
+            "player_id": row.get("player_id"),
+            "position": row.get("position"),
+            "xp": row.get("jornada"),
+            "en_xi": True,
+            "p_titular": row.get("p_titular"),
+        }
+        for row in records.values()
+        if row.get("is_self") is True and row.get("in_xi") is True
+    ]
+    notas: dict[str, dict[str, Any]] = {}
+    for row in records.values():
+        if row.get("on_market") is not True:
+            continue
+        player_id = row.get("player_id")
+        if not isinstance(player_id, str):
+            continue
+        previsto = previsiones.get(player_id) if isinstance(previsiones.get(player_id), dict) else {}
+        notas[player_id] = calcular_nota_mercado(
+            {
+                "player_id": player_id,
+                "nombre": row.get("nombre"),
+                "position": row.get("position"),
+                "xp": row.get("jornada"),
+                "prevision_7d_pct": previsto.get("pct") if isinstance(previsto, dict) else None,
+                "p_titular": row.get("p_titular"),
+                "week_points": row.get("recientes"),
+                "dificultad": row.get("dificultad"),
+                "precio": row.get("sale_price") or row.get("valor"),
+            },
+            plantilla,
+            saldo,
+        )
+    return notas
 
 
 def _consejos(
@@ -1065,6 +1284,19 @@ def _stamp_row(row: dict[str, Any], report: dict[str, Any]) -> None:
         row["puja_recomendada"] = puja.get("puja_recomendada")
         row["puja_maxima"] = puja.get("puja_maxima")
         row["puja_smart"] = puja.get("puja_smart")
+        maxima = puja.get("puja_maxima")
+        if isinstance(maxima, int) and maxima > 0:
+            row["financial_max_bid_eur"] = maxima
+            smart = row.get("smart_bid_eur")
+            if isinstance(smart, int) and smart > maxima:
+                row["smart_bid_eur"] = maxima
+    nota = report.get("notas_mercado") if isinstance(report.get("notas_mercado"), dict) else {}
+    ficha = nota.get(player_id) if isinstance(nota, dict) else None
+    if isinstance(ficha, dict):
+        row["nota_mercado"] = ficha.get("nota_mercado")
+        row["veredicto_mercado"] = ficha.get("veredicto_mercado")
+        row["etiqueta_mercado"] = ficha.get("etiqueta_mercado")
+        row["frase_mercado"] = ficha.get("frase_mercado")
     if player_id in report["forzadas"]:
         row["venta_forzada_rival"] = True
         row["venta_forzada_detalle"] = report["forzadas"][player_id]
@@ -1112,6 +1344,7 @@ def stamp_strategy(payload: dict[str, Any], report: dict[str, Any]) -> None:
     payload["auditoria_ventas"] = report.get("auditoria_ventas") or []
     payload["resumen_ventas"] = report.get("resumen_ventas") or _resumen_vacio()
     payload["asesor_clausulas"] = report.get("asesor_clausulas") or _clausulas_vacias()
+    payload["radar_anti_robo"] = report.get("radar_anti_robo") or []
 
 
 def publish_strategy(board: dict[str, Any], payload: dict[str, Any], *, now: datetime | None = None) -> None:
@@ -1143,5 +1376,7 @@ def publish_strategy(board: dict[str, Any], payload: dict[str, Any], *, now: dat
             "auditoria_ventas": [],
             "resumen_ventas": _resumen_vacio(),
             "asesor_clausulas": _clausulas_vacias(),
+            "radar_anti_robo": [],
+            "notas_mercado": {},
         }
     stamp_strategy(payload, report)

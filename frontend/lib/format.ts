@@ -11,6 +11,22 @@ export function eur(value: number | null | undefined): string {
   }).format(value);
 }
 
+/** Millones con una cifra y coma: ``12,3M``. */
+export function millionsLabel(value: number | null | undefined): string {
+  if (typeof value !== "number" || Number.isNaN(value)) return "s/d";
+  return `${(value / 1_000_000).toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`;
+}
+
+/** Micro-texto de la cápsula de puja: ``Puja Smart: 12,3M (Máx: 14,1M)``. */
+export function smartBidCaption(
+  smart: number | null | undefined,
+  max: number | null | undefined,
+): string | null {
+  if (typeof smart !== "number" || Number.isNaN(smart)) return null;
+  if (typeof max !== "number" || Number.isNaN(max)) return `Puja Smart: ${millionsLabel(smart)}`;
+  return `Puja Smart: ${millionsLabel(smart)} (Máx: ${millionsLabel(max)})`;
+}
+
 /** Importe compacto para celdas estrechas: 8,57 M€ · 940 mil € · 320 €. */
 export function eurShort(value: number | null | undefined): string {
   if (typeof value !== "number" || Number.isNaN(value)) return "s/d";

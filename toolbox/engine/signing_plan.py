@@ -1,9 +1,9 @@
 """Plan de fichajes: once de más puntos, sin vaciar la caja a ciegas.
 
-El solver junta ventas, pujas, cláusulas y, si faltan al menos dos días, como
-mucho un jugador aún por encontrar. El dinero que se gasta hoy no vuelve a
-estar el jueves: la función objetivo resta el coste de oportunidad de esa
-caja según los días que quedan hasta el inicio de la jornada.
+El solver junta ventas, pujas y cláusulas. Un jugador aún por encontrar solo
+tapa un hueco que ya existe: no sirve para justificar una venta. El dinero que
+se gasta hoy no vuelve a estar el jueves, y el sobreprecio de un clausulazo
+tampoco vuelve al vender al jugador.
 """
 
 from __future__ import annotations
@@ -40,6 +40,22 @@ DIAS_REFERENCIA_LUNES = 4.0
 FACTOR_AJUSTE = XP_POR_MILLON_LUNES * 7.0 / DIAS_REFERENCIA_LUNES
 # Un chollo de banquillo no suma xP. Este extra solo desempata contra no gastarlo.
 BONUS_CHOLLO = 0.02
+# Cláusula / valor de mercado. Por encima, solo pasa si la subida a 7 días
+# cubre al menos el 60 % del sobreprecio.
+RATIO_CLAUSULA_MAX = 1.35
+COBERTURA_SOBREPRECIO = 0.60
+# Sobreprecio que LaLiga no devuelve. Por encima, el clausulazo de un jugador
+# de valor medio o bajo se descarta antes del solver.
+PRIMA_QUEMADA_MAX = 3_500_000
+VALOR_MEDIO_BAJO = 15_000_000
+# Puntos que se restan por cada millón de prima quemada que sí entra al solver.
+PENALIZACION_PRIMA_POR_MILLON = 0.45
+# Ventas de titulares sanos en un mismo plan. Lesionados y sancionados no cuentan.
+MAX_VENTAS_TITULARES_SANOS = 2
+# Por debajo de esto el jugador no es titular: hay que reemplazarlo y no entra en el tope.
+UMBRAL_BAJA = 0.20
+# Desempata a favor de sacar a un lesionado cuando al once le da igual.
+BONUS_REEMPLAZO_BAJA = 0.05
 _MILLON = 1_000_000
 _SEQ = 0
 
@@ -224,6 +240,208 @@ def _valor_jugador(row: dict[str, Any]) -> int:
     return 0
 
 
+def _entero_positivo(row: dict[str, Any], *keys: str) -> int | None:
+    for key in keys:
+        value = row.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        number = float(value)
+        if not math.isfinite(number) or number <= 0:
+            continue
+        return int(number)
+    return None
+
+
+def _prob_titular(row: dict[str, Any]) -> float | None:
+    """Probabilidad de titularidad en 0–1. Acepta también un porcentaje 0–100."""
+    for key in ("prob_titular", "p_titular"):
+        value = row.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        number = float(value)
+        if not math.isfinite(number) or number < 0:
+            continue
+        if number > 1.0:
+            number /= 100.0
+        return number
+    return None
+
+
+def _es_baja(row: dict[str, Any]) -> bool:
+    """Lesionado o sancionado: no cuenta como titular sano y hay que reemplazarlo."""
+    prob = _prob_titular(row)
+    return prob is not None and prob < UMBRAL_BAJA
+
+
+def _valor_mercado(row: dict[str, Any]) -> int | None:
+    """Valor de mercado del jugador. El precio de la cláusula no cuenta como valor."""
+    return _entero_positivo(row, "valor_mercado", "valor", "market_value")
+
+
+def evaluar_patrimonio_clausula(row: dict[str, Any]) -> dict[str, Any]:
+    """Sobreprecio de un clausulazo y si destruye patrimonio.
+
+    Sin valor de mercado no se puede demostrar el destrozo: el candidato sigue
+    y la prima quemada queda en cero. Con valor, se descarta si la cláusula
+    pasa del +35 % y la subida a 7 días no cubre el 60 % de ese sobreprecio,
+    o si la prima quemada supera 3,5 M€ en un jugador de menos de 15 M€.
+    """
+    clausula = _entero_positivo(row, "euros", "clausula", "clause")
+    valor = _valor_mercado(row)
+    pct = _leer_pct(row) or 0.0
+    if clausula is None or valor is None:
+        return {
+            "clausula": clausula,
+            "valor_mercado": valor,
+            "sobreprecio_bruto": None,
+            "ratio_clausula": None,
+            "subida_7d_euros": 0.0,
+            "prima_quemada_neta": 0.0,
+            "descartar": False,
+        }
+    sobreprecio = float(clausula - valor)
+    ratio = clausula / max(float(valor), 0.1)
+    subida = float(valor) * (pct / 100.0)
+    prima = max(0.0, float(clausula) - (float(valor) + subida))
+    descartar = False
+    if ratio > RATIO_CLAUSULA_MAX and subida < COBERTURA_SOBREPRECIO * max(sobreprecio, 0.0):
+        descartar = True
+    if valor < VALOR_MEDIO_BAJO and prima > PRIMA_QUEMADA_MAX:
+        descartar = True
+    return {
+        "clausula": clausula,
+        "valor_mercado": valor,
+        "sobreprecio_bruto": sobreprecio,
+        "ratio_clausula": ratio,
+        "subida_7d_euros": subida,
+        "prima_quemada_neta": prima,
+        "descartar": descartar,
+    }
+
+
+def _es_suplente(player_id: str, plantilla: list[dict[str, Any]], xi_ids: set[str]) -> bool:
+    """Sobran cuerpos y este jugador no está en el once: venderlo deja 11 reales."""
+    reales = [row for row in plantilla if isinstance(row.get("player_id"), str)]
+    return len(reales) >= 12 and player_id not in xi_ids
+
+
+def _detalle_venta_directa(
+    row: dict[str, Any],
+    *,
+    saldo: int,
+    ventana: bool,
+    financia_clausula: bool,
+    baja: bool,
+) -> str:
+    pct = _leer_pct(row)
+    if saldo < 0:
+        return "Vender hoy: el saldo ya está en negativo y hay que cubrir la deuda antes del viernes."
+    if financia_clausula:
+        return "Vender hoy: la caja financia un clausulazo, que entra al momento y no depende de una subasta."
+    if baja:
+        return (
+            "Vender hoy: está lesionado o sancionado (titularidad por debajo del 20 %) "
+            "y el once sigue completo sin él."
+        )
+    if ventana and pct is not None and pct < UMBRAL_CAIDA_PCT:
+        return "Vender hoy: ya hay oferta de LaLiga y el precio cae más de un 3 % a siete días."
+    if ventana:
+        return (
+            "Vender hoy: es suplente, el once sigue con 11 titulares reales "
+            "y hay oferta de LaLiga o el precio está bajando."
+        )
+    return "Venta para financiar el once. Conviene hacerla hoy: la caja tiene que estar lista antes de pujar."
+
+
+def _emparejar_ventas(
+    ventas: list[dict[str, Any]],
+    pujas: list[dict[str, Any]],
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Cada venta condicional se ata a la puja que la pagaría, a ser posible del mismo puesto."""
+    libres = list(pujas)
+    pares: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for venta in ventas:
+        mismo = next((puja for puja in libres if puja.get("position") == venta.get("position")), None)
+        if mismo is None and libres:
+            mismo = libres[0]
+        if mismo is None:
+            mismo = pujas[0]
+        else:
+            libres.remove(mismo)
+        pares.append((venta, mismo))
+    return pares
+
+
+def _partir_ventas(
+    *,
+    saldo: int,
+    ventas: list[dict[str, Any]],
+    pujas: list[dict[str, Any]],
+    clausulas_hechas: list[dict[str, Any]],
+    plantilla: list[dict[str, Any]],
+    xi_ids: set[str],
+    bajas: set[str],
+) -> tuple[list[dict[str, Any]], list[tuple[dict[str, Any], dict[str, Any]]], set[str], set[str]]:
+    """Separa «vender hoy» de «vender solo si ganas la puja».
+
+    Vender hoy solo cubre deuda, paga un clausulazo o saca a un suplente que
+    baja o ya tiene oferta. El resto, si financia una puja, espera a ganarla.
+    """
+    directos: set[str] = set()
+    por_deuda: set[str] = set()
+    por_clausula: set[str] = set()
+    if saldo < 0:
+        caja = saldo
+        for row in sorted(ventas, key=lambda item: int(item.get("venta_eur") or 0)):
+            if caja >= 0:
+                break
+            directos.add(row["player_id"])
+            por_deuda.add(row["player_id"])
+            caja += int(row.get("venta_eur") or 0)
+    gasto_clausulas = sum(int(row.get("euros") or 0) for row in clausulas_hechas)
+    caja = saldo + sum(int(row.get("venta_eur") or 0) for row in ventas if row["player_id"] in directos)
+    if clausulas_hechas and caja < gasto_clausulas:
+        faltan = gasto_clausulas - caja
+        for row in sorted(ventas, key=lambda item: -int(item.get("venta_eur") or 0)):
+            if faltan <= 0:
+                break
+            if row["player_id"] in directos:
+                continue
+            directos.add(row["player_id"])
+            por_clausula.add(row["player_id"])
+            faltan -= int(row.get("venta_eur") or 0)
+    for row in ventas:
+        player_id = row["player_id"]
+        if player_id in directos:
+            continue
+        pct = _leer_pct(row)
+        bajando = pct is not None and pct < 0
+        if _es_suplente(player_id, plantilla, xi_ids) and (bajando or _tiene_oferta(row) or player_id in bajas):
+            directos.add(player_id)
+    if not pujas:
+        directos.update(row["player_id"] for row in ventas)
+
+    def _reales_hoy(ids: set[str]) -> int:
+        return len(plantilla) - len(ids) + len(clausulas_hechas)
+
+    limite = min(XI_SIZE, len(plantilla))
+    while pujas and _reales_hoy(directos) < limite:
+        movibles = [
+            row for row in ventas if row["player_id"] in directos and row["player_id"] not in por_clausula
+        ]
+        if not movibles:
+            break
+        # Primero se aplaza al titular: es quien dejaría el once cojo si la puja se pierde.
+        movibles.sort(key=lambda row: (row["player_id"] not in xi_ids, -int(row.get("venta_eur") or 0)))
+        directos.discard(movibles[0]["player_id"])
+        por_deuda.discard(movibles[0]["player_id"])
+
+    hoy = [row for row in ventas if row["player_id"] in directos]
+    esperar = [row for row in ventas if row["player_id"] not in directos]
+    pares = _emparejar_ventas(esperar, pujas) if esperar and pujas else []
+    return hoy, pares, por_deuda, por_clausula
+
+
 def _revalorizacion_hasta_viernes(row: dict[str, Any], dias: float) -> float:
     """Euros que el jugador recupera antes del saque si el precio sube.
 
@@ -281,11 +499,12 @@ def build_plan_fichajes(
     viernes)``. Una rotación que se paga sola, o un jugador que sube, no
     arrastra el mismo castigo que vaciar el saldo.
 
-    Con dos días o más, un fichaje marginal y caro va a ``en_radar``. Aceptar
-    una venta hoy exige oferta firme de LaLiga: o el precio cae más de un 3 %,
-    o la caja hace falta para un must-buy. Quien sería venta el viernes y aún
-    sube se lista en ``ESCAPARATE`` y no se malvende. Un chollo de banquillo
-    solo entra si quedan al menos dos días y sobra caja para el once.
+    Con dos días o más, un fichaje marginal y caro va a ``en_radar``. Una venta
+    que solo financia una puja no se acepta hoy: se puja, se pone al jugador
+    en el escaparate y se vende mañana únicamente si la puja se gana. Vender
+    hoy queda para tapar deuda, pagar un clausulazo o sacar a un suplente que
+    ya tiene oferta o está bajando. Un chollo de banquillo solo entra si quedan
+    al menos dos días y sobra caja para el once.
     """
     meta = _meta(dias_para_jornada)
     dias = dias_al_cierre(dias_para_jornada)
@@ -296,6 +515,15 @@ def build_plan_fichajes(
     plantilla = [row for row in owned if isinstance(row, dict) and isinstance(row.get("player_id"), str)]
     compras = [row for row in mercado if isinstance(row, dict) and isinstance(row.get("player_id"), str)]
     raids = [row for row in clausulas if isinstance(row, dict) and isinstance(row.get("player_id"), str)]
+    primas: dict[str, float] = {}
+    raids_ok: list[dict[str, Any]] = []
+    for row in raids:
+        info = evaluar_patrimonio_clausula(row)
+        if info["descartar"]:
+            continue
+        primas[row["player_id"]] = float(info["prima_quemada_neta"])
+        raids_ok.append(row)
+    raids = raids_ok
     permite_busca = ventana
     coste_busca = int(round(BUSCA_PUNTOS * ratio)) if ratio and ratio > 0 else 0
     if saldo is None:
@@ -331,6 +559,8 @@ def build_plan_fichajes(
     ]
     actual = solve_best_xi(elegibles)
     base_puntos = float(actual["puntos"]) if actual["ok"] else 0.0
+    xi_ids = set(actual["player_ids"]) if actual["ok"] else set()
+    bajas = {row["player_id"] for row in plantilla if _es_baja(row)}
 
     ficha_compra: dict[str, dict[str, Any]] = {}
     radar: list[dict[str, Any]] = []
@@ -417,6 +647,11 @@ def build_plan_fichajes(
         else:
             problem += juega <= 1
 
+    sanos = [player_id for player_id in vende if player_id in xi_ids and player_id not in bajas]
+    if sanos:
+        # Tope de rotación: un lesionado no gasta plaza de este cupo.
+        problem += pulp.lpSum(vende[player_id] for player_id in sanos) <= MAX_VENTAS_TITULARES_SANOS
+
     def _alta_compra(
         origen: str,
         row: dict[str, Any],
@@ -445,16 +680,17 @@ def build_plan_fichajes(
     for index, row in enumerate(raids):
         _alta_compra("clause", row, index, clausula, problem)
 
+    # Una venta no puede dejar menos de 11 jugadores con nombre. El «busca un DEF»
+    # no cuenta como sustituto: si ya hay once real, ni siquiera se ofrece.
+    fichajes_con_nombre = list(puja.values()) + list(clausula.values())
+    if vende or fichajes_con_nombre:
+        problem += pulp.lpSum(list(vende.values()) or [0]) <= pulp.lpSum(fichajes_con_nombre or [0]) + max(
+            0, len(plantilla) - XI_SIZE
+        )
+
     busca = {position: pulp.LpVariable(f"{prefix}_b{position}", cat=pulp.LpBinary) for position in POSITIONS}
-    if permite_busca and coste_busca > 0:
+    if len(elegibles) < XI_SIZE and permite_busca and coste_busca > 0:
         problem += pulp.lpSum(busca.values()) <= 1
-        # Con el once ya cerrado, solo se busca si una venta deja un hueco.
-        if actual["ok"]:
-            if vende:
-                problem += pulp.lpSum(busca.values()) <= pulp.lpSum(vende.values())
-            else:
-                for variable in busca.values():
-                    problem += variable == 0
     else:
         for variable in busca.values():
             problem += variable == 0
@@ -533,21 +769,21 @@ def build_plan_fichajes(
         ]
     )
     oferta_firme = {row["player_id"]: _tiene_oferta(row) for row in plantilla}
-    # Sin oferta de LaLiga no se puede aceptar hoy, aunque el precio ya esté cayendo.
-    if ventana:
+    # Sin oferta de LaLiga no se puede aceptar hoy, salvo para tapar un saldo ya negativo.
+    if ventana and saldo >= 0:
         for player_id in list(vende):
             if not oferta_firme.get(player_id):
                 problem += vende[player_id] == 0
 
-    vende_libre = [
-        player_id
-        for player_id in vende
-        if not ventana or (
-            oferta_firme.get(player_id)
-            and pct_propio.get(player_id) is not None
-            and pct_propio[player_id] < UMBRAL_CAIDA_PCT
-        )
-    ]
+    def _venta_libre(player_id: str) -> bool:
+        if not ventana or saldo < 0:
+            return True
+        if not oferta_firme.get(player_id):
+            return False
+        pct = pct_propio.get(player_id)
+        return player_id in bajas or (pct is not None and pct < UMBRAL_CAIDA_PCT)
+
+    vende_libre = [player_id for player_id in vende if _venta_libre(player_id)]
     vende_cond = [player_id for player_id in vende if player_id not in set(vende_libre)]
     ingresos_libres = pulp.lpSum(
         int(row["venta_eur"]) * vende[row["player_id"]]
@@ -643,11 +879,19 @@ def build_plan_fichajes(
         peaje = (penalizacion / _MILLON) * drenaje
     else:
         peaje = 0
+    # La prima quemada es dinero que no vuelve. Se resta aunque el peaje de liquidez esté apagado.
+    castigo_patrimonio = pulp.lpSum(
+        (primas.get(player_id, 0.0) / _MILLON) * PENALIZACION_PRIMA_POR_MILLON * variable
+        for player_id, variable in clausula.items()
+    )
+    bonus_baja = pulp.lpSum(BONUS_REEMPLAZO_BAJA * vende[player_id] for player_id in bajas if player_id in vende)
     problem += (
         puntos
         + bonus
+        + bonus_baja
         - peaje
-        - 0.0001 * pulp.lpSum(vende.values())
+        - castigo_patrimonio
+        - 0.0001 * pulp.lpSum(list(vende.values()) or [0])
         - 1e-12 * (gastos_puja + gastos_clausula + gastos_busca + ingresos)
     )
 
@@ -711,31 +955,80 @@ def build_plan_fichajes(
     acciones: list[dict[str, Any]] = []
     ingreso = 0
     gasto = 0
-    for row in plantilla:
-        if row["player_id"] in vende and _on(vende[row["player_id"]]):
-            euros = int(row["venta_eur"])
-            ingreso += euros
-            pct = pct_propio.get(row["player_id"])
-            if ventana and pct is not None and pct < UMBRAL_CAIDA_PCT:
-                detalle = "Vender hoy: ya hay oferta de LaLiga y el precio cae más de un 3 % a siete días."
-            elif ventana:
-                detalle = "Vender hoy: ya hay oferta de LaLiga y hace falta esta caja para un must-buy que no cabe en el saldo."
-            else:
-                detalle = "Venta para financiar el once. Conviene hacerla hoy: la caja tiene que estar lista antes de pujar."
-            acciones.append(
-                _accion(
-                    "VENDER HOY" if ventana else "VENDE",
-                    "hoy",
-                    player_id=row["player_id"],
-                    nombre=_nombre(row),
-                    posicion=row.get("position"),
-                    jornada=_jornada(row),
-                    euros=euros,
-                    detalle=detalle,
-                    impulso="VENTA",
-                    prevision_7d_pct=pct,
-                )
+    ventas_sel = [row for row in plantilla if row["player_id"] in vende and _on(vende[row["player_id"]])]
+    pujas_sel = [row for row in compras if row["player_id"] in puja and _on(puja[row["player_id"]])]
+    clausulas_sel = [row for row in raids if row["player_id"] in clausula and _on(clausula[row["player_id"]])]
+    ventas_hoy, pares, por_deuda, por_clausula = _partir_ventas(
+        saldo=saldo,
+        ventas=ventas_sel,
+        pujas=pujas_sel,
+        clausulas_hechas=clausulas_sel,
+        plantilla=plantilla,
+        xi_ids=xi_ids,
+        bajas=bajas,
+    )
+    # El viernes ya no hay «mañana» antes del saque: la venta que financia el plan se acepta hoy.
+    if dias is not None and dias < 1.0 and pares:
+        ventas_hoy.extend(venta for venta, _puja in pares)
+        pares = []
+    pujas_protegidas = {puja_row["player_id"] for _venta, puja_row in pares}
+    ya_en_secuencia = {venta["player_id"] for venta, _puja in pares}
+    for row in ventas_sel:
+        ingreso += int(row["venta_eur"])
+    for row in ventas_hoy:
+        pct = pct_propio.get(row["player_id"])
+        acciones.append(
+            _accion(
+                "VENDER HOY" if ventana else "VENDE",
+                "hoy",
+                player_id=row["player_id"],
+                nombre=_nombre(row),
+                posicion=row.get("position"),
+                jornada=_jornada(row),
+                euros=int(row["venta_eur"]),
+                detalle=_detalle_venta_directa(
+                    row,
+                    saldo=saldo if row["player_id"] in por_deuda else 0,
+                    ventana=ventana,
+                    financia_clausula=row["player_id"] in por_clausula,
+                    baja=row["player_id"] in bajas,
+                ),
+                impulso="VENTA",
+                prevision_7d_pct=pct,
             )
+        )
+    for venta, puja_row in pares:
+        nombre_venta = _nombre(venta)
+        nombre_puja = _nombre(puja_row)
+        pct = pct_propio.get(venta["player_id"])
+        acciones.append(
+            _accion(
+                "ESCAPARATE",
+                "hoy",
+                player_id=venta["player_id"],
+                nombre=nombre_venta,
+                posicion=venta.get("position"),
+                jornada=_jornada(venta),
+                euros=int(venta["venta_eur"]),
+                detalle=f"PONER EN ESCAPARATE a {nombre_venta} (Para tener oferta de LaLiga mañana)",
+                impulso="ESCAPARATE",
+                prevision_7d_pct=pct,
+            )
+        )
+        acciones.append(
+            _accion(
+                "VENDE",
+                "condicional",
+                player_id=venta["player_id"],
+                nombre=nombre_venta,
+                posicion=venta.get("position"),
+                jornada=_jornada(venta),
+                euros=int(venta["venta_eur"]),
+                detalle=f"VENDER A {nombre_venta} SOLO SI GANAS LA PUJA DE {nombre_puja}",
+                impulso="VENTA",
+                prevision_7d_pct=pct,
+            )
+        )
 
     def _momento_y_detalle(ficha: dict[str, Any]) -> tuple[str, str]:
         row = ficha["row"]
@@ -772,6 +1065,10 @@ def build_plan_fichajes(
             puntos_once += float(row.get("jornada") or 0.0)
             once.append(_ficha(row, "puja"))
         momento, detalle = _momento_y_detalle(ficha)
+        if row["player_id"] in pujas_protegidas:
+            # La puja va hoy; la venta que la paga espera a saber si se gana.
+            momento = "hoy"
+            detalle = f"PUJAR POR {_nombre(row)}. {detalle}"
         acciones.append(
             _accion(
                 "PUJA",
@@ -797,6 +1094,9 @@ def build_plan_fichajes(
             puntos_once += float(row.get("jornada") or 0.0)
             once.append(_ficha(row, "clausulazo"))
         momento, detalle = _momento_y_detalle(ficha)
+        prima = primas.get(row["player_id"], 0.0)
+        if prima > 0:
+            detalle += f" Prima quemada de {prima / _MILLON:.2f} M€: ese sobreprecio no vuelve al venderlo."
         acciones.append(
             _accion(
                 "CLAUSULAZO",
@@ -842,7 +1142,9 @@ def build_plan_fichajes(
 
     mejora = round(puntos_once - float(baseline_puntos), 2)
     hay_urgente = any(accion.get("impulso") in {"MUST-BUY", "CHOLLO"} for accion in acciones)
-    if mejora < MEJORA_MINIMA and not hay_urgente:
+    vende_baja = any(row["player_id"] in bajas for row in ventas_sel)
+    cubre_deuda = saldo < 0 and bool(ventas_hoy)
+    if mejora < MEJORA_MINIMA and not hay_urgente and not vende_baja and not cubre_deuda:
         vacio = _vacio(saldo, ratio, baseline_puntos, meta)
         vacio["en_radar"] = radar
         vacio["acciones"] = _escaparate(set())
@@ -852,14 +1154,10 @@ def build_plan_fichajes(
     if hay_urgente:
         veredicto = "Hazlo ya"
         nota = max(nota, 8)
-    vendidos = {
-        accion["player_id"]
-        for accion in acciones
-        if accion.get("tipo") in {"VENDE", "VENDER HOY"} and isinstance(accion.get("player_id"), str)
-    }
-    acciones.extend(_escaparate(vendidos))
-    orden = {"hoy": 0, "luego": 1}
-    tipo_orden = {"VENDER HOY": 0, "VENDE": 0, "ESCAPARATE": 1, "PUJA": 2, "CLAUSULAZO": 3, "BUSCA": 4}
+    manejados = {row["player_id"] for row in ventas_hoy} | ya_en_secuencia
+    acciones.extend(_escaparate(manejados))
+    orden = {"hoy": 0, "condicional": 1, "luego": 2}
+    tipo_orden = {"PUJA": 0, "ESCAPARATE": 1, "VENDER HOY": 2, "VENDE": 3, "CLAUSULAZO": 4, "BUSCA": 5}
     acciones.sort(key=lambda accion: (orden.get(str(accion["momento"]), 9), tipo_orden.get(str(accion["tipo"]), 9)))
     return {
         "ok": True,

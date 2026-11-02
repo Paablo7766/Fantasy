@@ -34,9 +34,12 @@ function kindOf(verb: string): Kind {
 
 function moveFromAction(action: PlanFichajeAccion, index: number, photos: PhotoIndex): StrategyMove {
   const tipo = (action.tipo || "PUJA").toUpperCase();
-  const aceptar = tipo === "VENDE" || tipo === "VENDER HOY";
+  const condicional = action.momento === "condicional";
+  const aceptar = (tipo === "VENDE" || tipo === "VENDER HOY") && !condicional;
   const escaparate = tipo === "ESCAPARATE";
-  const verb = escaparate
+  const verb = condicional
+    ? "Vender solo si ganas la puja"
+    : escaparate
     ? "Poner en escaparate"
     : aceptar
       ? "Vender hoy"
@@ -65,18 +68,18 @@ function moveFromAction(action: PlanFichajeAccion, index: number, photos: PhotoI
     title: tipo === "BUSCA" ? (action.posicion ? `un ${action.posicion}` : "un hueco") : action.nombre || "Jugador",
     position: action.posicion || null,
     imageUrl: photoFor(photos, action.player_id, action.nombre),
-    cashImpact: escaparate || amount === null ? null : income ? amount : -amount,
-    cashLabel: escaparate || amount === null ? null : eurShort(amount),
-    cashTone: income ? "up" : "down",
+    cashImpact: escaparate || condicional || amount === null ? null : income ? amount : -amount,
+    cashLabel: escaparate || condicional || amount === null ? null : eurShort(amount),
+    cashTone: condicional ? "flat" : income ? "up" : "down",
     pointsImpact: jornada,
     pointsLabel: jornada === null ? null : `${points(jornada)} xP`,
     pointsTone: "flat",
     tag,
     forecastPct: typeof action.prevision_7d_pct === "number" ? action.prevision_7d_pct : null,
-    later: action.momento === "luego",
+    later: action.momento === "luego" || condicional,
     detail: action.detalle || null,
-    href: aceptar || escaparate ? "/equipo?tab=cartera" : tipo === "CLAUSULAZO" ? "/equipo?tab=clausulas" : "/mercado",
-    guide: aceptar || escaparate ? "Cartera" : tipo === "CLAUSULAZO" ? "Cláusulas" : "Mercado",
+    href: aceptar || escaparate || condicional ? "/equipo?tab=cartera" : tipo === "CLAUSULAZO" ? "/equipo?tab=clausulas" : "/mercado",
+    guide: aceptar || escaparate || condicional ? "Cartera" : tipo === "CLAUSULAZO" ? "Cláusulas" : "Mercado",
   };
 }
 
@@ -225,7 +228,9 @@ export function SigningBoard({
   });
   const laterIds = new Set(
     usePlan
-      ? actions.map((action, index) => (action.momento === "luego" ? planMoves[index].id : null)).filter((id): id is string => id !== null)
+      ? actions
+          .map((action, index) => (action.momento === "luego" || action.momento === "condicional" ? planMoves[index].id : null))
+          .filter((id): id is string => id !== null)
       : [],
   );
 

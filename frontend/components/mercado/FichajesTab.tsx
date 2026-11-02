@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { CompararButton } from "@/components/comparador/ComparadorReal";
 import { GradeBadge } from "@/components/MarketGrade";
 import { BidSheet } from "@/components/mercado/BidSheet";
 import { ACTION_VERDICT, budgetLine, difficultyLabel, historyLine, winShare } from "@/components/mercado/shared";
@@ -86,7 +87,7 @@ function PlanRow({ accion }: { accion: PlanFichajeAccion }) {
           <span className="block text-[14.5px] font-semibold tabular-nums text-white">{money(accion.euros)}</span>
         ) : null}
         <span className={`block text-[11px] font-semibold uppercase tracking-wide ${hoy ? "text-[#FFC08A]" : "text-white/35"}`}>
-          {hoy ? "hoy" : accion.momento === "radar" ? "radar" : "luego"}
+          {hoy ? "hoy" : accion.momento === "radar" ? "radar" : accion.momento === "condicional" ? "condicional" : "luego"}
         </span>
       </span>
     </li>
@@ -143,10 +144,11 @@ function PickCard({ player, photo, onOpen }: { player: MarketDecision; photo: st
   const name = playerName(player);
   return (
     <li className="w-[15.5rem] shrink-0">
+      <div className="home-glass flex h-full w-full flex-col gap-3 p-4">
       <button
         type="button"
         onClick={onOpen}
-        className="home-glass flex h-full w-full flex-col gap-3 p-4 text-left transition-colors duration-200 ease-out hover:bg-white/[0.06]"
+        className="flex flex-col gap-3 text-left transition-colors duration-200 ease-out"
       >
         <span className="flex items-center gap-3">
           <Face name={name} src={photo} size={44} ring={TONE.green} />
@@ -182,6 +184,8 @@ function PickCard({ player, photo, onOpen }: { player: MarketDecision; photo: st
         ) : null}
         {player.frase_mercado ? <span className="line-clamp-2 text-[12.5px] leading-snug text-white/55">{player.frase_mercado}</span> : null}
       </button>
+      <CompararButton objetivoId={player.player_id} posicion={player.position} className="self-start" />
+      </div>
     </li>
   );
 }
@@ -204,12 +208,12 @@ function DecisionRow({
   const trend = parsePct(player.prevision_7d_pct);
   const reason = actionReason(player);
   return (
-    <li className="row-in border-b border-white/[0.06] last:border-b-0" style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}>
+    <li className="row-in flex items-center border-b border-white/[0.06] last:border-b-0" style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}>
       <button
         type="button"
         onClick={onOpen}
         aria-label={`Por qué: ${name}`}
-        className="flex min-h-[4rem] w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-200 ease-out hover:bg-white/[0.02]"
+        className="flex min-h-[4rem] min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors duration-200 ease-out hover:bg-white/[0.02]"
       >
         <Face name={name} src={photo} size={42} ring={action === "PUJAR" ? TONE.green : undefined} />
         <span className="min-w-0 flex-1">
@@ -239,6 +243,7 @@ function DecisionRow({
           </span>
         </span>
       </button>
+      <CompararButton objetivoId={player.player_id} posicion={player.position} className="mr-3" />
     </li>
   );
 }

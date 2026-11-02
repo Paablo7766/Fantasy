@@ -18,6 +18,7 @@ import {
   signedMoney,
   toneOf,
 } from "@/components/equipo/ui";
+import { CompararButton } from "@/components/comparador/ComparadorReal";
 import { endpoint, getJson } from "@/lib/api";
 import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
 import { playerName, points, roiPct } from "@/lib/format";
@@ -89,11 +90,12 @@ function QuantRow({ player, photo, tone, index }: { player: QuantPlayer; photo: 
   const reasons = player.reasons || [];
   return (
     <li className="row-in border-b border-white/[0.06] last:border-b-0" style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}>
+      <div className="flex items-center">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="flex min-h-[4rem] w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-200 ease-out hover:bg-white/[0.02]"
+        className="flex min-h-[4rem] min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors duration-200 ease-out hover:bg-white/[0.02]"
       >
         <Face name={name} src={photo} size={42} ring={tone === "buy" ? TONE_COLOR.buy : undefined} />
         <span className="min-w-0 flex-1">
@@ -112,6 +114,8 @@ function QuantRow({ player, photo, tone, index }: { player: QuantPlayer; photo: 
         </span>
         <ScoreRing score={player.score} />
       </button>
+      {player.owner === "propio" ? null : <CompararButton objetivoId={player.player_id} posicion={player.position} className="mr-3" />}
+      </div>
       {open ? (
         <div className="row-in px-4 pb-4 pt-1">
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">

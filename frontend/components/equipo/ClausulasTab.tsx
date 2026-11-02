@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { CompararButton } from "@/components/comparador/ComparadorReal";
 import { endpoint, getJson } from "@/lib/api";
 import { buildClausulazosGuide, type DateBucket } from "@/lib/clausulazosGuide";
 import { playerName, points } from "@/lib/format";
@@ -14,6 +15,7 @@ import type {
   ClausulazoSugerido,
   NeedsPayload,
   PlanPayload,
+  RadarAntiRobo,
   RivalPlayer,
   SquadsPayload,
   VeredictoClausulazo,
@@ -49,11 +51,18 @@ const PROTEGER: Record<VeredictoProteger, { label: string; color: string }> = {
   ASUMIR: { label: "Asúmelo", color: TONE.gray },
 };
 
+const RADAR_BADGE = {
+  rojo: { label: "Riesgo alto", color: TONE.red },
+  verde: { label: "Sobreprotegido", color: TONE.green },
+  gris: { label: "Riesgo cero", color: TONE.gray },
+} as const;
+
 const CLAUSULAZO: Record<VeredictoClausulazo, { label: string; color: string }> = {
   CLAUSULAR_YA: { label: "Clausula ya", color: TONE.green },
   PROGRAMAR: { label: "Prográmalo", color: TONE.blue },
   SIN_CAJA: { label: "Te falta caja", color: TONE.red },
   OPORTUNIDAD: { label: "Oportunidad", color: TONE.amber },
+  GOLPE_RIVAL: { label: "Golpe al rival", color: TONE.red },
 };
 
 const RULES = [
@@ -171,11 +180,12 @@ function RaidRow({ row, photos, index }: { row: ClausulazoSugerido; photos: Phot
   const margin = row.margen_valor_justo_pct;
   return (
     <li className="row-in border-b border-white/[0.06] last:border-b-0" style={{ animationDelay: `${index * 30}ms` }}>
+      <div className="flex items-center">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="flex min-h-[4rem] w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-200 ease-out hover:bg-white/[0.02]"
+        className="flex min-h-[4rem] min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left transition-colors duration-200 ease-out hover:bg-white/[0.02]"
       >
         <Face name={row.nombre} src={photoFor(photos, row.player_id, row.nombre)} size={40} />
         <span className="min-w-0 flex-1">
@@ -195,6 +205,8 @@ function RaidRow({ row, photos, index }: { row: ClausulazoSugerido; photos: Phot
         </span>
         <Chevron open={open} />
       </button>
+      <CompararButton objetivoId={row.player_id} posicion={row.posicion} className="mr-3" />
+      </div>
       {open ? (
         <div className="row-in px-4 pb-4">
           <p className="flex flex-wrap items-center justify-between gap-2">
@@ -212,6 +224,34 @@ function RaidRow({ row, photos, index }: { row: ClausulazoSugerido; photos: Phot
           <p className="mt-3 text-[13px] leading-relaxed text-white/55">{row.motivo_detallado}</p>
         </div>
       ) : null}
+    </li>
+  );
+}
+
+function RadarCard({ row, photos, index }: { row: RadarAntiRobo; photos: PhotoIndex; index: number }) {
+  const tone = RADAR_BADGE[row.badge as keyof typeof RADAR_BADGE] ?? RADAR_BADGE.gris;
+  const when = row.clausula_abierta ? "Abierta" : typeof row.dias_para_abrir === "number" ? `Abre en ${row.dias_para_abrir.toLocaleString("es-ES", { maximumFractionDigits: 1 })} días` : "A punto de abrir";
+  return (
+    <li className="row-in border-b border-white/[0.06] px-4 py-3 last:border-b-0" style={{ animationDelay: `${index * 30}ms` }}>
+      <div className="flex items-start gap-3">
+        <Face name={row.nombre} src={photoFor(photos, row.player_id, row.nombre)} size={40} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-[15px] font-medium leading-tight text-white">{row.nombre}</p>
+              <p className="mt-0.5 text-[12px] text-white/45">
+                {when}
+                {row.posicion ? ` · ${row.posicion}` : ""}
+                {typeof row.rivales_con_caja === "number" ? ` · ${row.rivales_con_caja} con caja` : ""}
+              </p>
+            </div>
+            <Verdict {...tone} />
+          </div>
+          <p className="mt-2 rounded-xl px-3 py-2 text-[13px] leading-relaxed" style={{ color: tone.color, background: "rgba(0,0,0,0.22)" }}>
+            {row.consejo}
+          </p>
+        </div>
+      </div>
     </li>
   );
 }
@@ -263,6 +303,7 @@ function Calendar({ timeline, photos }: { timeline: DateBucket[]; photos: PhotoI
                   </span>
                 </span>
                 <span className="shrink-0 text-[14px] font-medium tabular-nums text-white">{money(entry.buyout_clause_eur)}</span>
+                {entry.is_self ? null : <CompararButton objetivoId={entry.player_id} posicion={entry.position} />}
               </li>
             );
           })}
@@ -314,6 +355,7 @@ export function ClausulasTab({
   }, [plan, squads, needs, boardPayload, minute]);
 
   const advisor = plan?.asesor_clausulas || null;
+  const radar = advisor?.radar_anti_robo?.length ? advisor.radar_anti_robo : plan?.radar_anti_robo || [];
   if (loading && !plan) return <Skeleton />;
   if (!advisor && !timeline.length) {
     return <Empty title="Sin informe de cláusulas" detail="Pulsa Actualizar para calcular tus cláusulas y los clausulazos." />;
@@ -370,6 +412,17 @@ export function ClausulasTab({
             </div>
           ) : null}
         </section>
+
+        {radar.length ? (
+          <section aria-label="Radar anti-robo" className="flex flex-col gap-3">
+            <SectionHead title="Radar anti-robo" meta={`${radar.length}`} />
+            <ul className="home-glass overflow-hidden">
+              {radar.map((row, index) => (
+                <RadarCard key={row.player_id} row={row} photos={photos} index={index} />
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         <section aria-label="Mis cláusulas" className="flex flex-col gap-3">
           <SectionHead title="Mis cláusulas" meta={proteger.length ? `${proteger.length} a vigilar` : undefined} />

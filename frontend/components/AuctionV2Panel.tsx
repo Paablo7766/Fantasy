@@ -1,6 +1,6 @@
 "use client";
 
-import { eur, pct } from "@/lib/format";
+import { eur, pct, smartBidCaption } from "@/lib/format";
 import type { MarketDecision } from "@/lib/types";
 
 const INTENT_LABEL: Record<string, string> = {
@@ -69,9 +69,11 @@ type Variant = "compact" | "full";
 export function AuctionV2Panel({
   player,
   variant = "full",
+  showCaption = true,
 }: {
   player: MarketDecision;
   variant?: Variant;
+  showCaption?: boolean;
 }) {
   const optimal = player.optimal_bid_eur;
   const smart = player.smart_bid_eur;
@@ -80,6 +82,8 @@ export function AuctionV2Panel({
     typeof smart === "number" ||
     typeof player.app_bid_eur === "number" ||
     typeof player.financial_max_bid_eur === "number" ||
+    typeof player.puja_smart === "number" ||
+    typeof player.puja_maxima === "number" ||
     typeof player.win_probability === "number" ||
     typeof player.intrinsic_valuation_eur === "number" ||
     typeof player.expected_surplus_eur === "number" ||
@@ -91,11 +95,21 @@ export function AuctionV2Panel({
 
   const intent = player.bid_intent;
   const knockouts = player.rival_knockout_targets?.filter(Boolean) ?? [];
+  const caption = showCaption
+    ? smartBidCaption(
+        typeof player.smart_bid_eur === "number" ? player.smart_bid_eur : player.puja_smart,
+        typeof player.puja_maxima === "number" ? player.puja_maxima : player.financial_max_bid_eur,
+      )
+    : null;
 
   if (variant === "compact") {
     return (
       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-        {typeof smart === "number" ? (
+        {caption ? (
+          <span className="rounded-md bg-[color:var(--gold-soft)] px-1.5 py-0.5 font-medium tabular-nums text-gold">
+            {caption}
+          </span>
+        ) : typeof smart === "number" ? (
           <span className="rounded-md bg-[color:var(--gold-soft)] px-1.5 py-0.5 font-medium text-gold">
             Smart {eur(smart)}
             {typeof player.smart_bid_success_pct === "number" ? ` · ${player.smart_bid_success_pct}%` : ""}
@@ -129,6 +143,7 @@ export function AuctionV2Panel({
       {typeof smart === "number" || typeof player.app_bid_eur === "number" ? (
         <div className="mt-3">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Puja smart</p>
+          {caption ? <p className="mt-1 text-[12px] font-medium tabular-nums text-gold">{caption}</p> : null}
           <dl className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {typeof smart === "number" ? (
               <div className="rounded-lg bg-[color:var(--gold-soft)] px-3 py-2">
@@ -150,7 +165,7 @@ export function AuctionV2Panel({
             ) : null}
             {typeof player.financial_max_bid_eur === "number" ? (
               <div className="rounded-lg bg-[color:var(--surface)] px-3 py-2">
-                <dt className="text-[11px] text-faint">Tope +25%</dt>
+                <dt className="text-[11px] text-faint">Máximo dinámico</dt>
                 <dd className="metric-value mt-0.5 text-sm">{eur(player.financial_max_bid_eur)}</dd>
               </div>
             ) : null}

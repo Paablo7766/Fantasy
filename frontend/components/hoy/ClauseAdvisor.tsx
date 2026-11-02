@@ -31,6 +31,7 @@ const CLAUSULAZO: Record<VeredictoClausulazo, { label: string; color: string }> 
   PROGRAMAR: { label: "PROGRAMA", color: "#0297DE" },
   SIN_CAJA: { label: "TE FALTA CAJA", color: "#FC734D" },
   OPORTUNIDAD: { label: "OPORTUNIDAD DE VALOR", color: "#F59E0B" },
+  GOLPE_RIVAL: { label: "GOLPE AL RIVAL", color: "#FC734D" },
 };
 
 function money(value: number): string {

@@ -19,7 +19,9 @@ from toolbox.engine.market_predictor import (
 )
 from toolbox.engine.signing_plan import (
     BUSCA_PUNTOS,
+    MAX_VENTAS_TITULARES_SANOS,
     build_plan_fichajes,
+    evaluar_patrimonio_clausula,
     penalizacion_por_millon,
 )
 from toolbox.engine.strategy_layer import build_strategy
@@ -114,10 +116,23 @@ class WarYCapitanTests(unittest.TestCase):
 
 
 class PujaYForzadaTests(unittest.TestCase):
-    def test_recomendada_suma_la_subida_de_hoy_y_el_tope_es_el_minimo(self) -> None:
+    def test_recomendada_suma_la_subida_de_hoy_y_el_techo_es_dinamico(self) -> None:
         pujas = calcular_pujas(10_000_000, 200_000, 8_000_000, tu_saldo=20_000_000, rivales=[], posicion="MC")
         self.assertEqual(pujas["puja_recomendada"], 10_670_000)
-        self.assertEqual(pujas["puja_maxima"], 8_000_000)
+        # Sin previsión ni dificultad: prima base del +15 %, no el valor justo.
+        self.assertEqual(pujas["puja_maxima"], 11_500_000)
+        con_revalorizacion = calcular_pujas(
+            10_000_000,
+            0,
+            8_000_000,
+            tu_saldo=20_000_000,
+            rivales=[],
+            posicion="MC",
+            prevision_7d_pct=23.2,
+            dificultad="facil",
+        )
+        # 1,15 + 0,55·0,232 + 0,02 = 1,2976 → 12.980.000, por debajo del cap +30 %.
+        self.assertEqual(con_revalorizacion["puja_maxima"], 12_980_000)
 
     def test_smart_supera_en_un_decimo_al_rival_con_menos_caja(self) -> None:
         pujas = calcular_pujas(
@@ -161,8 +176,13 @@ class PlanFichajesTests(unittest.TestCase):
             baseline_puntos=5.0 * 10 + 1.0,
         )
         tipos = {(accion["tipo"], accion["momento"]) for accion in plan["acciones"]}
-        self.assertIn(("VENDE", "hoy"), tipos)
         self.assertIn(("PUJA", "hoy"), tipos)
+        self.assertIn(("ESCAPARATE", "hoy"), tipos)
+        self.assertIn(("VENDE", "condicional"), tipos)
+        self.assertNotIn("VENDER HOY", [accion["tipo"] for accion in plan["acciones"]])
+        self.assertTrue(any(accion["detalle"].startswith("PUJAR POR estrella") for accion in plan["acciones"] if accion["tipo"] == "PUJA"))
+        self.assertTrue(any("PONER EN ESCAPARATE a DEL-2" in accion["detalle"] for accion in plan["acciones"]))
+        self.assertTrue(any("SOLO SI GANAS LA PUJA DE estrella" in accion["detalle"] for accion in plan["acciones"]))
         self.assertGreater(plan["mejora_puntos_jornada"], 1.5)
         self.assertEqual(plan["veredicto"], "Hazlo ya")
         self.assertGreaterEqual(plan["nota"], 8)
@@ -308,9 +328,11 @@ class LiquidezTests(unittest.TestCase):
             baseline=5.0 * 10 + 4.0,
         )
         tipos = {(accion["tipo"], accion["momento"]) for accion in caida["acciones"]}
-        self.assertIn(("VENDER HOY", "hoy"), tipos)
-        self.assertIn(("PUJA", "luego"), tipos)
-        self.assertTrue(any("3 %" in accion["detalle"] for accion in caida["acciones"] if accion["tipo"] == "VENDER HOY"))
+        self.assertNotIn(("VENDER HOY", "hoy"), tipos)
+        self.assertIn(("VENDE", "condicional"), tipos)
+        self.assertIn(("ESCAPARATE", "hoy"), tipos)
+        self.assertIn(("PUJA", "hoy"), tipos)
+        self.assertTrue(any("SOLO SI GANAS LA PUJA" in accion["detalle"] for accion in caida["acciones"]))
         self.assertGreater(caida["saldo_al_final"], 0)
 
         rico = _once(5.0)
@@ -324,11 +346,14 @@ class LiquidezTests(unittest.TestCase):
             owned=rico,
             baseline=5.0 * 11,
         )
-        self.assertIn("VENDER HOY", [accion["tipo"] for accion in must["acciones"]])
+        self.assertNotIn("VENDER HOY", [accion["tipo"] for accion in must["acciones"]])
+        self.assertIn("VENDE", [accion["tipo"] for accion in must["acciones"]])
         puja = next(accion for accion in must["acciones"] if accion["tipo"] == "PUJA")
         self.assertEqual(puja["impulso"], "MUST-BUY")
         self.assertEqual(puja["momento"], "hoy")
-        self.assertTrue(any("must-buy" in accion["detalle"] for accion in must["acciones"] if accion["tipo"] == "VENDER HOY"))
+        self.assertTrue(puja["detalle"].startswith("PUJAR POR estrella"))
+        self.assertTrue(any("Must-buy" in accion["detalle"] for accion in must["acciones"] if accion["tipo"] == "PUJA"))
+        self.assertTrue(any("SOLO SI GANAS LA PUJA DE estrella" in accion["detalle"] for accion in must["acciones"]))
 
         sin_oferta = _once(5.0)
         sin_oferta[10]["venta_eur"] = 8_000_000
@@ -395,8 +420,11 @@ class LiquidezTests(unittest.TestCase):
             baseline=55.0,
         )
         tipos = [accion["tipo"] for accion in rotacion["acciones"]]
-        self.assertIn("VENDER HOY", tipos)
+        self.assertNotIn("VENDER HOY", tipos)
+        self.assertIn("VENDE", tipos)
         self.assertIn("PUJA", tipos)
+        self.assertIn("ESCAPARATE", tipos)
+        self.assertTrue(any(accion["momento"] == "condicional" for accion in rotacion["acciones"] if accion["tipo"] == "VENDE"))
         self.assertEqual(rotacion["mejora_puntos_jornada"], 1.0)
         self.assertEqual(rotacion["saldo_al_final"], 0)
 
@@ -430,6 +458,237 @@ class LiquidezTests(unittest.TestCase):
         )
         self.assertTrue(any(accion.get("impulso") == "CHOLLO" for accion in holgado["acciones"]))
         self.assertEqual(holgado["saldo_al_final"], 0)
+
+
+def _reales_tras_ventas_de_hoy(plan: dict, owned: list[dict]) -> int:
+    """Cuerpos con nombre si se ejecutan solo las ventas de hoy y los clausulazos."""
+    ventas = {
+        accion["player_id"]
+        for accion in plan["acciones"]
+        if accion.get("tipo") in {"VENDE", "VENDER HOY"} and accion.get("momento") == "hoy" and accion.get("player_id")
+    }
+    clausulas = {
+        accion["player_id"]
+        for accion in plan["acciones"]
+        if accion.get("tipo") == "CLAUSULAZO" and accion.get("player_id")
+    }
+    return len(owned) - len(ventas) + len(clausulas)
+
+
+class ProteccionPatrimonioTests(unittest.TestCase):
+    def test_la_formula_de_prima_quemada(self) -> None:
+        caro = evaluar_patrimonio_clausula({"euros": 8_000_000, "valor": 4_000_000, "pct": 0})
+        self.assertEqual(caro["sobreprecio_bruto"], 4_000_000)
+        self.assertEqual(caro["ratio_clausula"], 2.0)
+        self.assertEqual(caro["subida_7d_euros"], 0)
+        self.assertEqual(caro["prima_quemada_neta"], 4_000_000)
+        self.assertTrue(caro["descartar"])
+
+        cubierto = evaluar_patrimonio_clausula({"euros": 8_000_000, "valor": 4_000_000, "pct": 60})
+        self.assertEqual(cubierto["subida_7d_euros"], 2_400_000)
+        self.assertEqual(cubierto["prima_quemada_neta"], 1_600_000)
+        self.assertFalse(cubierto["descartar"])
+
+        justo = evaluar_patrimonio_clausula({"euros": 13_500_000, "valor": 10_000_000, "pct": 0})
+        self.assertEqual(justo["ratio_clausula"], 1.35)
+        self.assertEqual(justo["prima_quemada_neta"], 3_500_000)
+        self.assertFalse(justo["descartar"])
+
+    def test_no_paga_8m_por_un_jugador_de_4m(self) -> None:
+        owned = _once(5.0)
+        plan = build_plan_fichajes(
+            cash=8_000_000,
+            owned=owned,
+            mercado=[],
+            clausulas=[_jugador("caro", "DEL", 12.0, euros=8_000_000, valor=4_000_000, pct=0)],
+            ratio=2_000_000,
+            dias_para_jornada=0,
+            baseline_puntos=55.0,
+        )
+        self.assertEqual(plan["acciones"], [])
+        self.assertEqual(plan["saldo_al_final"], 8_000_000)
+
+        # La subida a 7 días cubre el 60 % del sobreprecio: el clausulazo puede entrar.
+        con_subida = build_plan_fichajes(
+            cash=8_000_000,
+            owned=owned,
+            mercado=[],
+            clausulas=[_jugador("caro", "DEL", 12.0, euros=8_000_000, valor=4_000_000, pct=70)],
+            ratio=2_000_000,
+            dias_para_jornada=0,
+            baseline_puntos=55.0,
+        )
+        self.assertEqual([accion["tipo"] for accion in con_subida["acciones"]], ["CLAUSULAZO"])
+        self.assertIn("Prima quemada", con_subida["acciones"][0]["detalle"])
+
+    def test_prima_de_mas_de_3_5m_en_valor_medio_se_descarta_y_en_una_estrella_no(self) -> None:
+        # 12 M€ de valor, cláusula a +35 % exacto: prima 4,2 M€ y valor por debajo de 15 M€.
+        medio = evaluar_patrimonio_clausula({"euros": 16_200_000, "valor": 12_000_000, "pct": 0})
+        self.assertGreater(medio["prima_quemada_neta"], 3_500_000)
+        self.assertTrue(medio["descartar"])
+        owned = _once(5.0)
+        plan = build_plan_fichajes(
+            cash=16_200_000,
+            owned=owned,
+            mercado=[],
+            clausulas=[_jugador("medio", "DEL", 12.0, euros=16_200_000, valor=12_000_000)],
+            ratio=2_000_000,
+            dias_para_jornada=0,
+            baseline_puntos=55.0,
+        )
+        self.assertEqual(plan["acciones"], [])
+
+        # Misma prima, pero el jugador ya vale 20 M€: el filtro de 3,5 M€ no le aplica.
+        estrella = evaluar_patrimonio_clausula({"euros": 27_000_000, "valor": 20_000_000, "pct": 0})
+        self.assertGreater(estrella["prima_quemada_neta"], 3_500_000)
+        self.assertFalse(estrella["descartar"])
+        paga = build_plan_fichajes(
+            cash=27_000_000,
+            owned=owned,
+            mercado=[],
+            clausulas=[_jugador("estrella", "DEL", 12.0, euros=27_000_000, valor=20_000_000)],
+            ratio=2_000_000,
+            dias_para_jornada=0,
+            baseline_puntos=55.0,
+        )
+        self.assertEqual(paga["acciones"][0]["tipo"], "CLAUSULAZO")
+
+    def test_la_prima_quemada_pesa_en_el_solver(self) -> None:
+        # +1,0 xP por una prima de 3 M€. El castigo es 1,35 puntos y el clausulazo no entra.
+        owned = _once(5.0)
+        plan = build_plan_fichajes(
+            cash=13_000_000,
+            owned=owned,
+            mercado=[],
+            clausulas=[_jugador("caro", "DEL", 6.0, euros=13_000_000, valor=10_000_000, pct=0)],
+            ratio=2_000_000,
+            dias_para_jornada=0,
+            baseline_puntos=55.0,
+        )
+        self.assertEqual(plan["acciones"], [])
+        self.assertEqual(plan["saldo_al_final"], 13_000_000)
+
+        justo = build_plan_fichajes(
+            cash=10_000_000,
+            owned=owned,
+            mercado=[],
+            clausulas=[_jugador("justo", "DEL", 6.0, euros=10_000_000, valor=10_000_000)],
+            ratio=2_000_000,
+            dias_para_jornada=0,
+            baseline_puntos=55.0,
+        )
+        self.assertEqual(justo["acciones"][0]["tipo"], "CLAUSULAZO")
+        self.assertNotIn("Prima quemada", justo["acciones"][0]["detalle"])
+
+    def test_no_busca_un_def_si_eso_obliga_a_vender_a_un_titular(self) -> None:
+        owned = _once(4.0)
+        owned[10]["jornada"] = 1.0
+        owned[10]["venta_eur"] = 8_000_000
+        owned[10]["tiene_oferta_laliga"] = True
+        owned[10]["pct"] = -5.0
+        plan = build_plan_fichajes(
+            cash=0,
+            owned=owned,
+            mercado=[],
+            clausulas=[],
+            ratio=1_000_000,
+            dias_para_jornada=4,
+            baseline_puntos=41.0,
+        )
+        self.assertFalse(any(accion["tipo"] == "BUSCA" for accion in plan["acciones"]))
+        self.assertGreaterEqual(_reales_tras_ventas_de_hoy(plan, owned), 11)
+
+    def test_vender_hoy_solo_si_es_suplente_o_paga_un_clausulazo_o_hay_deuda(self) -> None:
+        owned = _once(5.0)
+        owned.append(_jugador("suplente", "DEL", 1.0, venta_eur=5_000_000, pct=-4.0, tiene_oferta_laliga=True))
+        suplente = build_plan_fichajes(
+            cash=0,
+            owned=owned,
+            mercado=[_jugador("repuesto", "DEL", 6.5, euros=4_000_000)],
+            clausulas=[],
+            ratio=2_000_000,
+            dias_para_jornada=4,
+            baseline_puntos=55.0,
+        )
+        venta = next(accion for accion in suplente["acciones"] if accion["player_id"] == "suplente")
+        self.assertEqual((venta["tipo"], venta["momento"]), ("VENDER HOY", "hoy"))
+        self.assertIn("3 %", venta["detalle"])
+        self.assertGreaterEqual(_reales_tras_ventas_de_hoy(suplente, owned), 11)
+
+        plantilla = _once(5.0)
+        plantilla[10]["jornada"] = 2.0
+        plantilla[10]["venta_eur"] = 6_000_000
+        plantilla[10]["pct"] = 0.0
+        plantilla[10]["tiene_oferta_laliga"] = True
+        clausula = build_plan_fichajes(
+            cash=1_000_000,
+            owned=plantilla,
+            mercado=[],
+            clausulas=[_jugador("fijo", "DEL", 8.0, euros=6_000_000, valor=6_000_000)],
+            ratio=2_000_000,
+            dias_para_jornada=4,
+            baseline_puntos=52.0,
+        )
+        self.assertIn(("VENDER HOY", "hoy"), {(accion["tipo"], accion["momento"]) for accion in clausula["acciones"]})
+        self.assertTrue(any("clausulazo" in accion["detalle"] for accion in clausula["acciones"] if accion["tipo"] == "VENDER HOY"))
+        self.assertGreaterEqual(_reales_tras_ventas_de_hoy(clausula, plantilla), 11)
+
+        deuda_owned = _once(5.0)
+        deuda_owned.append(_jugador("banco", "MC", 1.0, venta_eur=1_000_000, pct=2.0))
+        deuda = build_plan_fichajes(
+            cash=-500_000,
+            owned=deuda_owned,
+            mercado=[],
+            clausulas=[],
+            ratio=2_000_000,
+            dias_para_jornada=4,
+            baseline_puntos=55.0,
+        )
+        self.assertTrue(any(accion["tipo"] == "VENDER HOY" and accion["player_id"] == "banco" for accion in deuda["acciones"]))
+        self.assertTrue(any("negativo" in accion["detalle"] for accion in deuda["acciones"] if accion["tipo"] == "VENDER HOY"))
+        self.assertGreaterEqual(deuda["saldo_al_final"], 0)
+        self.assertGreaterEqual(_reales_tras_ventas_de_hoy(deuda, deuda_owned), 11)
+
+    def test_como_maximo_dos_titulares_sanos_y_las_bajas_no_cuentan(self) -> None:
+        owned = _once(5.0)
+        for row in owned:
+            row["venta_eur"] = 2_000_000
+            row["p_titular"] = 0.9
+            row["tiene_oferta_laliga"] = True
+        for index, position in enumerate(("DEF", "MC", "DEL")):
+            owned.append(
+                _jugador(
+                    f"baja-{index}",
+                    position,
+                    1.0,
+                    venta_eur=2_000_000,
+                    p_titular=0.1,
+                    tiene_oferta_laliga=True,
+                    pct=0.0,
+                )
+            )
+        mercado = [
+            _jugador(f"nuevo-{position}-{index}", position, 9.0, euros=2_000_000)
+            for position, count in (("DEF", 2), ("MC", 2), ("DEL", 1))
+            for index in range(count)
+        ]
+        plan = build_plan_fichajes(
+            cash=0,
+            owned=owned,
+            mercado=mercado,
+            clausulas=[],
+            ratio=2_000_000,
+            dias_para_jornada=4,
+            baseline_puntos=55.0,
+        )
+        ventas = [accion["player_id"] for accion in plan["acciones"] if accion["tipo"] in {"VENDE", "VENDER HOY"}]
+        sanos = [player_id for player_id in ventas if player_id and not str(player_id).startswith("baja-")]
+        bajas = [player_id for player_id in ventas if str(player_id).startswith("baja-")]
+        self.assertEqual(len(sanos), MAX_VENTAS_TITULARES_SANOS)
+        self.assertEqual(len(bajas), 3)
+        self.assertGreater(plan["mejora_puntos_jornada"], 10)
+        self.assertFalse(any(accion["tipo"] == "BUSCA" for accion in plan["acciones"]))
+        self.assertGreaterEqual(_reales_tras_ventas_de_hoy(plan, owned), 11)
 
 
 class CapaIntegradaTests(unittest.TestCase):

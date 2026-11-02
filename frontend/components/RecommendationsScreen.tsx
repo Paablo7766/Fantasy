@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { HomeHero } from "@/components/hoy/HomeHero";
+import { HojaDeRuta } from "@/components/hoy/HojaDeRuta";
 import { HomeLineup } from "@/components/hoy/HomeLineup";
 import { SigningBoard } from "@/components/hoy/SigningBoard";
 import { buildPhotoIndex, buildPlayerIndex } from "@/lib/photoIndex";
@@ -22,6 +23,7 @@ export function RecommendationsScreen() {
   return (
     <div className="hoy-root rec-home home-stack">
       <HomeHero plan={plan} optimize={optimize} squads={squads} loading={loading} />
+      <HojaDeRuta fichajes={plan?.plan_fichajes} loading={loading} />
       <SigningBoard
         plan={plan}
         optimize={optimize}

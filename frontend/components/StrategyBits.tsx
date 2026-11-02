@@ -201,7 +201,8 @@ export function SigningPlanCard({ plan }: { plan: PlanFichajes | null | undefine
 
 function PlanRow({ accion }: { accion: PlanFichajeAccion }) {
   const tipo = accion.tipo || "PUJA";
-  const momento = accion.momento === "hoy" ? "hoy" : accion.momento === "radar" ? "radar" : "luego";
+  const momento =
+    accion.momento === "hoy" ? "hoy" : accion.momento === "radar" ? "radar" : accion.momento === "condicional" ? "condicional" : "luego";
   const impulso = accion.impulso ? IMPULSE_LABEL[accion.impulso] || accion.impulso : null;
   return (
     <li className="flex items-start justify-between gap-3 py-2.5">
