@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PlayerAvatar } from "@/components/ui/PlayerAvatar";
 import { points, titularShare } from "@/lib/core/format";
+import { savedXiWithShares } from "@/lib/inicio/lineup";
 import { signedPoints } from "@/lib/inicio/hoy";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { CapitanPick, OptimizePayload, PlanPayload } from "@/lib/types";
@@ -111,7 +112,7 @@ export function HomeLineup({
   photos: PhotoIndex;
 }) {
   const [open, setOpen] = useState(false);
-  const xi = optimize?.saved_lineup?.xi?.length ? optimize.saved_lineup.xi : optimize?.xi || [];
+  const xi = savedXiWithShares(optimize);
   const squad = xi.map((player, index) => {
     const name = player.nickname || player.name || "Jugador";
     return {

@@ -1,9 +1,10 @@
 "use client";
 
 import { money } from "@/components/ui/kit";
-import { points, titularShare } from "@/lib/core/format";
+import { points } from "@/lib/core/format";
 import { signedPoints } from "@/lib/inicio/hoy";
-import type { OptimizePayload, PlanPayload, Player } from "@/lib/types";
+import { averageShare, savedXiWithShares } from "@/lib/inicio/lineup";
+import type { OptimizePayload, PlanPayload } from "@/lib/types";
 
 /** Semicírculo con relleno de cobre y un nudo luminoso en el extremo del progreso. */
 function Arc({ fraction }: { fraction: number }) {
@@ -81,9 +82,8 @@ export function StrategyImpact({
   // El arco enseña cuánto del potencial del plan ya capturas con tu once guardado.
   const fraction = now !== null && target !== null && target > 0 ? now / target : target !== null ? 1 : 0;
 
-  const xi: Player[] = optimize?.saved_lineup?.xi?.length ? optimize.saved_lineup.xi : optimize?.xi || [];
-  const shares = xi.map((player) => titularShare(player.p_titular)).filter((value): value is number => value !== null);
-  const avgShare = shares.length ? shares.reduce((total, value) => total + value, 0) / shares.length : null;
+  // Con el plan aplicado juega el once recomendado; si no llega, el guardado ya enriquecido.
+  const avgShare = averageShare(optimize?.xi?.length ? optimize.xi : savedXiWithShares(optimize));
 
   const dash = loading ? "…" : "—";
   const big = hasGain ? signedPoints(delta) : target !== null ? points(target) : dash;
