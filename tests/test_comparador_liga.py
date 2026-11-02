@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import unittest
 
-from toolbox.engine.comparador_liga import comparar_fichas, comparar_jugadores_liga
+from toolbox.engine.comparador_liga import (
+    UMBRAL_INFLEXION,
+    comparar_fichas,
+    comparar_jugadores_liga,
+    indice_inflexion_calendario,
+)
 
 
 def _actual(**extra: object) -> dict:
@@ -271,6 +276,22 @@ class CompararDesdeTableroTests(unittest.TestCase):
         comparado = comparar_jugadores_liga("a", "z", {"squads": {"squads": []}, "market": {}, "trends": {}, "optimize": {}})
         self.assertFalse(comparado["ok"])
         self.assertEqual(comparado["error"]["code"], "not_found")
+
+
+class InflexionCalendarioTests(unittest.TestCase):
+    def test_valle_de_panico_es_positivo_y_supera_el_umbral(self) -> None:
+        jugador = {"calendario": ["muy_dificil", "facil", "facil", "facil"]}
+        indice = indice_inflexion_calendario(jugador)
+        self.assertAlmostEqual(indice, 1.06 - 0.84, places=6)
+        self.assertGreater(indice, UMBRAL_INFLEXION)
+
+    def test_racha_que_empeora_es_negativa(self) -> None:
+        jugador = {"calendario": [{"difficulty": "facil"}, {"difficulty": "dificil"}, {"difficulty": "dificil"}, {"difficulty": "muy_dificil"}]}
+        self.assertLess(indice_inflexion_calendario(jugador), 0)
+
+    def test_sin_cuatro_partidos_no_hay_indice(self) -> None:
+        self.assertIsNone(indice_inflexion_calendario({"calendario": ["facil", "facil"]}))
+        self.assertIsNone(indice_inflexion_calendario({}))
 
 
 if __name__ == "__main__":

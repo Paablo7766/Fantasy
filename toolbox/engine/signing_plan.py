@@ -25,6 +25,10 @@ MEJORA_MINIMA = 0.1
 UMBRAL_ALL_IN_DIAS = 2.0
 # Mejora neta del once por encima de esto se ejecuta hoy, caiga el día que caiga.
 UMBRAL_MUST_XP = 2.0
+# El peaje no se apaga de golpe en UMBRAL_MUST_XP: se descuenta con una curva
+# logística. psi(0,4)=0,98 · psi(1,6)=0,50 · psi(2,0)=0,20 · psi(2,5)=0,04.
+PSI_CENTRO_XP = 1.6
+PSI_PENDIENTE = 3.5
 # Por debajo de esto, y si el fichaje es caro, se deja en el radar a principios de semana.
 UMBRAL_HOLD_XP = 0.8
 # Subida prevista a 7 días que convierte el fichaje en chollo.
@@ -97,6 +101,22 @@ def penalizacion_por_millon(dias: float | None) -> float:
     if dias is None or dias < UMBRAL_ALL_IN_DIAS:
         return 0.0
     return (dias / 7.0) * FACTOR_AJUSTE
+
+
+def factor_peaje(mejora_neta: float | None) -> float:
+    """Fracción del peaje que paga un fichaje según lo que mejora el once.
+
+    Logística continua: dos fichajes casi iguales en xP pagan casi lo mismo,
+    sin el salto de 0 a 100 % en UMBRAL_MUST_XP.
+    """
+    if mejora_neta is None or isinstance(mejora_neta, bool) or not math.isfinite(mejora_neta):
+        return 1.0
+    exponente = PSI_PENDIENTE * (float(mejora_neta) - PSI_CENTRO_XP)
+    if exponente > 60.0:
+        return 0.0
+    if exponente < -60.0:
+        return 1.0
+    return 1.0 / (1.0 + math.exp(exponente))
 
 
 def clasificar_impulso(
@@ -857,25 +877,37 @@ def build_plan_fichajes(
             ),
         ]
     )
+    def _psi(clave: str) -> float:
+        # El chollo no paga peaje. El resto lo paga en proporción a lo poco que mejora el once.
+        ficha = ficha_compra[clave]
+        return 0.0 if ficha["impulso"] == "CHOLLO" else factor_peaje(ficha["mejora"])
+
+    gastos_peaje = pulp.lpSum(
+        [
+            *(_psi(f"bid:{pid}") * _euros_de(f"bid:{pid}") * variable for pid, variable in puja.items()),
+            *(_psi(f"clause:{pid}") * _euros_de(f"clause:{pid}") * variable for pid, variable in clausula.items()),
+            *(coste_busca * busca[position] for position in POSITIONS),
+        ]
+    )
     revalorizacion = pulp.lpSum(
         [
             *(
-                _revalorizacion_hasta_viernes(ficha_compra[f"bid:{pid}"]["row"], dias or 0.0) * variable
+                _psi(f"bid:{pid}") * _revalorizacion_hasta_viernes(ficha_compra[f"bid:{pid}"]["row"], dias or 0.0) * variable
                 for pid, variable in puja.items()
-                if not _exento_peaje(f"bid:{pid}")
             ),
             *(
-                _revalorizacion_hasta_viernes(ficha_compra[f"clause:{pid}"]["row"], dias or 0.0) * variable
+                _psi(f"clause:{pid}")
+                * _revalorizacion_hasta_viernes(ficha_compra[f"clause:{pid}"]["row"], dias or 0.0)
+                * variable
                 for pid, variable in clausula.items()
-                if not _exento_peaje(f"clause:{pid}")
             ),
         ]
     )
-    # drenaje_neto = max(0, compras no urgentes - ventas - subida hasta el viernes).
+    # drenaje_neto = max(0, compras ponderadas por psi - ventas - subida hasta el viernes).
     # Una rotación que se paga sola, o un +8 % semanal, no pagan el precio bruto.
     if penalizacion > 0:
         drenaje = pulp.LpVariable(f"{prefix}_drenaje", lowBound=0)
-        problem += drenaje >= gastos_resto - ingresos - revalorizacion
+        problem += drenaje >= gastos_peaje - ingresos - revalorizacion
         peaje = (penalizacion / _MILLON) * drenaje
     else:
         peaje = 0

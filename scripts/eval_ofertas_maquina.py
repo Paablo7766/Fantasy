@@ -1,7 +1,7 @@
 """Evalúa una oferta del "Computer" (máquina) de LaLiga Fantasy.
 
-La máquina ofrece una distribución uniforme de Valor de Mercado ± 5 %: el
-valor esperado es el VM y la horquilla útil es ``[0.95·VM, 1.05·VM]``. Se mide
+La máquina ofrece una distribución uniforme de Valor de Mercado ± 10 %: el
+valor esperado es el VM y la horquilla útil es ``[0.90·VM, 1.10·VM]``. Se mide
 la desviación de la oferta frente al VM y se recomienda una acción.
 
 Uso:
@@ -17,7 +17,7 @@ import json
 import sys
 
 #: Horquilla de la máquina sobre el valor de mercado.
-MACHINE_SPREAD = 0.05
+MACHINE_SPREAD = 0.10
 INSTANT_SELL_PCT = 3.0
 ACCEPT_PCT = 1.0
 
@@ -60,7 +60,7 @@ def evaluate(market_value: float, offer: float, *, force_liquidity: bool = False
 
     if deviation_pct > INSTANT_SELL_PCT:
         action = "INSTANT_SELL"
-        reason = f"por encima del +{INSTANT_SELL_PCT:.0f}%: la máquina paga por encima de su horquilla"
+        reason = f"por encima del +{INSTANT_SELL_PCT:.0f}%: oferta claramente favorable dentro de la horquilla de la máquina"
     elif deviation_pct > ACCEPT_PCT:
         action = "ACCEPT"
         reason = f"entre +{ACCEPT_PCT:.0f}% y +{INSTANT_SELL_PCT:.0f}%: prima positiva sobre el VM"
@@ -86,7 +86,7 @@ def evaluate(market_value: float, offer: float, *, force_liquidity: bool = False
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="¿Es buena la oferta del Computer? LaLiga Fantasy ±5 %.")
+    parser = argparse.ArgumentParser(description="¿Es buena la oferta del Computer? LaLiga Fantasy ±10 %.")
     parser.add_argument("market_value", type=_money, help="Valor de mercado actual del jugador.")
     parser.add_argument("offer", type=_money, help="Oferta recibida por la máquina.")
     parser.add_argument("--force-liquidity", action="store_true", help="Vender aunque la desviación no sea positiva.")
@@ -110,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         f"desviación {result['deviation_label']}"
     )
     print(
-        f"Horquilla máquina ±5 %: {result['spread_range'][0]:,.0f} – "
+        f"Horquilla máquina ±10 %: {result['spread_range'][0]:,.0f} – "
         f"{result['spread_range'][1]:,.0f} € ({result['relative_to_spread']})"
     )
     print(f"ACCIÓN: {result['action']} — {result['reason']}")

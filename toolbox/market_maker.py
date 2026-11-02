@@ -62,6 +62,7 @@ SELL_FLAGS = frozenset({"STRONG_SELL", "SELL", "LIQUIDATE_NOW"})
 HOLD_FLAGS = frozenset({"STRONG_HOLD", "HOLD"})
 
 __all__ = [
+    "umbral_parada_optima",
     "DEFAULT_MEAN_PCT",
     "LOG_FILENAME",
     "MAX_OFFER_PCT",
@@ -202,6 +203,9 @@ _NOTES = {
     "esperar_oferta_mejor": "Oferta corta, pero mañana el escenario límite aún supera lo ofrecido hoy.",
     "sin_tendencia": "Sin tendencia estimada: la oferta no supera el EV y no hay motivo para vender.",
     "ev_neutro": "Oferta igual al EV de mañana: no hay prima por aceptar hoy.",
+    "supera_umbral_optimo": "La oferta supera lo que se espera sacar esperando a los próximos sorteos. Aceptar.",
+    "espera_mejor_sorteo": "Quedan sorteos antes del cierre y la oferta no supera el umbral de parada óptima.",
+    "ultimo_sorteo": "Es el último ciclo antes del cierre: no hay más sorteos que esperar.",
 }
 
 
@@ -210,6 +214,39 @@ def _badge(recommendation: str) -> dict[str, str]:
     if recommendation in SELL_FLAGS:
         return {"label": "VENDER", "tone": "green", "recommendation": recommendation}
     return {"label": "RECHAZAR", "tone": "red", "recommendation": recommendation}
+
+
+def _esperanza_max(centro: float, amplitud: float) -> float:
+    """E[max(X, centro)] con X ~ U(-amplitud, +amplitud)."""
+    if centro >= amplitud:
+        return centro
+    if centro <= -amplitud:
+        return 0.0
+    return centro * (centro + amplitud) / (2.0 * amplitud) + (amplitud**2 - centro**2) / (4.0 * amplitud)
+
+
+def umbral_parada_optima(ciclos_restantes: int, tendencia_diaria_pct: float = 0.0, mean_pct: float = 0.0) -> float:
+    """Ratio mínimo (oferta/valor - 1) que compensa aceptar hoy.
+
+    Cada ciclo la máquina sortea una oferta uniforme en ±10 % del valor de ese
+    día y hay que decidir en línea, sin saber la siguiente. Con ``n`` sorteos
+    por delante el valor de esperar sale de inducción hacia atrás:
+    ``C_n = valor_n`` (el último se acepta) y ``C_k = E[max(oferta_k, C_{k+1})]``.
+    Se acepta hoy si la oferta supera ``C_1``. Sin tendencia da 0 % con 1 sorteo
+    por delante, +2,5 % con 2 y +4,8 % con 4. ``ciclos_restantes <= 0`` no deja
+    nada que esperar: umbral mínimo.
+    """
+    if ciclos_restantes <= 0:
+        return MIN_OFFER_PCT
+    g = max(-0.5, float(tendencia_diaria_pct))
+    media = float(mean_pct)
+    # Relativo al valor de hoy: base_k = (1 + g)^k.
+    continuacion = (1.0 + g) ** ciclos_restantes * (1.0 + media)
+    for k in range(ciclos_restantes - 1, 0, -1):
+        base = (1.0 + g) ** k
+        centro = continuacion / base - 1.0 - media
+        continuacion = base * (1.0 + media + _esperanza_max(centro, MAX_OFFER_PCT))
+    return continuacion - 1.0
 
 
 def _decide(
@@ -222,6 +259,7 @@ def _decide(
     mean_source: str,
     samples: int,
     trend_source: str | None = None,
+    ciclos_restantes: int | None = None,
 ) -> dict[str, Any]:
     # Entradas normalizadas a ``float``: las comparaciones de la decisión no
     # deben depender del tipo con que llegue la oferta (reglas duras, valor > 0).
@@ -273,8 +311,19 @@ def _decide(
     liquidation_eur = int(round(liquidation_offer))
     reject_floor_eur = int(round(reject_floor))
 
+    umbral = None
+    if ciclos_restantes is not None:
+        umbral = umbral_parada_optima(ciclos_restantes, tendencia / valor, mean_pct)
+
     if ratio >= STRONG_SELL_RATIO:
         recommendation, reason = "STRONG_SELL", "pico_percentil_90"
+    elif umbral is not None and ciclos_restantes <= 0:
+        recommendation, reason = "SELL", "ultimo_sorteo"
+    elif umbral is not None:
+        if ratio >= umbral:
+            recommendation, reason = "SELL", "supera_umbral_optimo"
+        else:
+            recommendation, reason = ("STRONG_HOLD" if tendencia > 0 else "HOLD"), "espera_mejor_sorteo"
     elif offer_eur > ev_eur:
         recommendation, reason = "SELL", "oferta_sobre_ev"
     elif tendencia > 0:
@@ -307,6 +356,8 @@ def _decide(
         "mean_pct": round(mean_pct, 6),
         "mean_source": mean_source,
         "samples": samples,
+        "ciclos_restantes": ciclos_restantes,
+        "umbral_optimo_pct": None if umbral is None else round(umbral * 100.0, 2),
     }
 
 
@@ -348,6 +399,7 @@ def evaluate_offer(
     *,
     jugador_id: str | None = None,
     mean_pct: float | None = None,
+    ciclos_restantes: int | None = None,
     path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Evalúa una oferta suelta sin instanciar la clase.
@@ -361,6 +413,7 @@ def evaluate_offer(
         tendencia_diaria_estimada,
         jugador_id=jugador_id,
         mean_pct=mean_pct,
+        ciclos_restantes=ciclos_restantes,
     )
 
 
@@ -368,12 +421,14 @@ def get_market_recommendations(
     jugadores_en_venta: Any,
     *,
     mean_pct: float | None = None,
+    ciclos_restantes: int | None = None,
     path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Endpoint de integración: recomendación y badge por jugador en venta."""
     return MarketMakerExploiter(path).get_market_recommendations(
         jugadores_en_venta,
         mean_pct=mean_pct,
+        ciclos_restantes=ciclos_restantes,
     )
 
 
@@ -451,8 +506,13 @@ class MarketMakerExploiter:
         *,
         jugador_id: str | None = None,
         mean_pct: float | None = None,
+        ciclos_restantes: int | None = None,
     ) -> dict[str, Any]:
         """Evalúa una oferta contra el EV de la oferta de mañana.
+
+        ``ciclos_restantes`` son los sorteos de oferta que quedan antes del
+        cierre. Con él, la decisión usa el umbral de parada óptima; sin él, el
+        EV de mañana.
 
         ``mean_pct`` fuerza la media histórica (calibración y pruebas). Sin él
         se lee el log: media del jugador si hay muestra suficiente y, si no,
@@ -491,6 +551,7 @@ class MarketMakerExploiter:
             mean_source=source,
             samples=samples,
             trend_source=trend_source,
+            ciclos_restantes=ciclos_restantes,
         )
 
     # -- Endpoint ------------------------------------------------------------
@@ -500,6 +561,7 @@ class MarketMakerExploiter:
         jugadores_en_venta: Any,
         *,
         mean_pct: float | None = None,
+        ciclos_restantes: int | None = None,
     ) -> dict[str, Any]:
         """Cruza los jugadores propios en venta con el motor y pinta el badge.
 
@@ -562,6 +624,7 @@ class MarketMakerExploiter:
                 mean_source=source,
                 samples=samples,
                 trend_source="estimada" if trend is not None else None,
+                ciclos_restantes=ciclos_restantes,
             )
             signal.update(_identity(row, player_id))
             offers.append(signal)

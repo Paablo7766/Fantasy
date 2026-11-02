@@ -625,6 +625,12 @@ def evaluar_clausulas(
 _UMBRAL_VULNERABLE = 1.15
 _UMBRAL_SOBREPROTEGIDO = 1.30
 _VENTANA_APERTURA_DIAS = 3
+# Un sustituto debe rendir como mucho 0,3 xP menos que el jugador que te roban.
+_TOLERANCIA_SUSTITUTO_XP = 0.3
+# Sin sustituto libre, reponerlo cuesta un 60 % más que su valor.
+_RECARGO_SIN_SUSTITUTO = 1.60
+# Por debajo de esta pérdida, que te lo roben no cambia nada.
+_PERDIDA_ESCASEZ_MIN = 2_000_000
 
 
 def _millones_txt(value: float) -> str:
@@ -693,17 +699,51 @@ def _euros_jugador(jugador: dict[str, Any], *keys: str) -> int | None:
     return None
 
 
+def coste_reposicion(
+    jugador: dict[str, Any],
+    alternativas: list[dict[str, Any]],
+    valor: int,
+) -> tuple[int, bool]:
+    """Lo que cuesta tener otra vez los puntos de ``jugador`` si te lo roban.
+
+    Es el precio del sustituto más barato de su posición que rinda al menos
+    ``xp - 0,3``. Si no existe, ``1,6 × valor``. Devuelve ``(coste, hay_sustituto)``.
+    En una liga cerrada el valor de un jugador escaso no es su valor de mercado
+    sino lo que cuesta reponerlo.
+    """
+    xp = _num(jugador.get("jornada"))
+    posicion = jugador.get("position") or jugador.get("posicion")
+    if xp is None or posicion is None:
+        return int(round(valor * _RECARGO_SIN_SUSTITUTO)), False
+    precios = []
+    for alternativa in alternativas:
+        if alternativa.get("position") != posicion or alternativa.get("player_id") == jugador.get("player_id"):
+            continue
+        coste = _int(alternativa.get("coste"))
+        rinde = _num(alternativa.get("xp"))
+        if coste is None or coste <= 0 or rinde is None:
+            continue
+        if rinde >= xp - _TOLERANCIA_SUSTITUTO_XP:
+            precios.append(coste)
+    if not precios:
+        return int(round(valor * _RECARGO_SIN_SUSTITUTO)), False
+    return min(precios), True
+
+
 def auditar_clausulas_plantilla(
     jugadores_plantilla: list[dict[str, Any]],
     saldo_rivales: list[dict[str, Any]],
     *,
     ahora: datetime | None = None,
+    alternativas: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Riesgo real de que un rival pague la cláusula de un jugador nuestro.
 
     Solo mira cláusulas ya abiertas o que se abren en menos de 3 días. Cruza
     el múltiplo de la cláusula con cuántos rivales tienen ``dineroEstimado``
-    para pagarla hoy.
+    para pagarla hoy. Con ``alternativas`` (``position``, ``coste``, ``xp``)
+    mide también el coste de reposición: si lo que cobras no alcanza para
+    comprar un sustituto, la fila pasa a ``ESCASEZ``.
     """
     momento = ahora or datetime.now(timezone.utc)
     if momento.tzinfo is None:
@@ -737,7 +777,21 @@ def auditar_clausulas_plantilla(
         valor_proyectado = int(round(valor + subida))
         rivales_con_caja = sum(1 for caja in cajas if caja >= clausula)
         clausula_txt = _millones_txt(clausula)
-        if clausula >= valor * _UMBRAL_SOBREPROTEGIDO:
+        reposicion: int | None = None
+        perdida = 0
+        if alternativas is not None:
+            reposicion, hay_sustituto = coste_reposicion(jugador, alternativas, valor)
+            perdida = max(0, reposicion - clausula)
+        if perdida > _PERDIDA_ESCASEZ_MIN and rivales_con_caja >= 1:
+            estado = "ESCASEZ"
+            badge = "rojo"
+            origen = "el sustituto más barato" if hay_sustituto else "1,6× su valor (no hay sustituto libre)"
+            consejo = (
+                f"🧱 ESCASEZ: si pagan {clausula_txt}M, reponerlo cuesta {_millones_txt(reposicion)}M "
+                f"({origen}). Pierdes {_millones_txt(perdida)}M de poder competitivo. Blíndalo."
+            )
+            beneficio = 0
+        elif clausula >= valor * _UMBRAL_SOBREPROTEGIDO:
             beneficio = max(0, clausula - valor)
             estado = "SOBREPROTEGIDO"
             badge = "verde"
@@ -779,8 +833,10 @@ def auditar_clausulas_plantilla(
                 "rivales_con_caja": rivales_con_caja,
                 "clausula_abierta": abierta,
                 "dias_para_abrir": None if dias is None else round(dias, 2),
+                "coste_reposicion": reposicion,
+                "perdida_si_te_lo_roban": perdida if reposicion is not None else None,
             }
         )
-    orden = {"RIESGO_ALTO": 0, "RIESGO_CERO": 1, "SOBREPROTEGIDO": 2}
+    orden = {"RIESGO_ALTO": 0, "ESCASEZ": 1, "RIESGO_CERO": 2, "SOBREPROTEGIDO": 3}
     filas.sort(key=lambda fila: (orden[fila["estado"]], -fila["rivales_con_caja"], str(fila["nombre"])))
     return filas

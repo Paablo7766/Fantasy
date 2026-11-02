@@ -17,6 +17,7 @@ from toolbox.market_maker import (
     get_market_recommendations,
     get_offer_percentile,
     log_offer,
+    umbral_parada_optima,
 )
 
 VALUE = 10_000_000
@@ -102,6 +103,45 @@ class LogTests(_LogFixture):
         mean = self.mm.historical_mean("p1")
         self.assertAlmostEqual(mean["mean_pct"], 0.05, places=6)
         self.assertEqual(mean["mean_source"], "log_jugador")
+
+
+class ParadaOptimaTests(_LogFixture):
+    def test_umbral_crece_con_los_sorteos_que_quedan(self) -> None:
+        umbrales = [umbral_parada_optima(n) for n in range(1, 6)]
+        self.assertAlmostEqual(umbrales[0], 0.0, places=9)
+        self.assertAlmostEqual(umbrales[1], 0.025, places=6)
+        self.assertAlmostEqual(umbrales[3], 0.0483, places=3)
+        self.assertEqual(umbrales, sorted(umbrales))
+        self.assertLess(umbrales[-1], MAX_OFFER_PCT)
+
+    def test_sin_sorteos_se_acepta_cualquier_oferta(self) -> None:
+        self.assertEqual(umbral_parada_optima(0), MIN_OFFER_PCT)
+        result = self.mm.evaluate_offer(VALUE * 0.97, VALUE, 0, ciclos_restantes=0, mean_pct=0.0)
+        self.assertEqual(result["recommendation"], "SELL")
+        self.assertEqual(result["reason"], "ultimo_sorteo")
+
+    def test_un_jugador_que_cae_baja_el_umbral(self) -> None:
+        plano = umbral_parada_optima(4, 0.0)
+        cayendo = umbral_parada_optima(4, -0.02)
+        subiendo = umbral_parada_optima(4, 0.01)
+        self.assertLess(cayendo, plano)
+        self.assertGreater(subiendo, plano)
+        self.assertGreater(cayendo, 0.0)
+
+    def test_el_lunes_una_oferta_corta_se_rechaza_y_una_buena_se_acepta(self) -> None:
+        corta = self.mm.evaluate_offer(VALUE * 1.02, VALUE, 0, ciclos_restantes=4, mean_pct=0.0)
+        self.assertEqual(corta["recommendation"], "HOLD")
+        self.assertEqual(corta["reason"], "espera_mejor_sorteo")
+        self.assertAlmostEqual(corta["umbral_optimo_pct"], 4.83, places=2)
+        buena = self.mm.evaluate_offer(VALUE * 1.05, VALUE, 0, ciclos_restantes=4, mean_pct=0.0)
+        self.assertEqual(buena["recommendation"], "SELL")
+        self.assertEqual(buena["reason"], "supera_umbral_optimo")
+
+    def test_sin_ciclos_el_comportamiento_no_cambia(self) -> None:
+        result = self.mm.evaluate_offer(VALUE * 1.02, VALUE, 100_000)
+        self.assertIsNone(result["ciclos_restantes"])
+        self.assertIsNone(result["umbral_optimo_pct"])
+        self.assertEqual(result["reason"], "oferta_sobre_ev")
 
 
 class EvaluateOfferTests(_LogFixture):

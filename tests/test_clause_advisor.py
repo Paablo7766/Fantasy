@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, coste_subida, evaluar_clausulas
+from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, coste_reposicion, coste_subida, evaluar_clausulas
 from toolbox.engine.strategy_layer import build_strategy
 
 AHORA = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
@@ -361,6 +361,35 @@ class RadarAntiRoboTests(unittest.TestCase):
         self.assertEqual(filas[0]["badge"], "verde")
         self.assertIn("ganas +3,0M", filas[0]["consejo"])
         self.assertIn("No subir cláusula", filas[0]["consejo"])
+
+    def test_escasez_si_lo_que_cobras_no_alcanza_para_reponerlo(self) -> None:
+        # Cláusula 1,33× el valor: antes "sobreprotegido". Pero el sustituto cuesta 31 M.
+        jugador = self._jugador("lejeune", 13_300_000, 10_000_000, AHORA + timedelta(days=2))
+        jugador.update({"position": "DF", "jornada": 6.0})
+        alternativas = [
+            {"player_id": "caro", "position": "DF", "coste": 31_000_000, "xp": 5.9},
+            {"player_id": "peor", "position": "DF", "coste": 4_000_000, "xp": 3.0},
+            {"player_id": "otra_pos", "position": "MC", "coste": 2_000_000, "xp": 9.0},
+        ]
+        filas = auditar_clausulas_plantilla([jugador], [{"dineroEstimado": 40_000_000}], ahora=AHORA, alternativas=alternativas)
+        self.assertEqual(filas[0]["estado"], "ESCASEZ")
+        self.assertEqual(filas[0]["coste_reposicion"], 31_000_000)
+        self.assertEqual(filas[0]["perdida_si_te_lo_roban"], 17_700_000)
+        self.assertIn("Pierdes 17,7M", filas[0]["consejo"])
+
+    def test_con_sustituto_barato_sigue_sobreprotegido(self) -> None:
+        jugador = self._jugador("banco", 13_000_000, 10_000_000, AHORA + timedelta(days=2))
+        jugador.update({"position": "DF", "jornada": 6.0})
+        alternativas = [{"player_id": "ok", "position": "DF", "coste": 9_000_000, "xp": 5.8}]
+        filas = auditar_clausulas_plantilla([jugador], [{"dineroEstimado": 40_000_000}], ahora=AHORA, alternativas=alternativas)
+        self.assertEqual(filas[0]["estado"], "SOBREPROTEGIDO")
+        self.assertEqual(filas[0]["perdida_si_te_lo_roban"], 0)
+
+    def test_sin_sustituto_la_reposicion_es_un_sesenta_por_ciento_mas(self) -> None:
+        jugador = {"player_id": "x", "position": "DL", "jornada": 7.0}
+        self.assertEqual(coste_reposicion(jugador, [], 20_000_000), (32_000_000, False))
+        ya = {"player_id": "y", "position": "DL", "coste": 25_000_000, "xp": 6.8}
+        self.assertEqual(coste_reposicion(jugador, [ya], 20_000_000), (25_000_000, True))
 
     def test_candado_a_tres_dias_o_mas_no_entra(self) -> None:
         lejos = (AHORA + timedelta(days=3)).isoformat()

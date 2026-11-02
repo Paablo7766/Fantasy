@@ -852,6 +852,27 @@ def _plantillas_rivales(records: dict[str, dict[str, Any]]) -> dict[str, list[di
     return plantillas
 
 
+def _alternativas_reposicion(records: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Jugadores que se pueden comprar hoy: libres de LaLiga a su valor y ajenos a su cláusula."""
+    salida: list[dict[str, Any]] = []
+    for row in records.values():
+        if row.get("is_self") is True or row.get("excluded") is True:
+            continue
+        player_id = row.get("player_id")
+        if not isinstance(player_id, str) or row.get("position") not in POSITIONS:
+            continue
+        if row.get("on_market") is True and not row.get("seller_team_id"):
+            coste = row.get("valor")
+        elif row.get("team_id") and row.get("shielded") is not True:
+            coste = row.get("clause")
+        else:
+            continue
+        if isinstance(coste, bool) or not isinstance(coste, int) or coste <= 0:
+            continue
+        salida.append({"player_id": player_id, "position": row["position"], "coste": coste, "xp": row.get("jornada")})
+    return salida
+
+
 def _asesorar_clausulas(
     records: dict[str, dict[str, Any]],
     war: dict[str, float],
@@ -868,6 +889,7 @@ def _asesorar_clausulas(
     ajenos: list[dict[str, Any]] = []
     puestos = _puestos_liga(board)
     plantillas = _plantillas_rivales(records)
+    alternativas = _alternativas_reposicion(records)
     for row in records.values():
         player_id = row.get("player_id")
         if not isinstance(player_id, str):
@@ -915,6 +937,7 @@ def _asesorar_clausulas(
                 "prevision_7d_pct": fila.get("pct"),
                 "clausulaAbre": fila.get("bloqueo"),
                 "blindado": fila.get("blindado") is True,
+                "jornada": fila.get("jornada"),
             }
             for fila in propios
         ],
@@ -924,6 +947,7 @@ def _asesorar_clausulas(
             if isinstance(rival, dict)
         ],
         ahora=now,
+        alternativas=alternativas,
     )
     try:
         informe = evaluar_clausulas(

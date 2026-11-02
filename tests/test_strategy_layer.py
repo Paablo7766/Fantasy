@@ -22,6 +22,7 @@ from toolbox.engine.signing_plan import (
     MAX_VENTAS_TITULARES_SANOS,
     build_plan_fichajes,
     evaluar_patrimonio_clausula,
+    factor_peaje,
     penalizacion_por_millon,
 )
 from toolbox.engine.strategy_layer import build_strategy
@@ -392,18 +393,27 @@ class LiquidezTests(unittest.TestCase):
         self.assertEqual(tarde["acciones"], [])
         self.assertEqual(tarde["saldo_al_final"], 4_000_000)
 
+    def test_el_factor_de_peaje_es_continuo_y_decrece_con_la_mejora(self) -> None:
+        self.assertAlmostEqual(factor_peaje(0.4), 0.985, places=3)
+        self.assertAlmostEqual(factor_peaje(1.6), 0.5, places=6)
+        self.assertAlmostEqual(factor_peaje(2.5), 0.04, places=2)
+        # Sin salto en el antiguo umbral de 2,0 xP: 0,06 xP de ruido mueve el peaje un 5 %, no un 100 %.
+        self.assertLess(abs(factor_peaje(1.95) - factor_peaje(2.01)), 0.06)
+        self.assertEqual(factor_peaje(None), 1.0)
+        self.assertEqual(factor_peaje(float("nan")), 1.0)
+
     def test_la_revalorizacion_y_la_rotacion_bajan_el_peaje(self) -> None:
-        # +1,5 xP por 7,7 M€. En bruto el lunes pide 1,54 pts y lo descarta.
-        # Con un +8 % a 7 días, hasta el viernes solo se bloquean 7,35 M€ (1,47 pts) y entra.
-        caro = [_jugador("nueve", "DEL", 6.5, euros=7_700_000)]
+        # +1,2 xP por 7,7 M€. Con psi(1,2)=0,80 el lunes pide 1,23 pts y lo descarta.
+        # Con un +8 % a 7 días, hasta el viernes solo se bloquean 7,35 M€ (1,18 pts) y entra.
+        caro = [_jugador("nueve", "DEL", 6.2, euros=7_700_000)]
         sin_subida = self._plan(dias=4, cash=7_700_000, mercado=caro)
         self.assertEqual(sin_subida["acciones"], [])
         self.assertEqual(sin_subida["saldo_al_final"], 7_700_000)
 
-        con_subida = [_jugador("nueve", "DEL", 6.5, euros=7_700_000, valor=7_700_000, pct=8.0)]
+        con_subida = [_jugador("nueve", "DEL", 6.2, euros=7_700_000, valor=7_700_000, pct=8.0)]
         plan = self._plan(dias=4, cash=7_700_000, mercado=con_subida)
         self.assertEqual(plan["acciones"][0]["tipo"], "PUJA")
-        self.assertEqual(plan["mejora_puntos_jornada"], 1.5)
+        self.assertEqual(plan["mejora_puntos_jornada"], 1.2)
         self.assertEqual(plan["saldo_al_final"], 0)
 
         # La misma mejora de +1,0 por 8 M€ no pasa el peaje en bruto (1,6 pts).

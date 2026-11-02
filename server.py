@@ -2837,13 +2837,15 @@ def api_quant_radar(
 @_read_only
 def api_market_maker(
     league: str | None = Query(default=None),
+    ciclos: int | None = Query(default=None, ge=0, le=7),
 ) -> Any:
     """Ofertas del Computer sobre mi plantilla: percentil, EV de mañana y veredicto.
 
     Solo lee la foto de plantillas y el log local de ofertas. La oferta del
-    sistema es un punto de referencia (±10 % en el motor, ±5 % en la regla
-    rápida de ``scripts/eval_ofertas_maquina.py``); el jugador puede editar la
-    oferta real que recibe y volver a evaluarla desde la app.
+    sistema es un punto de referencia (±10 % del valor, según el reglamento); el
+    jugador puede editar la oferta real que recibe y volver a evaluarla desde la
+    app. ``ciclos`` son los sorteos de oferta que quedan antes del cierre: con él
+    se aplica el umbral de parada óptima.
     """
     board = _board("squads", league, tier="core")
     if isinstance(board, JSONResponse):
@@ -2851,7 +2853,7 @@ def api_market_maker(
     squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
     own = squads.get("self") if isinstance(squads.get("self"), dict) else None
     players = own.get("players") if isinstance(own, dict) and isinstance(own.get("players"), list) else []
-    document = get_market_recommendations(players)
+    document = get_market_recommendations(players, ciclos_restantes=ciclos)
     document.update(_photo_fields(board))
     document["league_id"] = document.get("league_id") or _board_league_id(board, league)
     return document

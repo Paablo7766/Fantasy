@@ -142,6 +142,27 @@ def xp_4_jornadas(jugador: dict[str, Any]) -> float | None:
     return sum(ajustados) / len(ajustados)
 
 
+# Una racha de calendario que mejora más de esto tras un partido duro es un valle de pánico.
+UMBRAL_INFLEXION = 0.12
+
+
+def indice_inflexion_calendario(jugador: dict[str, Any]) -> float | None:
+    """Cuánto mejora el calendario tras esta jornada: media de las 3 siguientes menos la actual.
+
+    Va en factor de dificultad (muy difícil 0,84, medio 1,00, fácil 1,06). Un valor
+    positivo alto es un jugador que hoy asusta (rival duro) pero tiene tres partidos
+    fáciles detrás: los mánagers lo venden antes de que se revalorice.
+    """
+    fechas = _calendario(jugador)
+    if len(fechas) < 4:
+        return None
+    factores = [
+        _factor(fecha.get("difficulty") or fecha.get("dificultad")) if isinstance(fecha, dict) else _factor(fecha)
+        for fecha in fechas[:4]
+    ]
+    return sum(factores[1:]) / 3.0 - factores[0]
+
+
 def _titularidad(jugador: dict[str, Any]) -> float | None:
     for key in ("prob_titular", "p_titular"):
         number = _prob(jugador.get(key))
@@ -513,6 +534,7 @@ def comparar_fichas(
             "foto": jugador.get("image_url") or jugador.get("foto"),
             "xp_j1": _redondear(xp),
             "xp_4j": _redondear(xp4),
+            "inflexion_calendario": _redondear(indice_inflexion_calendario(jugador), 3),
             "prob_titular": _redondear(tit, 3) if tit is not None else None,
             "techo": _redondear(techo),
             "valor": _valor(jugador),
