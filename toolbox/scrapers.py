@@ -1480,6 +1480,16 @@ def build_trends(
                 day=_snapshot_day(market),
             )
             sources.update(own_summary.get("sources") or {})
+            try:
+                from toolbox.signal_log import record_signal_log
+
+                record_signal_log(
+                    players,
+                    league_id=league_id if isinstance(league_id, str) else None,
+                    day=_snapshot_day(market),
+                )
+            except Exception:  # noqa: BLE001 — el registro es de medición, nunca tumba trends
+                logger.debug("Sin registro de señales del día", exc_info=True)
         except Exception as exc:  # noqa: BLE001 — own intel no tumba trends
             sources["own_intel"] = {
                 "ok": False,
