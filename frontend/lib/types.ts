@@ -769,6 +769,8 @@ export type RivalSquad = {
   fantasy_team_name?: string | null;
   rank?: number | null;
   cash_eur?: number | null;
+  /** Puntos acumulados en la liga. */
+  points?: number | null;
   cash_is_ceiling?: boolean | null;
   player_count?: number | null;
   locked_clauses?: number | null;

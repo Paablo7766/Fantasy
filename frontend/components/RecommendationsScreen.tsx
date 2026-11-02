@@ -2,10 +2,11 @@
 
 import { useMemo } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
-import { HomeHero } from "@/components/hoy/HomeHero";
+import { AccountSummary } from "@/components/hoy/AccountSummary";
 import { HojaDeRuta } from "@/components/hoy/HojaDeRuta";
 import { HomeLineup } from "@/components/hoy/HomeLineup";
 import { SigningBoard } from "@/components/hoy/SigningBoard";
+import { StrategyImpact } from "@/components/hoy/StrategyImpact";
 import { buildPhotoIndex, buildPlayerIndex } from "@/lib/photoIndex";
 import type { NeedsPayload, OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
@@ -22,7 +23,8 @@ export function RecommendationsScreen() {
 
   return (
     <div className="hoy-root rec-home home-stack">
-      <HomeHero plan={plan} optimize={optimize} squads={squads} loading={loading} />
+      <AccountSummary plan={plan} squads={squads} loading={loading} />
+      <StrategyImpact plan={plan} optimize={optimize} loading={loading} />
       <HojaDeRuta fichajes={plan?.plan_fichajes} loading={loading} />
       <SigningBoard
         plan={plan}
