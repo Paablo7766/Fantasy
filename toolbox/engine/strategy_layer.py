@@ -32,6 +32,7 @@ from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, evaluar_c
 from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
 from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes
+from toolbox.plan_memory import load_objetivos_previos, save_plan
 from toolbox.market_intel import _jornada_kickoff, _parse_kickoff
 from toolbox.normalize import exclusion_from_status, parse_clause_lock
 
@@ -1188,6 +1189,7 @@ def _plan(
             # Días hasta el inicio de jornada: primer silbato del día con más partidos.
             dias_para_jornada=_days_to_kickoff(trends, now),
             baseline_puntos=baseline,
+            objetivos_previos=board.get("plan_objetivos_previos") or None,
         )
     except Exception:
         logger.exception("plan de fichajes")
@@ -1371,10 +1373,32 @@ def stamp_strategy(payload: dict[str, Any], report: dict[str, Any]) -> None:
     payload["radar_anti_robo"] = report.get("radar_anti_robo") or []
 
 
+def _league_id(board: dict[str, Any]) -> str | None:
+    for key in ("trends", "squads", "market"):
+        document = board.get(key) if isinstance(board, dict) else None
+        if isinstance(document, dict) and isinstance(document.get("league_id"), str) and document["league_id"]:
+            return document["league_id"]
+    return None
+
+
 def publish_strategy(board: dict[str, Any], payload: dict[str, Any], *, now: datetime | None = None) -> None:
-    """Calcula y estampa. Un fallo aquí no puede tumbar el resto del JSON."""
+    """Calcula y estampa. Un fallo aquí no puede tumbar el resto del JSON.
+
+    Lee los objetivos del plan anterior y guarda el de hoy (``plan_memory``):
+    así el plan no salta de jugador cada mañana y se puede medir cuánto cambia.
+    """
+    league_id = _league_id(board)
+    try:
+        previos = load_objetivos_previos(league_id)
+    except Exception:
+        logger.exception("memoria del plan")
+        previos = []
+    if previos and isinstance(board, dict):
+        board = {**board, "plan_objetivos_previos": previos}
+    calculado = False
     try:
         report = build_strategy(board, now=now)
+        calculado = True
     except Exception:
         logger.exception("capa estratégica")
         ratio = float(EUROS_POR_PUNTO)
@@ -1404,3 +1428,10 @@ def publish_strategy(board: dict[str, Any], payload: dict[str, Any], *, now: dat
             "notas_mercado": {},
         }
     stamp_strategy(payload, report)
+    if not calculado:
+        # Un plan vacío por error no puede borrar la memoria del plan bueno.
+        return
+    try:
+        save_plan(league_id, report.get("plan_fichajes"))
+    except Exception:
+        logger.exception("memoria del plan")

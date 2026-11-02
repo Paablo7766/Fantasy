@@ -103,8 +103,10 @@ def hydrate_audit_from_app_stores(
             ledgers = CashLedgerStore().list_ledgers(None)
     except Exception:
         ledgers = []
-    buy_n = conn.execute("select count(*) from activity_buys").fetchone()[0]
-    if ledgers and buy_n < 3:
+    # Se reimporta siempre: el ledger crece cada día y son unas pocas filas.
+    # Importar solo con la tabla vacía congelaba las compras en la primera carga,
+    # y sin compras nuevas ninguna PUJAR se podía dar por ganada o perdida.
+    if ledgers:
         index: dict[tuple[str, str], int] = {}
         for player_id, day, value in conn.execute(
             "select player_id, day, market_value from price_snapshots where market_value is not null"
@@ -130,7 +132,7 @@ def hydrate_audit_from_app_stores(
                         "at": ev.get("at"),
                     }
                 )
-        buys = collect_activity_buys(events, index, ledgers)
+        buys = collect_activity_buys(events, index, ledgers, require_reference=False)
         if buys:
             if league_id is not None:
                 conn.execute("delete from activity_buys where league_id = ? or league_id is null", (league_id,))

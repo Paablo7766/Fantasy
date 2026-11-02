@@ -21,6 +21,14 @@ from toolbox.engine.lineup_math import solve_best_xi
 BUSCA_PUNTOS = 4.7
 # Por debajo de esto el once no cambia de verdad.
 MEJORA_MINIMA = 0.1
+# Mejora mínima del once para cambiar de plan. Con xP ruidosos, un +0,2 es
+# ruido, y seguirlo hace que el plan salte de un jugador a otro cada mañana.
+# Seguir con los objetivos de ayer solo exige MEJORA_MINIMA. Valor inicial,
+# pendiente de calibrar con plan_snapshots y los puntos reales.
+UMBRAL_CAMBIO_XP = 0.5
+# Prima en el objetivo por fichar a quien ya recomendó el plan anterior. Un
+# objetivo nuevo tiene que ganarle por más que esto para desplazarlo.
+CONTINUIDAD_XP = 0.4
 # Jueves y viernes: se apaga el filtro y se optimiza solo por puntos.
 UMBRAL_ALL_IN_DIAS = 2.0
 # Mejora neta del once por encima de esto se ejecuta hoy, caiga el día que caiga.
@@ -511,8 +519,14 @@ def build_plan_fichajes(
     dias_para_jornada: float | None,
     baseline_puntos: float,
     preparar_escaparate: bool = True,
+    objetivos_previos: list[str] | set[str] | None = None,
 ) -> dict[str, Any]:
     """Maximiza ``xP - peaje × drenaje neto``. No envía órdenes.
+
+    ``objetivos_previos`` son los fichajes que recomendó el plan anterior. Si
+    siguen disponibles, el solver los premia con ``CONTINUIDAD_XP`` y el plan
+    solo exige ``MEJORA_MINIMA`` para mantenerlos. Un plan con objetivos
+    nuevos tiene que mejorar el once en ``UMBRAL_CAMBIO_XP``.
 
     El peaje no mira el precio bruto. Mira el dinero que de verdad sale de la
     caja, ``max(0, compras no urgentes - ventas - revalorización hasta el
@@ -528,6 +542,7 @@ def build_plan_fichajes(
     """
     meta = _meta(dias_para_jornada)
     dias = dias_al_cierre(dias_para_jornada)
+    previos = {str(item) for item in objetivos_previos or [] if item}
     ventana = meta["modo_liquidez"] == "VENTANA"
     all_in = meta["modo_liquidez"] == "ALL-IN"
     penalizacion = float(meta["penalizacion_liquidez"])
@@ -562,6 +577,7 @@ def build_plan_fichajes(
             dias_para_jornada=0,
             baseline_puntos=baseline_puntos,
             preparar_escaparate=False,
+            objetivos_previos=previos,
         )
         ventas_viernes = {
             accion["player_id"]
@@ -917,10 +933,17 @@ def build_plan_fichajes(
         for player_id, variable in clausula.items()
     )
     bonus_baja = pulp.lpSum(BONUS_REEMPLAZO_BAJA * vende[player_id] for player_id in bajas if player_id in vende)
+    continuidad = pulp.lpSum(
+        [
+            *(CONTINUIDAD_XP * variable for pid, variable in puja.items() if pid in previos),
+            *(CONTINUIDAD_XP * variable for pid, variable in clausula.items() if pid in previos),
+        ]
+    )
     problem += (
         puntos
         + bonus
         + bonus_baja
+        + continuidad
         - peaje
         - castigo_patrimonio
         - 0.0001 * pulp.lpSum(list(vende.values()) or [0])
@@ -1176,7 +1199,14 @@ def build_plan_fichajes(
     hay_urgente = any(accion.get("impulso") in {"MUST-BUY", "CHOLLO"} for accion in acciones)
     vende_baja = any(row["player_id"] in bajas for row in ventas_sel)
     cubre_deuda = saldo < 0 and bool(ventas_hoy)
-    if mejora < MEJORA_MINIMA and not hay_urgente and not vende_baja and not cubre_deuda:
+    fichados = [row["player_id"] for row in pujas_sel + clausulas_sel]
+    for accion in acciones:
+        if accion.get("tipo") in {"PUJA", "CLAUSULAZO"}:
+            accion["sigue_plan"] = accion.get("player_id") in previos
+    # Mantener lo de ayer es barato; cambiar de objetivo tiene que merecer la pena.
+    solo_continua = bool(fichados) and all(player_id in previos for player_id in fichados)
+    umbral = MEJORA_MINIMA if solo_continua else UMBRAL_CAMBIO_XP
+    if mejora < umbral and not hay_urgente and not vende_baja and not cubre_deuda:
         vacio = _vacio(saldo, ratio, baseline_puntos, meta)
         vacio["en_radar"] = radar
         vacio["acciones"] = _escaparate(set())
@@ -1204,6 +1234,8 @@ def build_plan_fichajes(
         "ratio_mercado": round(ratio, 2) if ratio else None,
         "once": once,
         "en_radar": radar,
+        "objetivos_previos": sorted(previos),
+        "umbral_cambio_xp": umbral,
         **meta,
     }
 

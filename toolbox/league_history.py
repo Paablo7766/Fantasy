@@ -546,8 +546,15 @@ def collect_activity_buys(
     events: list[dict[str, Any]],
     snapshots: dict[tuple[str, str], int],
     ledgers: list[dict[str, Any]] | None = None,
+    *,
+    require_reference: bool = True,
 ) -> list[dict[str, Any]]:
-    """Compras (activity_type_id == 31) con valor de referencia del mismo día Madrid."""
+    """Compras (activity_type_id == 31) con valor de referencia del mismo día Madrid.
+
+    ``require_reference=False`` conserva también las compras de un día sin foto
+    de precio, con la referencia vacía: para saber quién ganó una puja basta
+    con el comprador y el importe.
+    """
     cash_by_team: dict[str, int] = {}
     for ledger in ledgers or []:
         if not isinstance(ledger, dict):
@@ -573,7 +580,9 @@ def collect_activity_buys(
             continue
         ref = snapshots.get((player_id, day))
         if not isinstance(ref, int) or ref <= 0:
-            continue
+            if require_reference:
+                continue
+            ref = None
         cash_at = cash_by_team.get(team_id)
         buys.append(
             {

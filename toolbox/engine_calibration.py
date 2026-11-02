@@ -7,7 +7,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from toolbox.bid_war import probability_of_winning_bid
 from toolbox.cache import cache_root, madrid_day
 from toolbox.empirical_audit import (
     audit_sell_at_crest,
@@ -17,12 +16,7 @@ from toolbox.empirical_audit import (
     read_price_snapshots_grouped,
     sync_audit_from_local_store,
 )
-from toolbox.cache import CashLedgerStore
-from toolbox.league_history import RivalProfile, fit_rival_profiles_eb
-
-# Proyección neutra solo cuando el jugador no tiene ninguna jornada puntuada.
-# El Brier usa la proyección real guardada en ``matchday_snapshots``.
-DEFAULT_EXPECTED_PTS = 4.5
+from toolbox.plan_memory import plan_stability
 
 
 def calibration_db_path() -> Path:
@@ -155,6 +149,15 @@ def persist_market_decisions(
         conn.close()
 
 
+REINTENTO_UNKNOWN_DIAS = 4
+
+
+def _dia_menos(day: str, days: int) -> str:
+    from datetime import date, timedelta
+
+    return (date.fromisoformat(day) - timedelta(days=days)).isoformat()
+
+
 def _resolve_pujar_outcomes(conn: sqlite3.Connection, own_team_id: str | None) -> None:
     if not isinstance(own_team_id, str) or not own_team_id:
         return
@@ -162,10 +165,13 @@ def _resolve_pujar_outcomes(conn: sqlite3.Connection, own_team_id: str | None) -
         """
         select snapshot_day, player_id, suggested_bid, win_probability
         from market_decision_snapshots
-        where decision = 'PUJAR' and outcome is null and snapshot_day < ?
+        where decision = 'PUJAR' and snapshot_day < ?
+          and (outcome is null or (outcome = 'unknown' and snapshot_day >= ?))
         order by snapshot_day
         """,
-        (madrid_day(),),
+        # Una «unknown» se vuelve a mirar unos días: el ledger llega con retraso
+        # y una puja resuelta antes de que entrase la compra quedaba sin dueño.
+        (madrid_day(), _dia_menos(madrid_day(), REINTENTO_UNKNOWN_DIAS)),
     ).fetchall()
     if not pending:
         return
@@ -305,118 +311,41 @@ def pujar_hit_metrics(conn: sqlite3.Connection, own_team_id: str | None) -> dict
     }
 
 
-def _ledgers_from_cache(league_id: str | None = None) -> list[dict[str, Any]]:
-    try:
-        ledgers = CashLedgerStore().list_ledgers(league_id)
-        if ledgers:
-            return ledgers
-    except Exception:
-        pass
-    path = cache_root() / "supabase-local" / "cash_ledgers.json"
-    if not path.is_file():
-        return []
-    try:
-        import json
-
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    return [row for row in payload if isinstance(row, dict)]
-
-
-def _rival_profiles(conn: sqlite3.Connection) -> dict[str, RivalProfile]:
-    buys_raw = conn.execute(
-        """
-        select team_id, amount_eur, reference_value_eur, cash_at_event_eur, positional_urgency
-        from activity_buys
-        where amount_eur > 0 and reference_value_eur > 0
-        """
-    ).fetchall()
-    buys = [
-        {
-            "team_id": team_id,
-            "amount_eur": amount,
-            "reference_value_eur": ref,
-            "cash_at_event_eur": cash,
-            "positional_urgency": urgency,
-        }
-        for team_id, amount, ref, cash, urgency in buys_raw
-    ]
-    rivals_state: list[dict[str, Any]] = []
-    for ledger in _ledgers_from_cache(None):
-        team_id = ledger.get("team_id")
-        if not isinstance(team_id, str):
-            continue
-        cash = ledger.get("observed_cash_eur")
-        if not isinstance(cash, int):
-            cash = ledger.get("reconstructed_cash_eur")
-        rivals_state.append(
-            {
-                "team_id": team_id,
-                "manager_name": ledger.get("manager_name") or team_id,
-                "cash_eur": cash if isinstance(cash, int) else 0,
-                "thin_positions": [],
-            }
-        )
-    if not buys or not rivals_state:
-        return {}
-    return fit_rival_profiles_eb(buys, rivals_state)
-
-
-def _expected_points_seed(conn: sqlite3.Connection, player_id: str) -> float:
-    """Proyección real del jugador (última jornada guardada). Fallback neutro si no hay dato."""
-    try:
-        row = conn.execute(
-            """
-            select expected_points from matchday_snapshots
-            where player_id = ? and expected_points is not null
-            order by cast(jornada_id as integer) desc
-            limit 1
-            """,
-            (player_id,),
-        ).fetchone()
-    except sqlite3.Error:
-        row = None
-    if row and isinstance(row[0], (int, float)) and not isinstance(row[0], bool):
-        return float(row[0])
-    return DEFAULT_EXPECTED_PTS
+# Con menos pujas resueltas el Brier es ruido y no entra en la confianza.
+MIN_PUJAS_BRIER = 10
 
 
 def win_probability_calibration(conn: sqlite3.Connection, *, limit: int = 120) -> dict[str, Any]:
-    profiles = _rival_profiles(conn)
-    if not profiles:
-        return {"samples": 0, "brier": None, "bins": [], "mean_predicted": None}
+    """P(ganar) que el motor dio a cada PUJAR frente a si la puja se ganó.
 
+    Antes se simulaba que cada mánager pujaba lo mismo que el ganador de cada
+    compra. El motor daba ~70 % a cada uno y solo uno de diez gana por
+    construcción, así que el Brier salía malo midiera lo que midiera. Aquí
+    solo cuentan recomendaciones reales con resultado conocido.
+
+    Límite: «lost» significa que otro se llevó al jugador, aunque no conste
+    que tú pujaras. Mientras no se guarde la puja propia, mide la
+    recomendación más que la puja.
+    """
     rows = conn.execute(
         """
-        select team_id, player_id, amount_eur, reference_value_eur
-        from activity_buys
-        where amount_eur > 0 and reference_value_eur > 0
-        order by at desc
+        select win_probability, outcome
+        from market_decision_snapshots
+        where decision = 'PUJAR' and outcome in ('hit', 'lost') and win_probability is not null
+        order by snapshot_day desc
         limit ?
         """,
         (limit,),
     ).fetchall()
-
     samples: list[tuple[float, float]] = []
-    for winner_id, _player_id, amount, ref in rows:
-        if not isinstance(ref, int) or ref <= 0 or not isinstance(amount, int):
-            continue
-        winner_id = str(winner_id)
-        for subject_id in profiles:
-            rivals = [profile for tid, profile in profiles.items() if tid != subject_id]
-            if not rivals:
-                continue
-            # Cada compra se contrasta con la proyección real del jugador: usar
-            # una constante (6.0) metía el mismo sesgo en todas las muestras y
-            # el Brier medía la constante, no al motor.
-            expected_pts = _expected_points_seed(conn, str(_player_id))
-            predicted = probability_of_winning_bid(float(amount), float(ref), float(ref), "MC", expected_pts, rivals)
-            outcome = 1.0 if subject_id == winner_id else 0.0
-            samples.append((predicted, outcome))
+    for predicted, outcome in rows:
+        value = float(predicted)
+        if value > 1.0:
+            value /= 100.0
+        samples.append((max(0.0, min(1.0, value)), 1.0 if outcome == "hit" else 0.0))
 
     if not samples:
-        return {"samples": 0, "brier": None, "bins": [], "mean_predicted": None}
+        return {"samples": 0, "brier": None, "bins": [], "mean_predicted": None, "suficiente": False}
 
     brier = sum((pred - outcome) ** 2 for pred, outcome in samples) / len(samples)
     mean_pred = sum(pred for pred, _ in samples) / len(samples)
@@ -442,6 +371,7 @@ def win_probability_calibration(conn: sqlite3.Connection, *, limit: int = 120) -
         "brier": round(brier, 4),
         "mean_predicted": round(mean_pred, 4),
         "bins": bins,
+        "suficiente": len(samples) >= MIN_PUJAS_BRIER,
     }
 
 
@@ -495,7 +425,7 @@ def compute_engine_confidence(report: dict[str, Any]) -> dict[str, Any]:
 
     win = report.get("win_probability") if isinstance(report.get("win_probability"), dict) else {}
     brier = win.get("brier")
-    if isinstance(brier, (int, float)):
+    if isinstance(brier, (int, float)) and win.get("suficiente") is True:
         if brier <= 0.18:
             score += 6
         elif brier >= 0.28:
@@ -539,6 +469,7 @@ def build_calibration_report(
         points = matchday_points_trend(conn)
         pujar = pujar_hit_metrics(conn, own_team_id)
         win = win_probability_calibration(conn)
+        estabilidad = plan_stability(conn, league_id)
         snap_rows, buy_rows = sync_audit_from_local_store(conn, path.parent)
         report: dict[str, Any] = {
             "ok": True,
@@ -557,6 +488,7 @@ def build_calibration_report(
             "sell_at_crest": crest,
             "pujar": pujar,
             "win_probability": win,
+            "plan_stability": estabilidad,
             "generated_at": time.time(),
         }
         report["engine_confidence"] = compute_engine_confidence(report)
