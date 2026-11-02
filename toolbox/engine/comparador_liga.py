@@ -471,8 +471,42 @@ def comparar_fichas(
     if maxima is not None and venta is not None and saldo is not None and coste["canal"] == "laliga":
         saldo_maxima = int(saldo - (maxima - venta))
 
-    def ficha(jugador: dict[str, Any], xp: float | None, xp4: float | None, tit: float | None, techo: float | None, subida: int, pct: float) -> dict[str, Any]:
+    def precio(jugador: dict[str, Any]) -> dict[str, Any]:
+        """Lo que cuesta cada lado en esta liga: puja, venta de rival o cláusula."""
+        if jugador.get("is_self") is True or _canal(jugador) == "propio":
+            venta_propia = ingreso_venta(jugador)
+            return {"importe": venta_propia["importe"], "tipo": "propio", "etiqueta": "Tu jugador · venta"}
+        datos = coste_adquisicion(jugador, ahora)
+        tipo = {"puja_smart": "mercado", "venta_rival": "venta_rival", "clausula": "clausula"}.get(datos["fuente"], "desconocido")
         return {
+            "importe": datos["importe"],
+            "tipo": tipo,
+            "etiqueta": datos["etiqueta"],
+            "clausula_abierta": datos["clausula_abierta"] if tipo == "clausula" else None,
+            "clausula_abre": datos["clausula_abre"] if tipo == "clausula" else None,
+            "rival": datos["rival"],
+        }
+
+    def proximos(jugador: dict[str, Any]) -> list[dict[str, Any]]:
+        out = []
+        for fecha in _calendario(jugador):
+            if isinstance(fecha, dict) and fecha.get("opponent"):
+                out.append(
+                    {
+                        "rival": fecha.get("opponent"),
+                        "casa": fecha.get("is_home") if isinstance(fecha.get("is_home"), bool) else None,
+                        "dificultad": fecha.get("difficulty") or fecha.get("dificultad"),
+                    }
+                )
+        return out[:3]
+
+    def ficha(jugador: dict[str, Any], xp: float | None, xp4: float | None, tit: float | None, techo: float | None, subida: int, pct: float) -> dict[str, Any]:
+        media = _num(jugador.get("average_points") if jugador.get("average_points") is not None else jugador.get("media"))
+        return {
+            "club": jugador.get("club"),
+            "media": _redondear(media),
+            "precio": precio(jugador),
+            "proximos": proximos(jugador),
             "player_id": _pid(jugador.get("player_id")),
             "nombre": _nombre(jugador),
             "posicion": jugador.get("position") or jugador.get("posicion"),

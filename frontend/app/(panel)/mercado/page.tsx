@@ -21,7 +21,7 @@ type Tab = "fichajes" | "radar" | "universo";
 const TABS: { id: Tab; label: string }[] = [
   { id: "fichajes", label: "Hoy" },
   { id: "radar", label: "Radar" },
-  { id: "universo", label: "Todos" },
+  { id: "universo", label: "Jugadores" },
 ];
 
 function asTab(value: string | null): Tab {

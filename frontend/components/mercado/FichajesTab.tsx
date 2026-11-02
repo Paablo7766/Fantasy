@@ -7,20 +7,16 @@ import { ACTION_VERDICT, budgetLine, difficultyLabel, historyLine } from "@/comp
 import { Disclosure, Empty, Face, HeroStat, Skeleton, TONE, compact, money, parsePct, signedPct, toneOf } from "@/components/equipo/ui";
 import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
 import { errorMessage, playerName } from "@/lib/format";
-import { executableBid, marketAction, type MarketAction } from "@/lib/marketAction";
+import { executableBid, marketAction } from "@/lib/marketAction";
 import type { JornadaClub, MarketDecision, PlanFichajeAccion, PlanFichajes, TrendsPayload } from "@/lib/types";
 
-type Filter = "all" | MarketAction | "rival";
+type Source = "liga" | "rival" | "todos";
 
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: "all", label: "Todos" },
-  { id: "PUJAR", label: "Pujar" },
-  { id: "ESPERAR", label: "Esperar" },
-  { id: "NO", label: "No" },
-  { id: "rival", label: "De rivales" },
+const SOURCES: { id: Source; label: string; empty: string }[] = [
+  { id: "liga", label: "Liga", empty: "La liga no ofrece jugadores ahora mismo." },
+  { id: "rival", label: "Rivales", empty: "Ningún rival vende jugadores ahora mismo." },
+  { id: "todos", label: "Combinado", empty: "No hay jugadores en venta." },
 ];
-
-const ORDER: Record<MarketAction, number> = { PUJAR: 0, ESPERAR: 1, NO: 2 };
 
 const PLAN_TONE: Record<string, string> = {
   "Hazlo ya": TONE.green,
@@ -194,28 +190,27 @@ function FixtureList({ clubs }: { clubs: JornadaClub[] }) {
 }
 
 export function FichajesTab({ trends, photos, loading }: { trends: TrendsPayload | null; photos: PhotoIndex; loading: boolean }) {
-  const [filter, setFilter] = useState<Filter>("all");
+  const [source, setSource] = useState<Source>("liga");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const decisions = useMemo(() => {
     if (!trends || trends.ok === false) return [] as MarketDecision[];
     const rows = Array.isArray(trends.market_decisions) ? trends.market_decisions : [];
-    // Primero lo que hay que pujar, y dentro de cada grupo la mejor nota.
-    return [...rows].sort(
-      (a, b) => ORDER[marketAction(a)] - ORDER[marketAction(b)] || (b.nota_mercado ?? -1) - (a.nota_mercado ?? -1),
-    );
+    // Tus propias ventas no se compran: solo liga y rivales, de mejor a peor nota.
+    return rows
+      .filter((row) => (row.offer_source || "liga") !== "propio")
+      .sort((a, b) => (b.nota_mercado ?? -1) - (a.nota_mercado ?? -1));
   }, [trends]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return decisions.filter((row) => {
-      if (filter === "rival" && row.offer_source !== "rival") return false;
-      if (filter !== "all" && filter !== "rival" && marketAction(row) !== filter) return false;
+      if (source !== "todos" && (row.offer_source || "liga") !== source) return false;
       if (!needle) return true;
       return `${row.nickname || ""} ${row.name || ""} ${row.club || ""}`.toLowerCase().includes(needle);
     });
-  }, [decisions, filter, query]);
+  }, [decisions, source, query]);
 
   if (loading && (!trends || trends.ok === false)) return <Skeleton />;
   if (!trends || trends.ok === false) {
@@ -225,13 +220,13 @@ export function FichajesTab({ trends, photos, loading }: { trends: TrendsPayload
   const summary = trends.market_decision_summary || {};
   const photo = (player: MarketDecision) => player.image_url || photoFor(photos, String(player.player_id), playerName(player));
   const board = (Array.isArray(trends.jornada_board) ? trends.jornada_board : []).filter((club) => (club.market_count ?? 0) > 0);
-  const counts: Record<Filter, number> = {
-    all: decisions.length,
-    PUJAR: decisions.filter((row) => marketAction(row) === "PUJAR").length,
-    ESPERAR: decisions.filter((row) => marketAction(row) === "ESPERAR").length,
-    NO: decisions.filter((row) => marketAction(row) === "NO").length,
+  const counts: Record<Source, number> = {
+    liga: decisions.filter((row) => (row.offer_source || "liga") === "liga").length,
     rival: decisions.filter((row) => row.offer_source === "rival").length,
+    todos: decisions.length,
   };
+  const pujar = decisions.filter((row) => marketAction(row) === "PUJAR").length;
+  const empty = SOURCES.find((item) => item.id === source)?.empty || "";
   const budget = budgetLine(summary);
   const selected = decisions.find((row) => String(row.player_id) === selectedId) || null;
 
@@ -242,8 +237,8 @@ export function FichajesTab({ trends, photos, loading }: { trends: TrendsPayload
           <div className="min-w-0">
             <p className="text-[13px] font-medium text-white/60">Mercado de hoy</p>
             <p className="mt-1 text-[2.4rem] font-semibold leading-none tabular-nums text-white">
-              {counts.PUJAR}
-              <span className="ml-2 text-[1rem] font-medium text-white/60">{counts.PUJAR === 1 ? "puja recomendada" : "pujas recomendadas"}</span>
+              {pujar}
+              <span className="ml-2 text-[1rem] font-medium text-white/60">{pujar === 1 ? "puja recomendada" : "pujas recomendadas"}</span>
             </p>
           </div>
           <span className="shrink-0 text-[12.5px] tabular-nums text-white/55">{decisions.length} en venta</span>
@@ -257,28 +252,30 @@ export function FichajesTab({ trends, photos, loading }: { trends: TrendsPayload
       </section>
 
       <section className="flex flex-col gap-3">
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Buscar jugador o equipo"
-          aria-label="Buscar jugador o equipo"
-          className="h-11 w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 text-[14px] text-white outline-none transition-colors duration-200 ease-out placeholder:text-white/30 focus:border-[#FF9A5A]/60"
-        />
-        <div className="eq-scroll">
-          {FILTERS.map((item) =>
-            item.id === "rival" && !counts.rival ? null : (
-              <button
-                key={item.id}
-                type="button"
-                aria-pressed={filter === item.id}
-                onClick={() => setFilter(item.id)}
-                className={filter === item.id ? "eq-chip eq-chip--on" : "eq-chip"}
-              >
-                {item.label}
-                <span className="tabular-nums opacity-60">{counts[item.id]}</span>
-              </button>
-            ),
-          )}
+        <div className="desk-switch" role="tablist" aria-label="Quién vende">
+          {SOURCES.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={source === item.id}
+              onClick={() => setSource(item.id)}
+              className={source === item.id ? "desk-switch__btn desk-switch__btn--on" : "desk-switch__btn"}
+            >
+              {item.label}
+              <span className="ml-1.5 tabular-nums opacity-60">{counts[item.id]}</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center justify-between gap-3 px-1">
+          <p className="text-[12.5px] text-white/45">Ordenados por nota de la app</p>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar"
+            aria-label="Buscar jugador o equipo"
+            className="h-9 w-40 rounded-full border border-white/[0.08] bg-white/[0.04] px-4 text-[13px] text-white outline-none transition-colors placeholder:text-white/30 focus:border-[#FF9A5A]/60"
+          />
         </div>
         {filtered.length ? (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -287,7 +284,7 @@ export function FichajesTab({ trends, photos, loading }: { trends: TrendsPayload
             ))}
           </ul>
         ) : (
-          <p className="px-1 py-6 text-center text-[13.5px] text-white/45">Nadie en este filtro.</p>
+          <p className="px-1 py-6 text-center text-[13.5px] text-white/45">{query ? "Nadie coincide con la búsqueda." : empty}</p>
         )}
       </section>
 

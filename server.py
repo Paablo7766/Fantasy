@@ -20,7 +20,7 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -2196,6 +2196,10 @@ def _attach_player_card(decisions: list[dict[str, Any]], board: dict[str, Any]) 
     except Exception:
         logger.debug("Sin catálogo para la ficha del mercado", exc_info=True)
         catalog = {}
+    try:
+        history = _catalog_price_history()
+    except Exception:
+        history = {}
     trends = board.get("trends") if isinstance(board.get("trends"), dict) else {}
     rows = trends.get("players") if isinstance(trends.get("players"), list) else []
     trend_by_id = {str(row.get("player_id")): row for row in rows if isinstance(row, dict) and row.get("player_id")}
@@ -2209,6 +2213,26 @@ def _attach_player_card(decisions: list[dict[str, Any]], board: dict[str, Any]) 
         listing = listing_by_id.get(player_id) or {}
         weeks = cat.get("week_points")
         item["week_points"] = [float(value) for value in weeks if isinstance(value, (int, float))] if isinstance(weeks, list) else []
+        by_day: dict[str, int] = {}
+        for point in history.get(player_id) or []:
+            if isinstance(point, dict) and isinstance(point.get("day"), str) and isinstance(point.get("market_value"), int):
+                by_day[point["day"]] = point["market_value"]
+        series = [{"day": day, "value": by_day[day]} for day in sorted(by_day)]
+        current = listing.get("market_value") or cat.get("market_value")
+        if len(series) < 3 and isinstance(current, int) and current > 0:
+            # Sin fotos suficientes: la curva sale de las variaciones a 7, 3 y 1 día.
+            today = datetime.now(timezone.utc).date()
+            rebuilt = []
+            for days, key in ((7, "price_delta_7"), (3, "price_delta_3"), (1, "price_delta")):
+                delta = trend.get(key)
+                if isinstance(delta, (int, float)) and not isinstance(delta, bool):
+                    rebuilt.append({"day": (today - timedelta(days=days)).isoformat(), "value": int(current - delta)})
+            change = listing.get("market_value_change")
+            if not rebuilt and isinstance(change, int) and not isinstance(change, bool):
+                rebuilt.append({"day": (today - timedelta(days=1)).isoformat(), "value": current - change})
+            if rebuilt:
+                series = rebuilt + [{"day": today.isoformat(), "value": current}]
+        item["value_history"] = series
         if not item.get("club"):
             item["club"] = cat.get("club") or trend.get("club") or listing.get("club")
         if item.get("average_points") is None:
@@ -2698,6 +2722,23 @@ def api_comparar(
     result = comparar_jugadores_liga(actual, objetivo, board)
     if result.get("ok") is False:
         return JSONResponse(status_code=404, content=result)
+    try:
+        catalog = {str(row.get("player_id")): row for row in _catalog_players() if row.get("player_id")}
+    except Exception:
+        catalog = {}
+    for side in ("jugador_a", "jugador_b"):
+        ficha = result.get(side)
+        if not isinstance(ficha, dict):
+            continue
+        cat = catalog.get(str(ficha.get("player_id"))) or {}
+        if not ficha.get("club"):
+            ficha["club"] = cat.get("club")
+        if not ficha.get("media"):
+            ficha["media"] = cat.get("average_points") if cat.get("average_points") is not None else ficha.get("media")
+        if not ficha.get("posicion"):
+            ficha["posicion"] = cat.get("position")
+        weeks = cat.get("week_points")
+        ficha["ultimas"] = [float(value) for value in weeks[-5:] if isinstance(value, (int, float))] if isinstance(weeks, list) else []
     result.update(_photo_fields(board))
     return result
 

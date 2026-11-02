@@ -176,6 +176,8 @@ export type Player = {
   xp_4_jornadas?: number | null;
   /** Puntos oficiales de las últimas jornadas, de la más antigua a la última. */
   week_points?: number[] | null;
+  /** Valor diario guardado en local, del día más antiguo al más reciente. */
+  value_history?: Array<{ day: string; value: number }> | null;
   lineup_status?: string | null;
   listing_expires_at?: string | null;
   /** Puntos que pierde el once óptimo si este titular sale hoy. */
