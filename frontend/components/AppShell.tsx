@@ -31,7 +31,7 @@ const SECTIONS: readonly NavItem[] = [
     href: "/mercado",
     label: "Mercado",
     title: "Mercado",
-    hint: "Pujas, radar cuantitativo y catálogo",
+    hint: "Qué comprar hoy, oportunidades y buscador",
   },
   {
     href: "/clausulas",

@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LabSection } from "@/components/mercado/LabSection";
 import { Empty, Face, SectionHead, Skeleton, TONE, money, signedMoney, toneOf } from "@/components/equipo/ui";
 import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
 import { playerName } from "@/lib/format";
@@ -39,7 +38,7 @@ function MiniSpark({ points }: { points: CatalogPlayer["price_points"] }) {
   );
 }
 
-export function UniversoTab({ trends, photos, loading }: { trends: TrendsPayload | null; photos: PhotoIndex; loading: boolean }) {
+export function BuscadorTab({ trends, photos, loading }: { trends: TrendsPayload | null; photos: PhotoIndex; loading: boolean }) {
   const [owner, setOwner] = useState<Owner>("all");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
@@ -126,8 +125,6 @@ export function UniversoTab({ trends, photos, loading }: { trends: TrendsPayload
           </button>
         ) : null}
       </section>
-
-      <LabSection photos={photos} />
     </div>
   );
 }

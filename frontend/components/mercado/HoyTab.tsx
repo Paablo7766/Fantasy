@@ -189,7 +189,7 @@ function FixtureList({ clubs }: { clubs: JornadaClub[] }) {
   );
 }
 
-export function FichajesTab({ trends, photos, loading }: { trends: TrendsPayload | null; photos: PhotoIndex; loading: boolean }) {
+export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | null; photos: PhotoIndex; loading: boolean }) {
   const [source, setSource] = useState<Source>("liga");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);

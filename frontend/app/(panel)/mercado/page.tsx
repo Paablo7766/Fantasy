@@ -4,28 +4,32 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { Skeleton } from "@/components/equipo/ui";
-import { RadarTab } from "@/components/mercado/RadarTab";
-import { FichajesTab } from "@/components/mercado/FichajesTab";
-import { UniversoTab } from "@/components/mercado/UniversoTab";
+import { BuscadorTab } from "@/components/mercado/BuscadorTab";
+import { HoyTab } from "@/components/mercado/HoyTab";
+import { LabSection } from "@/components/mercado/LabSection";
+import { OportunidadesTab } from "@/components/mercado/OportunidadesTab";
 import { ComparadorLauncher } from "@/components/comparador/ComparadorReal";
 import { buildPhotoIndex } from "@/lib/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
-type Tab = "fichajes" | "radar" | "universo";
+type Tab = "hoy" | "oportunidades" | "buscador";
 
 /**
- * Fichajes mira la puja de la liga; el radar, el valor intrínseco y el dinero
- * global; el universo, todo lo que no está anunciado. Se separan para que
- * ninguna fuente de decisión tape a la otra.
+ * Hoy mira la puja de tu liga y es la única que dice qué comprar. Oportunidades
+ * reúne las señales que la apoyan (radar, dinero global, perfiles fuera del
+ * mercado) y Buscador es la consulta libre del catálogo.
  */
 const TABS: { id: Tab; label: string }[] = [
-  { id: "fichajes", label: "Hoy" },
-  { id: "radar", label: "Radar" },
-  { id: "universo", label: "Jugadores" },
+  { id: "hoy", label: "Hoy" },
+  { id: "oportunidades", label: "Oportunidades" },
+  { id: "buscador", label: "Buscador" },
 ];
 
+/** Acepta también los ids antiguos (``radar``, ``universo``) de enlaces ya guardados. */
 function asTab(value: string | null): Tab {
-  return value === "radar" || value === "universo" ? value : "fichajes";
+  if (value === "oportunidades" || value === "radar") return "oportunidades";
+  if (value === "buscador" || value === "universo") return "buscador";
+  return "hoy";
 }
 
 function MercadoContent() {
@@ -44,7 +48,7 @@ function MercadoContent() {
 
   const select = (next: Tab) => {
     const params = new URLSearchParams(search.toString());
-    if (next === "fichajes") params.delete("tab");
+    if (next === "hoy") params.delete("tab");
     else params.set("tab", next);
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
@@ -76,12 +80,15 @@ function MercadoContent() {
       </div>
 
       <div key={tab} id={`mk-panel-${tab}`} role="tabpanel" aria-labelledby={`mk-tab-${tab}`} className="row-in min-w-0">
-        {tab === "fichajes" ? (
-          <FichajesTab trends={trends} photos={photos} loading={loading} />
-        ) : tab === "radar" ? (
-          <RadarTab photos={photos} />
+        {tab === "hoy" ? (
+          <HoyTab trends={trends} photos={photos} loading={loading} />
+        ) : tab === "oportunidades" ? (
+          <div className="flex min-w-0 flex-col gap-5">
+            <OportunidadesTab photos={photos} />
+            <LabSection photos={photos} />
+          </div>
         ) : (
-          <UniversoTab trends={trends} photos={photos} loading={loading} />
+          <BuscadorTab trends={trends} photos={photos} loading={loading} />
         )}
       </div>
     </div>

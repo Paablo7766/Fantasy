@@ -181,7 +181,7 @@ function QuantList({ rows, tone, photos }: { rows: QuantPlayer[]; tone: Tone; ph
  * y momentum global. Lee ``/api/market/quant-radar``, que a su vez solo lee
  * la foto guardada: aquí no se descarga nada.
  */
-export function RadarTab({ photos }: { photos: PhotoIndex }) {
+export function OportunidadesTab({ photos }: { photos: PhotoIndex }) {
   const search = useSearchParams();
   const league = search.get("league");
   const [loaded, setLoaded] = useState<{ league: string | null; payload: QuantRadarPayload } | null>(null);
