@@ -94,18 +94,6 @@ function sectionFromPath(pathname: string): NavItem {
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
-  if (href === "/equipo") {
-    return (
-      pathname === "/equipo" ||
-      pathname.startsWith("/equipo/") ||
-      pathname === "/once" ||
-      pathname === "/cartera" ||
-      pathname === "/clausulazos"
-    );
-  }
-  if (href === "/liga") {
-    return pathname === "/liga" || pathname === "/rivales" || pathname.startsWith("/rivales/");
-  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

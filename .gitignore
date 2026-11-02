@@ -29,3 +29,10 @@ market_offers_log.json
 # Lanzador generado por scripts/create_desktop_shortcut.py: lleva la ruta
 # absoluta de esta máquina, así que no se versiona.
 Actualizar_Fantasy.bat
+
+# Diagnóstico local: scripts y logs de depuración (no son parte del producto)
+/_*.py
+/_*.txt
+/_*.log
+/_tmp_curl/
+*.log
