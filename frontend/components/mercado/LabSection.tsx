@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Face, Fact, SectionHead, TONE, Verdict, compact, money, signedMoney, toneOf } from "@/components/ui/kit";
+import { useDashboard } from "@/components/DashboardProvider";
 import { endpoint, getJson } from "@/lib/core/api";
+import { beyondBudget, bidBudget } from "@/lib/mercado/budget";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { points } from "@/lib/core/format";
 import type { ArbitragePayload, CatalogProfilePlayer, FreeAgentsPayload } from "@/lib/types";
@@ -73,7 +75,7 @@ function trendLabel(row: CatalogProfilePlayer): string {
   return trend.decelerating ? "caída frenando" : trend.falling ? "cayendo" : trend.recovery ? "recupera" : "estable";
 }
 
-function ProfileRow({ row, photo, index }: { row: CatalogProfilePlayer; photo: string | null; index: number }) {
+function ProfileRow({ row, photo, index, tooPricey }: { row: CatalogProfilePlayer; photo: string | null; index: number; tooPricey: boolean }) {
   const [open, setOpen] = useState(false);
   const name = row.nickname || row.name || "Jugador";
   const asset = ASSET[row.asset_class || ""];
@@ -93,10 +95,11 @@ function ProfileRow({ row, photo, index }: { row: CatalogProfilePlayer; photo: s
           <span className="mt-0.5 block truncate text-[12.5px] text-white/45">
             {[row.position, row.club, row.is_free_agent ? "libre" : row.owner_team_id ? "fichado" : ""].filter(Boolean).join(" · ")}
             {status ? <span style={{ color: TONE.red }}> · {status}</span> : null}
+            {tooPricey ? <span style={{ color: TONE.amber }}> · No te llega</span> : null}
           </span>
         </span>
         <span className="shrink-0 text-right">
-          <span className="block text-[15px] font-semibold tabular-nums text-white">{money(row.market_value)}</span>
+          <span className={`block text-[15px] font-semibold tabular-nums ${tooPricey ? "text-white/45" : "text-white"}`}>{money(row.market_value)}</span>
           <span className="block text-[12.5px] font-medium tabular-nums text-[#FFC08A]">{points(row.median)} pts</span>
         </span>
       </button>
@@ -136,6 +139,8 @@ function ProfileRow({ row, photo, index }: { row: CatalogProfilePlayer; photo: s
 export function LabSection({ photos }: { photos: PhotoIndex }) {
   const search = useSearchParams();
   const league = search.get("league");
+  const { state } = useDashboard();
+  const budget = bidBudget(state.plan?.cash_eur, state.squads?.self?.market_value_total);
   const [vista, setVista] = useState<Vista>("libres");
   const [free, setFree] = useState<{ league: string | null; payload: FreeAgentsPayload } | null>(null);
   const [arb, setArb] = useState<{ league: string | null; payload: ArbitragePayload } | null>(null);
@@ -164,15 +169,19 @@ export function LabSection({ photos }: { photos: PhotoIndex }) {
   const freePayload = free && free.league === league ? free.payload : null;
   const arbPayload = arb && arb.league === league ? arb.payload : null;
 
-  const lists = useMemo<Record<Vista, CatalogProfilePlayer[]>>(
-    () => ({
-      libres: onlyPlayers(freePayload?.top_free),
-      suelo: onlyPlayers(arbPayload?.distressed),
-      refugio: onlyPlayers(arbPayload?.refuge),
-      riesgo: onlyPlayers(arbPayload?.risk),
-    }),
-    [freePayload, arbPayload],
-  );
+  const lists = useMemo<Record<Vista, CatalogProfilePlayer[]>>(() => {
+    // Los libres que superan tu presupuesto de puja pasan al final: siguen visibles, pero no mandan.
+    const reach = (rows: CatalogProfilePlayer[]) => [
+      ...rows.filter((row) => !(row.is_free_agent && beyondBudget(row.market_value, budget))),
+      ...rows.filter((row) => row.is_free_agent && beyondBudget(row.market_value, budget)),
+    ];
+    return {
+      libres: reach(onlyPlayers(freePayload?.top_free)),
+      suelo: reach(onlyPlayers(arbPayload?.distressed)),
+      refugio: reach(onlyPlayers(arbPayload?.refuge)),
+      riesgo: reach(onlyPlayers(arbPayload?.risk)),
+    };
+  }, [freePayload, arbPayload, budget]);
   const freeCount = useMemo(() => onlyPlayers(freePayload?.free_agents).length, [freePayload]);
 
   if (freePayload === null || arbPayload === null) {
@@ -227,6 +236,7 @@ export function LabSection({ photos }: { photos: PhotoIndex }) {
               key={`${vista}-${row.player_id}`}
               row={row}
               index={index}
+              tooPricey={Boolean(row.is_free_agent) && beyondBudget(row.market_value, budget)}
               photo={photoFor(photos, String(row.player_id), row.nickname || row.name || "")}
             />
           ))}
@@ -236,7 +246,7 @@ export function LabSection({ photos }: { photos: PhotoIndex }) {
       )}
       <p className="px-1 text-[12px] leading-relaxed text-white/35">
         Perfil de {counts?.profiled ?? 0} jugadores con serie real · catálogo {counts?.catalog ?? 0} · {counts?.owned ?? 0} fichados en tu liga.
-        Entrenadores excluidos. No sustituye al veredicto de Fichajes.
+        Entrenadores excluidos. «No te llega» = vale más que tu caja más el 20 % de endeudamiento. No sustituye al veredicto de Hoy.
       </p>
     </section>
   );
