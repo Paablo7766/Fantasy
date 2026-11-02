@@ -1,71 +1,99 @@
 "use client";
 
-import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
-import { CatalogLab } from "@/components/CatalogLab";
-import { SigningPlanCard } from "@/components/StrategyBits";
-import { MarketTable } from "@/components/MarketTable";
-import { QuantRadarPanel } from "@/components/QuantRadarPanel";
-import type { TrendsPayload } from "@/lib/types";
+import { Skeleton } from "@/components/equipo/ui";
+import { RadarTab } from "@/components/mercado/RadarTab";
+import { FichajesTab } from "@/components/mercado/FichajesTab";
+import { UniversoTab } from "@/components/mercado/UniversoTab";
+import { buildPhotoIndex } from "@/lib/photoIndex";
+import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
-type Vista = "mercado" | "radar" | "catalogo";
+type Tab = "fichajes" | "radar" | "universo";
 
 /**
- * Mercado y radar cuantitativo comparten pestaña pero no fuente de decisión:
- * la tabla mira la puja de la liga; el radar, el valor intrínseco y el dinero
- * global. Se separan para que ninguna tape a la otra. El catálogo es el
- * universo completo (libres, suelo y loterías), no solo lo anunciado.
+ * Fichajes mira la puja de la liga; el radar, el valor intrínseco y el dinero
+ * global; el universo, todo lo que no está anunciado. Se separan para que
+ * ninguna fuente de decisión tape a la otra.
  */
-export default function MercadoPage() {
+const TABS: { id: Tab; label: string }[] = [
+  { id: "fichajes", label: "Fichajes" },
+  { id: "radar", label: "Radar" },
+  { id: "universo", label: "Universo" },
+];
+
+function asTab(value: string | null): Tab {
+  return value === "radar" || value === "universo" ? value : "fichajes";
+}
+
+function MercadoContent() {
+  const search = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const tab = asTab(search.get("tab"));
   const { state, pending, busy } = useDashboard();
   const trends = state.trends as TrendsPayload | null;
-  const trendsLoading = pending.trends || (!state.trends && busy);
-  const [vista, setVista] = useState<Vista>("mercado");
+  const photos = useMemo(
+    () =>
+      buildPhotoIndex(state.plan as PlanPayload | null, state.optimize as OptimizePayload | null, state.squads as SquadsPayload | null, trends),
+    [state.plan, state.optimize, state.squads, trends],
+  );
+  const loading = pending.trends || (!state.trends && busy);
+
+  const select = (next: Tab) => {
+    const params = new URLSearchParams(search.toString());
+    if (next === "fichajes") params.delete("tab");
+    else params.set("tab", next);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
 
   return (
-    <div className="reveal flex min-w-0 flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="seg">
-          {(
-            [
-              ["mercado", "Mercado de la liga"],
-              ["radar", "Radar cuantitativo"],
-              ["catalogo", "Catálogo"],
-            ] as const
-          ).map(([key, label]) => (
+    <div className="eq-stack reveal min-w-0">
+      <div className="flex flex-col gap-3 px-1">
+        <h1 className="text-[1.6rem] font-semibold leading-tight tracking-tight text-white">Mercado</h1>
+        <div className="desk-switch" role="tablist" aria-label="Secciones del mercado">
+          {TABS.map((item) => (
             <button
-              key={key}
+              key={item.id}
+              id={`mk-tab-${item.id}`}
               type="button"
-              onClick={() => setVista(key)}
-              className={vista === key ? "seg__btn seg__btn--active" : "seg__btn"}
-              aria-pressed={vista === key}
+              role="tab"
+              aria-selected={tab === item.id}
+              aria-controls={`mk-panel-${item.id}`}
+              className={tab === item.id ? "desk-switch__btn desk-switch__btn--on" : "desk-switch__btn"}
+              onClick={() => select(item.id)}
             >
-              {label}
+              {item.label}
             </button>
           ))}
         </div>
-        <p className="text-[11px] leading-4 text-faint">
-          {vista === "radar"
-            ? "Value investing: coste por punto, momentum global y blank rate. Sin mirar a tus rivales."
-            : vista === "catalogo"
-              ? "Agentes libres, suelo de lesión y loterías: el universo que no está anunciado."
-              : "Pujar, esperar o dejar pasar según lo que hace tu liga."}
-        </p>
       </div>
 
-      {vista === "radar" ? (
-        <QuantRadarPanel />
-      ) : vista === "catalogo" ? (
-        <CatalogLab />
-      ) : (
-        <section className="min-w-0 flex flex-col gap-6">
-          <SigningPlanCard plan={trends?.plan_fichajes} />
-          {/* Las discrepancias ya no viven aquí: el motor las convierte en veto
-              (acción NO + motivo) dentro de la propia tabla. El detalle AF vs
-              modelo propio queda en Contexto · Intel. */}
-          <MarketTable trends={trends} loading={trendsLoading} />
-        </section>
-      )}
+      <div key={tab} id={`mk-panel-${tab}`} role="tabpanel" aria-labelledby={`mk-tab-${tab}`} className="row-in min-w-0">
+        {tab === "fichajes" ? (
+          <FichajesTab trends={trends} photos={photos} loading={loading} />
+        ) : tab === "radar" ? (
+          <RadarTab photos={photos} />
+        ) : (
+          <UniversoTab trends={trends} photos={photos} loading={loading} />
+        )}
+      </div>
     </div>
+  );
+}
+
+export default function MercadoPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="eq-stack">
+          <Skeleton />
+        </div>
+      }
+    >
+      <MercadoContent />
+    </Suspense>
   );
 }

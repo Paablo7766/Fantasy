@@ -418,6 +418,23 @@ export type ClausulazoSugerido = {
   motivo_detallado: string;
 };
 
+export type RadarAntiRobo = {
+  player_id: string;
+  nombre: string;
+  posicion?: string | null;
+  estado: "RIESGO_ALTO" | "RIESGO_CERO" | "SOBREPROTEGIDO" | string;
+  badge: "rojo" | "verde" | "gris" | string;
+  consejo: string;
+  clausula: number;
+  valor_mercado: number;
+  valor_proyectado_7d?: number | null;
+  prevision_7d_pct?: number | null;
+  beneficio_neto?: number | null;
+  rivales_con_caja: number;
+  clausula_abierta?: boolean;
+  dias_para_abrir?: number | null;
+};
+
 export type AsesorClausulas = {
   resumen: {
     en_peligro: number;
@@ -432,6 +449,7 @@ export type AsesorClausulas = {
   };
   proteger: ClausulaEnPeligro[];
   clausulazos: ClausulazoSugerido[];
+  radar_anti_robo?: RadarAntiRobo[];
 };
 
 export type VentaForzada = {
@@ -535,7 +553,12 @@ export type MarketDecision = Player & {
   optimal_bid_eur?: number | null;
   /** Puja genérica al estilo de La Pizarra: valor × 1,047. */
   app_bid_eur?: number | null;
-  /** Tope racional: valor × 1,25. */
+  /** Nota de fichaje 0-10 y veredicto del evaluador de mercado. */
+  nota_mercado?: number | null;
+  veredicto_mercado?: string | null;
+  etiqueta_mercado?: string | null;
+  frase_mercado?: string | null;
+  /** Techo dinámico: +15 % más previsión a 7 días y dificultad, cap +30 %. */
   financial_max_bid_eur?: number | null;
   /** Puja que supera la caja del rival interesado sin pasar el tope. */
   smart_bid_eur?: number | null;
@@ -1416,6 +1439,8 @@ export type PlanPayload = ApiError & PhotoMeta & {
   resumen_ventas?: ResumenVentas | null;
   /** Jugadores tuyos en peligro con su cláusula perfecta y los mejores clausulazos. */
   asesor_clausulas?: AsesorClausulas | null;
+  /** Radar anti-robo: cláusulas abiertas o a punto, cruzadas con la caja rival. */
+  radar_anti_robo?: RadarAntiRobo[];
   strategy_baseline_points?: number | null;
   audit?: {
     complete?: boolean;
