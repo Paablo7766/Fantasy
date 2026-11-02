@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { DataHealthPanel } from "@/components/DataHealthPanel";
-import { ApiUsagePanel } from "@/components/ApiUsagePanel";
 import { useDashboard } from "@/components/DashboardProvider";
 
 type NavItem = {
@@ -99,7 +97,10 @@ function Icon({ name }: { name: SectionLabel }) {
   );
 }
 
+const LABORATORIO: NavItem = { href: "/laboratorio", label: "Laboratorio", title: "Laboratorio", hint: "Auditoría del modelo y de los datos" };
+
 function sectionFromPath(pathname: string): NavItem {
+  if (pathname === LABORATORIO.href || pathname.startsWith(`${LABORATORIO.href}/`)) return LABORATORIO;
   const match = SECTIONS.find((section) =>
     section.href === "/" ? pathname === "/" : pathname === section.href || pathname.startsWith(`${section.href}/`),
   );
@@ -155,6 +156,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const section = sectionFromPath(pathname);
   const query = searchParams.toString();
   const withQuery = (href: string) => (query ? `${href}?${query}` : href);
+  const labHref = (tab?: string) => {
+    const params = new URLSearchParams(query);
+    if (tab) params.set("tab", tab);
+    const text = params.toString();
+    return text ? `/laboratorio?${text}` : "/laboratorio";
+  };
 
   useEffect(() => {
     markShellReady();
@@ -196,11 +203,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mt-4 border-t border-[color:var(--sidebar-line)] px-2 pt-4">
           <p className="truncate text-sm font-medium text-white">{leagueName}</p>
           <p className="mt-1 font-mono text-[11px] text-[color:var(--sidebar-muted)]">{photoLine}</p>
+          <Link
+            href={labHref()}
+            className={`mt-3 block text-sm no-underline ${pathname.startsWith("/laboratorio") ? "text-white" : "text-[color:var(--sidebar-muted)] hover:text-white"}`}
+          >
+            Laboratorio
+          </Link>
           <button
             type="button"
             onClick={() => void connectAccount()}
             disabled={connecting || busy}
-            className="btn btn-ghost mt-3 w-full justify-start px-0"
+            className="btn btn-ghost mt-1 w-full justify-start px-0"
           >
             {connecting ? "Elige tu cuenta en Chrome…" : "Conectar cuenta"}
           </button>
@@ -270,7 +283,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div
               role="dialog"
               aria-modal="true"
-              aria-label="Foto, uso de API y conexión"
+              aria-label="Foto y conexión"
               className="card w-full max-w-sm p-4"
               onClick={(event) => event.stopPropagation()}
             >
@@ -286,8 +299,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </button>
               </div>
               <div className="flex flex-col items-start gap-2">
-                <ApiUsagePanel />
-                <DataHealthPanel />
+                <Link
+                  href={labHref("datos")}
+                  onClick={() => setToolsOpen(false)}
+                  className="btn btn-secondary w-full no-underline"
+                  title="Frescura de los datos, consumo de API, calibración y señales"
+                >
+                  Laboratorio · datos y API
+                </Link>
                 <button
                   type="button"
                   onClick={() => void connectAccount()}

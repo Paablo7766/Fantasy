@@ -23,7 +23,7 @@ import { photoFor, type PhotoIndex } from "@/lib/photoIndex";
 import { playerName, points, roiPct } from "@/lib/format";
 import type { QuantPlayer, QuantRadarPayload } from "@/lib/types";
 
-type Tone = "buy" | "watch" | "toxic";
+export type Tone = "buy" | "watch" | "toxic";
 
 const TONE_COLOR: Record<Tone, string> = { buy: TONE.green, watch: TONE.amber, toxic: TONE.red };
 
@@ -160,7 +160,7 @@ function QuantRow({ player, photo, tone, index }: { player: QuantPlayer; photo: 
   );
 }
 
-function QuantList({ rows, tone, photos }: { rows: QuantPlayer[]; tone: Tone; photos: PhotoIndex }) {
+export function QuantList({ rows, tone, photos }: { rows: QuantPlayer[]; tone: Tone; photos: PhotoIndex }) {
   return (
     <ul className="home-glass overflow-hidden">
       {rows.map((player, index) => (
@@ -203,7 +203,6 @@ export function OportunidadesTab({ photos }: { photos: PhotoIndex }) {
 
   const buys = useMemo(() => (Array.isArray(payload?.buys) ? payload!.buys! : []), [payload]);
   const watchlist = useMemo(() => (Array.isArray(payload?.watchlist) ? payload!.watchlist! : []), [payload]);
-  const toxic = useMemo(() => (Array.isArray(payload?.toxic) ? payload!.toxic! : []), [payload]);
   const smartMoney = useMemo(() => (Array.isArray(payload?.momentum?.smart_money) ? payload!.momentum!.smart_money! : []), [payload]);
 
   if (payload === null) return <Skeleton />;
@@ -217,8 +216,6 @@ export function OportunidadesTab({ photos }: { photos: PhotoIndex }) {
   }
 
   const summary = payload.summary || {};
-  const baselines = payload.baselines || {};
-  const weights = payload.assumptions?.weights;
   const strong = summary.buys ?? buys.length;
 
   return (
@@ -251,10 +248,6 @@ export function OportunidadesTab({ photos }: { photos: PhotoIndex }) {
             detail="Ningún fichable es a la vez barato por punto, con muestra real y fiable. Mejor esperar que comprar una trampa."
           />
         )}
-        <p className="px-1 text-[12px] text-white/40">
-          Nota: valor {Math.round((weights?.value ?? 0.55) * 100)} % · descuento {Math.round((weights?.discount ?? 0.25) * 100)} % · momentum{" "}
-          {Math.round((weights?.momentum ?? 0.2) * 100)} %. Pulsa un jugador para ver el detalle.
-        </p>
       </section>
 
       <section className="flex flex-col gap-3">
@@ -299,43 +292,11 @@ export function OportunidadesTab({ photos }: { photos: PhotoIndex }) {
         {watchlist.length ? <QuantList rows={watchlist} tone="watch" photos={photos} /> : <p className="text-[13px] text-white/45">Ningún candidato.</p>}
       </Disclosure>
 
-      <Disclosure title="Tóxicos descartados" meta={`${toxic.length}`}>
-        <p className="mb-3 text-[12.5px] text-white/50">Baratos, pero dejan demasiadas jornadas en blanco.</p>
-        {toxic.length ? <QuantList rows={toxic} tone="toxic" photos={photos} /> : <p className="text-[13px] text-white/45">Ninguno entre los fichables.</p>}
-      </Disclosure>
-
-      <Disclosure title="Precio de referencia por posición" meta="€ / punto">
-        <p className="text-[12.5px] leading-relaxed text-white/50">
-          Cuánto cuesta cada punto que produce un jugador, comparado con la mediana de su posición: un MC de 2 M que puntúa como uno
-          de 6 M es una ineficiencia, no una corazonada.
-        </p>
-        <ul className="mt-2">
-          {(["POR", "DEF", "MC", "DEL"] as const).map((position) => {
-            const row = baselines[position];
-            return (
-              <li key={position} className="flex items-center justify-between gap-3 border-b border-white/[0.06] py-2.5 last:border-b-0">
-                <span className="text-[14.5px] font-medium text-white">{position}</span>
-                <span className="text-right">
-                  <span className="block text-[14.5px] font-semibold tabular-nums text-white">{money(row?.median_cost_per_point_eur)}</span>
-                  <span className="block text-[12px] text-white/45">
-                    {row?.count ?? 0} con muestra · mediana {points(row?.median_points)} pts
-                  </span>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-        <p className="mt-3 text-[12px] leading-relaxed text-white/40">
-          Blank = jornadas con ≤ {payload.assumptions?.blank_threshold_points ?? 2} puntos. Por encima del{" "}
-          {Math.round((payload.assumptions?.max_blank_rate ?? 0.4) * 100)} % el jugador se marca tóxico aunque esté barato.
-        </p>
-      </Disclosure>
-
       <p className="flex flex-wrap items-center justify-between gap-2 px-1 text-[12px] text-white/35">
         <span>
           Catálogo {payload.sources?.catalog_rows ?? 0} · momentum {payload.sources?.momentum_source || "sin fuente"}
         </span>
-        <Link href={league ? `/intel?league=${league}` : "/intel"} className="text-white/55 no-underline hover:text-white">
+        <Link href={league ? `/laboratorio?tab=senales&league=${league}` : "/laboratorio?tab=senales"} className="text-white/55 no-underline hover:text-white">
           Señales externas →
         </Link>
       </p>

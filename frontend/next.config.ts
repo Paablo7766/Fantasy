@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
       { source: "/clausulazos", destination: "/clausulas", permanent: false },
       { source: "/equipo", has: [{ type: "query", key: "tab", value: "clausulas" }], destination: "/clausulas", permanent: false },
       { source: "/rivales", destination: "/liga", permanent: false },
+      { source: "/intel", destination: "/laboratorio?tab=senales", permanent: false },
+      { source: "/calibracion", destination: "/laboratorio?tab=calibracion", permanent: false },
     ];
   },
   async rewrites() {
