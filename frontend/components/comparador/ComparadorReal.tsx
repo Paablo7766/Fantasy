@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDashboard } from "@/components/DashboardProvider";
 import { Face, TONE, money } from "@/components/ui/kit";
-import { apiUrl, getJson } from "@/lib/core/api";
+import { apiUrl } from "@/lib/core/api";
 import { playerName } from "@/lib/core/format";
 import { buildPhotoIndex, photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, Player, SquadsPayload, TrendsPayload } from "@/lib/types";
@@ -155,12 +155,13 @@ function universo(optimize: OptimizePayload | null, squads: SquadsPayload | null
   return [...out.values()];
 }
 
-/** Buscador a pantalla del panel: se abre al tocar un hueco y se cierra al elegir. */
+/** Lista de búsqueda. El hueco de arriba no se esconde: aquí solo se elige quién lo ocupa. */
 function Picker({
   color,
   etiqueta,
   opciones,
   excluir,
+  otro,
   photos,
   onPick,
   onCancel,
@@ -169,9 +170,10 @@ function Picker({
   etiqueta: string;
   opciones: Opcion[];
   excluir: string | null;
+  otro: Opcion | null;
   photos: PhotoIndex;
   onPick: (id: string) => void;
-  onCancel: (() => void) | null;
+  onCancel: () => void;
 }) {
   const [texto, setTexto] = useState("");
   const filtradas = useMemo(() => {
@@ -182,15 +184,13 @@ function Picker({
       .slice(0, 40);
   }, [opciones, texto, excluir]);
   return (
-    <div className="flex min-h-[22rem] flex-col">
+    <div className="flex flex-col">
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
-        <p className="flex-1 text-[13px] font-semibold text-white">Elige {etiqueta}</p>
-        {onCancel ? (
-          <button type="button" onClick={onCancel} className="text-[13px] font-medium text-white/50 hover:text-white">
-            Cancelar
-          </button>
-        ) : null}
+        <p className="flex-1 text-[13px] font-semibold text-white">Buscar {etiqueta}</p>
+        <button type="button" onClick={onCancel} className="text-[13px] font-medium text-white/50 hover:text-white">
+          Cerrar
+        </button>
       </div>
       <input
         autoFocus
@@ -200,7 +200,16 @@ function Picker({
         aria-label={`Buscar ${etiqueta}`}
         className="mt-3 h-12 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[15px] text-white outline-none placeholder:text-white/30 focus:border-white/25"
       />
-      <ul className="mt-2 max-h-[22rem] flex-1 overflow-y-auto">
+      {otro ? (
+        <p className="mt-3 flex items-center gap-2 rounded-2xl bg-white/[0.04] px-3 py-2 text-[13px] text-white/75">
+          <Face name={otro.nombre} src={otro.foto || photoFor(photos, otro.id, otro.nombre)} size={28} />
+          <span className="min-w-0 truncate">
+            <span className="text-white/40">Ya elegido · </span>
+            {otro.nombre}
+          </span>
+        </p>
+      ) : null}
+      <ul className="mt-2 max-h-[18rem] overflow-y-auto">
         {filtradas.map((opcion) => (
           <li key={opcion.id}>
             <button
@@ -230,6 +239,7 @@ function Slot({
   lado,
   photos,
   winner,
+  active,
   onChange,
 }: {
   color: string;
@@ -237,6 +247,7 @@ function Slot({
   lado: Lado | undefined;
   photos: PhotoIndex;
   winner: boolean;
+  active: boolean;
   onChange: () => void;
 }) {
   const nombre = lado?.nombre || opcion?.nombre || "Jugador";
@@ -246,37 +257,49 @@ function Slot({
     <button
       type="button"
       onClick={onChange}
+      aria-pressed={active}
       className="group relative flex min-w-0 flex-1 flex-col items-center rounded-3xl px-2 pb-3 pt-4 text-center transition-colors"
-      style={{ background: winner ? `${color}14` : "rgba(255,255,255,0.03)", boxShadow: `inset 0 0 0 1px ${winner ? `${color}66` : "rgba(255,255,255,0.06)"}` }}
-      aria-label={`Cambiar ${nombre}`}
+      style={{
+        background: winner || active ? `${color}14` : "rgba(255,255,255,0.03)",
+        boxShadow: `inset 0 0 0 ${active ? 2 : 1}px ${winner || active ? color : "rgba(255,255,255,0.06)"}`,
+      }}
+      aria-label={active ? `Eligiendo. Ahora es ${nombre}` : `Cambiar ${nombre}`}
     >
       {winner ? (
         <span className="absolute -top-2.5 rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold text-[#0a0706]" style={{ background: color }}>
           Mejor opción
         </span>
-      ) : null}
+      ) : (
+        <span className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded-full text-[11px] font-bold text-[#0a0706]" style={{ background: color }} aria-hidden="true">
+          ✓
+        </span>
+      )}
       <Face name={nombre} src={foto} size={64} ring={color} />
       <span className="mt-2 block w-full truncate text-[15px] font-semibold text-white">{nombre}</span>
       <span className="block w-full truncate text-[11.5px] text-white/45">{sub || " "}</span>
       <span className="mt-2 rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-white/60 transition-colors group-hover:bg-white/[0.12] group-hover:text-white">
-        Cambiar
+        {active ? "Cambiando" : "Elegido · cambiar"}
       </span>
     </button>
   );
 }
 
-function EmptySlot({ color, etiqueta, onPick }: { color: string; etiqueta: string; onPick: () => void }) {
+function EmptySlot({ color, etiqueta, active, onPick }: { color: string; etiqueta: string; active: boolean; onPick: () => void }) {
   return (
     <button
       type="button"
       onClick={onPick}
+      aria-pressed={active}
       className="flex min-h-[10.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-2 rounded-3xl border border-dashed text-center transition-colors hover:bg-white/[0.03]"
-      style={{ borderColor: `${color}66` }}
+      style={{ borderColor: active ? color : `${color}66`, background: active ? `${color}14` : undefined, boxShadow: active ? `inset 0 0 0 1px ${color}` : undefined }}
     >
+      <span className="text-[10.5px] font-semibold uppercase tracking-[0.16em]" style={{ color }}>
+        {active ? "Eligiendo" : "Vacío"}
+      </span>
       <span className="grid h-12 w-12 place-items-center rounded-full text-[22px]" style={{ color, background: `${color}1a` }}>
         +
       </span>
-      <span className="text-[13px] font-semibold text-white/80">Elegir {etiqueta}</span>
+      <span className="text-[13px] font-semibold text-white/80">{active ? `Busca ${etiqueta}` : `Elegir ${etiqueta}`}</span>
     </button>
   );
 }
@@ -437,9 +460,10 @@ export function ComparadorModal({
   const [idA, setIdA] = useState<string | null>(inicialA);
   const [idB, setIdB] = useState<string | null>(inicialB);
   const [picking, setPicking] = useState<"A" | "B" | null>(!inicialA ? "A" : !inicialB ? "B" : null);
-  const [data, setData] = useState<ComparacionLiga | null>(null);
+  const [loaded, setLoaded] = useState<{ pair: string; data: ComparacionLiga } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const photos = useMemo(() => buildPhotoIndex(state.plan, optimize, squads, trends), [state.plan, optimize, squads, trends]);
 
   useEffect(() => {
@@ -457,32 +481,48 @@ export function ComparadorModal({
 
   useEffect(() => {
     if (!idA || !idB) return;
+    const pair = `${idA}|${idB}`;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 45_000);
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setLoaded((current) => (current?.pair === pair ? null : current));
     const params = new URLSearchParams(window.location.search);
     const query = new URLSearchParams();
     const league = params.get("league");
     if (league) query.set("league", league);
     query.set("actual", idA);
     query.set("objetivo", idB);
-    getJson<ComparacionLiga>(apiUrl("/api/comparar", query))
+    fetch(apiUrl("/api/comparar", query), { signal: controller.signal })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => ({
+          ok: false,
+          error: { message: `HTTP ${response.status}` },
+        }))) as ComparacionLiga & { error?: { message?: string }; message?: string };
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error?.message || payload.message || "No se ha podido comparar.");
+        }
+        return payload;
+      })
       .then((payload) => {
-        if (!cancelled) setData(payload);
+        if (!cancelled) setLoaded({ pair, data: payload });
       })
       .catch((reason: unknown) => {
-        if (!cancelled) {
-          setData(null);
-          setError(reason instanceof Error ? reason.message : "No se ha podido comparar.");
-        }
+        if (cancelled) return;
+        const aborted = reason instanceof Error && reason.name === "AbortError";
+        setError(aborted ? "La comparación está tardando demasiado. Vuelve a intentarlo." : reason instanceof Error ? reason.message : "No se ha podido comparar.");
       })
       .finally(() => {
+        window.clearTimeout(timer);
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
+      controller.abort();
+      window.clearTimeout(timer);
     };
-  }, [idA, idB]);
+  }, [idA, idB, attempt]);
 
   const pick = (id: string) => {
     if (picking === "A") {
@@ -496,19 +536,38 @@ export function ComparadorModal({
   const swap = () => {
     setIdA(idB);
     setIdB(idA);
+    setPicking((side) => (side === "A" ? "B" : side === "B" ? "A" : null));
   };
 
-  const ready = Boolean(idA && idB && data && !error);
-  const fresh = ready && String(data?.jugador_a?.player_id) === idA && String(data?.jugador_b?.player_id) === idB;
-  const a = fresh ? data?.jugador_a : undefined;
-  const b = fresh ? data?.jugador_b : undefined;
+  const pair = idA && idB ? `${idA}|${idB}` : "";
+  const data = loaded?.pair === pair ? loaded.data : null;
+  const a = data?.jugador_a;
+  const b = data?.jugador_b;
   const opcionA = opciones.find((opcion) => opcion.id === idA) || null;
   const opcionB = opciones.find((opcion) => opcion.id === idB) || null;
-  const ganaB = fresh && data?.ganador === "B";
-  const ganaA = fresh && data?.ganador === "A";
-  const head = fresh && data ? headline(data) : null;
-  const why = fresh && data ? reasons(data) : [];
+  const nombreA = a?.nombre || opcionA?.nombre || "el primero";
+  const nombreB = b?.nombre || opcionB?.nombre || "el segundo";
+  const ganaB = data?.ganador === "B";
+  const ganaA = data?.ganador === "A";
+  const head = data ? headline(data) : null;
+  const why = data ? reasons(data) : [];
   const winnerColor = ganaB ? COLOR_B : COLOR_A;
+  const aviso = (() => {
+    if (picking === "A") {
+      if (!idA && idB) return `Has elegido a ${nombreB}. Ahora toca uno para el hueco naranja.`;
+      if (idA) return `El naranja es ${nombreA}. Toca otro si quieres cambiarlo.`;
+      return "Paso 1 de 2. Toca un jugador: se queda arriba, en el hueco naranja.";
+    }
+    if (picking === "B") {
+      if (idA && !idB) return `Has elegido a ${nombreA}. Ahora toca uno para el hueco azul.`;
+      if (idB) return `El azul es ${nombreB}. Toca otro si quieres cambiarlo.`;
+      return "Paso 1 de 2. Toca un jugador: se queda arriba, en el hueco azul.";
+    }
+    if (idA && idB && error) return "No se ha podido comparar. Los dos jugadores siguen elegidos.";
+    if (idA && idB && !data) return `Comparando ${nombreA} con ${nombreB}…`;
+    if (idA && idB) return "Toca un jugador si quieres cambiarlo.";
+    return "Elige los dos jugadores. El que toques se queda en su hueco.";
+  })();
 
   const body = (
     <div className="fixed inset-0 z-[200] flex items-end justify-center sm:items-center sm:p-4" role="presentation">
@@ -525,7 +584,7 @@ export function ComparadorModal({
             <h2 id="comparador-titulo" className="text-[17px] font-semibold text-white">
               Comparar jugadores
             </h2>
-            <p className="text-[12px] text-white/40">Toca un jugador para cambiarlo</p>
+            <p className="text-[12px] text-white/40">Los dos se quedan visibles arriba</p>
           </div>
           <button
             type="button"
@@ -542,39 +601,81 @@ export function ComparadorModal({
         <div className="flex-1 overflow-y-auto px-5 pb-6 pt-5">
           {!opciones.length ? (
             <p className="py-10 text-center text-[14px] text-white/55">Todavía no hay jugadores en la foto. Actualiza y vuelve a comparar.</p>
-          ) : picking ? (
-            <Picker
-              color={picking === "A" ? COLOR_A : COLOR_B}
-              etiqueta={picking === "A" ? "el primer jugador" : "el segundo jugador"}
-              opciones={opciones}
-              excluir={picking === "A" ? idB : idA}
-              photos={photos}
-              onPick={pick}
-              onCancel={(picking === "A" ? idA : idB) ? () => setPicking(null) : null}
-            />
           ) : (
-            <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-4">
               <div className="flex items-stretch gap-2">
-                {idA ? <Slot color={COLOR_A} opcion={opcionA} lado={a} photos={photos} winner={ganaA} onChange={() => setPicking("A")} /> : <EmptySlot color={COLOR_A} etiqueta="jugador" onPick={() => setPicking("A")} />}
+                {idA ? (
+                  <Slot color={COLOR_A} opcion={opcionA} lado={a} photos={photos} winner={ganaA} active={picking === "A"} onChange={() => setPicking("A")} />
+                ) : (
+                  <EmptySlot color={COLOR_A} etiqueta="el primero" active={picking === "A"} onPick={() => setPicking("A")} />
+                )}
                 <button
                   type="button"
                   onClick={swap}
+                  disabled={!idA && !idB}
                   aria-label="Intercambiar jugadores"
-                  className="grid h-9 w-9 shrink-0 place-items-center self-center rounded-full bg-white/[0.07] text-white/60 transition-colors hover:bg-white/[0.14] hover:text-white"
+                  className="grid h-9 w-9 shrink-0 place-items-center self-center rounded-full bg-white/[0.07] text-white/60 transition-colors hover:bg-white/[0.14] hover:text-white disabled:opacity-30"
                 >
                   <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                     <path d="M5 3 2 6l3 3M2 6h9M11 13l3-3-3-3M14 10H5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
-                {idB ? <Slot color={COLOR_B} opcion={opcionB} lado={b} photos={photos} winner={ganaB} onChange={() => setPicking("B")} /> : <EmptySlot color={COLOR_B} etiqueta="jugador" onPick={() => setPicking("B")} />}
+                {idB ? (
+                  <Slot color={COLOR_B} opcion={opcionB} lado={b} photos={photos} winner={ganaB} active={picking === "B"} onChange={() => setPicking("B")} />
+                ) : (
+                  <EmptySlot color={COLOR_B} etiqueta="el segundo" active={picking === "B"} onPick={() => setPicking("B")} />
+                )}
               </div>
 
-              {error ? (
-                <p className="rounded-2xl bg-[#FC734D]/10 px-4 py-3 text-[13.5px] text-[#FC734D]">{error}</p>
-              ) : !fresh || loading ? (
-                <div className="flex flex-col gap-3" aria-label="Calculando">
-                  <div className="eq-skel h-28 rounded-3xl" />
-                  <div className="eq-skel h-64 rounded-3xl" />
+              <p
+                aria-live="polite"
+                className="rounded-2xl px-4 py-3 text-[13.5px] leading-snug text-white/85"
+                style={{ background: picking ? `${picking === "B" ? COLOR_B : COLOR_A}18` : "rgba(255,255,255,0.04)" }}
+              >
+                {aviso}
+              </p>
+
+              {picking ? (
+                <Picker
+                  key={picking}
+                  color={picking === "A" ? COLOR_A : COLOR_B}
+                  etiqueta={picking === "A" ? "el primero" : "el segundo"}
+                  opciones={opciones}
+                  excluir={picking === "A" ? idB : idA}
+                  otro={picking === "A" ? opcionB : opcionA}
+                  photos={photos}
+                  onPick={pick}
+                  onCancel={() => setPicking(null)}
+                />
+              ) : null}
+
+              {idA && idB && error ? (
+                <div className="flex flex-col items-start gap-3 rounded-2xl bg-[#FC734D]/10 px-4 py-3">
+                  <p className="text-[13.5px] text-[#FC734D]">{error}</p>
+                  <button
+                    type="button"
+                    onClick={() => setAttempt((value) => value + 1)}
+                    className="rounded-full bg-white/[0.08] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-white/[0.14]"
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              ) : idA && idB && !data ? (
+                <div className="flex flex-col gap-3" aria-busy={loading} aria-label={`Comparando ${nombreA} con ${nombreB}`}>
+                  {loading ? (
+                    <>
+                      <div className="eq-skel h-28 rounded-3xl" />
+                      <div className="eq-skel h-40 rounded-3xl" />
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAttempt((value) => value + 1)}
+                      className="rounded-2xl bg-white/[0.06] px-4 py-3 text-left text-[13.5px] text-white/80 hover:bg-white/[0.1]"
+                    >
+                      No ha llegado la comparación. Toca para reintentar.
+                    </button>
+                  )}
                 </div>
               ) : data && head ? (
                 <>
