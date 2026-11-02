@@ -79,6 +79,7 @@ from toolbox.matchday_auto import auto_track_from_board
 from toolbox.market_intel import decisions_from_board
 from toolbox.quant_valuation import build_quant_radar
 from toolbox.league_race import build_league_race, mode_from_squads, posture_from_squads
+from toolbox.league_history import fit_rival_profiles_eb
 from toolbox.net import FantasyHttpError, LaligaClient, network_log_path, no_network
 from toolbox.net import (
     HUMAN_PACER,
@@ -1593,6 +1594,34 @@ def shape_trends(board: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _attach_bid_profiles(rivals: list[dict[str, Any]], needs: dict[str, Any]) -> None:
+    """Cómo puja de verdad cada rival: P(exacto), sobrepuja mediana y etiqueta."""
+    history = needs.get("history") if isinstance(needs.get("history"), dict) else {}
+    buys = [item for item in history.get("activity_buys") or [] if isinstance(item, dict)]
+    states = [
+        {"team_id": str(view.get("team_id")), "manager_name": view.get("manager_name") or ""}
+        for view in rivals
+        if view.get("team_id") is not None
+    ]
+    try:
+        profiles = fit_rival_profiles_eb(buys, states)
+    except Exception:
+        logger.debug("Sin perfil de puja de los rivales", exc_info=True)
+        return
+    for view in rivals:
+        profile = profiles.get(str(view.get("team_id")))
+        if profile is None:
+            continue
+        typical = profile.typical_premium
+        view["bid_profile"] = {
+            "style": profile.style,
+            "n_buys": profile.n_buys,
+            "p_exact": round(profile.p_exact, 3),
+            "median_overbid_pct": round(profile.median_overbid * 100, 1) if profile.median_overbid is not None else None,
+            "typical_premium_pct": round(typical * 100, 1) if typical is not None else None,
+        }
+
+
 def shape_squads(board: dict[str, Any]) -> dict[str, Any]:
     document = board.get("squads") if isinstance(board.get("squads"), dict) else board
     squads = document.get("squads") if isinstance(document.get("squads"), list) else []
@@ -1642,6 +1671,7 @@ def shape_squads(board: dict[str, Any]) -> dict[str, Any]:
             continue
         rivals.append(view)
         clauses.extend(_clause_rows(squad))
+    _attach_bid_profiles(rivals, needs)
     rivals.sort(key=_squad_sort)
     clauses.sort(key=_clause_sort)
     own_players = own.get("players") if isinstance(own, dict) else []

@@ -26,6 +26,8 @@ from toolbox.league_history import RivalProfile, apply_league_clearing, clearing
 # devolvía a todos los rivales la misma probabilidad y colapsaba la curva.
 PREMIUM_SCALE = 0.03
 PREMIUM_PERSISTENCE = 0.05
+# Anchura (en prima relativa) con la que se suaviza el empate contra una puja a valor.
+EXACT_BID_SMOOTH = 0.004
 
 # Puja genérica al estilo de La Pizarra. El techo financiero es dinámico
 # (prima +15 %, previsión a 7 días y dificultad) y nunca pasa del +30 %.
@@ -362,7 +364,11 @@ def probability_of_winning_bid(
         star_boost = 0.10 * max(0.0, expected_pts - 6.0)
         mu_ji = rv.alpha_aggressiveness + beta_liquidity * liq_term + beta_urgency * urgency_level + star_boost
 
-        cdf_valuation = float(norm.cdf((log_prem_b - mu_ji) / rv.sigma_dispersion))
+        cdf_overbid = float(norm.cdf((log_prem_b - mu_ji) / rv.sigma_dispersion))
+        # Hurdle: con probabilidad ``p_exact`` el rival puja a valor de mercado, sin
+        # prima de riesgo; solo el resto sigue la curva de sobrepuja.
+        cdf_exact = float(norm.cdf((premium_b - rv.exact_premium) / EXACT_BID_SMOOTH))
+        cdf_valuation = rv.p_exact * cdf_exact + (1.0 - rv.p_exact) * cdf_overbid
         cdf_budget_ceiling = float(norm.cdf((bid_eur - rv.cash_eur) / rv.cash_uncertainty_eur))
         f_j = 1.0 - (1.0 - cdf_valuation) * (1.0 - cdf_budget_ceiling)
         p_beat_rival = (1.0 - theta_j) + theta_j * f_j

@@ -31,7 +31,7 @@ from toolbox.analyzer import (
     unavailable_reason,
 )
 from toolbox.analyzer import (
-    expected_opta_points as _expected_opta_points,
+    precomputed_xp as _precomputed_xp,
 )
 from toolbox.analyzer import (
     probability as _probability,
@@ -561,11 +561,10 @@ def _signing(
     purchase = assess_purchase(cash=cash, cost=amount, lineup_void=lineup_void)
     reasons.extend(reason for reason in purchase["reasons"] if reason not in reasons)
     usable = trend_usable(trend)
-    opta, components = _expected_opta_points(
-        listing.get("position") if isinstance(listing.get("position"), str) else "",
-        trend.get("form") if usable and isinstance(trend.get("form"), dict) else None,
-    )
-    bonus = relevo_bonus(trend.get("relevo_bonus")) if usable else None
+    own_xp = _precomputed_xp(None, trend) if usable else None
+    opta = own_xp["expected_points"] if own_xp is not None else 0.0
+    components: dict[str, float] = {"own_xp": opta} if own_xp is not None else {}
+    bonus = relevo_bonus(trend.get("relevo_bonus")) if usable and own_xp is None else None
     p_titular = _probability(trend.get("p_titular")) if usable else None
     points = round(opta + (float(bonus) if bonus is not None else 0.0), 4)
     snipe = schedule_snipe(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from toolbox.bid_war import calcular_puja_optima, probability_of_winning_bid, solve_optimal_bid_v2
 from toolbox.league_history import RivalProfile, fit_rival_profiles_eb
@@ -68,6 +69,61 @@ class FitRivalProfilesTests(unittest.TestCase):
         profiles = fit_rival_profiles_eb([], rivals, cash_uncertainty_floor_eur=100_000)
         self.assertEqual(profiles["ok"].cash_uncertainty_eur, 100_000)
         self.assertGreater(profiles["off"].cash_uncertainty_eur, profiles["ok"].cash_uncertainty_eur)
+
+
+class HurdleProfileTests(unittest.TestCase):
+    @staticmethod
+    def _buys(team: str, premiums: list[float]) -> list[dict]:
+        return [
+            {
+                "team_id": team,
+                "amount_eur": round(10_000_000 * (1.0 + premium)),
+                "reference_value_eur": 10_000_000,
+                "cash_at_event_eur": 30_000_000,
+                "positional_urgency": 0.0,
+            }
+            for premium in premiums
+        ]
+
+    def _profiles(self):
+        buys = (
+            self._buys("naviis", [0.0, 0.0, 0.004, 0.0, 0.0, 0.0, 0.0, 0.18])
+            + self._buys("pabs", [0.14, 0.16, 0.18, 0.15, 0.17, 0.0])
+        )
+        rivals = [
+            {"team_id": "naviis", "manager_name": "Naviis10", "cash_eur": 40_000_000},
+            {"team_id": "pabs", "manager_name": "PABS FC", "cash_eur": 40_000_000},
+            {"team_id": "nuevo", "manager_name": "Nuevo", "cash_eur": 40_000_000},
+        ]
+        return fit_rival_profiles_eb(buys, rivals)
+
+    def test_exact_bids_are_data_not_censored(self) -> None:
+        profiles = self._profiles()
+        self.assertGreater(profiles["naviis"].p_exact, 0.6)
+        self.assertEqual(profiles["naviis"].style, "conservador")
+        self.assertLess(profiles["pabs"].p_exact, 0.4)
+        self.assertEqual(profiles["pabs"].style, "agresivo")
+        self.assertAlmostEqual(profiles["pabs"].median_overbid, 0.16, places=2)
+        self.assertEqual(profiles["nuevo"].style, "sin_datos")
+
+    def test_a_conservative_rival_adds_no_risk_premium(self) -> None:
+        profiles = self._profiles()
+        kwargs = dict(v_ref=10_000_000, min_legal_bid=10_000_000, position="MC", expected_pts=5.0)
+        # Con +3 % se gana casi siempre al que puja el valor exacto y casi nunca al agresivo.
+        # ``already_bidding`` fuerza que el rival participe, para aislar la curva de puja.
+        naviis = replace(profiles["naviis"], already_bidding=True)
+        pabs = replace(profiles["pabs"], already_bidding=True)
+        vs_naviis = probability_of_winning_bid(10_300_000, rivals=[naviis], **kwargs)
+        vs_pabs = probability_of_winning_bid(10_300_000, rivals=[pabs], **kwargs)
+        self.assertGreater(vs_naviis, 0.6)
+        self.assertGreater(vs_naviis, vs_pabs + 0.25)
+
+    def test_without_exact_mass_the_curve_is_unchanged(self) -> None:
+        rival = RivalProfile("r", "R", -2.0, 0.4, 40_000_000, 500_000, [], [], False)
+        self.assertEqual(rival.p_exact, 0.0)
+        low = probability_of_winning_bid(10_100_000, 10_000_000, 10_000_000, "MC", 5.0, [rival])
+        high = probability_of_winning_bid(12_000_000, 10_000_000, 10_000_000, "MC", 5.0, [rival])
+        self.assertLess(low, high)
 
 
 class OptimalBidTests(unittest.TestCase):

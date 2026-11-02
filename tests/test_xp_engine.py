@@ -259,6 +259,8 @@ class PipelineTests(unittest.TestCase):
             "average_points": 1.8,
             "week_points": [0, 0, 0, 1, 5],
             "form": {"minutes": 120, "starts": 1},
+            "own_expected_points": 3.6,
+            "own_points_if_starts": 4.5,
         }
         candidate = candidate_from_player(player, None, weights=ObjectiveWeights(), ordinal=0)
         self.assertIsNotNone(candidate)

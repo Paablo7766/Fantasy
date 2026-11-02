@@ -33,6 +33,8 @@ def _trend(player_id: str, position: str, xg: float) -> dict:
         "matching_confidence": 0.95,
         "p_titular": 0.9,
         "form": {"xg": xg, "xa": 0.05, "minutes_pct": 0.9},
+        # xP precalculado por ``own_intel``; aquí lo simula una tarifa plana.
+        "own_expected_points": round(0.9 * (xg * 5.0 + 0.05 * 3.0), 4),
     }
 
 

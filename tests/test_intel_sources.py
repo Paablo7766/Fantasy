@@ -5,7 +5,6 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 
-from toolbox.analyzer import expected_opta_points
 from toolbox.jornada_perfecta import parse_market_caching
 from toolbox.understat import (
     fdr_from_opponent_xga,
@@ -83,18 +82,6 @@ class IntelSourcesTest(unittest.TestCase):
         self.assertEqual(rows[0]["jp_tip"], "apuesta")
         self.assertEqual(rows[0]["jp_projected_points"], 5.5)
         self.assertEqual(rows[0]["jp_multiplier"], 1.0)
-
-    def test_expected_points_applies_minutes_and_fdr(self) -> None:
-        base, _ = expected_opta_points("MC", {"xg": 2.0, "xa": 1.0})
-        low_minutes, components = expected_opta_points(
-            "MC",
-            {"xg": 2.0, "xa": 1.0, "minutes_pct": 0.3, "fdr": 5, "home": True, "jp_multiplier": 1.06},
-        )
-        self.assertGreater(base, 0)
-        self.assertLess(low_minutes, base)
-        self.assertIn("minutes_factor", components)
-        self.assertIn("fixture_factor", components)
-        self.assertIn("jp_factor", components)
 
 
 if __name__ == "__main__":

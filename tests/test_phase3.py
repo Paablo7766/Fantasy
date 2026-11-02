@@ -79,6 +79,8 @@ def _player(
             "average_rating": 9.9,
         },
     }
+    # xP ya calculado por ``own_intel``; aquí lo simula una tarifa plana.
+    payload["own_expected_points"] = round((xg * 5.0 + xa * 3.0) * p_titular, 4)
     if fitness:
         payload["fitness"] = fitness
     if relevo is not None:
@@ -225,9 +227,10 @@ class Phase3Test(unittest.TestCase):
         plain = _player("mc2", "MC", xg=1.0, xa=1.0, p_titular=0.5)
         roster = candidates_from_squad(_squad([rewarded, plain]), {})
         by_id = {candidate.player_id: candidate for candidate in roster}
-        self.assertEqual(by_id["mc"].components, {"xg": 5.0, "xa": 3.0})
-        self.assertEqual(by_id["mc"].relevo_bonus, 2)
-        self.assertEqual(by_id["mc"].objective, 5.0)
+        self.assertEqual(by_id["mc"].components, {"own_xp": 4.0})
+        # El xP propio ya infiere el bonus de relevo: no se suma dos veces.
+        self.assertIsNone(by_id["mc"].relevo_bonus)
+        self.assertEqual(by_id["mc"].objective, 4.0)
         self.assertIsNone(by_id["mc2"].relevo_bonus)
         self.assertEqual(by_id["mc2"].objective, 4.0)
 
@@ -355,11 +358,12 @@ class Phase3Test(unittest.TestCase):
                     "price_delta": 1_325_257,
                     "matching_confidence": 0.91,
                     "p_titular": 0.8,
+                    "own_expected_points": 4.0,
                     "form": {"xg": 1},
                 },
-                {"player_id": "caro", "name": "Caro", "position": "DEL", "acceleration": 20, "matching_confidence": 0.95, "p_titular": 1, "form": {"xg": 1}},
+                {"player_id": "caro", "name": "Caro", "position": "DEL", "acceleration": 20, "matching_confidence": 0.95, "p_titular": 1, "own_expected_points": 4.0, "form": {"xg": 1}},
                 {"player_id": "ruido", "name": "Ruido", "position": "MC", "acceleration": 4, "matching_confidence": 0.4, "p_titular": 1},
-                {"player_id": "cerrado", "name": "Cerrado", "position": "DEL", "acceleration": 6, "matching_confidence": 0.9, "p_titular": 1, "form": {"xg": 1}},
+                {"player_id": "cerrado", "name": "Cerrado", "position": "DEL", "acceleration": 6, "matching_confidence": 0.9, "p_titular": 1, "own_expected_points": 4.0, "form": {"xg": 1}},
             ]
         }
         lineup = {"ok": True, "matchday_void": False}

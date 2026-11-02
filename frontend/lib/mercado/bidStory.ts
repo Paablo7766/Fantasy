@@ -331,6 +331,10 @@ function theoryText(player: MarketDecision): string {
     chunks.push(
       `Sin un ${positionName(player.position)} el once queda cojo. Cubrir ese hueco vale más que fichar un nombre caro en una posición que ya tienes cubierta.`,
     );
+  } else if (hasMotive(player, "shock_puntos")) {
+    chunks.push(
+      `${name} acaba de hacer un partidazo y su precio aún no se ha movido. LaLiga y las webs externas tardan en reflejarlo: comprar ahora es hacerlo antes de la subida.`,
+    );
   } else if (player.primary_motive === "flip" || hasMotive(player, "aceleracion") || hasMotive(player, "own_predicted_up")) {
     chunks.push(
       `Aquí el motivo no es el once de esta jornada, sino el precio. La tendencia dice que el valor puede subir, y vender más caro es caja para la siguiente puja.`,

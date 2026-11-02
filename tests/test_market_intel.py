@@ -167,6 +167,24 @@ class MarketDecisionTests(unittest.TestCase):
         self.assertEqual(row["price_band"], "overpay")
         self.assertIn("sobreprecio", row["reasons"])
 
+    def test_shock_de_puntos_motivates_before_the_price_moves(self) -> None:
+        doc = self._run(
+            [_listing("shock", sale=1_000_000)],
+            [_trend("shock", week_points=[1, 0, 12], market_value=1_000_000, p_titular=0.7)],
+        )
+        row = doc["decisions"][0]
+        self.assertIn("shock_puntos", row["motives"])
+        self.assertEqual(row["shock_puntos"]["ventana"], "abierta")
+
+    def test_shock_window_closed_when_the_external_source_already_sees_it(self) -> None:
+        doc = self._run(
+            [_listing("tarde", sale=1_000_000)],
+            [_trend("tarde", week_points=[1, 0, 12], market_value=1_000_000, af_predicted_delta=80_000)],
+        )
+        row = doc["decisions"][0]
+        self.assertNotIn("shock_puntos", row["motives"])
+        self.assertEqual(row["shock_puntos"]["ventana"], "cerrada")
+
     def test_injury_is_no(self) -> None:
         doc = self._run(
             [_listing("p3", sale=500_000)],
@@ -362,7 +380,7 @@ class MarketDecisionTests(unittest.TestCase):
         self.assertEqual(row["jornada_ev"], 4.0)
         self.assertEqual(row["points_roi"], 2.0)
 
-    def test_af_expected_points_are_scaled_by_titular(self) -> None:
+    def test_af_expected_points_are_not_an_xp_source(self) -> None:
         doc = self._run(
             [_listing("af-ev", sale=1_000_000)],
             [
@@ -377,9 +395,9 @@ class MarketDecisionTests(unittest.TestCase):
             ],
         )
         row = doc["decisions"][0]
-        self.assertEqual(row["expected_points_source"], "af")
-        self.assertEqual(row["jornada_ev"], 4.0)
-        self.assertEqual(row["points_roi"], 4.0)
+        # AF no lleva el contexto del rival: sin ``own_expected_points`` no hay xP.
+        self.assertIsNone(row["expected_points_source"])
+        self.assertIsNone(row["jornada_ev"])
 
 
 class JornadaBidTests(unittest.TestCase):

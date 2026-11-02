@@ -6,7 +6,7 @@ import { liquidityRead } from "@/lib/liga/liquidity";
 import type { RivalSquad } from "@/lib/types";
 import { CalibratedBadge, CalibratedCash, ThermometerBar } from "./Liquidity";
 import type { RivalSort } from "./shared";
-import { listMetric, rankTone, rivalInDebt, rivalLabel } from "./shared";
+import { bidProfileBadge, listMetric, rankTone, rivalInDebt, rivalLabel } from "./shared";
 
 export function RivalListCard({
   squad,
@@ -24,6 +24,7 @@ export function RivalListCard({
   const metric = listMetric(squad, sort);
   const read = liquidityRead(squad);
   const inDebt = !isSelf && rivalInDebt(squad, read);
+  const bid = isSelf ? null : bidProfileBadge(squad);
   return (
     <button
       type="button"
@@ -40,6 +41,11 @@ export function RivalListCard({
             {isSelf ? <span className="badge badge--good text-[10px]">Tú</span> : null}
             {inDebt ? <span className="badge badge--bad text-[10px]">Saldo negativo</span> : null}
             <CalibratedBadge read={read} compact />
+            {bid ? (
+              <span className={`badge ${bid.tone} text-[10px]`} title={bid.title}>
+                {bid.text}
+              </span>
+            ) : null}
           </div>
           <p className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[12px] text-muted">
             {teamName ? <span className="truncate">{teamName} ·</span> : null}

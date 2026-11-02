@@ -95,6 +95,18 @@ export type CashReconciliation = {
   covers_observed?: boolean | null;
 };
 
+/** Cómo puja de verdad un rival, ajustado con sus compras pasadas. */
+export type BidProfile = {
+  style: "conservador" | "moderado" | "agresivo" | "sin_datos";
+  n_buys: number;
+  /** Probabilidad de que puje a valor de mercado (prima <= 1 %). */
+  p_exact: number;
+  /** Mediana de la sobrepuja cuando sobrepuja. */
+  median_overbid_pct?: number | null;
+  /** Prima típica de sus compras, en %. */
+  typical_premium_pct?: number | null;
+};
+
 export type RivalSquad = {
   team_id?: string | null;
   manager_name?: string | null;
@@ -111,6 +123,7 @@ export type RivalSquad = {
   price_delta_players?: number | null;
   players?: RivalPlayer[];
   activity_profile?: ActivityProfile | null;
+  bid_profile?: BidProfile | null;
   portfolio?: PortfolioSummary | null;
   /** Cota calibrada contra el saldo observado. Nunca por debajo de él. */
   risk_adjusted_cash?: number | null;

@@ -540,6 +540,45 @@ class RivalProfile:
     xi_gaps: list[str]
     lacks_replacements: bool
     already_bidding: bool = False
+    # Modelo hurdle: con probabilidad ``p_exact`` puja a valor de mercado
+    # (prima <= ``EXACT_PREMIUM_MAX``, centrada en ``exact_premium``); si no, sobrepuja
+    # según ``alpha_aggressiveness`` / ``sigma_dispersion`` (log-normal de la prima).
+    p_exact: float = 0.0
+    exact_premium: float = 0.0
+    median_overbid: float | None = None
+    n_buys: int = 0
+
+    @property
+    def style(self) -> str:
+        """Etiqueta para la UI: Conservador / Moderado / Agresivo / Sin datos."""
+        return aggressiveness_style(self.n_buys, self.p_exact, self.median_overbid)
+
+    @property
+    def typical_premium(self) -> float | None:
+        """Prima típica real: la mediana de todas sus compras (exactas incluidas)."""
+        if self.n_buys <= 0:
+            return None
+        if self.p_exact >= 0.5 or self.median_overbid is None:
+            return self.exact_premium
+        return self.median_overbid
+
+
+# Una puja dentro de este margen sobre el valor cuenta como «a valor de mercado».
+EXACT_PREMIUM_MAX = 0.01
+# Por encima de esto la «prima» es un error de referencia, no una puja.
+PREMIUM_OUTLIER = 1.20
+AGGRESSIVE_PREMIUM = 0.10
+SOFT_P_EXACT = 0.5
+
+
+def aggressiveness_style(n_buys: int, p_exact: float, median_overbid: float | None) -> str:
+    if n_buys < 3:
+        return "sin_datos"
+    if p_exact >= SOFT_P_EXACT:
+        return "conservador"
+    if median_overbid is not None and median_overbid >= AGGRESSIVE_PREMIUM:
+        return "agresivo"
+    return "moderado"
 
 
 def collect_activity_buys(
@@ -624,7 +663,11 @@ def fit_rival_profiles_eb(
     )
     floor = max(0.0, floor)
     residuals_by_team: dict[str, list[float]] = {}
+    overbids_by_team: dict[str, list[float]] = {}
+    exacts_by_team: dict[str, list[float]] = {}
     all_residuals: list[float] = []
+    n_exact_total = 0
+    n_valid_total = 0
 
     for ev in activity_buys:
         team_id = str(ev.get("team_id", ""))
@@ -633,7 +676,13 @@ def fit_rival_profiles_eb(
         if amount <= 0 or ref_val <= 0 or not team_id:
             continue
         premium = (amount - ref_val) / ref_val
-        if premium <= 0.005 or premium > 1.20:
+        if premium > PREMIUM_OUTLIER:
+            continue
+        n_valid_total += 1
+        # Hurdle: pujar a valor de mercado es un resultado, no un dato censurado.
+        if premium <= EXACT_PREMIUM_MAX:
+            n_exact_total += 1
+            exacts_by_team.setdefault(team_id, []).append(max(0.0, premium))
             continue
 
         cash_at_buy = float(ev.get("cash_at_event_eur") or ref_val * 1.5)
@@ -643,7 +692,11 @@ def fit_rival_profiles_eb(
         y_obs = math.log(premium)
         res = y_obs - beta_liquidity * liq_ratio - beta_urgency * urgency
         residuals_by_team.setdefault(team_id, []).append(res)
+        overbids_by_team.setdefault(team_id, []).append(premium)
         all_residuals.append(res)
+
+    # Prior de la liga para P(exacto); sin muestra suficiente, no se supone nada.
+    p_exact_0 = (n_exact_total / n_valid_total) if n_valid_total >= 5 else 0.0
 
     mu_0 = float(np.mean(all_residuals)) if len(all_residuals) >= 5 else -2.465
     sigma_0 = float(np.std(all_residuals)) if len(all_residuals) >= 5 else 0.55
@@ -682,6 +735,12 @@ def fit_rival_profiles_eb(
         if not balanced:
             uncertainty = max(3.0 * floor, gap_val)
 
+        n_over = len(overbids_by_team.get(t_id, []))
+        exacts = exacts_by_team.get(t_id, [])
+        n_buys_j = n_over + len(exacts)
+        p_exact_j = (len(exacts) + eb_shrinkage_k * p_exact_0) / (n_buys_j + eb_shrinkage_k) if (n_buys_j or p_exact_0) else 0.0
+        over = overbids_by_team.get(t_id, [])
+
         profiles[t_id] = RivalProfile(
             team_id=t_id,
             manager_name=str(rival.get("manager_name") or t_id),
@@ -693,5 +752,9 @@ def fit_rival_profiles_eb(
             xi_gaps=[str(item) for item in (rival.get("xi_gaps") or []) if isinstance(item, str)],
             lacks_replacements=bool(rival.get("lacks_replacements", False)),
             already_bidding=bool(rival.get("already_bidding", False)),
+            p_exact=float(np.clip(p_exact_j, 0.0, 0.98)),
+            exact_premium=float(np.median(exacts)) if exacts else 0.0,
+            median_overbid=float(np.median(over)) if over else None,
+            n_buys=n_buys_j,
         )
     return profiles

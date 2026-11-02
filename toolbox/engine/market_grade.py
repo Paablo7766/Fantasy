@@ -120,7 +120,7 @@ def _racha(jugador: dict[str, Any]) -> list[float]:
 
 
 def _xp(jugador: dict[str, Any]) -> float | None:
-    for key in ("xp", "jornada_ev", "jornada", "expected_points"):
+    for key in ("xp", "jornada_ev", "jornada"):
         number = _num(jugador.get(key))
         if number is not None:
             return number

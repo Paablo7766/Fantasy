@@ -11,6 +11,30 @@ export function rivalLabel(squad: RivalSquad): string {
   return squad.manager_name || squad.fantasy_team_name || String(squad.team_id || "Rival");
 }
 
+/** Micro-badge «Agresivo (+15%)»: lo que ese rival paga de verdad sobre el valor de mercado. */
+export function bidProfileBadge(squad: RivalSquad): { text: string; tone: string; title: string } | null {
+  const profile = squad.bid_profile;
+  if (!profile) return null;
+  const name = rivalLabel(squad);
+  if (profile.style === "sin_datos") {
+    return {
+      text: "Sin datos de pujas",
+      tone: "",
+      title: `${name}: ${profile.n_buys} compras con valor de referencia`,
+    };
+  }
+  const label = profile.style === "agresivo" ? "Agresivo" : profile.style === "conservador" ? "Conservador" : "Moderado";
+  const pct = Math.round(profile.typical_premium_pct ?? 0);
+  const signed = `${pct >= 0 ? "+" : ""}${pct}`;
+  const tone = profile.style === "agresivo" ? "badge--bad" : profile.style === "conservador" ? "badge--good" : "badge--warn";
+  const exact = Math.round(profile.p_exact * 100);
+  return {
+    text: `${label} (${signed}%)`,
+    tone,
+    title: `${name}: prima típica ${signed} % · puja el valor exacto en el ${exact} % de sus compras (${profile.n_buys} compras)`,
+  };
+}
+
 export function ledgerFromNeeds(needs: NeedsPayload | null, teamId: string): NeedRival["ledger"] | null {
   return (needs?.ok ? needs.rivals || [] : []).find((row) => String(row.team_id) === teamId)?.ledger ?? null;
 }

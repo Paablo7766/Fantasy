@@ -742,26 +742,10 @@ def _trend_played_points(trends: dict[str, Any] | None, player_id: Any) -> float
     row = index_trends(trends).get(player_id)
     if row is None:
         return None
-    from toolbox.analyzer import expected_opta_points_v2_for_candidate
+    from toolbox.analyzer import precomputed_xp
 
-    position = row.get("position")
-    v2 = None
-    if isinstance(position, str):
-        try:
-            v2 = expected_opta_points_v2_for_candidate(row, row, position=position, run_monte_carlo=False)
-        except Exception:  # noqa: BLE001 — sin dato v2 se cae a la forma
-            v2 = None
-    if isinstance(v2, dict):
-        value = v2.get("expected_points")
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return float(value)
-    form = row.get("form") if isinstance(row.get("form"), dict) else None
-    if isinstance(position, str) and form is not None:
-        from toolbox.analyzer import expected_opta_points
-
-        opta, _ = expected_opta_points(position, form)
-        return float(opta)
-    return None
+    xp = precomputed_xp(row, row)
+    return xp["expected_points"] if xp is not None else None
 
 
 def _fire_sale(

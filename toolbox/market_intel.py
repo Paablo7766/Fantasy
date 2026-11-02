@@ -22,6 +22,7 @@ from toolbox.analyzer import (
     unavailable_reason,
 )
 from toolbox.bid_war import overbid_risk, plan_market_auction_bid, profiles_for_listing, public_bids, recommend_bid, rival_snapshots
+from toolbox.engine.shock_jornada import detectar_shock
 from toolbox.league_history import fit_rival_profiles_eb
 from toolbox.bidding import assess_purchase, bid_amount, schedule_snipe
 from toolbox.cache import ResponseCache
@@ -513,10 +514,7 @@ def _decide_listing(
     af_strength = _signed_number(trend.get("af_signal_strength"))
     own_expected = _signed_number(trend.get("own_expected_points"))
     af_expected = _signed_number(trend.get("af_expected_points"))
-    opta_expected = _signed_number(trend.get("expected_points"))
-    expected_pts, expected_source = _expected_points_cascade(
-        own_expected, af_expected, opta_expected, usable=usable
-    )
+    expected_pts, expected_source = _expected_points_cascade(own_expected)
     # p_titular de alineaciones no depende del matching AF (ya leído arriba).
     own_ppm = _signed_number(trend.get("own_points_per_million"))
     af_ppm = _signed_number(trend.get("af_points_per_million"))
@@ -645,6 +643,20 @@ def _decide_listing(
             score += W_SIGNAL_DOWN
         if not flip_up and not flip_down:
             reasons.append("matching_confidence")
+
+    # Shock de puntos: partidazo de un jugador barato que el precio aún no refleja.
+    shock = detectar_shock(
+        _puntos_recientes(trend),
+        amount if isinstance(amount, int) and amount > 0 else trend.get("market_value"),
+        price_delta,
+        externo_sube=bool(
+            (af_predicted is not None and af_predicted > 0) or (af_price_delta is not None and af_price_delta > 0)
+        ),
+    )
+    if shock is not None and shock["ventana"] == "abierta" and not flip_down:
+        motives.append("shock_puntos")
+        score += W_FLIP
+        flip_up = True
 
     points_motive = False
     jornada_ev: float | None = None
@@ -901,6 +913,7 @@ def _decide_listing(
         "own_expected_points": own_expected,
         "af_expected_points": af_expected,
         "jornada_ev": jornada_ev,
+        "shock_puntos": shock,
         "points_roi": points_roi,
         "p_titular": p_titular,
         "price_delta": day_delta,
@@ -1168,20 +1181,14 @@ def _primary_motive(
     return motives[0] if motives else "senal"
 
 
-def _expected_points_cascade(
-    own_expected: float | None,
-    af_expected: float | None,
-    opta_expected: float | None,
-    *,
-    usable: bool,
-) -> tuple[float | None, str | None]:
-    """own_* ya es valor de jornada. AF/OPTA son proyección del partido, sin titularidad."""
+def _expected_points_cascade(own_expected: float | None) -> tuple[float | None, str | None]:
+    """Única fuente de xP: ``own_expected_points`` (ya es valor de jornada).
+
+    Sin él no hay xP: ni AF ni el OPTA de temporada lo sustituyen, porque no
+    llevan el contexto del rival.
+    """
     if own_expected is not None:
         return own_expected, "own"
-    if af_expected is not None and usable:
-        return af_expected, "af"
-    if opta_expected is not None:
-        return opta_expected, "opta"
     return None, None
 
 
@@ -1199,14 +1206,10 @@ def _jornada_ev(expected_pts: float, p_titular: float | None, source: str | None
 
 
 def _matched_points(trend: dict[str, Any], usable: bool) -> tuple[float | None, str | None]:
-    """Puntos de jornada comparables: own, o AF si el matching sirve. OPTA de temporada no entra."""
+    """Puntos de jornada comparables: solo ``own_expected_points`` (fuente única)."""
     own = _signed_number(trend.get("own_expected_points"))
     if own is not None:
         return own, "own"
-    if usable:
-        af = _signed_number(trend.get("af_expected_points"))
-        if af is not None:
-            return af, "af"
     return None, None
 
 

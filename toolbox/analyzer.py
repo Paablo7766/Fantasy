@@ -31,10 +31,8 @@ from toolbox.normalize import (
     titularity_overrides_injury,
 )
 from toolbox.opta_points_v2 import (
-    compute_expected_opta_points_v2,
     infer_opta_performance_bonus,
     poisson_step_expectation,
-    rate_per90,
 )
 
 POSITIONS = ("POR", "DEF", "MC", "DEL")
@@ -47,8 +45,6 @@ FORMATIONS: dict[str, dict[str, int]] = {
     "5-3-2": {"POR": 1, "DEF": 5, "MC": 3, "DEL": 2},
     "5-4-1": {"POR": 1, "DEF": 5, "MC": 4, "DEL": 1},
 }
-GOAL_POINTS = {"POR": 6, "DEF": 6, "MC": 5, "DEL": 4}
-ASSIST_POINTS = 3
 MATCH_THRESHOLD = 0.85
 P_TITULAR_WEIGHT = 1.0
 EXPECTED_POINTS_WEIGHT = 1.0
@@ -373,196 +369,27 @@ def unavailable_reason(player: dict[str, Any], trend: dict[str, Any] | None) -> 
     return None
 
 
-def _minutes_factor(form: dict[str, Any]) -> float | None:
-    """Descuenta titulares de pocos minutos. 60 %+ de minutos = factor 1."""
-    pct = form.get("minutes_pct")
-    if isinstance(pct, (int, float)) and not isinstance(pct, bool):
-        share = float(pct)
-        if share > 1:
-            share /= 100.0
-        if share < 0:
-            return None
-        if share >= 0.6:
-            return 1.0
-        return round(max(0.4, share / 0.6), 4)
-    minutes = form.get("minutes")
-    starts = form.get("starts")
-    if (
-        isinstance(minutes, (int, float))
-        and not isinstance(minutes, bool)
-        and isinstance(starts, (int, float))
-        and not isinstance(starts, bool)
-        and float(starts) > 0
-    ):
-        share = float(minutes) / (90.0 * float(starts))
-        if share >= 0.6:
-            return 1.0
-        return round(max(0.4, min(1.0, share / 0.6)), 4)
-    return None
+def precomputed_xp(player: dict[str, Any] | None, trend: dict[str, Any] | None) -> dict[str, float] | None:
+    """xP de la jornada ya calculado por ``own_intel`` (única fuente de verdad).
 
-
-def expected_opta_points(position: str, form: dict[str, Any] | None) -> tuple[float, dict[str, float]]:
-    """Tarifa OPTA sobre xG/xA, ajustada por minutos, FDR y tip de Jornada Perfecta."""
-    components: dict[str, float] = {}
-    if position not in GOAL_POINTS or not isinstance(form, dict):
-        return 0.0, components
-    total = 0.0
-    minutes = form.get("minutes")
-    minutes_total = float(minutes) if isinstance(minutes, (int, float)) and not isinstance(minutes, bool) else 0.0
-    xg = form.get("xg")
-    xa = form.get("xa")
-    if isinstance(xg, (int, float)) and not isinstance(xg, bool):
-        xg_rate = rate_per90(float(xg), minutes_total)
-        points = round(xg_rate * GOAL_POINTS[position], 4)
-        components["xg"] = points
-        total += points
-    if isinstance(xa, (int, float)) and not isinstance(xa, bool):
-        xa_rate = rate_per90(float(xa), minutes_total)
-        points = round(xa_rate * ASSIST_POINTS, 4)
-        components["xa"] = points
-        total += points
-    if total <= 0:
-        return 0.0, components
-
-    minutes_factor = _minutes_factor(form)
-    if minutes_factor is not None and minutes_factor != 1.0:
-        total = round(total * minutes_factor, 4)
-        components["minutes_factor"] = minutes_factor
-
-    try:
-        from toolbox.understat import points_multiplier
-
-        fdr = form.get("fdr")
-        fdr_int = int(fdr) if isinstance(fdr, (int, float)) and not isinstance(fdr, bool) else None
-        home = form.get("home") if isinstance(form.get("home"), bool) else None
-        fixture_mult = points_multiplier(fdr=fdr_int, home=home)
-        if fixture_mult != 1.0:
-            total = round(total * fixture_mult, 4)
-            components["fixture_factor"] = fixture_mult
-    except Exception:
-        pass
-
-    jp_mult = form.get("jp_multiplier")
-    if isinstance(jp_mult, (int, float)) and not isinstance(jp_mult, bool) and float(jp_mult) != 1.0:
-        try:
-            from toolbox.jornada_perfecta import JP_TIP_MULT_FLOOR, JP_TIP_WEIGHT
-
-            # Variación relativa acotada: la etiqueta de rol nunca destruye los
-            # puntos base de Opta (suelo JP_TIP_MULT_FLOOR).
-            adjusted = float(total) * (1.0 + JP_TIP_WEIGHT * (float(jp_mult) - 1.0))
-            floor = float(total) * JP_TIP_MULT_FLOOR
-            total = round(max(adjusted, floor), 4)
-            components["jp_factor"] = float(jp_mult)
-        except Exception:
-            pass
-
-    return round(total, 4), components
-
-
-def _opta_v2_payload(
-    player: dict[str, Any],
-    trend: dict[str, Any] | None,
-    *,
-    position: str,
-) -> dict[str, Any]:
-    usable = trend if isinstance(trend, dict) else {}
-    form = usable.get("form") if isinstance(usable.get("form"), dict) else None
-    if form is None and isinstance(player.get("form"), dict):
-        form = player["form"]
-    sanction = usable.get("sanction") if isinstance(usable.get("sanction"), dict) else player.get("sanction")
-    p_titular = usable.get("p_titular") if usable.get("p_titular") is not None else player.get("p_titular")
-    week_points = player.get("week_points") if isinstance(player.get("week_points"), list) else None
-    if week_points is None and isinstance(usable.get("week_points"), list):
-        week_points = usable.get("week_points")
-    average_rating = None
-    for source in (form if isinstance(form, dict) else {}, player, usable):
+    ``own_intel`` lo calcula una vez por jornada con las lambdas, ``p_cs`` y el
+    rival. Aquí solo se lee: si falta, devuelve ``None`` y quien llama decide;
+    nunca se recalcula sobre la marcha sin el contexto del partido.
+    """
+    for source in (trend, player):
         if not isinstance(source, dict):
             continue
-        for key in ("average_rating", "sofascore_rating", "sofascore_rating_medio"):
-            rating = source.get(key)
-            if isinstance(rating, (int, float)) and not isinstance(rating, bool):
-                average_rating = float(rating)
-                break
-        if average_rating is not None:
-            break
-    return {
-        "player_id": player.get("player_id") or usable.get("player_id"),
-        "position": position,
-        "p_titular": p_titular,
-        "week_points": week_points or [],
-        "form": form if isinstance(form, dict) else {},
-        "average_rating": average_rating,
-        "sanction": sanction if isinstance(sanction, dict) else {},
-        "player_status": player.get("player_status") or usable.get("player_status"),
-        "fitness": usable.get("fitness") if isinstance(usable.get("fitness"), str) else player.get("fitness"),
-        "af_suspension": usable.get("af_suspension") or player.get("af_suspension"),
-        "average_points": player.get("average_points") or usable.get("average_points"),
-        "relevo_bonus": player.get("relevo_bonus") if player.get("relevo_bonus") is not None else usable.get("relevo_bonus"),
-        "has_midweek_cup": bool(usable.get("has_midweek_cup") or player.get("has_midweek_cup")),
-        "days_rest": int(usable.get("days_rest") or player.get("days_rest") or 6),
-    }
+        value = source.get("own_expected_points")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        out: dict[str, float] = {"expected_points": float(value)}
+        for key, target in (("own_points_if_starts", "xp_condicional"), ("own_ceiling_points", "ceiling_points")):
+            extra = source.get(key)
+            if isinstance(extra, (int, float)) and not isinstance(extra, bool):
+                out[target] = float(extra)
+        return out
+    return None
 
-
-def _lambdas_for_opta(trend: dict[str, Any] | None, form: dict[str, Any] | None) -> tuple[float, float, float | None]:
-    lam_own = 1.32
-    lam_opp = 1.32
-    p_cs = None
-    if isinstance(form, dict):
-        for key, target in (("lambda_for", "own"), ("lambda_against", "opp")):
-            val = form.get(key)
-            if isinstance(val, (int, float)) and not isinstance(val, bool):
-                if target == "own":
-                    lam_own = float(val)
-                else:
-                    lam_opp = float(val)
-        p_cs_val = form.get("p_cs_for")
-        if isinstance(p_cs_val, (int, float)) and not isinstance(p_cs_val, bool):
-            p_cs = float(p_cs_val)
-    if isinstance(trend, dict):
-        calendar = trend.get("own_calendar")
-        if isinstance(calendar, list) and calendar and isinstance(calendar[0], dict):
-            cell = calendar[0]
-            if isinstance(cell.get("lambda_for"), (int, float)):
-                lam_own = float(cell["lambda_for"])
-            if isinstance(cell.get("lambda_against"), (int, float)):
-                lam_opp = float(cell["lambda_against"])
-    return lam_own, lam_opp, p_cs
-
-
-def _opta_v2_enabled(form: dict[str, Any] | None, trend: dict[str, Any] | None) -> bool:
-    if isinstance(trend, dict) and isinstance(trend.get("own_calendar"), list) and trend["own_calendar"]:
-        return True
-    if not isinstance(form, dict):
-        return False
-    minutes = form.get("minutes")
-    if isinstance(minutes, (int, float)) and not isinstance(minutes, bool) and float(minutes) > 0:
-        return True
-    return False
-
-
-def expected_opta_points_v2_for_candidate(
-    player: dict[str, Any],
-    trend: dict[str, Any] | None,
-    *,
-    position: str,
-    run_monte_carlo: bool = False,
-) -> dict[str, float] | None:
-    payload = _opta_v2_payload(player, trend, position=position)
-    form = payload.get("form")
-    if not isinstance(form, dict):
-        form = {}
-    if not _opta_v2_enabled(form, trend if isinstance(trend, dict) else None):
-        return None
-    lam_own, lam_opp, p_cs = _lambdas_for_opta(trend if isinstance(trend, dict) else None, form)
-    return compute_expected_opta_points_v2(
-        payload,
-        lambda_own=lam_own,
-        lambda_opp=lam_opp,
-        p_cs_own=p_cs,
-        has_midweek_cup=bool(payload.get("has_midweek_cup")),
-        days_rest=int(payload.get("days_rest") or 6),
-        run_monte_carlo=run_monte_carlo,
-    )
 
 
 def objective_value(
@@ -671,16 +498,7 @@ def candidate_from_player(
             p_titular = starter_fallback(player)
             p_titular_source = "week_points" if p_titular is not None else None
     p_titular = apply_doubt_titular_discount(p_titular, player, usable)
-    form = usable.get("form") if usable and isinstance(usable.get("form"), dict) else None
-    if form is None and isinstance(player.get("form"), dict):
-        form = player["form"]
-    model_player = dict(player)
-    if p_titular is not None:
-        model_player["p_titular"] = p_titular
-    model_trend = dict(usable) if isinstance(usable, dict) else usable
-    if isinstance(model_trend, dict) and p_titular is not None:
-        model_trend = {**model_trend, "p_titular": p_titular}
-    v2 = expected_opta_points_v2_for_candidate(model_player, model_trend, position=position, run_monte_carlo=False)
+    v2 = precomputed_xp(player, usable)
     components: dict[str, float] = {}
     bonus = relevo_bonus(player.get("relevo_bonus"))
     if bonus is None and usable is not None:
@@ -689,18 +507,14 @@ def candidate_from_player(
     external_ev = False
     if uses_v2:
         opta = float(v2["expected_points"])
-        components["opta_v2"] = opta
-        for key in ("base_titular", "factor_partido", "n_titular"):
-            piece = v2.get(key)
-            if isinstance(piece, (int, float)) and not isinstance(piece, bool):
-                components[key] = round(float(piece), 4)
+        components["own_xp"] = opta
         if bonus is not None:
             bonus = None
     else:
-        opta, components = expected_opta_points(position, form)
+        opta = 0.0
     points = round(opta + (float(bonus) if bonus is not None else 0.0), 4)
     if points <= 0 and usable:
-        for key in ("own_expected_points", "af_expected_points"):
+        for key in ("af_expected_points",):
             alt = usable.get(key)
             if isinstance(alt, (int, float)) and not isinstance(alt, bool) and float(alt) > 0:
                 points = round(float(alt), 4)

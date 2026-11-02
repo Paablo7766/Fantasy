@@ -135,7 +135,7 @@ def _calendario(jugador: dict[str, Any]) -> list[Any]:
 
 
 def _xp_j1(jugador: dict[str, Any]) -> float | None:
-    for key in ("xp_j1", "jornada", "jornada_ev", "own_expected_points", "expected_points"):
+    for key in ("xp_j1", "jornada", "jornada_ev", "own_expected_points"):
         number = _num(jugador.get(key))
         if number is not None:
             return number

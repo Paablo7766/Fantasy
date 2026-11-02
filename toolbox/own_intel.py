@@ -843,9 +843,11 @@ def apply_own_intel(
         cell = calendar_by_club.get(club_key) if club_key else None
         form = player.get("form") if isinstance(player.get("form"), dict) else {}
         team = strength_map.get(club_key) if club_key else None
+        from toolbox.analyzer import apply_doubt_titular_discount
+
         pts = expected_opta_points(
             position=player.get("position") if isinstance(player.get("position"), str) else None,
-            p_titular=_as_float(player.get("p_titular")),
+            p_titular=apply_doubt_titular_discount(_as_float(player.get("p_titular")), player, None),
             player_xg=_as_float(form.get("xg")),
             player_xa=_as_float(form.get("xa")),
             team_lambda=_as_float(cell.get("lambda_for")) if cell else None,
@@ -925,6 +927,9 @@ def apply_own_intel(
                     "predicted_score": cell.get("predicted_score"),
                     "recommendation_pct": cell.get("recommendation_pct"),
                     "difficulty": cell.get("difficulty"),
+                    "lambda_for": cell.get("lambda_for"),
+                    "lambda_against": cell.get("lambda_against"),
+                    "p_cs_for": cell.get("p_cs_for"),
                 }
             ]
             player["own_recommendation_pct"] = cell.get("recommendation_pct")
