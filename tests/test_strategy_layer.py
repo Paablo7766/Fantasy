@@ -379,19 +379,23 @@ class LiquidezTests(unittest.TestCase):
         self.assertEqual([accion["tipo"] for accion in cabe["acciones"]], ["PUJA"])
         self.assertEqual(cabe["saldo_al_final"], 0)
 
-    def test_chollo_de_precio_se_ficha_hoy_aunque_no_entre_al_once(self) -> None:
+    def test_chollo_de_banquillo_va_al_trading_desk_no_al_once(self) -> None:
         mercado = [_jugador("billete", "DEL", 3.0, euros=1_000_000, pct=16.0)]
         plan = self._plan(dias=4, cash=4_000_000, mercado=mercado)
-        self.assertEqual(plan["acciones"][0]["impulso"], "CHOLLO")
-        self.assertEqual(plan["acciones"][0]["momento"], "hoy")
+        self.assertEqual(plan["acciones"], [])
         self.assertEqual(plan["mejora_puntos_jornada"], 0.0)
-        self.assertEqual(plan["saldo_al_final"], 3_000_000)
-        self.assertEqual(plan["veredicto"], "Hazlo ya")
+        self.assertEqual(plan["saldo_al_final"], 4_000_000)
+        self.assertNotEqual(plan["veredicto"], "Hazlo ya")
         self.assertNotIn("billete", {fila.get("player_id") for fila in plan["once"]})
+        operaciones = plan["trading"]["operaciones"]
+        self.assertEqual([op["player_id"] for op in operaciones], ["billete"])
+        self.assertEqual(operaciones[0]["etiqueta"], "COMPRAR PARA TRADING")
+        self.assertGreater(operaciones[0]["ganancia_esperada"], 0)
 
         tarde = self._plan(dias=1, cash=4_000_000, mercado=mercado)
         self.assertEqual(tarde["acciones"], [])
         self.assertEqual(tarde["saldo_al_final"], 4_000_000)
+        self.assertEqual(tarde["trading"]["operaciones"], [])
 
     def test_el_factor_de_peaje_es_continuo_y_decrece_con_la_mejora(self) -> None:
         self.assertAlmostEqual(factor_peaje(0.4), 0.985, places=3)
@@ -466,8 +470,11 @@ class LiquidezTests(unittest.TestCase):
             dias_para_jornada=4,
             baseline_puntos=0.0,
         )
-        self.assertTrue(any(accion.get("impulso") == "CHOLLO" for accion in holgado["acciones"]))
-        self.assertEqual(holgado["saldo_al_final"], 0)
+        # El once no gasta en el chollo: la caja sobrante se la queda el trading desk.
+        self.assertFalse(any(accion.get("impulso") == "CHOLLO" for accion in holgado["acciones"]))
+        self.assertEqual(holgado["saldo_al_final"], 1_000_000)
+        self.assertEqual([op["player_id"] for op in holgado["trading"]["operaciones"]], ["suplente"])
+        self.assertEqual(holgado["trading"]["usa_deuda"], 0)
 
 
 def _reales_tras_ventas_de_hoy(plan: dict, owned: list[dict]) -> int:

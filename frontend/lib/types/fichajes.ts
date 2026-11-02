@@ -19,6 +19,28 @@ export type PlanFichajeAccion = {
   alta_demanda?: boolean;
 };
 
+export type TradingOperacion = {
+  player_id?: string | null;
+  nombre?: string | null;
+  origen?: string | null;
+  euros?: number | null;
+  pct?: number | null;
+  ganancia_esperada?: number | null;
+  etiqueta?: string | null;
+  cierre?: string | null;
+};
+
+export type TradingDesk = {
+  activo?: boolean;
+  operaciones?: TradingOperacion[];
+  caja_libre?: number | null;
+  deuda_usable?: number | null;
+  capital?: number | null;
+  gasto?: number | null;
+  usa_deuda?: number | null;
+  ganancia_esperada?: number | null;
+};
+
 export type PlanFichajes = {
   ok?: boolean;
   mejora_puntos_jornada?: number | null;
@@ -35,6 +57,7 @@ export type PlanFichajes = {
   factor_ajuste?: number | null;
   modo_liquidez?: "VENTANA" | "ALL-IN" | "SIN_RELOJ" | string | null;
   en_radar?: PlanFichajeAccion[];
+  trading?: TradingDesk;
   once?: Array<{
     player_id?: string | null;
     nombre?: string | null;

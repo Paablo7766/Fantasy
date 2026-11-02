@@ -16,6 +16,7 @@ import pulp
 from toolbox.analyzer import FORMATIONS, POSITIONS, XI_SIZE
 from toolbox.engine.auction_intel import nota_y_veredicto
 from toolbox.engine.lineup_math import solve_best_xi
+from toolbox.engine.trading_desk import build_trading_desk
 
 # Un suplente buscado a ciegas rinde como un titular medio de esa posición.
 BUSCA_PUNTOS = 4.7
@@ -55,8 +56,6 @@ UMBRAL_MUCHO_DINERO = 1_000_000
 XP_POR_MILLON_LUNES = 0.2
 DIAS_REFERENCIA_LUNES = 4.0
 FACTOR_AJUSTE = XP_POR_MILLON_LUNES * 7.0 / DIAS_REFERENCIA_LUNES
-# Un chollo de banquillo no suma xP. Este extra solo desempata contra no gastarlo.
-BONUS_CHOLLO = 0.02
 # Cláusula / valor de mercado. Por encima, solo pasa si la subida a 7 días
 # cubre al menos el 60 % del sobreprecio.
 RATIO_CLAUSULA_MAX = 1.35
@@ -522,8 +521,6 @@ def _reserva_para_el_once(
     if permite_busca and coste_busca > 0:
         opciones.append(coste_busca)
     for ficha in fichas.values():
-        if ficha.get("especulativo"):
-            continue
         fantasma = {
             "player_id": f"nuevo:{ficha['row'].get('player_id')}",
             "position": ficha["row"].get("position"),
@@ -534,7 +531,27 @@ def _reserva_para_el_once(
     return min(opciones) if opciones else 0
 
 
-def build_plan_fichajes(
+def build_plan_fichajes(**kwargs: Any) -> dict[str, Any]:
+    """Plan del once más, aparte, el trading desk con lo que sobra.
+
+    Los chollos de banquillo no entran en el solver del once: se recogen y los
+    reparte ``build_trading_desk`` con la caja sobrante y parte de la deuda.
+    """
+    trading: list[dict[str, Any]] = []
+    plan = _plan_once(**kwargs, trading_out=trading)
+    saldo = plan.get("saldo_al_final")
+    owned = kwargs.get("owned") or []
+    valor_equipo = sum(_valor_jugador(row) for row in owned if isinstance(row, dict))
+    plan["trading"] = build_trading_desk(
+        trading,
+        saldo_sobrante=saldo if isinstance(saldo, int) and not isinstance(saldo, bool) else None,
+        valor_equipo=valor_equipo,
+        dias_para_jornada=dias_al_cierre(kwargs.get("dias_para_jornada")),
+    )
+    return plan
+
+
+def _plan_once(
     *,
     cash: int | None,
     owned: list[dict[str, Any]],
@@ -545,6 +562,7 @@ def build_plan_fichajes(
     baseline_puntos: float,
     preparar_escaparate: bool = True,
     objetivos_previos: list[str] | set[str] | None = None,
+    trading_out: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Maximiza ``xP - peaje × drenaje neto``. No envía órdenes.
 
@@ -645,7 +663,19 @@ def build_plan_fichajes(
         )
         # Chollo de banquillo: no entra en el once. Sin dos días no da tiempo a revenderlo.
         especulativo = impulso == "CHOLLO" and mejora < MEJORA_MINIMA
-        if especulativo and not ventana:
+        if especulativo:
+            # Fuera del solver del once: lo reparte el trading desk.
+            if ventana and trading_out is not None:
+                trading_out.append(
+                    {
+                        "player_id": player_id,
+                        "nombre": _nombre(row),
+                        "origen": origen,
+                        "euros": euros,
+                        "valor": _valor_jugador(row) or euros,
+                        "pct": pct,
+                    }
+                )
             return
         ficha = {
             "row": row,
@@ -654,7 +684,6 @@ def build_plan_fichajes(
             "pct": pct,
             "impulso": impulso,
             "origen": origen,
-            "especulativo": especulativo,
         }
         if impulso == "HOLD":
             dias_txt = _dias_texto(dias or 0.0)
@@ -728,10 +757,7 @@ def build_plan_fichajes(
         alineado = pulp.LpVariable(f"{prefix}_{origen[0]}x{index}", cat=pulp.LpBinary)
         destino[row["player_id"]] = compra
         en_once[clave] = alineado
-        if ficha.get("especulativo"):
-            # Banquillo: se compra por el precio, no para alinearlo hoy.
-            modelo += alineado <= compra
-        elif ficha["impulso"] == "CHOLLO":
+        if ficha["impulso"] == "CHOLLO":
             modelo += alineado <= compra
         else:
             modelo += alineado == compra
@@ -805,8 +831,7 @@ def build_plan_fichajes(
 
     def _es_prioritario(clave: str) -> bool:
         ficha = ficha_compra[clave]
-        # El chollo de banquillo no autoriza a malvender a nadie para pagarlo.
-        return ficha["impulso"] in {"MUST-BUY", "CHOLLO"} and not ficha.get("especulativo")
+        return ficha["impulso"] in {"MUST-BUY", "CHOLLO"}
 
     gastos_prioritarios = pulp.lpSum(
         [
@@ -872,26 +897,6 @@ def build_plan_fichajes(
             problem += gastos_prioritarios >= (saldo + 1) - techo * (1 - need)
             problem += pulp.lpSum(vende[player_id] for player_id in vende_cond) <= len(vende_cond) * need
 
-    especulativos = [
-        *(puja[pid] * _euros_de(f"bid:{pid}") for pid in puja if ficha_compra[f"bid:{pid}"].get("especulativo")),
-        *(
-            clausula[pid] * _euros_de(f"clause:{pid}")
-            for pid in clausula
-            if ficha_compra[f"clause:{pid}"].get("especulativo")
-        ),
-    ]
-    if especulativos:
-        reserva = _reserva_para_el_once(
-            actual_ok=actual["ok"],
-            elegibles=elegibles,
-            fichas=ficha_compra,
-            permite_busca=permite_busca,
-            coste_busca=coste_busca,
-        )
-        holgura = max(0, saldo - reserva)
-        # El chollo de banquillo solo gasta la caja que sobra después de poder alinear 11.
-        problem += pulp.lpSum(especulativos) <= holgura
-
     # El once se elige por esta jornada y las tres siguientes: un fichaje con
     # buen calendario no pierde contra otro que solo rinde el próximo partido.
     # Busca no tiene calendario: cuenta como BUSCA_PUNTOS en cada jornada.
@@ -910,12 +915,12 @@ def build_plan_fichajes(
     bonus = pulp.lpSum(
         [
             *(
-                (BONUS_CHOLLO + max(ficha_compra[f"bid:{pid}"].get("pct") or 0.0, 0.0) * 1e-5) * variable
+                max(ficha_compra[f"bid:{pid}"].get("pct") or 0.0, 0.0) * 1e-5 * variable
                 for pid, variable in puja.items()
                 if ficha_compra[f"bid:{pid}"]["impulso"] == "CHOLLO"
             ),
             *(
-                (BONUS_CHOLLO + max(ficha_compra[f"clause:{pid}"].get("pct") or 0.0, 0.0) * 1e-5) * variable
+                max(ficha_compra[f"clause:{pid}"].get("pct") or 0.0, 0.0) * 1e-5 * variable
                 for pid, variable in clausula.items()
                 if ficha_compra[f"clause:{pid}"]["impulso"] == "CHOLLO"
             ),

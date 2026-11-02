@@ -160,6 +160,41 @@ function PlanBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
   );
 }
 
+function TradingBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
+  const trading = plan?.trading;
+  const operaciones = Array.isArray(trading?.operaciones) ? trading.operaciones : [];
+  if (!trading?.activo || !operaciones.length) return null;
+  return (
+    <Disclosure
+      title="Operaciones especulativas"
+      meta={<span style={{ color: TONE.green }}>{`+${compact(trading.ganancia_esperada)} esperados`}</span>}
+    >
+      <p className="text-[12.5px] text-white/50">
+        No tocan tu once. Compra hoy y vende el viernes por la mañana, antes del cierre.
+        {typeof trading.usa_deuda === "number" && trading.usa_deuda > 0
+          ? ` Usan ${compact(trading.usa_deuda)} de deuda: el viernes tienes que acabar en positivo.`
+          : ""}
+      </p>
+      <ul className="mt-2">
+        {operaciones.map((op, index) => (
+          <li key={`trading-${op.player_id || op.nombre}-${index}`} className="flex items-center gap-3 border-b border-white/[0.06] py-2.5 last:border-b-0">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14.5px] font-medium text-white">{op.nombre || "Jugador"}</span>
+              <span className="block truncate text-[12px] tabular-nums text-white/45">
+                {[typeof op.pct === "number" ? `+${decimal(op.pct)}% a 7 días` : "", op.cierre].filter(Boolean).join(" · ")}
+              </span>
+            </span>
+            <span className="shrink-0 text-right">
+              {typeof op.euros === "number" ? <span className="block text-[14.5px] font-semibold tabular-nums text-white">{money(op.euros)}</span> : null}
+              <span className="block text-[11px] font-semibold tabular-nums text-[#7FE0A8]">{`+${compact(op.ganancia_esperada)}`}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Disclosure>
+  );
+}
+
 function FixtureList({ clubs }: { clubs: JornadaClub[] }) {
   if (!clubs.length) return <p className="text-[13.5px] text-white/50">Estos fichajes no traen calendario contrastado.</p>;
   return (
@@ -289,6 +324,7 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
       </section>
 
       <PlanBlock plan={trends.plan_fichajes} />
+      <TradingBlock plan={trends.plan_fichajes} />
 
       <Disclosure title="Calendario de estos fichajes" meta={`${board.length} equipos`}>
         <FixtureList clubs={board} />
