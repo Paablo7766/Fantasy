@@ -692,8 +692,13 @@ def expected_opta_points(
     n_sims: int = 40,
     player: dict[str, Any] | None = None,
     p_cs_own: float | None = None,
+    monte_carlo: bool = True,
 ) -> dict[str, float | None]:
-    """E[Pts] OPTA v2 + techo Monte Carlo (P90) y P(gol)/P(asist)."""
+    """E[Pts] OPTA v2 + techo Monte Carlo (P90) y P(gol)/P(asist).
+
+    ``monte_carlo=False`` se salta el techo: para las jornadas siguientes solo
+    hace falta la media y la simulación es lo caro.
+    """
     from toolbox.opta_points_v2 import MC_SIMS_DEFAULT, compute_expected_opta_points_v2
 
     if p_titular is None and player_xg is None and player_xa is None:
@@ -725,7 +730,7 @@ def expected_opta_points(
         lambda_own=float(team_lambda) if team_lambda is not None else 1.32,
         lambda_opp=float(opp_lambda) if opp_lambda is not None else 1.32,
         p_cs_own=p_cs_own,
-        run_monte_carlo=True,
+        run_monte_carlo=monte_carlo,
         n_sims=n_sims if n_sims > 100 else MC_SIMS_DEFAULT,
     )
     return {
@@ -772,6 +777,21 @@ def snapshot_rows_from_players(
             }
         )
     return rows
+
+
+def _strength_for(
+    fixture: FixtureInfo,
+    strength_map: dict[str, TeamStrength],
+    unique_strengths: dict[int, TeamStrength],
+) -> TeamStrength | None:
+    """Fuerza del rival de ``fixture``: por id de Understat y, si no, por nombre."""
+    if fixture.opponent_id:
+        for strength in unique_strengths.values():
+            if strength.team_id == fixture.opponent_id:
+                return strength
+    if fixture.opponent:
+        return strength_map.get(normalize_club(fixture.opponent)) or strength_map.get(normalize_name(fixture.opponent))
+    return None
 
 
 def apply_own_intel(
@@ -831,6 +851,29 @@ def apply_own_intel(
             away_rolling=away_roll,
         )
 
+    # J2-J4 con el mismo Poisson, sin cuotas: las casas aún no las publican y
+    # la forma (rolling) es la de hoy. Es la proyección que antes se pedía a
+    # AnalíticaFantasy, que solo trae una o dos jornadas.
+    siguientes_by_club: dict[str, list[tuple[FixtureInfo, dict[str, Any]]]] = {}
+    for club_key, fixture in fixtures.items():
+        team = strength_map.get(club_key)
+        for offset, later in enumerate(fixture.siguientes, start=1):
+            opp = _strength_for(later, strength_map, unique_strengths)
+            home_key = club_key if later.home else normalize_club(later.opponent)
+            away_key = normalize_club(later.opponent) if later.home else club_key
+            cell = build_team_calendar_cell(
+                team_name=team.title if team else club_key,
+                fixture=later,
+                team=team,
+                opponent=opp,
+                league_avg_xg=league_avg_xg,
+                matchday=offset,
+                hours_to_kickoff=hours_until_kickoff(later.kickoff, now=now),
+                home_rolling=resolve_rolling_window(team if later.home else opp, team_rolling, home_key),
+                away_rolling=resolve_rolling_window(opp if later.home else team, team_rolling, away_key),
+            )
+            siguientes_by_club.setdefault(club_key, []).append((later, cell))
+
     # Primera pasada: pts esperados para media de jornada (ajuste de puja).
     prelim_points: dict[str, float] = {}
     for player in players:
@@ -861,6 +904,28 @@ def apply_own_intel(
         if pts["expected_points"] is not None:
             prelim_points[pid] = float(pts["expected_points"])
             player["_own_pts_cache"] = pts
+            # xP en cada partido siguiente, con su rival y su campo. Sin Monte
+            # Carlo: solo hace falta la media, no el techo.
+            futuros: list[float] = []
+            for later, later_cell in siguientes_by_club.get(club_key, []):
+                later_pts = expected_opta_points(
+                    position=player.get("position") if isinstance(player.get("position"), str) else None,
+                    p_titular=apply_doubt_titular_discount(_as_float(player.get("p_titular")), player, None),
+                    player_xg=_as_float(form.get("xg")),
+                    player_xa=_as_float(form.get("xa")),
+                    team_lambda=_as_float(later_cell.get("lambda_for")),
+                    opp_lambda=_as_float(later_cell.get("lambda_against")),
+                    team_avg_xg=team.avg_xg if team else league_avg_xg,
+                    home=bool(later.home),
+                    fdr=later.fdr,
+                    player=player,
+                    p_cs_own=_as_float(later_cell.get("p_cs_for")),
+                    monte_carlo=False,
+                )
+                if later_pts["expected_points"] is None:
+                    break
+                futuros.append(round(float(later_pts["expected_points"]), 3))
+            player["_own_xp_siguientes"] = futuros
 
     jornada_avg = _mean(list(prelim_points.values()))
 
@@ -917,23 +982,30 @@ def apply_own_intel(
         _apply_kinematics_to_player(player, kin)
         kinematics_count += 1
 
-        # Calendario
+        # Calendario: la próxima jornada y las siguientes del Poisson propio.
         if cell is not None:
+            celdas = [cell, *(later_cell for _later, later_cell in siguientes_by_club.get(club_key, []))]
             player["own_calendar"] = [
                 {
-                    "matchday": cell.get("matchday") or 0,
-                    "opponent": cell.get("opponent"),
-                    "is_home": cell.get("is_home"),
-                    "predicted_score": cell.get("predicted_score"),
-                    "recommendation_pct": cell.get("recommendation_pct"),
-                    "difficulty": cell.get("difficulty"),
-                    "lambda_for": cell.get("lambda_for"),
-                    "lambda_against": cell.get("lambda_against"),
-                    "p_cs_for": cell.get("p_cs_for"),
+                    "matchday": celda.get("matchday") or 0,
+                    "opponent": celda.get("opponent"),
+                    "is_home": celda.get("is_home"),
+                    "predicted_score": celda.get("predicted_score"),
+                    "recommendation_pct": celda.get("recommendation_pct"),
+                    "difficulty": celda.get("difficulty"),
+                    "lambda_for": celda.get("lambda_for"),
+                    "lambda_against": celda.get("lambda_against"),
+                    "p_cs_for": celda.get("p_cs_for"),
+                    "kickoff": celda.get("kickoff"),
                 }
+                for celda in celdas
             ]
             player["own_recommendation_pct"] = cell.get("recommendation_pct")
             calendar_count += 1
+        futuros = player.pop("_own_xp_siguientes", None)
+        if isinstance(futuros, list) and futuros:
+            # xP de J2, J3 y J4 en este orden. La próxima está en own_expected_points.
+            player["own_xp_siguientes"] = futuros
 
         # Puntos
         pts = player.pop("_own_pts_cache", None)

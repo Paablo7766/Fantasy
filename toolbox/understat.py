@@ -10,7 +10,7 @@ import json
 import math
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -53,6 +53,8 @@ class TeamRollingWindow:
 
 
 ROLLING_MATCH_WINDOW = 5
+# Partidos por club que se proyectan: la próxima jornada y las tres siguientes.
+FIXTURES_AHEAD = 4
 
 
 @dataclass
@@ -64,6 +66,10 @@ class FixtureInfo:
     fdr: int
     opponent_xga: float | None
     opponent_xg: float | None
+    # Los partidos que vienen después de este, en orden. Solo el próximo de
+    # cada club los lleva; con ellos el modelo propio proyecta J2-J4 sin
+    # depender del calendario de AnalíticaFantasy.
+    siguientes: tuple["FixtureInfo", ...] = ()
 
 
 def understat_season() -> str:
@@ -360,7 +366,11 @@ def next_fixtures(
     *,
     now: datetime | None = None,
 ) -> dict[str, FixtureInfo]:
-    """Próximo partido por club normalizado, con FDR según xGA del rival."""
+    """Próximo partido por club normalizado, con FDR según xGA del rival.
+
+    Cada uno lleva en ``siguientes`` los ``FIXTURES_AHEAD - 1`` partidos
+    posteriores del mismo club.
+    """
     moment = now or datetime.now(timezone.utc)
     league_vals = [item.avg_xga for item in {id(v): v for v in strengths.values()}.values()]
     league_avg = sum(league_vals) / len(league_vals) if league_vals else 1.0
@@ -376,7 +386,7 @@ def next_fixtures(
         upcoming.append((kickoff, row))
     upcoming.sort(key=lambda item: item[0])
 
-    fixtures: dict[str, FixtureInfo] = {}
+    fixtures: dict[str, list[FixtureInfo]] = {}
     for kickoff, row in upcoming:
         home = row.get("h") if isinstance(row.get("h"), dict) else {}
         away = row.get("a") if isinstance(row.get("a"), dict) else {}
@@ -385,7 +395,7 @@ def next_fixtures(
             if not title:
                 continue
             key = normalize_club(title)
-            if key in fixtures:
+            if len(fixtures.get(key, [])) >= FIXTURES_AHEAD:
                 continue
             rival_title = rival.get("title") if isinstance(rival.get("title"), str) else None
             rival_id = str(rival["id"]) if rival.get("id") is not None else None
@@ -397,16 +407,21 @@ def next_fixtures(
             opponent_xga = strength.avg_xga if strength else None
             opponent_xg = strength.avg_xg if strength else None
             fdr = fdr_from_opponent_xga(opponent_xga, league_avg) if opponent_xga is not None else 3
-            fixtures[key] = FixtureInfo(
-                opponent=rival_title or "?",
-                opponent_id=rival_id,
-                home=is_home,
-                kickoff=kickoff.astimezone(timezone.utc).isoformat(),
-                fdr=fdr,
-                opponent_xga=round(opponent_xga, 4) if opponent_xga is not None else None,
-                opponent_xg=round(opponent_xg, 4) if opponent_xg is not None else None,
+            fixtures.setdefault(key, []).append(
+                FixtureInfo(
+                    opponent=rival_title or "?",
+                    opponent_id=rival_id,
+                    home=is_home,
+                    kickoff=kickoff.astimezone(timezone.utc).isoformat(),
+                    fdr=fdr,
+                    opponent_xga=round(opponent_xga, 4) if opponent_xga is not None else None,
+                    opponent_xg=round(opponent_xg, 4) if opponent_xg is not None else None,
+                )
             )
-    return fixtures
+    return {
+        key: replace(proximos[0], siguientes=tuple(proximos[1:]))
+        for key, proximos in fixtures.items()
+    }
 
 
 def load_understat(

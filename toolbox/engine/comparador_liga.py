@@ -119,6 +119,9 @@ def calendario_combinado(jugador: dict[str, Any]) -> list[Any]:
     if isinstance(raw, list) and raw:
         return raw[:4]
     own = [cell for cell in jugador.get("own_calendar") or [] if isinstance(cell, dict)]
+    # El Poisson propio ya proyecta las cuatro jornadas: AF solo rellena si no.
+    if len(own) >= 2:
+        return sorted(own, key=lambda cell: _matchday(cell) or 0)[:4]
     af = [cell for cell in jugador.get("af_calendar") or [] if isinstance(cell, dict)]
     proxima = next((cell for cell in own if (_matchday(cell) or 0) == 0), None)
     siguientes = sorted(
@@ -142,15 +145,30 @@ def _xp_j1(jugador: dict[str, Any]) -> float | None:
     return None
 
 
+def _xp_propios_siguientes(jugador: dict[str, Any]) -> list[float]:
+    """xP de J2-J4 del modelo propio, calculado partido a partido."""
+    raw = jugador.get("own_xp_siguientes")
+    if not isinstance(raw, list):
+        return []
+    return [float(value) for value in raw[:3] if isinstance(value, (int, float)) and not isinstance(value, bool)]
+
+
 def xp_4_jornadas(jugador: dict[str, Any]) -> float | None:
     """Puntos esperados por jornada en las próximas 4, ponderados por rival.
 
-    El partido inmediato conserva ``xp_j1``. Cada uno de los tres siguientes
-    se escala por su dificultad respecto a la del primero.
+    Con ``own_xp_siguientes`` es la media del xP propio de cada partido. Sin
+    él, el partido inmediato conserva ``xp_j1`` y cada uno de los tres
+    siguientes se escala por su dificultad respecto a la del primero.
     """
     base = _xp_j1(jugador)
     if base is None:
         return None
+    propios = _xp_propios_siguientes(jugador)
+    if propios:
+        serie = [base, *propios]
+        while len(serie) < 4:
+            serie.append(serie[-1])
+        return sum(serie[:4]) / 4
     fechas = _calendario(jugador)
     if len(fechas) < 2:
         return base
@@ -175,8 +193,15 @@ def xp_jornadas_siguientes(jugador: dict[str, Any]) -> float | None:
     al menos dos partidos no hay nada que proyectar y devuelve ``None``.
     """
     base = _xp_j1(jugador)
+    if base is None:
+        return None
+    propios = _xp_propios_siguientes(jugador)
+    if propios:
+        while len(propios) < 3:
+            propios.append(propios[-1])
+        return sum(propios[:3])
     fechas = _calendario(jugador)
-    if base is None or len(fechas) < 2:
+    if len(fechas) < 2:
         return None
     factores = [
         _factor((fecha.get("difficulty") or fecha.get("dificultad")) if isinstance(fecha, dict) else fecha)

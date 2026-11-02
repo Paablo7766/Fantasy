@@ -276,14 +276,26 @@ def _set_calendar(row: dict[str, Any], source: dict[str, Any]) -> None:
 
 
 def _futuro(row: dict[str, Any]) -> float:
-    """xP de las tres jornadas siguientes a la próxima, o 0 sin calendario."""
+    """xP de las tres jornadas siguientes a la próxima, o 0 sin calendario.
+
+    Usa el xP propio de cada partido si lo hay; si no, reescala el de la
+    próxima por la dificultad del calendario.
+    """
     # comparador_liga importa de este módulo: el import va aquí para no cerrar el ciclo.
     from toolbox.engine.comparador_liga import xp_jornadas_siguientes
 
     jornada = row.get("jornada")
-    if not isinstance(jornada, (int, float)) or isinstance(jornada, bool) or not row.get("calendario"):
+    if not isinstance(jornada, (int, float)) or isinstance(jornada, bool):
         return 0.0
-    valor = xp_jornadas_siguientes({"jornada": float(jornada), "calendario": row["calendario"]})
+    if not row.get("calendario") and not row.get("xp_siguientes"):
+        return 0.0
+    valor = xp_jornadas_siguientes(
+        {
+            "jornada": float(jornada),
+            "calendario": row.get("calendario") or [],
+            "own_xp_siguientes": row.get("xp_siguientes"),
+        }
+    )
     return round(float(valor), 3) if valor is not None else 0.0
 
 
@@ -372,6 +384,8 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
         _set_price(row, player)
         _set_difficulty(row, player)
         _set_calendar(row, player)
+        if isinstance(player.get("own_xp_siguientes"), list) and not row.get("xp_siguientes"):
+            row["xp_siguientes"] = player["own_xp_siguientes"]
         if exclusion_from_status(player.get("player_status") if isinstance(player.get("player_status"), str) else None):
             row["excluded"] = True
 
