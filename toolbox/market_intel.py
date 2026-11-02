@@ -956,6 +956,7 @@ def _decide_listing(
         "financial_max_bid_eur": econ.get("financial_max_bid_eur") if isinstance(econ.get("financial_max_bid_eur"), int) else None,
         "smart_bid_eur": econ.get("smart_bid_eur") if isinstance(econ.get("smart_bid_eur"), int) else None,
         "smart_bid_success_pct": econ.get("smart_bid_success_pct") if isinstance(econ.get("smart_bid_success_pct"), int) else None,
+        "smart_bid_rule_pct": econ.get("smart_bid_rule_pct") if isinstance(econ.get("smart_bid_rule_pct"), int) else None,
         "smart_bid_analysis": econ.get("smart_bid_analysis") if isinstance(econ.get("smart_bid_analysis"), str) else None,
         "smart_bid_rivals": [name for name in (econ.get("smart_bid_rivals") or []) if isinstance(name, str) and name],
         "win_probability": econ.get("win_probability"),

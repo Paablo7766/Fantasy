@@ -105,7 +105,7 @@ class PlanRefreshOpensTheGateTests(unittest.TestCase):
     def test_the_download_runs_inside_the_production_window(self) -> None:
         seen: list[str] = []
 
-        def spy(league, *, tier="full", track_status=True):
+        def spy(league, *, tier="full", track_status=True, force_rivals=False):
             seen.append(net.environment())
             return self.board
 

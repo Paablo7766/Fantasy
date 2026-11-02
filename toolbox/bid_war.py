@@ -848,7 +848,18 @@ def plan_market_auction_bid(
     caps["app_bid_eur"] = smart["puja_base_app"]
     caps["financial_max_bid_eur"] = smart["puja_maxima"]
     caps["smart_bid_eur"] = smart["puja_smart"]
+    # La regla de calcular_puja_optima da porcentajes fijos (0/20/40/95/99).
+    # La tarjeta enseña la puja smart con su probabilidad: con perfiles de
+    # rivales se mide esa misma puja con el modelo de P(ganar), el que se
+    # calibra en el Laboratorio. La regla queda como referencia.
+    caps["smart_bid_rule_pct"] = smart["probabilidad_exito"]
     caps["smart_bid_success_pct"] = smart["probabilidad_exito"]
+    smart_bid = smart.get("puja_smart")
+    if profiles and isinstance(smart_bid, int) and smart_bid > 0:
+        min_legal = max(sale_price, lead + 1.0 if lead > 0 else sale_price)
+        caps["smart_bid_success_pct"] = int(
+            round(100.0 * probability_of_winning_bid(float(smart_bid), max(mv, sale_price), min_legal, pos, pts, profiles))
+        )
     caps["smart_bid_analysis"] = smart["analisis"]
     caps["smart_bid_rivals"] = smart["rivales_peligrosos"]
 

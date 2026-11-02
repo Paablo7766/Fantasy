@@ -148,7 +148,7 @@ class RefreshStatusTests(unittest.TestCase):
     def test_refresh_board_marks_the_pass_finished(self) -> None:
         """El latido lo enciende y lo apaga ``refresh_board``, no el endpoint."""
 
-        def fake_load(league: str | None, fresh: bool) -> dict:
+        def fake_load(league: str | None, fresh: bool, **_: object) -> dict:
             # Dentro de la descarga el latido ya está en marcha.
             live = server.refresh_status_snapshot()
             self.assertTrue(live["running"])
@@ -175,11 +175,11 @@ class RefreshStatusTests(unittest.TestCase):
         """Sin ``track_status=False`` el panel vería «terminado» entre las dos fotos."""
         seen: list[bool] = []
 
-        def fake_core(league: str | None, fresh: bool) -> dict:
+        def fake_core(league: str | None, fresh: bool, **_: object) -> dict:
             seen.append(server.refresh_status_snapshot()["running"])
             return {"dashboard_at": "2026-10-25T08:00:00+00:00", "market": {}, "squads": {}}
 
-        def fake_full(league: str | None, *, tier: str = "full", track_status: bool = True) -> dict:
+        def fake_full(league: str | None, *, tier: str = "full", track_status: bool = True, **_: object) -> dict:
             seen.append(server.refresh_status_snapshot()["running"])
             return {"dashboard_at": "2026-10-25T08:05:00+00:00", "market": {}, "squads": {}, "trends": {}}
 

@@ -189,7 +189,9 @@ class RemoteRefreshBackgroundTests(_RemoteBase):
         with patch.object(server, "refresh_board", return_value=self.board):
             response = self.client.post(
                 "/api/remote/refresh",
-                json={"target_minutes": 5},
+                # 1 min frente a ~150 s de una pasada completa a cadencia de
+                # fábrica: un presupuesto más corto que la pasada no la acelera.
+                json={"target_minutes": 1},
                 headers={"X-Remote-Token": TOKEN},
             )
             self.assertEqual(response.status_code, 202)

@@ -854,8 +854,8 @@ class DashboardApiTests(unittest.TestCase):
         fresh_board["trends"]["players"] = [
             {"player_id": f"p{index}", "nickname": f"J{index}"} for index in range(20)
         ]
-        self.core_loader.side_effect = lambda league, fresh: fresh_board if fresh else old
-        self.loader.side_effect = lambda league, fresh: fresh_board if fresh else old
+        self.core_loader.side_effect = lambda league, fresh, **_: fresh_board if fresh else old
+        self.loader.side_effect = lambda league, fresh, **_: fresh_board if fresh else old
 
         payload = self.client.post("/api/plan/refresh").json()
 
@@ -871,7 +871,7 @@ class DashboardApiTests(unittest.TestCase):
     def test_refresh_reports_core_photo_when_full_fails(self) -> None:
         fresh_core = fixture()
         fresh_core["dashboard_at"] = "2026-10-24T16:00:00+00:00"
-        self.core_loader.side_effect = lambda league, fresh: fresh_core
+        self.core_loader.side_effect = lambda league, fresh, **_: fresh_core
         self.loader.side_effect = RuntimeError("scrapers caídos")
 
         payload = self.client.post("/api/plan/refresh").json()
@@ -885,7 +885,7 @@ class DashboardApiTests(unittest.TestCase):
     def test_parallel_loads_read_the_same_photo_without_network(self) -> None:
         calls = {"n": 0}
 
-        def slow(league: str | None, fresh: bool) -> dict:
+        def slow(league: str | None, fresh: bool, **_: object) -> dict:
             calls["n"] += 1
             return fixture()
 
@@ -999,7 +999,7 @@ class DashboardApiTests(unittest.TestCase):
         release = threading.Event()
         started = threading.Event()
 
-        def slow(league: str | None, fresh: bool) -> dict:
+        def slow(league: str | None, fresh: bool, **_: object) -> dict:
             started.set()
             release.wait(3)
             return fixture()

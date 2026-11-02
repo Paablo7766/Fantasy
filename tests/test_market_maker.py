@@ -186,7 +186,8 @@ class EvaluateOfferTests(_LogFixture):
         debajo, esperar solo puede empeorar y se liquida ahora.
         """
         trend = -800_000
-        offer = VALUE + trend * (1.0 + MIN_OFFER_PCT) * 0.95
+        # Un 5 % por debajo del suelo de mañana: (valor + tendencia) · (1 + MIN_OFFER_PCT).
+        offer = (VALUE + trend) * (1.0 + MIN_OFFER_PCT) * 0.95
         result = self.mm.evaluate_offer(offer, VALUE, trend, mean_pct=0.08)
         self.assertEqual(result["recommendation"], "LIQUIDATE_NOW")
         self.assertEqual(result["reason"], "escenario_limite")
@@ -203,14 +204,16 @@ class EvaluateOfferTests(_LogFixture):
 
     def test_liquidation_window_does_not_need_the_historical_mean(self) -> None:
         trend = -900_000
-        offer = VALUE + trend * (1.0 + MIN_OFFER_PCT) * 0.95
+        offer = (VALUE + trend) * (1.0 + MIN_OFFER_PCT) * 0.95
         result = self.mm.evaluate_offer(offer, VALUE, trend, mean_pct=0.0)
         self.assertEqual(result["recommendation"], "LIQUIDATE_NOW")
         self.assertEqual(result["reason"], "escenario_limite")
 
     def test_hold_when_tomorrow_floor_still_beats_today(self) -> None:
         trend = -900_000
-        offer = VALUE - 500_000
+        # Entre el suelo de mañana (8,19 M) y el valor de mañana (9,1 M): ni
+        # liquidar ni vender, porque mañana se espera más de lo que dan hoy.
+        offer = VALUE - 1_000_000
         result = self.mm.evaluate_offer(offer, VALUE, trend, mean_pct=0.0)
         self.assertEqual(result["recommendation"], "HOLD")
         self.assertEqual(result["reason"], "esperar_oferta_mejor")
