@@ -17,7 +17,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 from toolbox.analyzer import (
+    FORMATIONS,
     POSITIONS,
+    XI_SIZE,
     CatalogClient,
     ObjectiveWeights,
     candidates_from_squad,
@@ -38,10 +40,20 @@ from toolbox.analyzer import (
 )
 from toolbox.cache import CashLedgerStore, ResponseCache
 from toolbox.normalize import SCHEMA_VERSION, display_zone
+from toolbox.rival_intel import ROJO_SEGURO, estado_rojo
 
 SNIPE_LEAD_SECONDS = 8
 DIRECT_RIVAL_RANK_WINDOW = 3
 MIN_HEADCOUNT = {"POR": 1, "DEF": 3, "MC": 3, "DEL": 1}
+#: Urgencia por posición. ``hueco``: sin un fichaje ahí no forma 11 y la
+#: jornada vale 0. ``justo``: forma 11, pero una baja más en esa línea lo deja
+#: sin once. La escala es la de ``urgency_level`` del modelo de pujas.
+URGENCIA_HUECO = "hueco"
+URGENCIA_JUSTO = "justo"
+NIVEL_URGENCIA = {URGENCIA_HUECO: 2.0, URGENCIA_JUSTO: 1.0}
+#: Una compra solo se fecha con la plantilla de hoy si es así de reciente:
+#: más atrás, la plantilla actual ya no es la que tenía al pujar.
+URGENCIA_VENTANA_HORAS = 36.0
 LEDGER_TTL_SECONDS = 300.0
 _WEIGHTS = ObjectiveWeights()
 _MONEY_KEYS = (
@@ -368,8 +380,25 @@ def needs_from_documents(
     ledgers = books["ledgers"] if isinstance(books, dict) else []
     history = books["history"] if isinstance(books, dict) and isinstance(books.get("history"), dict) else {}
     league_id = squads.get("league_id") if isinstance(squads.get("league_id"), str) else None
-    if cache is not None and league_id:
-        CashLedgerStore(root=cache.root, client=cache.client).replace_league(league_id, ledgers)
+    store = CashLedgerStore(root=cache.root, client=cache.client) if cache is not None and league_id else None
+    anotar_urgencia_compras(
+        ledgers,
+        [squad for squad in roster if isinstance(squad, dict)],
+        index_trends(trends),
+        now=now or datetime.now(timezone.utc),
+        previos=store.list_ledgers(league_id) if store is not None else None,
+    )
+    if isinstance(history.get("activity_buys"), list):
+        from toolbox.league_history import urgencias_de_libros
+
+        urgencias = urgencias_de_libros(ledgers)
+        for buy in history["activity_buys"]:
+            if isinstance(buy, dict):
+                buy["positional_urgency"] = urgencias.get(
+                    (buy.get("team_id"), buy.get("player_id"), buy.get("amount_eur"), buy.get("at"))
+                )
+    if store is not None and league_id:
+        store.replace_league(league_id, ledgers)
     rivals = sabotage_alerts(squads, market, trends, ledgers, now=now)
     scheduled = [
         alert
@@ -659,6 +688,126 @@ def _speculative(trend: dict[str, Any]) -> tuple[bool, str | None]:
     return False, "sin_aceleracion"
 
 
+def _max_colocados(depth: dict[str, int]) -> int:
+    """Jugadores que entran en la mejor formación con esta plantilla."""
+    return max(
+        sum(min(slots[position], max(0, depth.get(position, 0))) for position in POSITIONS)
+        for slots in FORMATIONS.values()
+    )
+
+
+def urgencia_posicional(depth: dict[str, int]) -> dict[str, str]:
+    """``{posición: hueco|justo}`` con los sanos de cada línea.
+
+    Hueco: el once no llega a 11 y un jugador más en esa línea coloca a uno
+    más. Justo: el once llega a 11, pero perder a uno de esa línea lo rompe.
+    Las demás posiciones no aparecen.
+    """
+    best = _max_colocados(depth)
+    found: dict[str, str] = {}
+    if best < XI_SIZE:
+        for position in POSITIONS:
+            if _max_colocados({**depth, position: depth.get(position, 0) + 1}) > best:
+                found[position] = URGENCIA_HUECO
+    for position in POSITIONS:
+        if position in found or depth.get(position, 0) <= 0:
+            continue
+        if _max_colocados({**depth, position: depth[position] - 1}) < best:
+            found[position] = URGENCIA_JUSTO
+    return found
+
+
+def nivel_urgencia(urgencia: dict[str, str] | None, position: str | None) -> float:
+    """2 hueco, 1 justo, 0 sin urgencia: la ``positional_urgency`` de una compra."""
+    if not isinstance(urgencia, dict) or not isinstance(position, str):
+        return 0.0
+    return NIVEL_URGENCIA.get(urgencia.get(position, ""), 0.0)
+
+
+def _depth(roster: list[Any], *, skip_ids: set[str] | None = None) -> dict[str, int]:
+    available = {position: 0 for position in POSITIONS}
+    for candidate in roster:
+        if skip_ids and candidate.player_id in skip_ids:
+            continue
+        if candidate.eligible and candidate.position in available:
+            available[candidate.position] += 1
+    return available
+
+
+def _parse_at(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        moment = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def _buy_key(team_id: Any, event: dict[str, Any]) -> tuple[Any, ...]:
+    return (team_id, event.get("player_id"), event.get("amount_eur"), event.get("at"))
+
+
+def anotar_urgencia_compras(
+    ledgers: list[dict[str, Any]],
+    squads: list[dict[str, Any]],
+    trends: dict[str, dict[str, Any]],
+    *,
+    now: datetime,
+    previos: list[dict[str, Any]] | None = None,
+) -> int:
+    """Pone ``positional_urgency`` en las compras de los libros. Devuelve cuántas fecha hoy.
+
+    Solo fecha las compras de las últimas ``URGENCIA_VENTANA_HORAS``: la
+    plantilla de hoy, sin ese jugador ni lo comprado después, es la que tenía
+    el rival al pujar. Las anteriores conservan lo que traían los libros
+    guardados (``previos``) o se quedan sin dato: no se reconstruye una
+    plantilla de hace una semana con la de hoy.
+    """
+    guardado: dict[tuple[Any, ...], float] = {}
+    for ledger in previos or []:
+        if not isinstance(ledger, dict):
+            continue
+        for event in ledger.get("events") or []:
+            if not isinstance(event, dict) or event.get("kind") != "buy":
+                continue
+            value = event.get("positional_urgency")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                guardado[_buy_key(ledger.get("team_id"), event)] = float(value)
+    squad_by_id = {str(squad.get("team_id")): squad for squad in squads if isinstance(squad, dict)}
+    fechadas = 0
+    for ledger in ledgers:
+        if not isinstance(ledger, dict):
+            continue
+        team_id = ledger.get("team_id")
+        events = [event for event in ledger.get("events") or [] if isinstance(event, dict)]
+        squad = squad_by_id.get(str(team_id))
+        roster = candidates_from_squad(squad, trends) if isinstance(squad, dict) else []
+        by_id = {candidate.player_id: candidate for candidate in roster}
+        for event in events:
+            if event.get("kind") != "buy":
+                continue
+            moment = _parse_at(event.get("at"))
+            bought = by_id.get(event.get("player_id"))
+            recent = moment is not None and timedelta(0) <= now - moment <= timedelta(hours=URGENCIA_VENTANA_HORAS)
+            if recent and bought is not None:
+                after = {
+                    other.get("player_id")
+                    for other in events
+                    if other.get("kind") == "buy"
+                    and isinstance(other.get("player_id"), str)
+                    and (_parse_at(other.get("at")) or moment) >= moment
+                }
+                urgencia = urgencia_posicional(_depth(roster, skip_ids=after))
+                event["positional_urgency"] = nivel_urgencia(urgencia, bought.position)
+                fechadas += 1
+                continue
+            stored = guardado.get(_buy_key(team_id, event))
+            if stored is not None:
+                event["positional_urgency"] = stored
+    return fechadas
+
+
 def _rival_risk(
     squad: dict[str, Any],
     *,
@@ -669,10 +818,7 @@ def _rival_risk(
     now: datetime,
 ) -> dict[str, Any]:
     roster = candidates_from_squad(squad, trends)
-    available = {position: 0 for position in POSITIONS}
-    for candidate in roster:
-        if candidate.eligible and candidate.position in available:
-            available[candidate.position] += 1
+    available = _depth(roster)
     observed = squad.get("cash") if isinstance(squad.get("cash"), int) else None
     reconstructed = (
         ledger.get("reconstructed_cash_eur")
@@ -680,8 +826,14 @@ def _rival_risk(
         else None
     )
     cash = observed if observed is not None else reconstructed
+    ceiling = observed is None and isinstance(ledger, dict) and ledger.get("cash_is_ceiling") is True
+    # Caja observada o cota alta del libro bajo cero: rojo seguro. Un libro
+    # sin cota solo dice que probablemente lo está.
+    rojo = estado_rojo(cash if observed is not None or ceiling else None, cash)
     direct = _direct(own.get("rank"), squad.get("rank"))
-    thin = [position for position in POSITIONS if available[position] <= MIN_HEADCOUNT[position]]
+    urgencia = urgencia_posicional(available)
+    thin = [position for position in POSITIONS if position in urgencia]
+    gaps = [position for position in POSITIONS if urgencia.get(position) == URGENCIA_HUECO]
     alerts: list[dict[str, Any]] = []
     if direct is True:
         for position in thin:
@@ -705,14 +857,18 @@ def _rival_risk(
         "rank": squad.get("rank") if isinstance(squad.get("rank"), int) else None,
         "direct": direct,
         "cash_eur": cash,
-        "cash_is_ceiling": bool(observed is None and isinstance(ledger, dict) and ledger.get("cash_is_ceiling") is True),
+        "cash_is_ceiling": bool(ceiling),
+        "en_rojo": rojo,
+        "en_rojo_seguro": rojo == ROJO_SEGURO,
+        # En rojo no puja: hacerlo le hunde más y saca 0 si no vende antes del saque.
+        "bid_limit_eur": 0 if rojo else cash,
         "ledger": ledger,
         "depth": available,
         "minimum": dict(MIN_HEADCOUNT),
+        "urgencia": urgencia,
         "thin_positions": thin,
-        "lacks_replacements": any(
-            available[position] <= MIN_HEADCOUNT[position] and not _affordable(listings, position, cash) for position in thin
-        ),
+        "xi_gaps": gaps,
+        "lacks_replacements": any(not _affordable(listings, position, cash) for position in thin),
         "lacks_liquidity": lacks_liquidity,
         "clause_alerts": alerts,
     }

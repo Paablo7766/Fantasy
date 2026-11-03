@@ -16,7 +16,7 @@ import pulp
 from toolbox.analyzer import FORMATIONS, POSITIONS, XI_SIZE
 from toolbox.engine.auction_intel import nota_y_veredicto
 from toolbox.engine.lineup_math import solve_best_xi
-from toolbox.engine.trading_desk import build_trading_desk
+from toolbox.engine.trading_desk import DEUDA_PCT_EQUIPO, build_trading_desk
 
 # Un suplente buscado a ciegas rinde como un titular medio de esa posición.
 BUSCA_PUNTOS = 4.7
@@ -226,17 +226,32 @@ def _futuro(row: dict[str, Any]) -> float:
     return float(value)
 
 
-def _valor_horizonte(row: dict[str, Any]) -> float:
+def _futuro_efectivo(row: dict[str, Any]) -> float:
+    """xP sumado de J2-J4. Sin calendario, la próxima jornada repetida tres veces."""
+    futuro = _futuro(row)
+    if futuro > 0:
+        return futuro
+    return 3.0 * float(row.get("jornada") or 0.0)
+
+
+def _horizonte(puntos_j1: float, puntos_futuro: float) -> float:
     """Media ponderada por jornada: la próxima pesa 1 y cada una de las tres siguientes, PESO_FUTURO.
 
     Queda en puntos de una jornada, la escala en la que están el peaje, la
-    prima de continuidad y el umbral. Sin calendario es la jornada sin más.
+    prima de continuidad y el umbral.
     """
-    jornada = float(row.get("jornada") or 0.0)
-    futuro = _futuro(row)
-    if futuro <= 0:
-        return jornada
-    return (jornada + PESO_FUTURO * futuro) / (1.0 + 3.0 * PESO_FUTURO)
+    return (puntos_j1 + PESO_FUTURO * puntos_futuro) / (1.0 + 3.0 * PESO_FUTURO)
+
+
+def _mejor_once_futuro(plantilla: list[dict[str, Any]]) -> float:
+    """Puntos de J2-J4 del mejor once que sale de la plantilla, sin mirar quién juega la próxima."""
+    filas = [
+        {**row, "jornada": _futuro_efectivo(row)}
+        for row in plantilla
+        if row.get("position") in POSITIONS
+    ]
+    once = solve_best_xi(filas)
+    return float(once["puntos"]) if once["ok"] else 0.0
 
 
 def _leer_pct(row: dict[str, Any]) -> float | None:
@@ -320,7 +335,12 @@ def _prob_titular(row: dict[str, Any]) -> float | None:
 
 
 def _es_baja(row: dict[str, Any]) -> bool:
-    """Lesionado o sancionado: no cuenta como titular sano y hay que reemplazarlo."""
+    """Lesionado o sancionado: no cuenta como titular sano y hay que reemplazarlo.
+
+    Una sanción que solo cubre la próxima jornada no es baja: vuelve en J2.
+    """
+    if row.get("sancion_temporal") is True:
+        return False
     prob = _prob_titular(row)
     return prob is not None and prob < UMBRAL_BAJA
 
@@ -408,20 +428,21 @@ def _detalle_venta_directa(
 def _emparejar_ventas(
     ventas: list[dict[str, Any]],
     pujas: list[dict[str, Any]],
+    asignacion: dict[str, str],
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """Cada venta condicional se ata a la puja que la pagaría, a ser posible del mismo puesto."""
-    libres = list(pujas)
-    pares: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    for venta in ventas:
-        mismo = next((puja for puja in libres if puja.get("position") == venta.get("position")), None)
-        if mismo is None and libres:
-            mismo = libres[0]
-        if mismo is None:
-            mismo = pujas[0]
-        else:
-            libres.remove(mismo)
-        pares.append((venta, mismo))
-    return pares
+    """Cada venta condicional con la puja que la dispara.
+
+    El reparto sale del solver (``asignacion``: venta → puja) y no del puesto.
+    Cada puja queda cubierta por su parte de la caja de hoy más las ventas que
+    se le atan, así que cualquier combinación de pujas ganadas deja el saldo
+    en cero o por encima.
+    """
+    por_id = {row["player_id"]: row for row in pujas}
+    return [
+        (venta, por_id[asignacion[venta["player_id"]]])
+        for venta in ventas
+        if asignacion.get(venta["player_id"]) in por_id
+    ]
 
 
 def _partir_ventas(
@@ -429,68 +450,36 @@ def _partir_ventas(
     saldo: int,
     ventas: list[dict[str, Any]],
     pujas: list[dict[str, Any]],
+    asignacion: dict[str, str],
     clausulas_hechas: list[dict[str, Any]],
-    plantilla: list[dict[str, Any]],
-    xi_ids: set[str],
-    bajas: set[str],
 ) -> tuple[list[dict[str, Any]], list[tuple[dict[str, Any], dict[str, Any]]], set[str], set[str]]:
     """Separa «vender hoy» de «vender solo si ganas la puja».
 
-    Vender hoy solo cubre deuda, paga un clausulazo o saca a un suplente que
-    baja o ya tiene oferta. El resto, si financia una puja, espera a ganarla.
+    Lo decide el solver: una venta atada a una puja espera a ganarla; el resto
+    se hace hoy. Aquí solo se etiqueta por qué va hoy (deuda o clausulazo).
     """
-    directos: set[str] = set()
+    pares = _emparejar_ventas(ventas, pujas, asignacion)
+    condicionales = {venta["player_id"] for venta, _puja in pares}
+    hoy = [row for row in ventas if row["player_id"] not in condicionales]
     por_deuda: set[str] = set()
     por_clausula: set[str] = set()
+    caja = saldo
     if saldo < 0:
-        caja = saldo
-        for row in sorted(ventas, key=lambda item: int(item.get("venta_eur") or 0)):
+        for row in sorted(hoy, key=lambda item: int(item.get("venta_eur") or 0)):
             if caja >= 0:
                 break
-            directos.add(row["player_id"])
             por_deuda.add(row["player_id"])
             caja += int(row.get("venta_eur") or 0)
     gasto_clausulas = sum(int(row.get("euros") or 0) for row in clausulas_hechas)
-    caja = saldo + sum(int(row.get("venta_eur") or 0) for row in ventas if row["player_id"] in directos)
     if clausulas_hechas and caja < gasto_clausulas:
         faltan = gasto_clausulas - caja
-        for row in sorted(ventas, key=lambda item: -int(item.get("venta_eur") or 0)):
+        for row in sorted(hoy, key=lambda item: -int(item.get("venta_eur") or 0)):
             if faltan <= 0:
                 break
-            if row["player_id"] in directos:
+            if row["player_id"] in por_deuda:
                 continue
-            directos.add(row["player_id"])
             por_clausula.add(row["player_id"])
             faltan -= int(row.get("venta_eur") or 0)
-    for row in ventas:
-        player_id = row["player_id"]
-        if player_id in directos:
-            continue
-        pct = _leer_pct(row)
-        bajando = pct is not None and pct < 0
-        if _es_suplente(player_id, plantilla, xi_ids) and (bajando or _tiene_oferta(row) or player_id in bajas):
-            directos.add(player_id)
-    if not pujas:
-        directos.update(row["player_id"] for row in ventas)
-
-    def _reales_hoy(ids: set[str]) -> int:
-        return len(plantilla) - len(ids) + len(clausulas_hechas)
-
-    limite = min(XI_SIZE, len(plantilla))
-    while pujas and _reales_hoy(directos) < limite:
-        movibles = [
-            row for row in ventas if row["player_id"] in directos and row["player_id"] not in por_clausula
-        ]
-        if not movibles:
-            break
-        # Primero se aplaza al titular: es quien dejaría el once cojo si la puja se pierde.
-        movibles.sort(key=lambda row: (row["player_id"] not in xi_ids, -int(row.get("venta_eur") or 0)))
-        directos.discard(movibles[0]["player_id"])
-        por_deuda.discard(movibles[0]["player_id"])
-
-    hoy = [row for row in ventas if row["player_id"] in directos]
-    esperar = [row for row in ventas if row["player_id"] not in directos]
-    pares = _emparejar_ventas(esperar, pujas) if esperar and pujas else []
     return hoy, pares, por_deuda, por_clausula
 
 
@@ -542,11 +531,23 @@ def build_plan_fichajes(**kwargs: Any) -> dict[str, Any]:
     saldo = plan.get("saldo_al_final")
     owned = kwargs.get("owned") or []
     valor_equipo = sum(_valor_jugador(row) for row in owned if isinstance(row, dict))
+    sobrante = saldo if isinstance(saldo, int) and not isinstance(saldo, bool) else None
+    credito: int | None = None
+    cobertura = plan.get("cobertura_pujas")
+    if isinstance(cobertura, dict):
+        # El trading puja a la vez que el once: solo usa la caja que ninguna
+        # puja del once tiene reservada y el crédito que esas pujas no gastan.
+        reservada = sum(int(item["caja"]) for item in cobertura["pujas"])
+        libre = int(cobertura["caja_al_pujar"]) - reservada
+        sobrante = libre if sobrante is None else min(sobrante, libre)
+        if isinstance(cobertura.get("tope_deuda"), int):
+            credito = max(0, int(cobertura["tope_deuda"]) - int(cobertura["deuda_al_pujar"]))
     plan["trading"] = build_trading_desk(
         trading,
-        saldo_sobrante=saldo if isinstance(saldo, int) and not isinstance(saldo, bool) else None,
+        saldo_sobrante=sobrante,
         valor_equipo=valor_equipo,
         dias_para_jornada=dias_al_cierre(kwargs.get("dias_para_jornada")),
+        credito_disponible=credito,
     )
     return plan
 
@@ -826,6 +827,68 @@ def _plan_once(
     gastos_busca = pulp.lpSum(coste_busca * busca[position] for position in POSITIONS)
     problem += saldo + ingresos - gastos_puja - gastos_clausula - gastos_busca >= 0
 
+    # Cobertura de cada puja. Las subastas se resuelven a la vez y puedes ganar
+    # cualquier combinación: cada puja tiene su parte de la caja de hoy más las
+    # ventas que se le atan (y que solo se hacen si se gana). La venta que no se
+    # ata a ninguna puja se hace hoy y suma a esa caja.
+    def _vender_ya(player_id: str) -> bool:
+        row = next(item for item in plantilla if item["player_id"] == player_id)
+        pct = _leer_pct(row)
+        bajando = pct is not None and pct < 0
+        return _es_suplente(player_id, plantilla, xi_ids) and (
+            bajando or _tiene_oferta(row) or player_id in bajas
+        )
+
+    venta_de = {
+        row["player_id"]: int(row["venta_eur"])
+        for row in plantilla
+        if row["player_id"] in vende and isinstance(row.get("venta_eur"), int)
+    }
+    asigna: dict[tuple[str, str], pulp.LpVariable] = {}
+    for s_index, vendido in enumerate(vende):
+        for b_index, pujado in enumerate(puja):
+            variable = pulp.LpVariable(f"{prefix}_a{s_index}_{b_index}", cat=pulp.LpBinary)
+            asigna[(vendido, pujado)] = variable
+            problem += variable <= puja[pujado]
+        problem += pulp.lpSum(asigna[(vendido, pujado)] for pujado in puja) <= vende[vendido]
+    caja_puja = {pujado: pulp.LpVariable(f"{prefix}_c{index}", lowBound=0) for index, pujado in enumerate(puja)}
+    for pujado, variable in puja.items():
+        problem += _euros_de(f"bid:{pujado}") * variable <= caja_puja[pujado] + pulp.lpSum(
+            venta_de.get(vendido, 0) * asigna[(vendido, pujado)] for vendido in vende
+        )
+
+    def _hoy(vendido: str) -> Any:
+        return vende[vendido] - pulp.lpSum(asigna[(vendido, pujado)] for pujado in puja)
+
+    ingresos_hoy = pulp.lpSum(venta_de.get(vendido, 0) * _hoy(vendido) for vendido in vende)
+    caja_hoy = saldo + ingresos_hoy - gastos_clausula
+    problem += pulp.lpSum(caja_puja.values()) <= caja_hoy - gastos_busca
+    # Perder todas las pujas, o ganar solo las que se pagan con varias ventas,
+    # no puede dejar menos de 11 jugadores.
+    exceso = {pujado: pulp.LpVariable(f"{prefix}_e{index}", lowBound=0) for index, pujado in enumerate(puja)}
+    for pujado, variable in exceso.items():
+        problem += variable >= pulp.lpSum(asigna[(vendido, pujado)] for vendido in vende) - puja[pujado]
+    if vende:
+        problem += pulp.lpSum(_hoy(vendido) for vendido in vende) + pulp.lpSum(exceso.values()) <= max(
+            0, len(plantilla) - XI_SIZE
+        ) + pulp.lpSum(list(clausula.values()) or [0])
+    # LaLiga no acepta pujas que te endeuden más del 20 % del valor del equipo.
+    # Solo se aplica si se conoce el valor de toda la plantilla.
+    valores_propios = {row["player_id"]: _valor_jugador(row) for row in plantilla}
+    tope_deuda_conocido = bool(plantilla) and all(valor > 0 for valor in valores_propios.values())
+    if tope_deuda_conocido and puja:
+        valor_equipo_hoy = (
+            sum(valores_propios.values())
+            - pulp.lpSum(valores_propios[vendido] * _hoy(vendido) for vendido in vende)
+            + pulp.lpSum((_valor_mercado(row) or 0) * clausula[row["player_id"]] for row in raids if row["player_id"] in clausula)
+        )
+        problem += gastos_puja + gastos_busca - caja_hoy <= DEUDA_PCT_EQUIPO * valor_equipo_hoy
+    # Desempate: el suplente que baja o ya tiene oferta se vende hoy; el resto,
+    # mejor solo si se gana la puja.
+    preferencia_condicional = pulp.lpSum(
+        (-1e-6 if _vender_ya(vendido) else 1e-6) * variable for (vendido, _pujado), variable in asigna.items()
+    )
+
     def _exento_peaje(clave: str) -> bool:
         return ficha_compra[clave]["impulso"] in {"MUST-BUY", "CHOLLO"}
 
@@ -897,21 +960,61 @@ def _plan_once(
             problem += gastos_prioritarios >= (saldo + 1) - techo * (1 - need)
             problem += pulp.lpSum(vende[player_id] for player_id in vende_cond) <= len(vende_cond) * need
 
-    # El once se elige por esta jornada y las tres siguientes: un fichaje con
-    # buen calendario no pierde contra otro que solo rinde el próximo partido.
+    # Dos onces: el de la próxima jornada (``en_once``) y el de J2-J4
+    # (``en_futuro``), que sale de la plantilla que queda tras el plan. Un
+    # sancionado que no juega la próxima no ocupa sitio en el primero, pero
+    # sigue valiendo en el segundo y no se vende por un solo partido.
     # Busca no tiene calendario: cuenta como BUSCA_PUNTOS en cada jornada.
-    puntos = pulp.lpSum(_valor_horizonte(row) * en_once[f"own:{row['player_id']}"] for row in plantilla)
-    puntos += pulp.lpSum(
-        _valor_horizonte(row) * en_once[f"bid:{row['player_id']}"]
-        for row in compras
-        if f"bid:{row['player_id']}" in en_once
-    )
-    puntos += pulp.lpSum(
-        _valor_horizonte(row) * en_once[f"clause:{row['player_id']}"]
-        for row in raids
-        if f"clause:{row['player_id']}" in en_once
-    )
-    puntos += pulp.lpSum(BUSCA_PUNTOS * busca[position] for position in POSITIONS)
+    en_futuro: dict[str, pulp.LpVariable] = {}
+    for index, row in enumerate(plantilla):
+        player_id = row["player_id"]
+        variable = pulp.LpVariable(f"{prefix}_fo{index}", cat=pulp.LpBinary)
+        en_futuro[f"own:{player_id}"] = variable
+        if row.get("position") not in POSITIONS:
+            problem += variable == 0
+        elif player_id in vende:
+            problem += variable + vende[player_id] <= 1
+    for origen, filas, compra_de in (("bid", compras, puja), ("clause", raids, clausula)):
+        for index, row in enumerate(filas):
+            if row["player_id"] not in compra_de:
+                continue
+            variable = pulp.LpVariable(f"{prefix}_f{origen[0]}{index}", cat=pulp.LpBinary)
+            en_futuro[f"{origen}:{row['player_id']}"] = variable
+            problem += variable <= compra_de[row["player_id"]]
+    busca_futuro = {
+        position: pulp.LpVariable(f"{prefix}_fb{position}", cat=pulp.LpBinary) for position in POSITIONS
+    }
+    for position in POSITIONS:
+        problem += busca_futuro[position] <= busca[position]
+    formacion_futuro = {
+        name: pulp.LpVariable(f"{prefix}_ff{name.replace('-', '_')}", cat=pulp.LpBinary) for name in FORMATIONS
+    }
+    problem += pulp.lpSum(formacion_futuro.values()) == 1
+    problem += pulp.lpSum(list(en_futuro.values()) + list(busca_futuro.values())) == XI_SIZE
+    for position in POSITIONS:
+        ocupantes_futuro = [
+            en_futuro[f"{origen}:{row['player_id']}"]
+            for origen, filas in (("own", plantilla), ("bid", compras), ("clause", raids))
+            for row in filas
+            if row.get("position") == position and f"{origen}:{row['player_id']}" in en_futuro
+        ] + [busca_futuro[position]]
+        problem += pulp.lpSum(ocupantes_futuro) == pulp.lpSum(
+            FORMATIONS[name][position] * formacion_futuro[name] for name in FORMATIONS
+        )
+
+    def _filas_con(variables: dict[str, pulp.LpVariable]) -> list[tuple[dict[str, Any], pulp.LpVariable]]:
+        return [
+            (row, variables[f"{origen}:{row['player_id']}"])
+            for origen, filas in (("own", plantilla), ("bid", compras), ("clause", raids))
+            for row in filas
+            if f"{origen}:{row['player_id']}" in variables
+        ]
+
+    puntos_j1 = pulp.lpSum(float(row.get("jornada") or 0.0) * variable for row, variable in _filas_con(en_once))
+    puntos_j1 += pulp.lpSum(BUSCA_PUNTOS * busca[position] for position in POSITIONS)
+    puntos_futuro = pulp.lpSum(_futuro_efectivo(row) * variable for row, variable in _filas_con(en_futuro))
+    puntos_futuro += pulp.lpSum(3.0 * BUSCA_PUNTOS * busca_futuro[position] for position in POSITIONS)
+    puntos = _horizonte(puntos_j1, puntos_futuro)
     bonus = pulp.lpSum(
         [
             *(
@@ -979,6 +1082,7 @@ def _plan_once(
         + continuidad
         - peaje
         - castigo_patrimonio
+        + preferencia_condicional
         - 0.0001 * pulp.lpSum(list(vende.values()) or [0])
         - 1e-12 * (gastos_puja + gastos_clausula + gastos_busca + ingresos)
     )
@@ -1046,19 +1150,61 @@ def _plan_once(
     ventas_sel = [row for row in plantilla if row["player_id"] in vende and _on(vende[row["player_id"]])]
     pujas_sel = [row for row in compras if row["player_id"] in puja and _on(puja[row["player_id"]])]
     clausulas_sel = [row for row in raids if row["player_id"] in clausula and _on(clausula[row["player_id"]])]
+    asignacion = {vendido: pujado for (vendido, pujado), variable in asigna.items() if _on(variable)}
     ventas_hoy, pares, por_deuda, por_clausula = _partir_ventas(
         saldo=saldo,
         ventas=ventas_sel,
         pujas=pujas_sel,
+        asignacion=asignacion,
         clausulas_hechas=clausulas_sel,
-        plantilla=plantilla,
-        xi_ids=xi_ids,
-        bajas=bajas,
     )
-    # El viernes ya no hay «mañana» antes del saque: la venta que financia el plan se acepta hoy.
-    if dias is not None and dias < 1.0 and pares:
+    # El viernes ya no hay «mañana» antes del saque: la venta que financia el plan
+    # se acepta hoy. Solo si, perdiendo todas las pujas, quedan 11 jugadores.
+    quedan_si_pierdes = len(plantilla) - len(ventas_sel) + len(clausulas_sel)
+    if dias is not None and dias < 1.0 and pares and quedan_si_pierdes >= min(XI_SIZE, len(plantilla)):
         ventas_hoy.extend(venta for venta, _puja in pares)
         pares = []
+    caja_al_pujar = int(
+        saldo
+        + sum(int(row["venta_eur"]) for row in ventas_hoy)
+        - sum(int(ficha_compra[f"clause:{row['player_id']}"]["euros"]) for row in clausulas_sel)
+    )
+    total_pujas = sum(int(ficha_compra[f"bid:{row['player_id']}"]["euros"]) for row in pujas_sel)
+    ventas_de_puja: dict[str, list[dict[str, Any]]] = {}
+    for venta, puja_row in pares:
+        ventas_de_puja.setdefault(puja_row["player_id"], []).append(
+            {"player_id": venta["player_id"], "euros": int(venta["venta_eur"])}
+        )
+    cobertura_pujas = {
+        "caja_al_pujar": caja_al_pujar,
+        "deuda_al_pujar": max(0, total_pujas - caja_al_pujar),
+        "tope_deuda": (
+            int(
+                DEUDA_PCT_EQUIPO
+                * (
+                    sum(valores_propios.values())
+                    - sum(valores_propios[row["player_id"]] for row in ventas_hoy)
+                    + sum(_valor_mercado(row) or 0 for row in clausulas_sel)
+                )
+            )
+            if tope_deuda_conocido
+            else None
+        ),
+        "pujas": [
+            {
+                "player_id": row["player_id"],
+                "euros": int(ficha_compra[f"bid:{row['player_id']}"]["euros"]),
+                # Lo que la puja necesita de la caja de hoy: su precio menos sus ventas.
+                "caja": max(
+                    0,
+                    int(ficha_compra[f"bid:{row['player_id']}"]["euros"])
+                    - sum(item["euros"] for item in ventas_de_puja.get(row["player_id"], [])),
+                ),
+                "ventas": ventas_de_puja.get(row["player_id"], []),
+            }
+            for row in pujas_sel
+        ],
+    }
     pujas_protegidas = {puja_row["player_id"] for _venta, puja_row in pares}
     ya_en_secuencia = {venta["player_id"] for venta, _puja in pares}
     for row in ventas_sel:
@@ -1230,13 +1376,8 @@ def _plan_once(
 
     mejora = round(puntos_once - float(baseline_puntos), 2)
     # La misma mejora, medida en la media ponderada de las cuatro jornadas.
-    horizonte_once = sum(
-        _valor_horizonte(row)
-        for origen, filas in (("own", plantilla), ("bid", compras), ("clause", raids))
-        for row in filas
-        if _on(en_once.get(f"{origen}:{row['player_id']}"))
-    )
-    horizonte_base = sum(_valor_horizonte(row) for row in plantilla if row["player_id"] in xi_ids)
+    horizonte_once = float(pulp.value(puntos) or 0.0)
+    horizonte_base = _horizonte(base_puntos, _mejor_once_futuro(plantilla))
     mejora_horizonte = round(horizonte_once - horizonte_base, 2)
     hay_urgente = any(accion.get("impulso") in {"MUST-BUY", "CHOLLO"} for accion in acciones)
     vende_baja = any(row["player_id"] in bajas for row in ventas_sel)
@@ -1277,6 +1418,7 @@ def _plan_once(
         "once": once,
         "en_radar": radar,
         "mejora_horizonte": mejora_horizonte,
+        "cobertura_pujas": cobertura_pujas,
         "objetivos_previos": sorted(previos),
         "umbral_cambio_xp": umbral,
         **meta,

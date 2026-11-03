@@ -7,6 +7,7 @@ ausente. Convive con ``af_*`` (Analítica Fantasy) como contraste.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -746,6 +747,68 @@ def expected_opta_points(
     }
 
 
+_PARTIDOS_SANCION = re.compile(r"(\d+)\s*(?:partidos?|jornadas?|matches|games)", re.IGNORECASE)
+
+
+def _texto_contiene(value: Any, *tokens: str) -> bool:
+    return isinstance(value, str) and any(token in value.lower() for token in tokens)
+
+
+def jugador_tras_sancion(player: dict[str, Any]) -> tuple[dict[str, Any], float | None, int] | None:
+    """Sanción que acaba: el jugador como estará cuando la cumpla.
+
+    Devuelve ``(jugador, p_titular, partidos)``: una copia sin la sanción, su
+    titularidad de siempre (la de su historial, no el 0 de esta semana) y
+    cuántos partidos se pierde (1 si la fuente no lo dice). Una lesión no
+    tiene fecha de vuelta, así que con lesión, o sin sanción, devuelve None.
+    """
+    sanction = player.get("sanction") if isinstance(player.get("sanction"), dict) else {}
+    status = str(player.get("player_status") or "").lower()
+    sancionado = bool(
+        sanction.get("suspended")
+        or player.get("af_suspension")
+        or status in {"suspended", "sancionado"}
+        or _texto_contiene(player.get("fitness"), "sancion", "sanción", "sanction")
+    )
+    if not sancionado:
+        return None
+    lesionado = bool(
+        player.get("af_injury")
+        or status in {"injured", "lesionado"}
+        or _texto_contiene(player.get("fitness"), "lesion", "lesión", "injured")
+    )
+    if lesionado:
+        return None
+    partidos = 1
+    for key in ("matches", "partidos", "games"):
+        value = _as_int(sanction.get(key))
+        if value is not None and value > 0:
+            partidos = value
+            break
+    else:
+        suspension = player.get("af_suspension") if isinstance(player.get("af_suspension"), dict) else {}
+        for text in (player.get("fitness_detail"), suspension.get("info"), suspension.get("report")):
+            match = _PARTIDOS_SANCION.search(text) if isinstance(text, str) else None
+            if match:
+                partidos = max(1, int(match.group(1)))
+                break
+    from toolbox.engine.xp_calculator import FantasyXPEngine, historial_desde_jugador
+
+    p_titular = FantasyXPEngine.prob_titular_heuristica(historial_desde_jugador(player))
+    if p_titular is None:
+        raw = _as_float(player.get("p_titular"))
+        p_titular = raw if raw is not None and raw > 0 else None
+    limpio = {key: value for key, value in player.items() if key != "af_suspension"}
+    limpio["sanction"] = {**sanction, "suspended": False}
+    limpio["p_titular"] = p_titular
+    if status in {"suspended", "sancionado"}:
+        limpio["player_status"] = "ok"
+    # Sin rastro de lesión, un «baja» en el parte es la propia sanción.
+    if _texto_contiene(player.get("fitness"), "sancion", "sanción", "sanction", "baja", "out"):
+        limpio["fitness"] = None
+    return limpio, p_titular, partidos
+
+
 def snapshot_rows_from_players(
     players: list[dict[str, Any]],
     *,
@@ -905,12 +968,21 @@ def apply_own_intel(
             prelim_points[pid] = float(pts["expected_points"])
             player["_own_pts_cache"] = pts
             # xP en cada partido siguiente, con su rival y su campo. Sin Monte
-            # Carlo: solo hace falta la media, no el techo.
+            # Carlo: solo hace falta la media, no el techo. Una sanción solo
+            # cuenta en los partidos que cubre: después vuelve su titularidad.
+            sancion = jugador_tras_sancion(player)
+            if sancion is not None:
+                player["own_sancion_partidos"] = sancion[2]
+            else:
+                player.pop("own_sancion_partidos", None)
             futuros: list[float] = []
-            for later, later_cell in siguientes_by_club.get(club_key, []):
+            for offset, (later, later_cell) in enumerate(siguientes_by_club.get(club_key, []), start=1):
+                cumplida = sancion is not None and offset >= sancion[2]
+                jugador_j = sancion[0] if cumplida else player
+                p_j = sancion[1] if cumplida else _as_float(player.get("p_titular"))
                 later_pts = expected_opta_points(
                     position=player.get("position") if isinstance(player.get("position"), str) else None,
-                    p_titular=apply_doubt_titular_discount(_as_float(player.get("p_titular")), player, None),
+                    p_titular=apply_doubt_titular_discount(p_j, jugador_j, None),
                     player_xg=_as_float(form.get("xg")),
                     player_xa=_as_float(form.get("xa")),
                     team_lambda=_as_float(later_cell.get("lambda_for")),
@@ -918,7 +990,7 @@ def apply_own_intel(
                     team_avg_xg=team.avg_xg if team else league_avg_xg,
                     home=bool(later.home),
                     fdr=later.fdr,
-                    player=player,
+                    player=jugador_j,
                     p_cs_own=_as_float(later_cell.get("p_cs_for")),
                     monte_carlo=False,
                 )

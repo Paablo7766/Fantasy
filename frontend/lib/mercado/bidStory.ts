@@ -161,6 +161,12 @@ function overbidLine(player: MarketDecision): string | null {
   const risk = player.bid_plan?.overbid;
   if (!risk?.status || marketAction(player) === "NO") return null;
   const count = risk.count;
+  if (risk.status === "guerra") {
+    const names = risk.rivales_hueco ?? [];
+    const many = names.length > 1;
+    const who = names.length ? names.join(", ") : "Un rival";
+    return `${who} ${many ? "no forman" : "no forma"} once sin un ${positionName(player.position)} y ${many ? "tienen" : "tiene"} caja. ${many ? "Van" : "Va"} a pujar fuerte.`;
+  }
   if (risk.status === "high") {
     const n = typeof count === "number" && count > 0 ? `${count} ` : "";
     return `${n}rivales tienen dinero y un hueco de ${positionName(player.position)}. Te pueden pasar por encima.`;

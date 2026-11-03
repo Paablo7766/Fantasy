@@ -267,6 +267,11 @@ _NO_SCORE_KIND = {
 #: Motivo de ``_NO_SCORE_KIND`` que invalida el suelo de publicidad por caja.
 NEGATIVE_BALANCE_REASON = "saldo_negativo"
 
+#: Rival en números rojos. ``seguro``: la caja calculada, que es la cota alta,
+#: ya está bajo cero. ``probable``: lo está la caja esperada.
+ROJO_SEGURO = "seguro"
+ROJO_PROBABLE = "probable"
+
 #: Filas del tablón que no mueven dinero pero fechan o prueban un estado.
 #: El alta (``9``) marca el nacimiento de la liga o del equipo y por tanto el
 #: primer día en que pudo cobrar publicidad: los anuncios no existen antes.
@@ -388,6 +393,7 @@ __all__ = [
     "events_from_ledgers",
     "extract_money",
     "get_financial_intel",
+    "estado_rojo",
     "madrid_day_of",
     "parse_activities",
     "reward_amount",
@@ -702,6 +708,20 @@ def _balance_floor(
 
 
 # --- Termómetro de control --------------------------------------------------
+
+
+def estado_rojo(calculated_cash: int | None, cash_expected: int | None = None) -> str | None:
+    """``seguro`` si la caja calculada es negativa, ``probable`` si solo lo es la esperada.
+
+    Un rival en rojo saca 0 puntos si llega así al primer partido. El motor de
+    subastas lo trata como fuera de la puja: ya no puede pujar sin hundirse
+    más, aunque el reglamento le deje endeudarse.
+    """
+    if isinstance(calculated_cash, int) and not isinstance(calculated_cash, bool) and calculated_cash < 0:
+        return ROJO_SEGURO
+    if isinstance(cash_expected, int) and not isinstance(cash_expected, bool) and cash_expected < 0:
+        return ROJO_PROBABLE
+    return None
 
 
 def _normal_cdf(value: float) -> float:
@@ -2148,6 +2168,7 @@ class LedgerAuditor:
             cash_expected = pure_cash + int(round(own_rate * max_ad)) if own_rate is not None else cash
             cash_expected = min(max(cash_expected, cash_floor), cash)
             debt = self.debt_limits.get(team_id, self.debt_limit_eur)
+            rojo = estado_rojo(int(cash), int(cash_expected))
             observed_cash = squad.get("cash") if isinstance(squad.get("cash"), int) else None
             reconciliation = None
             risk_adjusted_cash = cash
@@ -2210,11 +2231,15 @@ class LedgerAuditor:
                 "cash_floor_eur": int(cash_floor),
                 "cash_expected_eur": int(cash_expected),
                 "cash_band_eur": int(cash - cash_floor),
-                "max_bid_limit": int(max(0, cash + debt)),
-                "floor_bid_limit": int(max(0, cash_floor + debt)),
-                "expected_bid_limit": int(max(0, cash_expected + debt)),
+                # En rojo no se cuenta con la deuda: pujar le hunde más y saca 0
+                # puntos si no vende antes del primer partido.
+                "max_bid_limit": 0 if rojo else int(max(0, cash + debt)),
+                "floor_bid_limit": 0 if rojo else int(max(0, cash_floor + debt)),
+                "expected_bid_limit": 0 if rojo else int(max(0, cash_expected + debt)),
                 "risk_adjusted_cash": int(risk_adjusted_cash),
-                "risk_adjusted_bid_limit": int(max(0, risk_adjusted_cash + debt)),
+                "risk_adjusted_bid_limit": 0 if rojo else int(max(0, risk_adjusted_cash + debt)),
+                "legal_bid_limit": int(max(0, cash + debt)),
+                "en_rojo": rojo,
                 "debt_limit_eur": debt,
                 "cash_is_upper_bound": anchor is None,
                 "hidden_expenses_eur": int(hidden_cost),

@@ -540,6 +540,8 @@ class RivalProfile:
     xi_gaps: list[str]
     lacks_replacements: bool
     already_bidding: bool = False
+    #: Saldo bajo cero: no puja (saca 0 si llega así al saque).
+    en_rojo: bool = False
     # Modelo hurdle: con probabilidad ``p_exact`` puja a valor de mercado
     # (prima <= ``EXACT_PREMIUM_MAX``, centrada en ``exact_premium``); si no, sobrepuja
     # según ``alpha_aggressiveness`` / ``sigma_dispersion`` (log-normal de la prima).
@@ -581,6 +583,22 @@ def aggressiveness_style(n_buys: int, p_exact: float, median_overbid: float | No
     return "moderado"
 
 
+def urgencias_de_libros(ledgers: list[dict[str, Any]] | None) -> dict[tuple[Any, ...], float]:
+    """``positional_urgency`` de cada compra de los libros, por (equipo, jugador, importe, hora)."""
+    found: dict[tuple[Any, ...], float] = {}
+    for ledger in ledgers or []:
+        if not isinstance(ledger, dict):
+            continue
+        for event in ledger.get("events") or []:
+            if not isinstance(event, dict) or event.get("kind") != "buy":
+                continue
+            value = event.get("positional_urgency")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                key = (ledger.get("team_id"), event.get("player_id"), event.get("amount_eur"), event.get("at"))
+                found[key] = float(value)
+    return found
+
+
 def collect_activity_buys(
     events: list[dict[str, Any]],
     snapshots: dict[tuple[str, str], int],
@@ -593,7 +611,11 @@ def collect_activity_buys(
     ``require_reference=False`` conserva también las compras de un día sin foto
     de precio, con la referencia vacía: para saber quién ganó una puja basta
     con el comprador y el importe.
+
+    ``positional_urgency`` sale de los libros (2 hueco, 1 justo, 0 nada) y
+    queda vacía en las compras que nadie fechó a tiempo.
     """
+    urgencias = urgencias_de_libros(ledgers)
     cash_by_team: dict[str, int] = {}
     for ledger in ledgers or []:
         if not isinstance(ledger, dict):
@@ -631,7 +653,7 @@ def collect_activity_buys(
                 "reference_value_eur": ref,
                 "market_value": ref,
                 "cash_at_event_eur": cash_at if isinstance(cash_at, int) else None,
-                "positional_urgency": 0.0,
+                "positional_urgency": urgencias.get((team_id, player_id, amount, event.get("at"))),
                 "at": event.get("at"),
             }
         )
@@ -752,6 +774,7 @@ def fit_rival_profiles_eb(
             xi_gaps=[str(item) for item in (rival.get("xi_gaps") or []) if isinstance(item, str)],
             lacks_replacements=bool(rival.get("lacks_replacements", False)),
             already_bidding=bool(rival.get("already_bidding", False)),
+            en_rojo=bool(rival.get("en_rojo")),
             p_exact=float(np.clip(p_exact_j, 0.0, 0.98)),
             exact_premium=float(np.median(exacts)) if exacts else 0.0,
             median_overbid=float(np.median(over)) if over else None,

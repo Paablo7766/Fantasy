@@ -22,6 +22,7 @@ from toolbox.engine.auction_intel import (
     puja_anti_pizarra,
 )
 from toolbox.engine.lineup_math import solve_best_xi, war_del_once
+from toolbox.engine.liquidacion import plan_liquidacion
 from toolbox.engine.market_predictor import (
     EUROS_POR_PUNTO,
     proyectar_7d,
@@ -386,6 +387,8 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
         _set_calendar(row, player)
         if isinstance(player.get("own_xp_siguientes"), list) and not row.get("xp_siguientes"):
             row["xp_siguientes"] = player["own_xp_siguientes"]
+        if isinstance(player.get("own_sancion_partidos"), int) and not isinstance(player.get("own_sancion_partidos"), bool):
+            row["sancion_partidos"] = player["own_sancion_partidos"]
         if exclusion_from_status(player.get("player_status") if isinstance(player.get("player_status"), str) else None):
             row["excluded"] = True
 
@@ -1117,6 +1120,8 @@ def _plan(
                 "p_titular": row.get("p_titular") if isinstance(row.get("p_titular"), (int, float)) and not isinstance(row.get("p_titular"), bool) else row.get("prob_titular"),
                 "tiene_oferta_laliga": row.get("tiene_oferta_laliga") is True,
                 "futuro": _futuro(row),
+                # Vuelve dentro de las cuatro jornadas del plan: no es una baja.
+                "sancion_temporal": isinstance(row.get("sancion_partidos"), int) and row["sancion_partidos"] < 4,
             }
         )
     if saldo is not None and saldo < 0:
@@ -1221,7 +1226,7 @@ def _plan(
     clausulas = clausulas[:_MAX_CLAUSULAS]
     trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
     try:
-        return build_plan_fichajes(
+        plan = build_plan_fichajes(
             cash=saldo,
             owned=owned_rows,
             mercado=mercado,
@@ -1235,6 +1240,31 @@ def _plan(
     except Exception:
         logger.exception("plan de fichajes")
         return _empty_plan(saldo, ratio)
+    try:
+        plan["liquidacion"] = _liquidacion(records, owned_rows, saldo, _days_to_kickoff(trends, now), own_id)
+    except Exception:
+        logger.exception("plan de liquidación")
+    return plan
+
+
+def _liquidacion(
+    records: dict[str, dict[str, Any]],
+    owned_rows: list[dict[str, Any]],
+    saldo: int | None,
+    dias: float | None,
+    own_id: str | None,
+) -> dict[str, Any]:
+    """Salida del #12 en adelante con la mejor oferta con importe de cada jugador."""
+    filas: list[dict[str, Any]] = []
+    ofertas: dict[str, int | None] = {}
+    for row in owned_rows:
+        record = records.get(row["player_id"]) or {}
+        filas.append(
+            {**row, "en_venta": record.get("on_market") is True and record.get("seller_team_id") in {None, own_id}}
+        )
+        importes = [oferta["importe"] for oferta in _ofertas_propias(record, own_id, {}) if isinstance(oferta.get("importe"), int)]
+        ofertas[row["player_id"]] = max(importes) if importes else None
+    return plan_liquidacion(filas, saldo=saldo, dias_para_jornada=dias, ofertas=ofertas)
 
 
 def _notas_mercado(

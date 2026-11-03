@@ -195,6 +195,72 @@ function TradingBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
   );
 }
 
+const FASE_TEXTO: Record<string, { title: string; text: string; color: string }> = {
+  APALANCAMIENTO: {
+    title: "Apalancamiento",
+    text: "Quedan 3 días o más. Los que no entran en el once son posiciones de trading: se mantienen salvo que la oferta pague el valor.",
+    color: TONE.green,
+  },
+  ESCAPARATE: {
+    title: "Escaparate",
+    text: "Ponlos a la venta hoy. La oferta de LaLiga cambia cada día (valor ±10 %): se acepta la que pague el valor.",
+    color: TONE.copper,
+  },
+  LIQUIDACION: {
+    title: "Liquidación",
+    text: "Último día. Vende con la oferta que haya: deja 11 y el saldo en positivo antes del primer partido.",
+    color: TONE.red,
+  },
+};
+
+function LiquidacionBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
+  const liq = plan?.liquidacion;
+  const sobrantes = Array.isArray(liq?.sobrantes) ? liq.sobrantes : [];
+  if (!liq?.activo || !sobrantes.length || !liq.fase) return null;
+  const fase = FASE_TEXTO[liq.fase] ?? { title: liq.fase, text: "", color: TONE.gray };
+  return (
+    <Disclosure
+      title={`Salida del #12 en adelante · ${fase.title}`}
+      meta={<span style={{ color: fase.color }}>{`${sobrantes.length} fuera del once`}</span>}
+    >
+      <p className="text-[12.5px] text-white/50">
+        {fase.text}
+        {typeof liq.saldo_tras_liquidar === "number" ? ` Vendiéndolos todos acabas con ${money(liq.saldo_tras_liquidar)}` : ""}
+        {typeof liq.saldo_peor_caso === "number" && money(liq.saldo_peor_caso) !== money(liq.saldo_tras_liquidar)
+          ? ` (${money(liq.saldo_peor_caso)} si LaLiga paga un 10 % menos).`
+          : typeof liq.saldo_tras_liquidar === "number"
+            ? "."
+            : ""}
+        {typeof liq.deficit_eur === "number" && liq.deficit_eur > 0
+          ? ` Aun así faltan ${compact(liq.deficit_eur)}: habrá que vender a alguien del once.`
+          : ""}
+      </p>
+      <ul className="mt-2">
+        {sobrantes.map((item, index) => (
+          <li key={`liq-${item.player_id || item.nombre}-${index}`} className="flex items-center gap-3 border-b border-white/[0.06] py-2.5 last:border-b-0">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14.5px] font-medium text-white">
+                {[item.nombre || "Jugador", item.position].filter(Boolean).join(" · ")}
+              </span>
+              <span className="block text-[12px] text-white/45">{item.etiqueta || item.motivo}</span>
+            </span>
+            <span className="shrink-0 text-right">
+              <span className="block text-[11px] font-semibold uppercase tracking-wider" style={{ color: fase.color }}>
+                {item.accion}
+              </span>
+              {typeof item.oferta_eur === "number" ? (
+                <span className="block text-[13px] tabular-nums text-white">{`Oferta ${money(item.oferta_eur)}`}</span>
+              ) : typeof item.valor === "number" ? (
+                <span className="block text-[13px] tabular-nums text-white/60">{`Valor ${money(item.valor)}`}</span>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Disclosure>
+  );
+}
+
 function FixtureList({ clubs }: { clubs: JornadaClub[] }) {
   if (!clubs.length) return <p className="text-[13.5px] text-white/50">Estos fichajes no traen calendario contrastado.</p>;
   return (
@@ -325,6 +391,7 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
 
       <PlanBlock plan={trends.plan_fichajes} />
       <TradingBlock plan={trends.plan_fichajes} />
+      <LiquidacionBlock plan={trends.plan_fichajes} />
 
       <Disclosure title="Calendario de estos fichajes" meta={`${board.length} equipos`}>
         <FixtureList clubs={board} />

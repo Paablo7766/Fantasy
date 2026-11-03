@@ -144,9 +144,13 @@ export type Player = {
     floor_eur?: number | null;
     reason?: string | null;
     overbid?: {
-      status?: string | null;
+      status?: "guerra" | "high" | "low" | "unknown" | string | null;
       count?: number | null;
       reason?: string | null;
+      etiqueta?: string | null;
+      rivales_hueco?: string[];
+      rivales_justo?: string[];
+      rivales_sin_caja?: string[];
     } | null;
   } | null;
 };

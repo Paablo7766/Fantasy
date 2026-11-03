@@ -15,7 +15,8 @@ from scipy.optimize import minimize_scalar
 from scipy.stats import norm
 
 from toolbox.analyzer import POSITIONS, candidates_from_squad, index_trends, own_squad
-from toolbox.bidding import MIN_HEADCOUNT
+from toolbox.bidding import URGENCIA_HUECO, URGENCIA_JUSTO, _depth, urgencia_posicional
+from toolbox.rival_intel import ROJO_SEGURO, estado_rojo
 from toolbox.engine.auction_intel import techo_puja_dinamico
 from toolbox.league_history import RivalProfile, apply_league_clearing, clearing_quote
 
@@ -133,22 +134,44 @@ def rival_snapshots(squads: dict[str, Any] | None, trends: dict[str, Any] | None
             continue
         if isinstance(own_id, str) and squad.get("team_id") == own_id:
             continue
-        roster = candidates_from_squad(squad, indexed)
-        available = {position: 0 for position in POSITIONS}
-        for candidate in roster:
-            if candidate.eligible and candidate.position in available:
-                available[candidate.position] += 1
-        thin = [position for position in POSITIONS if available[position] <= MIN_HEADCOUNT[position]]
+        urgencia = urgencia_posicional(_depth(candidates_from_squad(squad, indexed)))
         cash = squad.get("cash") if isinstance(squad.get("cash"), int) and not isinstance(squad.get("cash"), bool) else None
+        rojo = estado_rojo(cash)
         rows.append(
             {
                 "team_id": squad.get("team_id"),
                 "manager_name": squad.get("manager_name"),
                 "cash_eur": cash,
-                "thin_positions": thin,
+                "en_rojo": rojo,
+                "en_rojo_seguro": rojo == ROJO_SEGURO,
+                "bid_limit_eur": 0 if rojo else cash,
+                "urgencia": urgencia,
+                "thin_positions": [position for position in POSITIONS if position in urgencia],
+                "xi_gaps": [position for position in POSITIONS if urgencia.get(position) == URGENCIA_HUECO],
             }
         )
     return rows
+
+
+def _bid_limit(row: dict[str, Any]) -> int | None:
+    """Lo que el rival puede pujar: 0 en rojo, si no su caja."""
+    for key in ("bid_limit_eur", "cash_eur"):
+        value = row.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def _urgencia_en(row: dict[str, Any], position: str) -> str | None:
+    urgencia = row.get("urgencia") if isinstance(row.get("urgencia"), dict) else None
+    if urgencia is not None:
+        value = urgencia.get(position)
+        return value if value in {URGENCIA_HUECO, URGENCIA_JUSTO} else None
+    gaps = row.get("xi_gaps") if isinstance(row.get("xi_gaps"), list) else []
+    if position in gaps:
+        return URGENCIA_HUECO
+    thin = row.get("thin_positions") if isinstance(row.get("thin_positions"), list) else []
+    return URGENCIA_JUSTO if position in thin else None
 
 
 def overbid_risk(
@@ -156,29 +179,70 @@ def overbid_risk(
     ideal: int | None,
     rivals: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:
-    """Cuenta rivales con caja conocida que cubre el ideal y tienen esa posición floja.
+    """Rivales que necesitan la posición y pueden pagar el ideal.
 
-    Si falta la caja de alguien y nadie conocido puede cubrir, el riesgo es
-    ``unknown``. No se devuelve un porcentaje.
+    ``guerra``: alguien tiene un hueco ahí (sin fichar no forma 11) y caja
+    para el ideal. ``high``: alguien va justo en esa línea y tiene caja.
+    ``low``: quien necesita la posición no puede pagarla o nadie la necesita.
+    Un rival en rojo no puja. Si falta la caja de alguien y nadie conocido
+    puede cubrir, el riesgo es ``unknown``. No se devuelve un porcentaje.
     """
     if not isinstance(ideal, int) or isinstance(ideal, bool) or not isinstance(position, str) or not position:
         return {"status": "unknown", "count": None, "reason": "sin_ideal"}
     roster = [row for row in rivals or [] if isinstance(row, dict)]
     if not roster:
         return {"status": "unknown", "count": None, "reason": "sin_rivales"}
-    known = [row for row in roster if isinstance(row.get("cash_eur"), int) and not isinstance(row.get("cash_eur"), bool)]
+    known = [row for row in roster if _bid_limit(row) is not None]
     unknown_cash = len(roster) - len(known)
-    able: list[str] = []
+    hueco: list[dict[str, Any]] = []
+    justo: list[dict[str, Any]] = []
+    sin_caja: list[str] = []
     for row in known:
-        thin = row.get("thin_positions") if isinstance(row.get("thin_positions"), list) else []
-        if position in thin and row["cash_eur"] >= ideal:
-            team_id = row.get("team_id")
-            able.append(team_id if isinstance(team_id, str) else "")
+        urgencia = _urgencia_en(row, position)
+        if urgencia is None:
+            continue
+        if (_bid_limit(row) or 0) < ideal:
+            sin_caja.append(_rival_name(row))
+            continue
+        (hueco if urgencia == URGENCIA_HUECO else justo).append(row)
+    able = [*hueco, *justo]
+    base = {
+        "rivales_hueco": [_rival_name(row) for row in hueco],
+        "rivales_justo": [_rival_name(row) for row in justo],
+        "rivales_sin_caja": sin_caja,
+    }
     if able:
-        return {"status": "high", "count": len(able), "reason": "caja_y_hueco", "team_ids": [item for item in able if item]}
+        team_ids = [row.get("team_id") for row in able if isinstance(row.get("team_id"), str)]
+        if hueco:
+            nombres = ", ".join(base["rivales_hueco"])
+            verbo = "necesita" if len(hueco) == 1 else "necesitan"
+            return {
+                **base,
+                "status": "guerra",
+                "count": len(able),
+                "reason": "hueco_y_caja",
+                "team_ids": team_ids,
+                "etiqueta": f"🔴 GUERRA SEGURA ({nombres} {verbo} cubrir este puesto sí o sí)",
+            }
+        return {
+            **base,
+            "status": "high",
+            "count": len(able),
+            "reason": "caja_y_hueco",
+            "team_ids": team_ids,
+            "etiqueta": f"🟠 RIVAL JUSTO ({', '.join(base['rivales_justo'])} {'van' if len(justo) > 1 else 'va'} al mínimo en este puesto)",
+        }
     if unknown_cash:
-        return {"status": "unknown", "count": None, "reason": "caja_desconocida"}
-    return {"status": "low", "count": 0, "reason": "nadie_cubre"}
+        return {**base, "status": "unknown", "count": None, "reason": "caja_desconocida"}
+    return {
+        **base,
+        "status": "low",
+        "count": 0,
+        "reason": "nadie_cubre",
+        "etiqueta": "🟢 LIBRE DE RIVALES (nadie cojea en este puesto)"
+        if not sin_caja
+        else "🟢 LIBRE DE RIVALES (quien cojea aquí no tiene caja)",
+    }
 
 
 def public_bids(listing: dict[str, Any], own_team_id: str | None) -> list[dict[str, Any]]:
@@ -338,6 +402,8 @@ def probability_of_winning_bid(
     p_win_all = 1.0
 
     for rv in rivals:
+        if rv.en_rojo and not rv.already_bidding:
+            continue
         if rv.cash_eur + 2.0 * rv.cash_uncertainty_eur < min_legal_bid and not rv.already_bidding:
             continue
 
@@ -558,7 +624,7 @@ def _within_cash(amount: int, cash: float) -> int:
 
 
 def _rival_cash(rival: dict[str, Any]) -> float | None:
-    for key in ("dineroEstimado", "cash_eur", "reconstructed_cash_eur"):
+    for key in ("dineroEstimado", "bid_limit_eur", "cash_eur", "reconstructed_cash_eur"):
         value = rival.get(key)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             continue

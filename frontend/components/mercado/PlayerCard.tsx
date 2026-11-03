@@ -315,6 +315,14 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
                   </span>
                 ) : null}
               </div>
+              {player.bid_plan?.overbid?.etiqueta ? (
+                <p
+                  className="mt-2 text-[12px] font-semibold"
+                  style={{ color: player.bid_plan.overbid.status === "guerra" ? TONE.red : player.bid_plan.overbid.status === "high" ? TONE.copper : TONE.green }}
+                >
+                  {player.bid_plan.overbid.etiqueta}
+                </p>
+              ) : null}
               <p className="mt-2 line-clamp-3 text-[13.5px] leading-snug text-white/75">{reason}</p>
             </div>
           </div>

@@ -795,7 +795,8 @@ def _decide_listing(
         cash=cash,
         snipe_status=snipe.get("status") if isinstance(snipe.get("status"), str) else None,
     )
-    bid_plan["overbid"] = overbid_risk(position, ideal, rivals)
+    # Sin ideal (un NO) se mide con la puja mínima: la etiqueta de rivales vale para todo el mercado.
+    bid_plan["overbid"] = overbid_risk(position, ideal if isinstance(ideal, int) else amount, rivals)
     if not hard_veto and decision == DECISION_ESPERAR and primary == "snipe" and bid_plan.get("how") == "ahora":
         decision = DECISION_PUJAR
         primary = _primary_motive(

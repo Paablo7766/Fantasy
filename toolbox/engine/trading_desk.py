@@ -34,9 +34,15 @@ def _num(value: Any) -> float | None:
     return float(value)
 
 
-def capital_trading(saldo_sobrante: int, valor_equipo: int) -> dict[str, int]:
-    """Caja libre más la deuda que el trading se atreve a usar."""
+def capital_trading(saldo_sobrante: int, valor_equipo: int, credito_disponible: int | None = None) -> dict[str, int]:
+    """Caja libre más la deuda que el trading se atreve a usar.
+
+    ``credito_disponible`` es el margen del 20 % que las pujas del once dejan
+    sin usar; la deuda del trading nunca pasa de ahí.
+    """
     deuda = int(max(0, valor_equipo) * DEUDA_PCT_EQUIPO * DEUDA_USO_MAX)
+    if credito_disponible is not None:
+        deuda = min(deuda, max(0, int(credito_disponible)))
     return {
         "caja_libre": int(max(0, saldo_sobrante)),
         "deuda_usable": deuda,
@@ -57,6 +63,7 @@ def build_trading_desk(
     saldo_sobrante: int | None,
     valor_equipo: int,
     dias_para_jornada: float | None,
+    credito_disponible: int | None = None,
 ) -> dict[str, Any]:
     """Elige las compras especulativas que maximizan euros dentro del capital.
 
@@ -66,7 +73,7 @@ def build_trading_desk(
     vacio: dict[str, Any] = {"activo": False, "operaciones": [], "capital": 0, "ganancia_esperada": 0}
     if saldo_sobrante is None or dias_para_jornada is None or dias_para_jornada < DIAS_MINIMOS:
         return vacio
-    capital = capital_trading(saldo_sobrante, valor_equipo)
+    capital = capital_trading(saldo_sobrante, valor_equipo, credito_disponible)
     dias = min(DIAS_TRADING, float(dias_para_jornada))
     filas: list[dict[str, Any]] = []
     vistos: set[str] = set()

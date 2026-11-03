@@ -41,6 +41,33 @@ export type TradingDesk = {
   ganancia_esperada?: number | null;
 };
 
+export type FaseSemana = "APALANCAMIENTO" | "ESCAPARATE" | "LIQUIDACION";
+
+export type LiquidacionSobrante = {
+  player_id?: string | null;
+  nombre?: string | null;
+  position?: string | null;
+  valor?: number | null;
+  oferta_eur?: number | null;
+  pct?: number | null;
+  elegible?: boolean;
+  accion?: string | null;
+  motivo?: string | null;
+  etiqueta?: string | null;
+};
+
+export type PlanLiquidacion = {
+  activo?: boolean;
+  fase?: FaseSemana | string | null;
+  dias_para_jornada?: number | null;
+  once_completo?: boolean;
+  sobrantes?: LiquidacionSobrante[];
+  saldo?: number | null;
+  saldo_tras_liquidar?: number | null;
+  saldo_peor_caso?: number | null;
+  deficit_eur?: number | null;
+};
+
 export type PlanFichajes = {
   ok?: boolean;
   mejora_puntos_jornada?: number | null;
@@ -58,6 +85,7 @@ export type PlanFichajes = {
   modo_liquidez?: "VENTANA" | "ALL-IN" | "SIN_RELOJ" | string | null;
   en_radar?: PlanFichajeAccion[];
   trading?: TradingDesk;
+  liquidacion?: PlanLiquidacion;
   once?: Array<{
     player_id?: string | null;
     nombre?: string | null;
