@@ -1616,6 +1616,7 @@ def _player_payload(
         "transfermarkt_value_eur": transfermarkt_value,
         "gap_eur": gap,
         "value_ratio": ratio,
+        "week_points": list(player.week_points),
         "p_titular": p_titular,
         "p_titular_source": p_titular_source,
         "lineup_status": lineup_status,

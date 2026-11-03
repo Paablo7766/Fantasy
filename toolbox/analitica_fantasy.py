@@ -749,6 +749,39 @@ def _link_rows(
     return linked, decisions
 
 
+# Con las dos fuentes de once probable por debajo de este % el jugador es
+# suplente o baja: su media histórica de minutos ya no cuenta.
+CONSENSO_TITULAR_BAJO = 0.20
+
+
+def _fraccion(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if number > 1.0:
+        number /= 100.0
+    return number if 0.0 <= number <= 1.0 else None
+
+
+def _consenso_titularidad_baja(player: dict[str, Any]) -> None:
+    """Marca ``p_titular_consenso = "bajo"`` si AF y FútbolFantasy dan ≤ 20 %.
+
+    FútbolFantasy es la fuente ``scraper``. Con las dos de acuerdo, ``p_titular``
+    queda en la menor y ``apply_own_intel`` deja de sostener los minutos con
+    la media histórica.
+    """
+    player.pop("p_titular_consenso", None)
+    if player.get("p_titular_source") != "scraper":
+        return
+    ff = _fraccion(player.get("p_titular"))
+    af = _fraccion(player.get("af_p_titular"))
+    if ff is None or af is None:
+        return
+    if ff <= CONSENSO_TITULAR_BAJO and af <= CONSENSO_TITULAR_BAJO:
+        player["p_titular"] = min(ff, af)
+        player["p_titular_consenso"] = "bajo"
+
+
 def apply_analitica_fantasy(
     catalog: list[CanonicalPlayer],
     resolver: EntityResolver,
@@ -794,6 +827,8 @@ def apply_analitica_fantasy(
             if player.get("p_titular") is None and market.p_titular is not None:
                 player["p_titular"] = market.p_titular
                 player["p_titular_source"] = "analiticafantasy_market"
+        if market is not None and market.p_titular is not None and player.get("af_p_titular") is None:
+            player["af_p_titular"] = market.p_titular
         if bid is not None:
             player["af_ideal_bid"] = bid.ideal_bid
             player["af_max_bid"] = bid.max_bid
@@ -817,6 +852,9 @@ def apply_analitica_fantasy(
                 if isinstance(value, (int, float)) and value > 0:
                     ppm = round(float(pts.predicted_points) / (float(value) / 1_000_000.0), 4)
             player["af_points_per_million"] = ppm
+            if pts.p_titular is not None:
+                player["af_p_titular"] = pts.p_titular
+        _consenso_titularidad_baja(player)
         if injured is not None:
             from toolbox.normalize import titularity_overrides_injury
 

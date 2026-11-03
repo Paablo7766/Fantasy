@@ -33,9 +33,20 @@ create table if not exists {TABLE} (
     own_predicted_delta real,
     own_expected_points real,
     stored_at real not null,
+    af_expected_points real,
+    own_xp_modelo real,
     primary key (player_id, day)
 )
 """
+
+_COLUMNAS_NUEVAS = ("af_expected_points", "own_xp_modelo")
+
+
+def _migrar(conn: sqlite3.Connection) -> None:
+    existentes = {row[1] for row in conn.execute(f"pragma table_info({TABLE})")}
+    for columna in _COLUMNAS_NUEVAS:
+        if columna not in existentes:
+            conn.execute(f"alter table {TABLE} add column {columna} real")
 
 
 def _db_path() -> Path:
@@ -90,6 +101,8 @@ def rows_from_players(players: list[dict[str, Any]], *, league_id: str | None, d
                 _num(player.get("own_predicted_delta")),
                 _num(player.get("own_expected_points")),
                 now,
+                _num(player.get("af_expected_points")),
+                _num(player.get("own_xp_modelo")),
             )
         )
     return rows
@@ -113,8 +126,11 @@ def record_signal_log(
     conn = sqlite3.connect(target, timeout=10)
     try:
         conn.execute(_SCHEMA)
+        _migrar(conn)
         conn.executemany(
-            f"insert or replace into {TABLE} values (?,?,?,?,?,?,?,?,?,?,?)",
+            f"insert or replace into {TABLE} (player_id, day, league_id, price, market_value_change, "
+            "last_points, af_predicted_delta, af_price_delta, own_predicted_delta, own_expected_points, "
+            "stored_at, af_expected_points, own_xp_modelo) values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             rows,
         )
         conn.commit()

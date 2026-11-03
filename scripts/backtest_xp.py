@@ -157,6 +157,7 @@ def _predict(entry: dict[str, Any], prior: list[PartidoHistorico], p_titular: fl
     player = {
         "position": entry["position"],
         "p_titular": p_titular,
+        "market_value": entry.get("precio"),
         "historial": [{"puntos": p.puntos, "minutos": p.minutos, "jornada": p.jornada} for p in prior],
     }
     kwargs: dict[str, Any] = {"run_monte_carlo": False}
@@ -485,6 +486,25 @@ def report(rows: list[dict[str, Any]], players: dict[str, dict[str, Any]]) -> No
     _grid(rows)
 
 
+def _cargar_precios(players: dict[str, dict[str, Any]], cache: Path) -> None:
+    """Valor de mercado del primer día guardado: prior por precio del motor."""
+    import sqlite3
+
+    db = cache / "responses.sqlite"
+    if not db.is_file():
+        return
+    conn = sqlite3.connect(db)
+    try:
+        rows = conn.execute("select player_id, market_value from price_snapshots order by day desc").fetchall()
+    except sqlite3.Error:
+        return
+    finally:
+        conn.close()
+    precios = {pid: value for pid, value in rows if value}
+    for pid, entry in players.items():
+        entry["precio"] = precios.get(pid)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--test-weeks", type=int, nargs="+", default=[9, 10, 11])
@@ -494,6 +514,7 @@ def main() -> int:
     args = parser.parse_args()
 
     players, understat = load_history(args.bodies)
+    _cargar_precios(players, args.cache)
     coverage: dict[int, int] = defaultdict(int)
     for entry in players.values():
         for week in entry["weeks"]:

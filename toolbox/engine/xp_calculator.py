@@ -24,6 +24,47 @@ PRIORS_TITULAR = {"PT": 8.0, "DF": 4.3, "MC": 4.8, "DL": 5.8}
 PRIORS_SUPLENTE = {"PT": 0.5, "DF": 1.6, "MC": 2.1, "DL": 2.3}
 STD_DEFAULT = {"PT": 2.8, "DF": 3.1, "MC": 3.8, "DL": 4.5}
 
+# Deciles del valor de mercado por puesto (catálogo, nov 2026). El mercado ya
+# descuenta el estatus del jugador en la temporada, así que sirve de prior con
+# pocos partidos: separa al titular caro del suplente barato desde el primer día.
+PRECIO_DECILES = {
+    "PT": (564_000, 589_000, 597_000, 621_000, 691_000, 774_000, 1_605_000, 13_547_000, 22_263_000, 37_535_000, 59_713_000),
+    "DF": (580_000, 596_000, 665_000, 794_000, 1_041_000, 2_376_000, 4_175_000, 6_310_000, 13_090_000, 24_386_000, 90_781_000),
+    "MC": (587_000, 604_000, 633_000, 742_000, 1_053_000, 1_661_000, 3_909_000, 6_801_000, 14_233_000, 31_545_000, 130_727_000),
+    "DL": (582_000, 599_000, 648_000, 712_000, 988_000, 2_455_000, 4_172_000, 8_849_000, 23_825_000, 47_215_000, 189_253_000),
+}
+# Ajuste del prior del puesto en puntos: recta sobre el percentil de precio,
+# recortada. El percentil 0 resta 1 punto y el 1 suma 1,8.
+AJUSTE_PRIOR_BASE = -1.0
+AJUSTE_PRIOR_PENDIENTE = 2.8
+AJUSTE_PRIOR_MIN = -1.0
+AJUSTE_PRIOR_MAX = 1.8
+
+
+def percentil_precio(slot: str, precio: float | None) -> float | None:
+    """Percentil 0..1 del valor de mercado dentro de su puesto (interpolado en deciles)."""
+    anclas = PRECIO_DECILES.get(slot)
+    if anclas is None or precio is None or not math.isfinite(precio) or precio <= 0:
+        return None
+    if precio <= anclas[0]:
+        return 0.0
+    if precio >= anclas[-1]:
+        return 1.0
+    for indice in range(1, len(anclas)):
+        if precio <= anclas[indice]:
+            lo, hi = anclas[indice - 1], anclas[indice]
+            return ((indice - 1) + (precio - lo) / (hi - lo)) / (len(anclas) - 1)
+    return 1.0
+
+
+def ajuste_prior_por_precio(slot: str, precio: float | None) -> float:
+    percentil = percentil_precio(slot, precio)
+    if percentil is None:
+        return 0.0
+    ajuste = AJUSTE_PRIOR_BASE + AJUSTE_PRIOR_PENDIENTE * percentil
+    return max(AJUSTE_PRIOR_MIN, min(AJUSTE_PRIOR_MAX, ajuste))
+
+
 LIGA_AVG_XG = 1.25
 # Partidos de titular que vale el prior. Con n=0 manda el puesto; con n grande, el jugador.
 K_PRIOR = 4.0
@@ -233,6 +274,14 @@ def _rating(player: dict[str, Any]) -> float | None:
     return None
 
 
+def _precio(player: dict[str, Any]) -> float | None:
+    for key in ("fantasy_price", "market_value", "sale_price", "precio"):
+        valor = _number(player.get(key))
+        if valor is not None and valor > 0:
+            return valor
+    return None
+
+
 def _status_token(player: dict[str, Any]) -> str:
     for key in ("player_status", "fitness", "lineup_status"):
         value = player.get(key)
@@ -296,6 +345,7 @@ class FantasyXPEngine:
         lambda_favor: float | None = None,
         lambda_contra: float | None = None,
         prob_clean_sheet: float | None = None,
+        ajuste_prior: float = 0.0,
     ) -> dict[str, float]:
         slot = canonical_slot(posicion)
         partidos_titular = [partido for partido in historial if partido.minutos >= STARTER_MINUTES]
@@ -309,7 +359,7 @@ class FantasyXPEngine:
             media_titular_real = 0.0
             std_jugador = STD_DEFAULT.get(slot, 3.5)
 
-        prior_pos = PRIORS_TITULAR.get(slot, 4.5)
+        prior_pos = PRIORS_TITULAR.get(slot, 4.5) + ajuste_prior
         base_titular = ((n_tit * media_titular_real) + (K_PRIOR * prior_pos)) / (n_tit + K_PRIOR)
         if sofascore_rating_medio is not None and sofascore_rating_medio > 6.70:
             bonus_sofa = (sofascore_rating_medio - 6.80) * 2.8
@@ -412,4 +462,5 @@ def predecir_desde_jugador(
         lambda_favor=lambda_favor,
         lambda_contra=lambda_contra,
         prob_clean_sheet=prob_clean_sheet,
+        ajuste_prior=ajuste_prior_por_precio(canonical_slot(str(player.get("position") or "MC")), _precio(player)),
     )

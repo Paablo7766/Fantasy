@@ -36,6 +36,22 @@ class SignalLogTests(unittest.TestCase):
             conn.close()
         self.assertEqual(rows, [("p1", 3_000_000, 3.0, 40_000.0), ("p2", 9_000_000, None, None)])
 
+    def test_guarda_xp_de_af_y_del_modelo_y_migra_tablas_viejas(self) -> None:
+        players = [{"player_id": "p1", "af_expected_points": 8.8, "own_xp_modelo": 4.1, "own_expected_points": 8.2}]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "responses.sqlite"
+            conn = sqlite3.connect(path)
+            conn.execute(f"create table {TABLE} (player_id text not null, day text not null, league_id text, price integer, "
+                         "market_value_change integer, last_points real, af_predicted_delta real, af_price_delta real, "
+                         "own_predicted_delta real, own_expected_points real, stored_at real not null, primary key (player_id, day))")
+            conn.commit()
+            conn.close()
+            self.assertEqual(record_signal_log(players, league_id="L", day="2026-11-03", path=path), 1)
+            conn = sqlite3.connect(path)
+            row = conn.execute(f"select af_expected_points, own_xp_modelo, own_expected_points from {TABLE}").fetchone()
+            conn.close()
+        self.assertEqual(row, (8.8, 4.1, 8.2))
+
     def test_no_day_or_no_players_writes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "responses.sqlite"

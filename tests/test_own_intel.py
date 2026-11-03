@@ -370,5 +370,65 @@ class DeltasTests(unittest.TestCase):
         self.assertEqual(deltas_from_history(hist), [50_000, 50_000, 50_000])
 
 
+class MezclaXpAfTests(unittest.TestCase):
+    def test_mezcla_55_af_y_deja_el_modelo_aparte(self) -> None:
+        from toolbox.own_intel import _mezclar_xp_af
+
+        player = {
+            "own_expected_points": 4.0,
+            "own_ceiling_points": 5.0,
+            "af_expected_points": 8.0,
+            "_own_xp_siguientes": [4.0, 2.0],
+        }
+        _mezclar_xp_af(player)
+        self.assertAlmostEqual(player["own_expected_points"], 6.2)
+        self.assertEqual(player["own_xp_modelo"], 4.0)
+        self.assertEqual(player["own_xp_fuente"], "af_mezcla")
+        self.assertEqual(player["own_ceiling_points"], 6.2)
+        self.assertEqual(player["_own_xp_siguientes"], [6.2, 3.1])
+        self.assertNotIn("own_xp_tope_af", player)
+
+    def test_tope_si_af_se_dispara_y_el_jugador_rinde_poco(self) -> None:
+        from toolbox.own_intel import _mezclar_xp_af
+
+        player = {
+            "own_expected_points": 4.0,
+            "af_expected_points": 8.81,
+            "week_points": [4.0, 0.0, 2.0, 4.0],
+        }
+        _mezclar_xp_af(player)
+        self.assertAlmostEqual(player["own_expected_points"], 5.5)
+        self.assertTrue(player["own_xp_tope_af"])
+
+    def test_sin_tope_si_viene_rindiendo(self) -> None:
+        from toolbox.own_intel import _mezclar_xp_af
+
+        player = {
+            "own_expected_points": 4.0,
+            "af_expected_points": 8.81,
+            "week_points": [9.0, 10.0, 8.0],
+        }
+        _mezclar_xp_af(player)
+        self.assertAlmostEqual(player["own_expected_points"], 0.55 * 8.81 + 0.45 * 4.0, places=2)
+
+    def test_sin_af_no_toca_el_xp_propio(self) -> None:
+        from toolbox.own_intel import _mezclar_xp_af
+
+        player = {"own_expected_points": 4.0}
+        _mezclar_xp_af(player)
+        self.assertEqual(player["own_expected_points"], 4.0)
+        self.assertEqual(player["own_xp_modelo"], 4.0)
+        self.assertNotIn("own_xp_fuente", player)
+
+    def test_consenso_bajo_quita_los_minutos_historicos(self) -> None:
+        from toolbox.own_intel import _vista_consenso_bajo
+
+        player = {"p_titular": 0.1, "p_titular_consenso": "bajo", "form": {"minutes_pct": 0.9}}
+        self.assertEqual(_vista_consenso_bajo(player)["form"]["minutes_pct"], 0.1)
+        self.assertEqual(player["form"]["minutes_pct"], 0.9)
+        sin = {"p_titular": 0.1, "form": {"minutes_pct": 0.9}}
+        self.assertIs(_vista_consenso_bajo(sin), sin)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -295,6 +295,146 @@ def _as_int(value: Any) -> int | None:
     return None
 
 
+# Backtest J9-J11 (233 jugadores-jornada con los dos, prior por precio ya activo):
+# MAE 3,21 propio, 2,89 con 0,55 de AF, 2,78 solo AF. 0,55 deja margen al motor
+# propio por el posible dato post-partido en el histórico de AF.
+AF_XP_WEIGHT = 0.55
+# Si AF supera al modelo en más de esto y el jugador viene rindiendo por debajo
+# de ``AF_TOPE_RACHA``, la mezcla no pasa de ``xp_propio + AF_TOPE_SOBRE_PROPIO``.
+AF_TOPE_DIFERENCIA = 2.2
+AF_TOPE_RACHA = 6.0
+AF_TOPE_SOBRE_PROPIO = 1.5
+
+
+def _media_ultimos_jugados(player: dict[str, Any], partidos: int = 3) -> float | None:
+    """Media de puntos de sus últimos ``partidos`` con minutos; None sin historial."""
+    from toolbox.engine.xp_calculator import historial_desde_jugador
+
+    jugados = [p.puntos for p in sorted(historial_desde_jugador(player), key=lambda p: p.jornada) if p.minutos != 0]
+    jugados = jugados[-partidos:]
+    return sum(jugados) / len(jugados) if jugados else None
+
+
+def _mezclar_xp_af(player: dict[str, Any]) -> None:
+    """Pasa el xP de la próxima jornada a ``AF_XP_WEIGHT`` de AF y el resto propio.
+
+    Deja el del modelo propio en ``own_xp_modelo`` para medir ambos. Los xP de
+    las jornadas siguientes se reescalan con el mismo cociente para que
+    ``xp_4_jornadas`` no mezcle dos escalas.
+    """
+    propio = _as_float(player.get("own_expected_points"))
+    af = _as_float(player.get("af_expected_points"))
+    if propio is None:
+        return
+    player["own_xp_modelo"] = propio
+    if af is None or af < 0 or not math.isfinite(af):
+        return
+    mezcla = AF_XP_WEIGHT * af + (1.0 - AF_XP_WEIGHT) * propio
+    if af - propio > AF_TOPE_DIFERENCIA:
+        racha = _media_ultimos_jugados(player)
+        if racha is not None and racha < AF_TOPE_RACHA:
+            mezcla = min(mezcla, propio + AF_TOPE_SOBRE_PROPIO)
+            player["own_xp_tope_af"] = True
+    player["own_expected_points"] = round(mezcla, 3)
+    player["own_xp_fuente"] = "af_mezcla"
+    techo = _as_float(player.get("own_ceiling_points"))
+    if techo is not None and techo < mezcla:
+        player["own_ceiling_points"] = round(mezcla, 3)
+    futuros = player.get("_own_xp_siguientes")
+    if isinstance(futuros, list) and futuros and propio > 0.1:
+        ratio = mezcla / propio
+        player["_own_xp_siguientes"] = [round(float(v) * ratio, 3) for v in futuros]
+
+
+_ACTAS_CACHE: dict[str, Any] = {"firma": None, "jugadores": {}}
+
+
+def _actas_en_cache() -> dict[str, dict[str, Any]]:
+    """Puntos y minutos por jornada de ``playerMaster.lastStats`` (cuerpos del scraper).
+
+    Sin esto el motor no ve el historial del jugador: la serie ``week_points``
+    no trae minutos y no sirve para separar titular de revulsivo, así que el xP
+    salía del prior del puesto para todos. Se relee solo si cambia la caché.
+    """
+    from toolbox.cache import cache_root
+    from toolbox.player_history import load_history
+
+    carpeta = cache_root() / "scraper_bodies"
+    try:
+        ficheros = list(carpeta.iterdir())
+        firma = (len(ficheros), max((f.stat().st_mtime_ns for f in ficheros), default=0))
+    except OSError:
+        return {}
+    if _ACTAS_CACHE["firma"] != firma:
+        try:
+            jugadores, _ = load_history(carpeta)
+        except Exception:  # noqa: BLE001 — sin actas el motor vuelve al prior, nunca tumba trends
+            jugadores = {}
+        _ACTAS_CACHE["firma"] = firma
+        _ACTAS_CACHE["jugadores"] = jugadores
+    return _ACTAS_CACHE["jugadores"]
+
+
+def _inyectar_actas(players: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pone ``historial`` (puntos, minutos, jornada) en quien no lo trae. Devuelve a quién."""
+    actas = _actas_en_cache()
+    puestos: list[dict[str, Any]] = []
+    for player in players:
+        pid = player.get("player_id")
+        if not isinstance(pid, str) or player.get("historial"):
+            continue
+        entry = actas.get(pid)
+        if not entry or not entry.get("weeks"):
+            continue
+        player["historial"] = [
+            {"puntos": pts, "minutos": int(mins), "jornada": week}
+            for week, (pts, mins) in sorted(entry["weeks"].items())
+        ]
+        puestos.append(player)
+    _rellenar_week_points(players)
+    return puestos
+
+
+def _rellenar_week_points(players: list[dict[str, Any]]) -> None:
+    """``week_points`` del catálogo para quien llega sin serie (típico del mercado).
+
+    Los fichajes del mercado no traen ``lastStats``; el catálogo sí guarda sus
+    puntos por jornada. Sin minutos no corrigen el xP, pero sirven para el tope
+    de la mezcla con AF y para la forma de la nota de mercado.
+    """
+    faltan = [
+        p for p in players if isinstance(p.get("player_id"), str) and not p.get("week_points") and not p.get("historial")
+    ]
+    if not faltan:
+        return
+    try:
+        from toolbox.normalize import normalize_catalog
+        from toolbox.quant_valuation import cached_catalog
+
+        catalogo = {str(row.get("player_id")): row for row in normalize_catalog(cached_catalog())}
+    except Exception:  # noqa: BLE001 — sin catálogo se queda como estaba
+        return
+    for player in faltan:
+        serie = (catalogo.get(player["player_id"]) or {}).get("week_points")
+        if isinstance(serie, list) and serie:
+            player["week_points"] = [float(v) for v in serie if isinstance(v, (int, float)) and not isinstance(v, bool)]
+
+
+def _vista_consenso_bajo(player: dict[str, Any]) -> dict[str, Any]:
+    """Copia del jugador sin la media histórica de minutos si AF y FF lo dan de banquillo.
+
+    ``compute_expected_opta_points_v2`` reparte la probabilidad de entrar desde
+    el banquillo con ``minutes_pct``: un titular habitual que ahora es duda
+    mantendría un 20 % de minutos por historia. Con consenso bajo manda el %
+    del once probable.
+    """
+    if player.get("p_titular_consenso") != "bajo":
+        return player
+    p = _as_float(player.get("p_titular")) or 0.0
+    form = player.get("form") if isinstance(player.get("form"), dict) else {}
+    return {**player, "form": {**form, "minutes_pct": p}}
+
+
 def _as_float(value: Any) -> float | None:
     if isinstance(value, bool) or value is None:
         return None
@@ -868,6 +1008,7 @@ def apply_own_intel(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Rellena ``own_*`` en cada jugador. Devuelve summary + sources status."""
+    con_actas = _inyectar_actas(players)
     fixtures = fixtures_by_club or {}
     strength_map = strengths or {}
     unique_strengths = {id(v): v for v in strength_map.values()}
@@ -951,6 +1092,7 @@ def apply_own_intel(
         team = strength_map.get(club_key) if club_key else None
         from toolbox.analyzer import apply_doubt_titular_discount
 
+        vista = _vista_consenso_bajo(player)
         pts = expected_opta_points(
             position=player.get("position") if isinstance(player.get("position"), str) else None,
             p_titular=apply_doubt_titular_discount(_as_float(player.get("p_titular")), player, None),
@@ -961,7 +1103,7 @@ def apply_own_intel(
             team_avg_xg=team.avg_xg if team else league_avg_xg,
             home=bool(fixture.home) if fixture else False,
             fdr=fixture.fdr if fixture else None,
-            player=player,
+            player=vista,
             p_cs_own=_as_float(cell.get("p_cs_for")) if cell else None,
         )
         if pts["expected_points"] is not None:
@@ -978,7 +1120,7 @@ def apply_own_intel(
             futuros: list[float] = []
             for offset, (later, later_cell) in enumerate(siguientes_by_club.get(club_key, []), start=1):
                 cumplida = sancion is not None and offset >= sancion[2]
-                jugador_j = sancion[0] if cumplida else player
+                jugador_j = sancion[0] if cumplida else vista
                 p_j = sancion[1] if cumplida else _as_float(player.get("p_titular"))
                 later_pts = expected_opta_points(
                     position=player.get("position") if isinstance(player.get("position"), str) else None,
@@ -1084,6 +1226,7 @@ def apply_own_intel(
         if isinstance(pts, dict) and pts.get("expected_points") is not None:
             player["own_expected_points"] = pts["expected_points"]
             player["own_ceiling_points"] = pts["ceiling_points"]
+            _mezclar_xp_af(player)
             if pts.get("xp_condicional") is not None:
                 player["own_points_if_starts"] = pts["xp_condicional"]
             player["own_goal_probability"] = pts["goal_probability"]
@@ -1207,6 +1350,8 @@ def apply_own_intel(
             "from_cache": False,
         },
     }
+    for jugador in con_actas:
+        jugador.pop("historial", None)
     return {
         "prediction_rising": rising,
         "prediction_falling": falling_list,
