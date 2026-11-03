@@ -128,16 +128,27 @@ def _cuando(momento: datetime | None, ahora: datetime) -> str:
     return f"{_DIAS[local.weekday()]} {hora}"
 
 
-def _niveles(clausula: int, capacidades: list[tuple[int, str | None]], saldo: int | None) -> list[dict[str, Any]]:
+def _niveles(
+    clausula: int,
+    capacidades: list[tuple[int, str | None]],
+    saldo: int | None,
+    tope: int | None = None,
+) -> list[dict[str, Any]]:
     """Cláusulas objetivo, de la más segura a la más barata.
 
     El nivel ``i`` deja sin cubrir a los ``i`` rivales con más caja. Cubrir a
-    todos exige superar la caja del más rico más un margen.
+    todos exige superar la caja del más rico más un margen, pero nunca más de
+    ``tope`` (lo máximo que alguien pagaría por el jugador): subir más no protege
+    nada y solo cuesta caja.
     """
     ordenadas = sorted((caja for caja, _ in capacidades), reverse=True)
     niveles: list[dict[str, Any]] = []
     for sin_cubrir in range(0, min(len(ordenadas), MAX_NIVELES)):
         objetivo = ordenadas[sin_cubrir] + _margen(ordenadas[sin_cubrir])
+        if tope is not None:
+            objetivo = min(objetivo, tope)
+        if objetivo <= clausula:
+            continue
         coste = coste_subida(clausula, objetivo)
         niveles.append(
             {
@@ -200,7 +211,8 @@ def _proteger(
         en_xi = jugador.get("en_xi") is True
         necesitan = [rival for _, rival in capaces if posicion in (rival.get("posiciones") or [])]
         capacidades = [(caja, str(rival.get("manager") or "Rival")) for caja, rival in capaces]
-        niveles = _niveles(clausula, capacidades, restante) if capaces else []
+        tope = int(referencia * MULTIPLO_CREIBLE) if referencia > 0 else None
+        niveles = _niveles(clausula, capacidades, restante, tope) if capaces else []
         caja_antes = restante
 
         # Daño si te lo clausulan: los puntos que pierde tu once pagados a precio de mercado

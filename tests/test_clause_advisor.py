@@ -411,3 +411,11 @@ class RadarAntiRoboTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_clausula_perfecta_no_supera_el_tope_creible():
+    from toolbox.engine.clause_advisor import _niveles
+
+    niveles = _niveles(26_500_000, [(106_000_000, "Rico")], 50_000_000, tope=int(30_000_000 * 2.5))
+    assert niveles[0]["clausula_objetivo"] == 75_000_000
+    assert _niveles(80_000_000, [(106_000_000, "Rico")], 50_000_000, tope=75_000_000) == []
