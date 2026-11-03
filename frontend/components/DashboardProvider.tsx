@@ -372,6 +372,11 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       setState({ ...EMPTY, ...snap.state });
       setPending(pendingFromSnapshot(snap.state));
       setReadAt(typeof snap.savedAt === "number" ? snap.savedAt : Date.now());
+      // La copia local se pinta al momento, pero el mercado se relee de la
+      // foto ya guardada. Así un cambio del cálculo (la previsión a 7 días)
+      // llega sin pulsar Actualizar y sin salir a LaLiga. El plan no se toca:
+      // releerlo cambiaba recomendaciones con la misma foto.
+      void fetchBlock("trends");
       return;
     }
     void load().then(() => {
@@ -384,7 +389,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         }
       }
     });
-  }, [load, shellReady, blankAfterLoad]);
+  }, [fetchBlock, load, shellReady, blankAfterLoad]);
 
   /**
    * Recargar la pestaña **a mitad de descarga** tiene que mostrar la descarga.
