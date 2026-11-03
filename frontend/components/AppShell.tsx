@@ -296,7 +296,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   // En Inicio no hay barra superior: la recarga vive en la barra lateral
   // (escritorio) y en un botón flotante sobre el dock (móvil).
-  const home = pathname === "/";
+  const home = pathname === "/" || pathname === "/equipo" || pathname.startsWith("/equipo/");
   const freshness = (
     <Freshness
       ageSeconds={photoAgeSeconds}
@@ -367,8 +367,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="app-frame">
-        <header className={`app-topbar relative ${pathname === "/" ? "app-topbar--bare" : ""}`}>
-          <div className="app-topbar__row" data-ui="topbar" hidden={pathname === "/"}>
+        <header className={`app-topbar relative ${home ? "app-topbar--bare" : ""}`}>
+          <div className="app-topbar__row" data-ui="topbar" hidden={home}>
             <div className="flex min-w-0 items-center gap-3">
               <span className="topbar-mark lg:hidden" aria-hidden="true">
                 <Icon name={section.label === "Laboratorio" ? "Liga" : (section.label as SectionLabel)} />
