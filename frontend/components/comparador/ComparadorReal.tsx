@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDashboard } from "@/components/DashboardProvider";
 import { Face, TONE, money } from "@/components/ui/kit";
@@ -464,6 +464,7 @@ export function ComparadorModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const scroller = useRef<HTMLDivElement>(null);
   const photos = useMemo(() => buildPhotoIndex(state.plan, optimize, squads, trends), [state.plan, optimize, squads, trends]);
 
   useEffect(() => {
@@ -532,6 +533,8 @@ export function ComparadorModal({
       setIdB(id);
       setPicking(idA ? null : "A");
     }
+    // En móvil la lista empuja los huecos fuera de la vista: se sube para ver a quién has elegido.
+    scroller.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
   const swap = () => {
     setIdA(idB);
@@ -598,7 +601,7 @@ export function ComparadorModal({
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-5 pb-6 pt-5">
+        <div ref={scroller} className="flex-1 overflow-y-auto px-5 pb-6 pt-5">
           {!opciones.length ? (
             <p className="py-10 text-center text-[14px] text-white/55">Todavía no hay jugadores en la foto. Actualiza y vuelve a comparar.</p>
           ) : (
