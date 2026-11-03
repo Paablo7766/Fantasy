@@ -135,6 +135,7 @@ def _blank() -> dict[str, Any]:
         "shielded": False,
         "clause_lock": None,
         "dificultad": None,
+        "kickoff": None,
         "on_market": False,
         "seller_team_id": None,
         "sale_price": None,
@@ -265,6 +266,18 @@ def _set_difficulty(row: dict[str, Any], source: dict[str, Any]) -> None:
             return
 
 
+def _set_kickoff(row: dict[str, Any], source: dict[str, Any]) -> None:
+    """Saque del próximo partido, en UTC, para cruzarlo con el inicio de jornada."""
+    fixture = source.get("fixture") if isinstance(source.get("fixture"), dict) else {}
+    raw = fixture.get("kickoff")
+    if raw is None:
+        calendar = source.get("own_calendar") if isinstance(source.get("own_calendar"), list) else []
+        raw = calendar[0].get("kickoff") if calendar and isinstance(calendar[0], dict) else None
+    moment = _parse_kickoff(raw)
+    if moment is not None:
+        row["kickoff"] = moment.astimezone(timezone.utc).isoformat()
+
+
 def _set_calendar(row: dict[str, Any], source: dict[str, Any]) -> None:
     """Próximos partidos: el propio da el próximo y AnalíticaFantasy los siguientes."""
     from toolbox.engine.comparador_liga import calendario_combinado
@@ -384,6 +397,7 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
         _set_points(row, player, prefer=False)
         _set_price(row, player)
         _set_difficulty(row, player)
+        _set_kickoff(row, player)
         _set_calendar(row, player)
         if isinstance(player.get("own_xp_siguientes"), list) and not row.get("xp_siguientes"):
             row["xp_siguientes"] = player["own_xp_siguientes"]
@@ -1118,6 +1132,7 @@ def _plan(
                 "pct": _pct_previsto(previsto, row["player_id"]),
                 "valor": row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None,
                 "p_titular": row.get("p_titular") if isinstance(row.get("p_titular"), (int, float)) and not isinstance(row.get("p_titular"), bool) else row.get("prob_titular"),
+                "kickoff": row.get("kickoff"),
                 "tiene_oferta_laliga": row.get("tiene_oferta_laliga") is True,
                 "futuro": _futuro(row),
                 # Vuelve dentro de las cuatro jornadas del plan: no es una baja.
@@ -1241,7 +1256,9 @@ def _plan(
         logger.exception("plan de fichajes")
         return _empty_plan(saldo, ratio)
     try:
-        plan["liquidacion"] = _liquidacion(records, owned_rows, saldo, _days_to_kickoff(trends, now), own_id)
+        plan["liquidacion"] = _liquidacion(
+            records, owned_rows, saldo, _days_to_kickoff(trends, now), own_id, _jornada_kickoff(trends, now)
+        )
     except Exception:
         logger.exception("plan de liquidación")
     return plan
@@ -1253,6 +1270,7 @@ def _liquidacion(
     saldo: int | None,
     dias: float | None,
     own_id: str | None,
+    inicio: str | None = None,
 ) -> dict[str, Any]:
     """Salida del #12 en adelante con la mejor oferta con importe de cada jugador."""
     filas: list[dict[str, Any]] = []
@@ -1264,7 +1282,7 @@ def _liquidacion(
         )
         importes = [oferta["importe"] for oferta in _ofertas_propias(record, own_id, {}) if isinstance(oferta.get("importe"), int)]
         ofertas[row["player_id"]] = max(importes) if importes else None
-    return plan_liquidacion(filas, saldo=saldo, dias_para_jornada=dias, ofertas=ofertas)
+    return plan_liquidacion(filas, saldo=saldo, dias_para_jornada=dias, ofertas=ofertas, inicio=inicio)
 
 
 def _notas_mercado(

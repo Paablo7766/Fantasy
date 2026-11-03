@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from toolbox.engine.lineup_math import solve_best_xi
+from toolbox.engine.lineup_math import UMBRAL_HUECO, prob_titular, solve_best_xi
 
 FASE_APALANCAMIENTO = "APALANCAMIENTO"
 FASE_ESCAPARATE = "ESCAPARATE"
@@ -91,6 +91,68 @@ def _accion(fase: str, *, valor: int, oferta: int | None, en_venta: bool, tiene_
     return ACCION_SIN_OFERTA, "No hay oferta de LaLiga. Ofrecerlo a un rival antes del saque."
 
 
+#: Rango de titularidad en el que un titular es dudoso y merece cobertura.
+DUDOSO_MIN = 0.40
+DUDOSO_MAX = 0.80
+
+
+def cobertura_inaugural(
+    owned: list[dict[str, Any]],
+    once_ids: set[str],
+    *,
+    inicio: Any,
+) -> dict[str, Any]:
+    """Suplentes que se guardan para cubrir a un dudoso del primer partido.
+
+    Un titular con ``0.40 <= p_titular <= 0.80`` que juega en el saque de la
+    jornada (``kickoff == inicio``) se cubre con el mejor suplente sano de su
+    posición. El valor de cobertura es ``(1 − p) · xP_planB``: lo que se gana
+    si el dudoso no sale y el suplente ocupa su sitio. Cada suplente cubre a un
+    solo dudoso.
+    """
+    vacio: dict[str, Any] = {"conservar": set(), "valor": 0.0, "coberturas": []}
+    if inicio is None:
+        return vacio
+    filas = [row for row in owned if isinstance(row, dict) and isinstance(row.get("player_id"), str)]
+    dudosos = []
+    for row in filas:
+        p = prob_titular(row)
+        if row["player_id"] in once_ids and p is not None and DUDOSO_MIN <= p <= DUDOSO_MAX and row.get("kickoff") == inicio:
+            dudosos.append((row, p))
+    dudosos.sort(key=lambda item: item[1])
+    usados: set[str] = set()
+    coberturas: list[dict[str, Any]] = []
+    for row, p in dudosos:
+        candidatos = [
+            suplente
+            for suplente in filas
+            if suplente["player_id"] not in once_ids
+            and suplente["player_id"] not in usados
+            and suplente.get("position") == row.get("position")
+            and suplente.get("elegible") is not False
+            and (prob_titular(suplente) is None or prob_titular(suplente) >= UMBRAL_HUECO)
+        ]
+        if not candidatos:
+            continue
+        mejor = max(candidatos, key=lambda item: (float(item.get("jornada") or 0.0), str(item["player_id"])))
+        usados.add(mejor["player_id"])
+        plan_b = float(mejor.get("jornada") or 0.0)
+        coberturas.append(
+            {
+                "titular_id": row["player_id"],
+                "suplente_id": mejor["player_id"],
+                "p_titular": round(p, 3),
+                "xp_plan_b": round(plan_b, 3),
+                "valor": round((1.0 - p) * plan_b, 3),
+            }
+        )
+    return {
+        "conservar": usados,
+        "valor": round(sum(item["valor"] for item in coberturas), 3),
+        "coberturas": coberturas,
+    }
+
+
 def plan_liquidacion(
     owned: list[dict[str, Any]],
     *,
@@ -98,6 +160,7 @@ def plan_liquidacion(
     dias_para_jornada: float | None,
     ofertas: dict[str, int | None] | None = None,
     conservar: set[str] | None = None,
+    inicio: Any = None,
 ) -> dict[str, Any]:
     """Qué hacer con cada jugador del #12 en adelante según la fase de la semana.
 
@@ -132,7 +195,8 @@ def plan_liquidacion(
     ]
     xi = solve_best_xi(elegibles)
     once_ids = set(xi["player_ids"]) if xi.get("ok") else set()
-    guardar = {str(item) for item in conservar or set()}
+    cobertura = cobertura_inaugural(filas, once_ids, inicio=inicio)
+    guardar = {str(item) for item in conservar or set()} | cobertura["conservar"]
     known = ofertas or {}
     sobrantes: list[dict[str, Any]] = []
     for row in filas:
@@ -182,6 +246,8 @@ def plan_liquidacion(
         "activo": True,
         "once_ids": sorted(once_ids),
         "once_completo": bool(xi.get("ok")),
+        "cobertura_inaugural": {**cobertura, "conservar": sorted(cobertura["conservar"])},
+        "puntos_once_con_cobertura": round(float(xi.get("puntos") or 0.0) + cobertura["valor"], 3),
         "sobrantes": sobrantes,
         "saldo_tras_liquidar": tras,
         "saldo_peor_caso": peor_caso,

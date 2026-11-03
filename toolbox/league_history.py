@@ -528,6 +528,14 @@ def _percentile(values: list[float], fraction: float) -> float:
     return ordered[index]
 
 
+def _legal_limit_of(rival: dict[str, Any]) -> float | None:
+    ledger = rival.get("ledger") if isinstance(rival.get("ledger"), dict) else {}
+    for value in (rival.get("legal_bid_limit_eur"), rival.get("legal_bid_limit"), ledger.get("legal_bid_limit")):
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    return None
+
+
 @dataclass
 class RivalProfile:
     team_id: str
@@ -542,6 +550,8 @@ class RivalProfile:
     already_bidding: bool = False
     #: Saldo bajo cero: no puja (saca 0 si llega así al saque).
     en_rojo: bool = False
+    #: Caja más deuda permitida; decide si un rojo leve aún puede pujar a crédito.
+    legal_bid_limit_eur: float | None = None
     # Modelo hurdle: con probabilidad ``p_exact`` puja a valor de mercado
     # (prima <= ``EXACT_PREMIUM_MAX``, centrada en ``exact_premium``); si no, sobrepuja
     # según ``alpha_aggressiveness`` / ``sigma_dispersion`` (log-normal de la prima).
@@ -775,6 +785,7 @@ def fit_rival_profiles_eb(
             lacks_replacements=bool(rival.get("lacks_replacements", False)),
             already_bidding=bool(rival.get("already_bidding", False)),
             en_rojo=bool(rival.get("en_rojo")),
+            legal_bid_limit_eur=_legal_limit_of(rival),
             p_exact=float(np.clip(p_exact_j, 0.0, 0.98)),
             exact_premium=float(np.median(exacts)) if exacts else 0.0,
             median_overbid=float(np.median(over)) if over else None,

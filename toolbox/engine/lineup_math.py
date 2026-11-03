@@ -15,6 +15,57 @@ from typing import Any
 from toolbox.analyzer import FORMATIONS, POSITIONS, XI_SIZE
 
 
+#: Peso de la varianza de titularidad: un once que depende de un dudoso vale menos
+#: que su media. Pequeño a propósito, solo desempata entre alternativas parejas.
+LAMBDA_VAR = 0.02
+#: Un titular con esta probabilidad o menos es un hueco que hay que tapar.
+UMBRAL_HUECO = 0.30
+HUECO_OBLIGATORIO = "HUECO_OBLIGATORIO"
+
+
+def prob_titular(row: dict[str, Any]) -> float | None:
+    """Probabilidad de titularidad en 0–1 (acepta 0–100). ``None`` si no se conoce."""
+    for key in ("p_titular", "prob_titular"):
+        value = row.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+            continue
+        number = float(value)
+        if number > 1.0:
+            number /= 100.0
+        return number if number <= 1.0 else None
+    return None
+
+
+def penalizacion_varianza(row: dict[str, Any], lambda_var: float = LAMBDA_VAR) -> float:
+    """``lambda · p · (1 − p) · xP_cond²``: la varianza de jugar o no jugar.
+
+    ``xP_cond`` son los puntos si sale de titular (``si_titular``); sin ese dato
+    se usa ``jornada``. Sin probabilidad conocida no hay penalización.
+    """
+    p = prob_titular(row)
+    if p is None or lambda_var <= 0:
+        return 0.0
+    cond = row.get("si_titular")
+    if isinstance(cond, bool) or not isinstance(cond, (int, float)):
+        cond = row.get("jornada")
+    cond = float(cond) if isinstance(cond, (int, float)) and not isinstance(cond, bool) else 0.0
+    return lambda_var * p * (1.0 - p) * cond * cond
+
+
+def huecos_obligatorios(titulares: list[dict[str, Any]]) -> list[str]:
+    """Titulares con ``p_titular <= 30 %``: el plan debe priorizar taparlos."""
+    ids: list[str] = []
+    for row in titulares:
+        p = prob_titular(row) if isinstance(row, dict) else None
+        if p is not None and p <= UMBRAL_HUECO and isinstance(row.get("player_id"), str):
+            ids.append(row["player_id"])
+    return ids
+
+
+def _ajustado(row: dict[str, Any], lambda_var: float) -> float:
+    return float(row["jornada"]) - penalizacion_varianza(row, lambda_var)
+
+
 def _rows(players: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -35,21 +86,31 @@ def _rows(players: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def solve_best_xi(players: list[dict[str, Any]]) -> dict[str, Any]:
-    """Maximiza la suma de ``jornada`` con una formación de LaLiga.
+def solve_best_xi(players: list[dict[str, Any]], *, lambda_var: float = LAMBDA_VAR) -> dict[str, Any]:
+    """Maximiza la suma de ``jornada`` menos la varianza de titularidad.
+
+    ``puntos`` es la suma real de ``jornada`` del once elegido; el criterio de
+    elección usa ``puntos_ajustados``.
 
     Sin once legal el resultado es ``ok: False`` y cero puntos: en el
     reglamento un hueco anula la jornada.
     """
     rows = _rows(players)
-    empty = {"ok": False, "puntos": 0.0, "player_ids": [], "formacion": None}
+    empty = {
+        "ok": False,
+        "puntos": 0.0,
+        "puntos_ajustados": 0.0,
+        "huecos_obligatorios": [],
+        "player_ids": [],
+        "formacion": None,
+    }
     if len(rows) < XI_SIZE:
         return empty
     by_position: dict[str, list[dict[str, Any]]] = {position: [] for position in POSITIONS}
     for row in rows:
         by_position[row["position"]].append(row)
     for pool in by_position.values():
-        pool.sort(key=lambda row: (-float(row["jornada"]), str(row["player_id"])))
+        pool.sort(key=lambda row: (-_ajustado(row, lambda_var), str(row["player_id"])))
 
     best: tuple[float, list[dict[str, Any]], str] | None = None
     for name, slots in FORMATIONS.items():
@@ -58,15 +119,18 @@ def solve_best_xi(players: list[dict[str, Any]]) -> dict[str, Any]:
         picked: list[dict[str, Any]] = []
         for position, need in slots.items():
             picked.extend(by_position[position][:need])
-        total = sum(float(row["jornada"]) for row in picked)
+        total = sum(_ajustado(row, lambda_var) for row in picked)
         if best is None or total > best[0]:
             best = (total, picked, name)
     if best is None:
         return empty
-    total, picked, name = best
+    ajustado, picked, name = best
+    total = sum(float(row["jornada"]) for row in picked)
     return {
         "ok": True,
         "puntos": round(total, 4),
+        "puntos_ajustados": round(ajustado, 4),
+        "huecos_obligatorios": huecos_obligatorios(picked),
         "player_ids": [row["player_id"] for row in picked],
         "formacion": name,
     }

@@ -862,6 +862,7 @@ def _rival_risk(
         "en_rojo_seguro": rojo == ROJO_SEGURO,
         # En rojo no puja: hacerlo le hunde más y saca 0 si no vende antes del saque.
         "bid_limit_eur": 0 if rojo else cash,
+        "legal_bid_limit_eur": ledger.get("legal_bid_limit") if isinstance(ledger, dict) else None,
         "ledger": ledger,
         "depth": available,
         "minimum": dict(MIN_HEADCOUNT),

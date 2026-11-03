@@ -145,6 +145,7 @@ def rival_snapshots(squads: dict[str, Any] | None, trends: dict[str, Any] | None
                 "en_rojo": rojo,
                 "en_rojo_seguro": rojo == ROJO_SEGURO,
                 "bid_limit_eur": 0 if rojo else cash,
+                "legal_bid_limit_eur": _legal_limit(cash, squad.get("debt_limit_eur")),
                 "urgencia": urgencia,
                 "thin_positions": [position for position in POSITIONS if position in urgencia],
                 "xi_gaps": [position for position in POSITIONS if urgencia.get(position) == URGENCIA_HUECO],
@@ -160,6 +161,29 @@ def _bid_limit(row: dict[str, Any]) -> int | None:
         if isinstance(value, int) and not isinstance(value, bool):
             return value
     return None
+
+
+def _legal_limit(cash: int | None, debt: Any) -> int | None:
+    """Caja más endeudamiento permitido. Sin caja no hay cota que dar."""
+    if cash is None:
+        return None
+    extra = debt if isinstance(debt, int) and not isinstance(debt, bool) else 0
+    return max(0, cash + max(0, extra))
+
+
+def _rojo_leve_con_hueco(row: dict[str, Any], position: str, price: int | float) -> int | None:
+    """Tope legal de un rival en rojo que aun así puja por cubrir un hueco.
+
+    En rojo leve (su tope legal supera el precio) y sin titulares sanos justo
+    en este puesto, puja hoy a crédito y vende el jueves: no se le baja a 0.
+    Sin hueco ahí, o con el tope legal agotado, se queda en 0.
+    """
+    if not row.get("en_rojo") or _urgencia_en(row, position) != URGENCIA_HUECO:
+        return None
+    legal = row.get("legal_bid_limit_eur")
+    if isinstance(legal, bool) or not isinstance(legal, (int, float)) or legal <= price:
+        return None
+    return int(legal)
 
 
 def _urgencia_en(row: dict[str, Any], position: str) -> str | None:
@@ -201,7 +225,8 @@ def overbid_risk(
         urgencia = _urgencia_en(row, position)
         if urgencia is None:
             continue
-        if (_bid_limit(row) or 0) < ideal:
+        limite = _rojo_leve_con_hueco(row, position, ideal) or _bid_limit(row) or 0
+        if limite < ideal:
             sin_caja.append(_rival_name(row))
             continue
         (hueco if urgencia == URGENCIA_HUECO else justo).append(row)
@@ -402,9 +427,17 @@ def probability_of_winning_bid(
     p_win_all = 1.0
 
     for rv in rivals:
-        if rv.en_rojo and not rv.already_bidding:
+        # Rojo leve con hueco en este puesto: puja a crédito y vende después.
+        credito = (
+            rv.legal_bid_limit_eur
+            if rv.en_rojo and position in rv.xi_gaps and rv.legal_bid_limit_eur is not None
+            and rv.legal_bid_limit_eur > min_legal_bid
+            else None
+        )
+        if rv.en_rojo and not rv.already_bidding and credito is None:
             continue
-        if rv.cash_eur + 2.0 * rv.cash_uncertainty_eur < min_legal_bid and not rv.already_bidding:
+        caja = max(rv.cash_eur, credito or 0.0)
+        if caja + 2.0 * rv.cash_uncertainty_eur < min_legal_bid and not rv.already_bidding:
             continue
 
         has_gap = 1.0 if position in rv.xi_gaps else 0.0
@@ -435,7 +468,7 @@ def probability_of_winning_bid(
         # prima de riesgo; solo el resto sigue la curva de sobrepuja.
         cdf_exact = float(norm.cdf((premium_b - rv.exact_premium) / EXACT_BID_SMOOTH))
         cdf_valuation = rv.p_exact * cdf_exact + (1.0 - rv.p_exact) * cdf_overbid
-        cdf_budget_ceiling = float(norm.cdf((bid_eur - rv.cash_eur) / rv.cash_uncertainty_eur))
+        cdf_budget_ceiling = float(norm.cdf((bid_eur - caja) / rv.cash_uncertainty_eur))
         f_j = 1.0 - (1.0 - cdf_valuation) * (1.0 - cdf_budget_ceiling)
         p_beat_rival = (1.0 - theta_j) + theta_j * f_j
         p_win_all *= p_beat_rival

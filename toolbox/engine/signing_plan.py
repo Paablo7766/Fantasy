@@ -15,7 +15,7 @@ import pulp
 
 from toolbox.analyzer import FORMATIONS, POSITIONS, XI_SIZE
 from toolbox.engine.auction_intel import nota_y_veredicto
-from toolbox.engine.lineup_math import solve_best_xi
+from toolbox.engine.lineup_math import HUECO_OBLIGATORIO, penalizacion_varianza, solve_best_xi
 from toolbox.engine.trading_desk import DEUDA_PCT_EQUIPO, build_trading_desk
 
 # Un suplente buscado a ciegas rinde como un titular medio de esa posición.
@@ -641,6 +641,7 @@ def _plan_once(
     base_puntos = float(actual["puntos"]) if actual["ok"] else 0.0
     xi_ids = set(actual["player_ids"]) if actual["ok"] else set()
     bajas = {row["player_id"] for row in plantilla if _es_baja(row)}
+    huecos = set(actual.get("huecos_obligatorios") or [])
 
     ficha_compra: dict[str, dict[str, Any]] = {}
     radar: list[dict[str, Any]] = []
@@ -1010,7 +1011,10 @@ def _plan_once(
             if f"{origen}:{row['player_id']}" in variables
         ]
 
-    puntos_j1 = pulp.lpSum(float(row.get("jornada") or 0.0) * variable for row, variable in _filas_con(en_once))
+    puntos_j1 = pulp.lpSum(
+        (float(row.get("jornada") or 0.0) - penalizacion_varianza(row)) * variable
+        for row, variable in _filas_con(en_once)
+    )
     puntos_j1 += pulp.lpSum(BUSCA_PUNTOS * busca[position] for position in POSITIONS)
     puntos_futuro = pulp.lpSum(_futuro_efectivo(row) * variable for row, variable in _filas_con(en_futuro))
     puntos_futuro += pulp.lpSum(3.0 * BUSCA_PUNTOS * busca_futuro[position] for position in POSITIONS)
@@ -1068,7 +1072,7 @@ def _plan_once(
         (primas.get(player_id, 0.0) / _MILLON) * PENALIZACION_PRIMA_POR_MILLON * variable
         for player_id, variable in clausula.items()
     )
-    bonus_baja = pulp.lpSum(BONUS_REEMPLAZO_BAJA * vende[player_id] for player_id in bajas if player_id in vende)
+    bonus_baja = pulp.lpSum(BONUS_REEMPLAZO_BAJA * vende[player_id] for player_id in bajas | huecos if player_id in vende)
     continuidad = pulp.lpSum(
         [
             *(CONTINUIDAD_XP * variable for pid, variable in puja.items() if pid in previos),
@@ -1414,6 +1418,17 @@ def _plan_once(
         "formacion": chosen_form,
         "puntos_once": round(puntos_once, 2),
         "puntos_once_actual": round(float(baseline_puntos), 2),
+        "huecos_obligatorios": [
+            {
+                "player_id": row["player_id"],
+                "nombre": _nombre(row),
+                "posicion": row.get("position"),
+                "p_titular": _prob_titular(row),
+                "etiqueta": HUECO_OBLIGATORIO,
+            }
+            for row in plantilla
+            if row["player_id"] in huecos
+        ],
         "ratio_mercado": round(ratio, 2) if ratio else None,
         "once": once,
         "en_radar": radar,
