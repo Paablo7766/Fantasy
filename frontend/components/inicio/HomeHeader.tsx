@@ -6,7 +6,6 @@ import { points } from "@/lib/core/format";
 import { buildClockReport, countdownParts, eventTitle, signedPoints } from "@/lib/inicio/hoy";
 import { useNow } from "@/lib/core/useClock";
 import { useCountUp } from "@/components/inicio/ui";
-import { useDashboard } from "@/components/DashboardProvider";
 import type { PlanPayload, SquadsPayload } from "@/lib/types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -26,16 +25,14 @@ function Figure({ text }: { text: string }) {
 function Tile({ icon, value, label, sub, children }: { icon?: ReactNode; value?: ReactNode; label: string; sub?: string | null; children?: ReactNode }) {
   return (
     <div className="ini-tile" data-ui="home-tile">
-      <div className="flex items-start justify-between gap-2">
-        {children ?? <span className="ini-tile__value tabular-nums">{value}</span>}
-        {icon ? (
-          <span className="ini-tile__icon shrink-0" aria-hidden="true">
-            {icon}
-          </span>
-        ) : null}
-      </div>
-      <div className="min-w-0">
-        {children && value ? <p className="ini-tile__value tabular-nums">{value}</p> : null}
+      {icon ? (
+        <span className="ini-tile__icon" aria-hidden="true">
+          {icon}
+        </span>
+      ) : null}
+      {children ? <div className="ini-tile__viz">{children}</div> : null}
+      {value !== undefined ? <p className="ini-tile__value tabular-nums">{value}</p> : null}
+      <div className="min-w-0 max-w-full">
         <p className="ini-tile__label truncate">{label}</p>
         <p className="ini-tile__sub truncate tabular-nums">{sub || " "}</p>
       </div>
@@ -51,7 +48,7 @@ function Ring({ value, ratio }: { value: string; ratio: number | null }) {
     <svg className="ini-ring" viewBox="0 0 52 52" aria-hidden="true">
       <circle className="ini-ring__track" cx="26" cy="26" r={r} />
       <circle className="ini-ring__bar" cx="26" cy="26" r={r} strokeDasharray={c} strokeDashoffset={c * (1 - p)} transform="rotate(-90 26 26)" />
-      <text x="26" y="31" textAnchor="middle">
+      <text x="26" y="31.5" textAnchor="middle">
         {value}
       </text>
     </svg>
@@ -82,43 +79,6 @@ function VsLeader({ you, leader }: { you: number | null; leader: number | null }
 }
 
 const DATE_FMT = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Madrid" });
-
-/**
- * Recarga dentro del hero (en Inicio no hay barra superior): edad de la foto,
- * botón redondo con anillo de progreso y atajo «R».
- */
-function HeroRefresh() {
-  const { refresh, refreshing, busy, connecting, refreshError, photoAge, photoAgeSeconds, refreshPct, progress } = useDashboard();
-  const working = refreshing || busy;
-  const pct = refreshing ? refreshPct : progress.pct;
-  const old = photoAgeSeconds === null || photoAgeSeconds >= 6 * 3600;
-  const tone = working ? "#38bdf8" : refreshError || old ? "#ff7d66" : photoAgeSeconds >= 3600 ? "#f5b544" : "#34d399";
-  const label = working ? `${pct}%` : refreshError ? "Falló" : photoAge || "Sin datos";
-  return (
-    <span className="ini-refresh" data-ui="refresh">
-      <span className="ini-refresh__age">
-        <span className="ini-refresh__dot" style={{ background: tone }} aria-hidden="true" />
-        <span aria-live="polite">{label}</span>
-      </span>
-      <button
-        type="button"
-        className="ini-refresh__btn"
-        onClick={() => void refresh()}
-        disabled={connecting || refreshing}
-        aria-label={refreshError ? "Reintentar la descarga" : "Actualizar datos"}
-        aria-keyshortcuts="R"
-        title="Actualizar datos (R)"
-        data-progress={working ? "true" : undefined}
-        style={{ "--p": `${Math.max(0, Math.min(100, pct))}%` } as CSSProperties}
-      >
-        <svg viewBox="0 0 20 20" className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-          <path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.1" strokeLinecap="round" />
-          <path d="M16.4 3.6v3.2h-3.2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-    </span>
-  );
-}
 
 const ico = { viewBox: "0 0 16 16", width: 14, height: 14, fill: "none", stroke: "currentColor", strokeWidth: 1.6 } as const;
 
@@ -195,9 +155,7 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
           <p className="ini-chip justify-self-center">
             <span className="truncate">{leagueName || "Tu cuenta"}</span>
           </p>
-          <div className="justify-self-end">
-            <HeroRefresh />
-          </div>
+          <span aria-hidden="true" />
         </div>
 
         <div className="ini-hero__center">
@@ -243,7 +201,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
 
       <div className="ini-bento ini-in" style={{ "--i": 1 } as CSSProperties}>
         <Tile
-          value={<Ring value={rank !== null ? String(rank) : dash} ratio={rankRatio} />}
           label="Posición"
           sub={field ? `de ${field} en la liga` : null}
           icon={
@@ -251,7 +208,9 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
               <path d="M5 2.5h6v3a3 3 0 0 1-6 0v-3ZM8 8.5v3M5.5 13.5h5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           }
-        />
+        >
+          <Ring value={rank !== null ? `${rank}º` : dash} ratio={rankRatio} />
+        </Tile>
         <Tile
           value={pts !== null ? <Figure text={`${Math.round(pts)} pts`} /> : dash}
           label="Puntos"

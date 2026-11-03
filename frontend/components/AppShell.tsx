@@ -294,6 +294,24 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [canRefresh, refresh]);
 
+  // En Inicio no hay barra superior: la recarga vive en la barra lateral
+  // (escritorio) y en un botón flotante sobre el dock (móvil).
+  const home = pathname === "/";
+  const freshness = (
+    <Freshness
+      ageSeconds={photoAgeSeconds}
+      age={photoAge}
+      refreshing={refreshing}
+      busy={busy}
+      pct={refreshing ? refreshPct : progress.pct}
+      error={Boolean(refreshError)}
+      disabled={connecting || refreshing}
+      onRefresh={() => void refresh()}
+      onOpen={() => setToolsOpen(true)}
+      open={toolsOpen}
+    />
+  );
+
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
@@ -330,6 +348,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mt-4 border-t border-[color:var(--sidebar-line)] px-2 pt-4">
           <p className="truncate text-sm font-medium text-white">{leagueName}</p>
           <p className="mt-1 font-mono text-[11px] text-[color:var(--sidebar-muted)]">{photoLine}</p>
+          {home ? <div className="side-fresh mt-3">{freshness}</div> : null}
           <Link
             href={labHref()}
             className={`mt-3 block text-sm no-underline ${pathname.startsWith("/laboratorio") ? "text-white" : "text-[color:var(--sidebar-muted)] hover:text-white"}`}
@@ -362,18 +381,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <p className="topbar-hint truncate">{section.hint}</p>
               </div>
             </div>
-            <Freshness
-              ageSeconds={photoAgeSeconds}
-              age={photoAge}
-              refreshing={refreshing}
-              busy={busy}
-              pct={refreshing ? refreshPct : progress.pct}
-              error={Boolean(refreshError)}
-              disabled={connecting || refreshing}
-              onRefresh={() => void refresh()}
-              onOpen={() => setToolsOpen(true)}
-              open={toolsOpen}
-            />
+            {freshness}
           </div>
           {refreshing ? (
             <div className="absolute inset-x-0 bottom-0" role="status" aria-live="polite" aria-label={refreshLine}>
@@ -435,6 +443,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         ) : null}
 
         <div className="app-page min-w-0 app-page--dock">{children}</div>
+
+        {home ? <div className="fab-fresh lg:hidden">{freshness}</div> : null}
 
         <nav
           className="fixed inset-x-5 bottom-3 z-50 flex h-14 items-stretch overflow-hidden rounded-2xl border border-white/[0.08] bg-[#060E14]/90 backdrop-blur-2xl lg:hidden"
