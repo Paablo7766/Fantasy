@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { money, signedMoney } from "@/components/ui/kit";
 import { points } from "@/lib/core/format";
 import { buildClockReport, countdownParts, eventTitle } from "@/lib/inicio/hoy";
 import { useNow } from "@/lib/core/useClock";
-import { useCountUp } from "@/components/inicio/ui";
 import type { PlanPayload, SquadsPayload } from "@/lib/types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -52,6 +51,31 @@ function Ring({ value, ratio }: { value: string; ratio: number | null }) {
         {value}
       </text>
     </svg>
+  );
+}
+
+/** Cifra que cuenta desde cero al montarse (cada dato del hero se monta con su clave). */
+function CountFigure({ value, fmt }: { value: number; fmt: (v: number) => string }) {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const t0 = performance.now();
+    const dur = reduced ? 0 : 1800;
+    let frame = 0;
+    const tick = (now: number) => {
+      const p = dur ? Math.min(1, (now - t0) / dur) : 1;
+      // ease-out exponencial: arranca rápido y se posa muy despacio.
+      const e = p === 1 ? 1 : 1 - Math.pow(2, -10 * p);
+      setV(value * e);
+      if (p < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+  return (
+    <span className="ini-cash__in">
+      <Figure text={fmt(v)} />
+    </span>
   );
 }
 
@@ -118,17 +142,21 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   ) ?? null;
   const dateText = mounted ? DATE_FMT.format(nowMs) : "";
 
-  // Cifra protagonista: alterna cada 5 s entre el saldo de ahora y el que
-  // queda tras el plan. El número cuenta hasta el nuevo valor y la etiqueta
-  // cambia con un fundido suave.
+  // Cifra protagonista: rota cada 6 s entre seis datos distintos. Cada uno
+  // entra con su propio conteo desde cero y un fundido largo.
+  const gain = typeof fichajes?.mejora_puntos_jornada === "number" && Math.abs(fichajes.mejora_puntos_jornada) >= 0.05 ? fichajes.mejora_puntos_jornada : null;
+  const pts1 = (v: number) => `${points(v)} pts`;
   const figures = [
-    { key: "now", label: "Saldo disponible", v: cash, other: cashEnd !== null ? `Tras el plan · ${money(cashEnd)}` : null },
-    cashEnd !== null ? { key: "end", label: "Saldo tras el plan", v: cashEnd, other: cash !== null ? `Disponible ahora · ${money(cash)}` : null } : null,
-  ].filter((f): f is { key: string; label: string; v: number | null; other: string | null } => f !== null);
-  const slide = figures.length > 1 && mounted && typeof cash === "number" ? Math.floor(nowMs / 5000) % figures.length : 0;
+    { key: "cash", label: "Saldo disponible", v: cash, fmt: money, other: cashEnd !== null ? `Tras el plan · ${money(cashEnd)}` : "Listo para pujar hoy" },
+    gain !== null ? { key: "gain", label: "Mejora con el plan de hoy", v: gain, fmt: (v: number) => `${v > 0 ? "+" : "−"}${points(Math.abs(v))} pts`, other: "Puntos extra en tu once si lo sigues" } : null,
+    cashEnd !== null ? { key: "end", label: "Saldo tras el plan", v: cashEnd, fmt: money, other: "Lo que te queda tras pujas y ventas" } : null,
+    typeof value === "number" ? { key: "value", label: "Valor de tu plantilla", v: value, fmt: money, other: typeof valueDay === "number" && valueDay !== 0 ? `${signedMoney(valueDay)} desde ayer` : "Suma del valor de mercado" } : null,
+    onceTarget !== null ? { key: "once", label: "Once previsto", v: onceTarget, fmt: pts1, other: "Puntos esperados de tu mejor alineación" } : null,
+    typeof gap === "number" && gap < 0 ? { key: "gap", label: "Distancia al líder", v: Math.abs(gap), fmt: (v: number) => `${Math.round(v)} pts`, other: rank !== null && field ? `Vas ${rank}º de ${field}` : "Por recortar esta jornada" } : null,
+  ].filter((f): f is { key: string; label: string; v: number | null; fmt: (v: number) => string; other: string } => f !== null);
+  const slide = figures.length > 1 && mounted && typeof cash === "number" ? Math.floor(nowMs / 6000) % figures.length : 0;
   const shown = figures[slide];
-  const animatedCash = useCountUp(shown.v, 1200);
-  const shownNegative = typeof shown.v === "number" && shown.v < 0;
+  const shownNegative = typeof shown.v === "number" && shown.v < 0 && shown.key !== "gain";
 
   const timeText = parts ? `${parts.days > 0 ? `${parts.days}d ` : ""}${pad(parts.hours)}:${pad(parts.minutes)}:${pad(parts.seconds)}` : null;
 
@@ -152,16 +180,12 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
             </span>
           </p>
           <p className="ini-cash tabular-nums" data-negative={shownNegative ? "true" : undefined} data-ui="home-cash">
-            <span key={shown.key} className="ini-cash__in">
-              {animatedCash !== null ? <Figure text={money(animatedCash)} /> : dash}
-            </span>
+            {typeof shown.v === "number" ? <CountFigure key={shown.key} value={shown.v} fmt={shown.fmt} /> : dash}
           </p>
           <p className="ini-swap mt-3">
-            {shown.other ? (
-              <span key={shown.key} className="ini-pill ini-swap__in">
-                {shown.other}
-              </span>
-            ) : null}
+            <span key={shown.key} className="ini-pill ini-swap__in ini-swap__in--late">
+              {shown.other}
+            </span>
           </p>
           {figures.length > 1 ? (
             <span className="ini-steps" aria-hidden="true">
