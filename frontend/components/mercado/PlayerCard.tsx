@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { gradeColor } from "@/components/mercado/MarketGrade";
 import { CompararConSugerido } from "@/components/comparador/ComparadorReal";
 import { Face, TONE, money, parsePct, signedPct } from "@/components/ui/kit";
-import { ACTION_VERDICT, sourceLabel, winShare } from "@/components/mercado/shared";
+import { ACTION_VERDICT, auctionLabel, sourceLabel, winShare } from "@/components/mercado/shared";
 import { bidStory } from "@/lib/mercado/bidStory";
 import { MONTHS, playerName } from "@/lib/core/format";
 import { actionReason, executableBid, isVetoed, marketAction } from "@/lib/mercado/marketAction";
@@ -266,6 +266,7 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
     const history = Array.isArray(player.value_history) ? player.value_history : [];
     const matches = upcoming(player);
     const accent = note === null ? TONE.gray : gradeColor(note);
+    const heat = auctionLabel(player);
     const reason = player.frase_mercado || actionReason(player, story.motive) || story.headline;
     const trendColor = trend === null ? TONE.gray : trend >= 0 ? TONE.green : TONE.red;
     const risk =
@@ -299,6 +300,14 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
               <h2 className="line-clamp-2 text-[1.35rem] font-semibold leading-tight tracking-tight text-white sm:text-[1.55rem]">{name}</h2>
               <p className="mt-1 truncate text-[12.5px] text-white/50">{[player.position, player.club].filter(Boolean).join(" · ")}</p>
               <p className="mt-0.5 truncate text-[12px] text-white/40">{sourceLabel(player)}</p>
+              {heat ? (
+                <p className="mt-1.5 text-[12.5px] font-semibold text-[#F59E0B]">
+                  {heat}
+                  {typeof player.leading_bid === "number" ? "" : ". LaLiga no publica el importe"}
+                </p>
+              ) : player.bid_count === 0 || player.offer_count === 0 ? (
+                <p className="mt-1.5 text-[12.5px] text-white/45">Nadie ha pujado todavía</p>
+              ) : null}
             </div>
           </div>
           <div className="mt-5 flex items-center gap-4">
@@ -415,7 +424,17 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
           </ul>
           <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-[12px] text-white/45">
             <span>
-              Puja más alta: <span className="tabular-nums text-white/75">{money(player.leading_bid)}</span>
+              {typeof player.leading_bid === "number" ? (
+                <>
+                  Puja más alta: <span className="tabular-nums text-white/75">{money(player.leading_bid)}</span>
+                </>
+              ) : heat ? (
+                <span className="text-[#F59E0B]">{heat}. Importe oculto</span>
+              ) : player.bid_count === 0 || player.offer_count === 0 ? (
+                "Sin pujas"
+              ) : (
+                "Puja no publicada"
+              )}
             </span>
             <span>
               Caja tras pujar: <span className="tabular-nums text-white/75">{money(player.cash_after_eur)}</span>

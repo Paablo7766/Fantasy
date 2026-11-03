@@ -83,6 +83,7 @@ from toolbox.league_race import build_league_race, mode_from_squads, posture_fro
 from toolbox.league_history import fit_rival_profiles_eb
 from toolbox.net import FantasyHttpError, LaligaClient, network_log_path, no_network
 from toolbox.net import (
+    auction_counts_from_cache,
     HUMAN_PACER,
     HUMAN_REQUESTS_PER_REFRESH,
     LALIGA_ENV_VAR,
@@ -1498,7 +1499,47 @@ def liquidity_from(optimize: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _overlay_auction_counts(board: dict[str, Any]) -> None:
+    """Pega el recuento de pujas de la caché cruda en una foto que no lo trae.
+
+    No sale a la red. Si la foto ya tiene ``bid_count`` u ``offer_count``,
+    no se toca.
+    """
+    market = board.get("market")
+    if not isinstance(market, dict):
+        return
+    listings = market.get("listings")
+    if not isinstance(listings, list) or not listings:
+        return
+    if any(isinstance(row, dict) and ("bid_count" in row or "offer_count" in row) for row in listings):
+        return
+    league = market.get("league_id")
+    if not isinstance(league, str) or not league.strip():
+        trends = board.get("trends")
+        league = trends.get("league_id") if isinstance(trends, dict) else None
+    if not isinstance(league, str) or not league.strip():
+        return
+    try:
+        counts = auction_counts_from_cache(league.strip())
+    except Exception:
+        logger.debug("recuento de pujas no disponible", exc_info=True)
+        return
+    if not counts:
+        return
+    for row in listings:
+        if not isinstance(row, dict):
+            continue
+        src = counts.get(str(row.get("market_id") or "")) or counts.get(f"player:{row.get('player_id')}")
+        if not isinstance(src, dict):
+            continue
+        if isinstance(src.get("bid_count"), int):
+            row["bid_count"] = src["bid_count"]
+        if isinstance(src.get("offer_count"), int):
+            row["offer_count"] = src["offer_count"]
+
+
 def shape_trends(board: dict[str, Any]) -> dict[str, Any]:
+    _overlay_auction_counts(board)
     trends = board.get("trends") if isinstance(board.get("trends"), dict) else {}
     flip = board.get("flip") if isinstance(board.get("flip"), dict) else {}
     market = board.get("market") if isinstance(board.get("market"), dict) else {}
@@ -2333,6 +2374,8 @@ def _slim_listing(row: dict[str, Any]) -> dict[str, Any]:
         "image_url": row.get("image_url") if isinstance(row.get("image_url"), str) else None,
         "sale_price": row.get("sale_price") if isinstance(row.get("sale_price"), int) else None,
         "leading_bid": row.get("leading_bid") if isinstance(row.get("leading_bid"), int) else None,
+        "bid_count": row.get("bid_count") if isinstance(row.get("bid_count"), int) and not isinstance(row.get("bid_count"), bool) else None,
+        "offer_count": row.get("offer_count") if isinstance(row.get("offer_count"), int) and not isinstance(row.get("offer_count"), bool) else None,
         "market_value": row.get("market_value") if isinstance(row.get("market_value"), int) else None,
         "listing_expires_at": row.get("listing_expires_at"),
         "listing_expires_local_time": row.get("listing_expires_local_time"),

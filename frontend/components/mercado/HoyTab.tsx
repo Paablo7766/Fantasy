@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { gradeColor } from "@/components/mercado/MarketGrade";
 import { PlayerCard } from "@/components/mercado/PlayerCard";
-import { ACTION_VERDICT, budgetLine, difficultyLabel, historyLine } from "@/components/mercado/shared";
+import { ACTION_VERDICT, auctionLabel, budgetLine, difficultyLabel, historyLine } from "@/components/mercado/shared";
 import { Disclosure, Empty, Face, HeroStat, Skeleton, TONE, compact, money, parsePct, signedPct, toneOf } from "@/components/ui/kit";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { errorMessage, playerName } from "@/lib/core/format";
@@ -47,6 +47,7 @@ function Tile({ player, photo, index, onOpen }: { player: MarketDecision; photo:
   const note = typeof player.nota_mercado === "number" ? player.nota_mercado : null;
   const accent = note === null ? TONE.gray : gradeColor(note);
   const xp = typeof player.jornada_ev === "number" ? player.jornada_ev : player.expected_points;
+  const heat = auctionLabel(player);
   return (
     <li className="row-in" style={{ animationDelay: `${Math.min(index, 16) * 25}ms` }}>
       <button type="button" onClick={onOpen} aria-label={`Ver ficha de ${name}`} className="mk-tile h-full w-full">
@@ -72,10 +73,15 @@ function Tile({ player, photo, index, onOpen }: { player: MarketDecision; photo:
           <span className="block w-full truncate text-center text-[11.5px] text-white/45">
             {[player.position, player.club].filter(Boolean).join(" · ")}
           </span>
+          {heat ? (
+            <span className="mt-1.5 inline-flex items-center rounded-full bg-[#F59E0B]/15 px-2 py-0.5 text-[10.5px] font-semibold text-[#F59E0B]">
+              {heat}
+            </span>
+          ) : null}
         </span>
         <span className="mt-auto flex items-end justify-between gap-2 border-t border-white/[0.06] px-3 py-2.5">
           <span className="min-w-0">
-            <span className="block text-[10.5px] text-white/40">{typeof bid === "number" ? "Puja" : "Valor"}</span>
+            <span className="block text-[10.5px] text-white/40">{typeof bid === "number" ? (heat ? "Tu tope" : "Puja") : "Valor"}</span>
             <span className="block truncate text-[15px] font-semibold tabular-nums text-white">{money(typeof bid === "number" ? bid : player.market_value ?? player.sale_price)}</span>
           </span>
           <span className="shrink-0 text-right">

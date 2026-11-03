@@ -22,6 +22,16 @@ export function difficultyLabel(key: string | null | undefined): string {
   return DIFFICULTY[key] || key.replace(/_/g, " ");
 }
 
+/** Texto corto cuando ya hay gente dentro y el importe no es público, o sí lo es. */
+export function auctionLabel(player: MarketDecision): string | null {
+  if (typeof player.leading_bid === "number") return `Van ${eur(player.leading_bid)}`;
+  const bids = player.bid_count;
+  const offers = player.offer_count;
+  if (typeof bids === "number" && bids > 0) return bids === 1 ? "1 puja" : `${bids} pujas`;
+  if (typeof offers === "number" && offers > 0) return offers === 1 ? "1 oferta" : `${offers} ofertas`;
+  return null;
+}
+
 export function sourceLabel(player: MarketDecision): string {
   if (player.offer_source === "rival") return `venta de ${player.seller_manager || "un rival"}`;
   if (player.offer_source === "propio") return "tu venta";

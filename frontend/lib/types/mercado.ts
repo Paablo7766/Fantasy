@@ -82,6 +82,10 @@ export type MarketDecision = Player & {
   aggressive_ceiling?: number | null;
   aggressive_ceiling_source?: string | null;
   leading_bid?: number | null;
+  /** Recuento de pujas de la liga. LaLiga no manda el importe. */
+  bid_count?: number | null;
+  /** Recuento de ofertas en una venta de rival. El importe no es público. */
+  offer_count?: number | null;
   rival_bids?: RivalBid[];
   replaces?: XiReplace | null;
   points_delta?: number | null;

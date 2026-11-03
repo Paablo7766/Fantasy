@@ -451,6 +451,41 @@ class JornadaBidTests(unittest.TestCase):
         self.assertEqual(row["rival_bids"][0]["manager_name"], "Ana")
         self.assertEqual(row["bid_eur"], 1_200_001)
 
+    def test_hidden_bid_count_is_not_treated_as_nobody(self) -> None:
+        expires = (self.now + timedelta(hours=3)).isoformat()
+        listing = _listing("pujas", sale=1_000_000, expires_at=expires)
+        listing["bid_count"] = 2
+        listing["market_value"] = 1_000_000
+        doc = build_market_decisions(
+            {"ok": True, "listings": [listing]},
+            {
+                "ok": True,
+                "players": [
+                    _trend(
+                        "pujas",
+                        own_ideal_bid=1_200_000,
+                        own_max_bid=1_800_000,
+                        af_ideal_bid=1_100_000,
+                        af_max_bid=1_600_000,
+                        own_market_signal="up",
+                        acceleration=40_000,
+                        own_expected_points=7.0,
+                        p_titular=0.9,
+                    )
+                ],
+            },
+            self.flip,
+            {"ok": True, "gaps": [], "xi": [], "market_fills": []},
+            now=self.now,
+        )
+        row = doc["decisions"][0]
+        self.assertEqual(row["bid_count"], 2)
+        self.assertIsNone(row["leading_bid"])
+        self.assertEqual(row["bid_eur"], 1_000_001)
+        self.assertNotEqual(row["bid_limit"], "abrir")
+        self.assertGreater(row["smart_bid_eur"], 1_100_000)
+        self.assertIn("no publica", row["smart_bid_analysis"])
+
     def test_leader_above_both_ceilings_is_not_chased(self) -> None:
         doc = build_market_decisions(
             {"ok": True, "listings": [_listing("p10", sale=800_000, leading=2_000_000)]},

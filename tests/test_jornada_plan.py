@@ -82,6 +82,42 @@ class BidWarTests(unittest.TestCase):
         self.assertEqual(plan["recommended_bid_eur"], 1_200_000)
         self.assertEqual(plan["reason"], "empate_gana_la_primera")
 
+    def test_hidden_bids_are_not_an_empty_auction(self) -> None:
+        from toolbox.normalize import normalize_listing
+
+        listing = normalize_listing(
+            {
+                "id": "m9",
+                "salePrice": 2_000_000,
+                "numberOfBids": 2,
+                "playerMaster": {"id": "p9", "nickname": "Nadie", "positionId": 3},
+            }
+        )
+        self.assertEqual(listing["bid_count"], 2)
+        self.assertIsNone(listing["leading_bid"])
+        self.assertIsNone(listing["offer_count"])
+        offers = normalize_listing(
+            {
+                "id": "m8",
+                "salePrice": 3_000_000,
+                "numberOfOffers": 0,
+                "playerMaster": {"id": "p8", "positionId": 4},
+            }
+        )
+        self.assertEqual(offers["offer_count"], 0)
+        self.assertIsNone(offers["bid_count"])
+
+        plan = recommend_bid(
+            {"sale_price": 1_000_000, "market_value": 1_000_000, "bid_count": 2},
+            ideal=1_200_000,
+            maximum=1_500_000,
+            cash=5_000_000,
+            snipe_status="hidden",
+        )
+        self.assertEqual(plan["reason"], "puja_oculta")
+        self.assertEqual(plan["recommended_bid_eur"], 1_500_000)
+        self.assertNotEqual(plan["reason"], "empate_gana_la_primera")
+
     def test_leader_above_ideal_waits(self) -> None:
         plan = recommend_bid(
             {"sale_price": 1_000_000, "leading_bid": 1_300_000},

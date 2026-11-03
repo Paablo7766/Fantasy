@@ -7,6 +7,8 @@ a 16,4 M€.
 
 La función no lee caché ni sale a la red. Recibe el precio y los dos últimos
 deltas y devuelve el movimiento de mañana y el precio dentro de siete días.
+Si esos dos días van al mismo ritmo, los siete lo repiten. Si el día de hoy
+es un pico, el impulso se apaga.
 """
 
 from __future__ import annotations
@@ -27,8 +29,14 @@ PESO_ACELERACION_FRENADA = 0.15
 FACTOR_RETORNO = 0.02
 
 # Cada día el delta hereda el 85 % del anterior: el impulso se apaga.
+# Solo aplica cuando el movimiento es un pico. Un ritmo parecido dos días
+# seguidos no es un pico y no se apaga en la ventana de siete días.
 AMORTIGUACION = 0.85
 HORIZONTE_DIAS = 7
+# Hoy y ayer cuentan como el mismo ritmo si no se separan más de un 35 %.
+TOLERANCIA_RITMO = 0.35
+# Por debajo de medio punto del precio, el movimiento es ruido.
+RITMO_MINIMO_PCT = 0.005
 
 # La plataforma mueve el precio en escalones de 10.000 €.
 PASO_PRECIO = 10_000
@@ -171,6 +179,23 @@ def valor_justo_jugador(xp_jornada: float, ratio: float) -> int:
     return int(round(xp_4 * ratio_4))
 
 
+def _ritmo_asentado(precio: float, delta_hoy: float, delta_ayer: float) -> float | None:
+    """Media de hoy y ayer si los dos días van al mismo lado y el paso es parecido.
+
+    None si el movimiento cambia de signo, nace de cero o hoy se separa más
+    de un 35 % de ayer. Eso es un pico, y el pico sí se apaga.
+    """
+    if delta_hoy == 0 or delta_ayer == 0 or delta_hoy * delta_ayer < 0:
+        return None
+    referencia = max(abs(delta_hoy), abs(delta_ayer))
+    if abs(delta_hoy - delta_ayer) > TOLERANCIA_RITMO * referencia:
+        return None
+    ritmo = (delta_hoy + delta_ayer) / 2.0
+    if abs(ritmo) < max(10_000.0, RITMO_MINIMO_PCT * precio):
+        return None
+    return ritmo
+
+
 def proyectar_7d(
     precio_actual: int | float,
     delta_hoy: int | float,
@@ -180,28 +205,42 @@ def proyectar_7d(
     *,
     en_forma: bool,
 ) -> dict[str, int | float | str]:
-    """Inercia de siete días más la convergencia al valor justo.
+    """Precio dentro de siete días.
 
-    Si el precio está por debajo del justo, la fuerza de subida solo entra
-    cuando el jugador viene de puntuar bien. Si está por encima, la
-    corrección a la baja entra siempre.
+    Si hoy y ayer se mueven al mismo lado y con un paso parecido, esos siete
+    días repiten ese ritmo. El valor justo no lo corrige: una racha de un
+    millón al día no se convierte en 390.000 € al día siguiente por estar
+    caro respecto a los puntos.
+
+    Si el movimiento es un pico de un solo día, o no hay ritmo, entra la
+    inercia que se apaga (cada día conserva el 85 %) y la fuerza hacia el
+    valor justo. La fuerza de subida, en ese caso, solo actúa cuando el
+    jugador viene de puntuar bien. La de bajada entra siempre.
     """
     precio = _numero(precio_actual, "precio_actual")
+    hoy = _numero(delta_hoy, "delta_hoy")
+    ayer = _numero(delta_ayer, "delta_ayer")
     if precio <= 0:
         raise ValueError("precio_actual tiene que ser positivo")
     justo = valor_justo_jugador(xp_jornada, ratio)
-    # El motor de inercia valora 1 punto de jornada a 16,4 M€. Se le pasa el
-    # xp equivalente al justo de esta liga para reutilizar la misma fuerza.
-    if justo > precio and not en_forma:
-        xp_fuerza = precio / EUROS_POR_PUNTO
+    ritmo = _ritmo_asentado(precio, hoy, ayer)
+    if ritmo is not None:
+        valor_en_7 = _al_paso(precio + ritmo * HORIZONTE_DIAS)
+        pct = round((valor_en_7 - precio) / precio * 100.0, 2)
     else:
-        xp_fuerza = justo / EUROS_POR_PUNTO
-    crudo = predecir_precio(precio, delta_hoy, delta_ayer, xp_fuerza)
-    pct = float(crudo["pct_cambio"])
+        # El motor de inercia valora 1 punto de jornada a 16,4 M€. Se le pasa el
+        # xp equivalente al justo de esta liga para reutilizar la misma fuerza.
+        if justo > precio and not en_forma:
+            xp_fuerza = precio / EUROS_POR_PUNTO
+        else:
+            xp_fuerza = justo / EUROS_POR_PUNTO
+        crudo = predecir_precio(precio, hoy, ayer, xp_fuerza)
+        valor_en_7 = int(crudo["valor_en_7_dias"])
+        pct = float(crudo["pct_cambio"])
     return {
         "valor_justo": justo,
         "xp_4_jornadas": round(max(0.0, float(xp_jornada)) * HORIZONTE_JORNADAS, 2),
-        "valor_en_7d": int(crudo["valor_en_7_dias"]),
+        "valor_en_7d": valor_en_7,
         "prevision_7d_pct": formatear_pct(pct),
         "pct": pct,
     }

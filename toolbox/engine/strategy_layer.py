@@ -215,15 +215,20 @@ def _set_price(row: dict[str, Any], source: dict[str, Any]) -> None:
     if delta is not None and not row.get("_delta_set"):
         row["delta_hoy"] = delta
         row["_delta_set"] = True
-    aceleracion = _num(source.get("acceleration"))
-    if aceleracion is not None and not row.get("_ayer_set"):
-        row["delta_ayer"] = float(row.get("delta_hoy") or 0.0) - aceleracion
-        row["_ayer_set"] = True
-    elif not row.get("_ayer_set"):
+    # ``ff_price_delta_2`` es la suma de hoy y ayer. Restarla del delta de hoy
+    # da el día anterior de verdad. ``acceleration`` de FútbolFantasy es una
+    # señal intradía, no esa resta, y solo se usa si no hay acumulado.
+    if row.get("_delta_set") and not row.get("_ayer_set"):
+        hoy = float(row.get("delta_hoy") or 0.0)
         dos = _num(source.get("ff_price_delta_2"))
-        if dos is not None and row.get("_delta_set"):
-            row["delta_ayer"] = dos - float(row.get("delta_hoy") or 0.0)
+        if dos is not None:
+            row["delta_ayer"] = dos - hoy
             row["_ayer_set"] = True
+        else:
+            aceleracion = _num(source.get("acceleration"))
+            if aceleracion is not None:
+                row["delta_ayer"] = hoy - aceleracion
+                row["_ayer_set"] = True
     if not row.get("recientes"):
         row["recientes"] = _recientes(source)
 
@@ -475,6 +480,12 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
         leading = _int(listing.get("leading_bid"))
         if leading is not None and leading > 0:
             row["leading_bid"] = leading
+        bid_count = _int(listing.get("bid_count"))
+        offer_count = _int(listing.get("offer_count"))
+        if bid_count is not None and bid_count >= 0:
+            row["bid_count"] = bid_count
+        if offer_count is not None and offer_count >= 0:
+            row["offer_count"] = offer_count
         if _expires_today(listing.get("listing_expires_at"), now):
             row["caduca_hoy"] = True
         if listing.get("tiene_oferta_laliga") is True:
@@ -1232,7 +1243,14 @@ def _plan(
             continue
         ask = row.get("sale_price") if isinstance(row.get("sale_price"), int) else 0
         lead = row.get("leading_bid") if isinstance(row.get("leading_bid"), int) else 0
+        pressure = max(
+            row.get("bid_count") if isinstance(row.get("bid_count"), int) else 0,
+            row.get("offer_count") if isinstance(row.get("offer_count"), int) else 0,
+        )
         coste = max(recomendada, ask, lead)
+        # Sin el importe, la puja de apertura no gana: hay que cubrir el tope.
+        if pressure > 0 and lead <= 0 and isinstance(maxima, int) and maxima >= coste:
+            coste = maxima
         if isinstance(maxima, int) and coste > maxima:
             continue
         mercado.append(

@@ -74,6 +74,48 @@ class RatioYPrecioTests(unittest.TestCase):
         self.assertLess(caro["valor_en_7d"], 12_000_000)
         self.assertTrue(str(caro["prevision_7d_pct"]).startswith("-"))
 
+    def test_un_millon_diario_dos_dias_seguidos_se_mantiene_la_semana(self) -> None:
+        # El valor justo por puntos está muy por debajo. No puede convertir
+        # una racha de ~1 M€/día en 390.000 € al día siguiente.
+        precio = 38_865_975
+        hoy = 969_556
+        ayer = 1_023_041
+        previsto = proyectar_7d(precio, hoy, ayer, 5.7, 3_760_000, en_forma=True)
+        ritmo = (hoy + ayer) / 2
+        esperado = int(round((precio + ritmo * 7) / 10_000)) * 10_000
+        self.assertEqual(previsto["valor_en_7d"], esperado)
+        self.assertGreater(previsto["valor_en_7d"], 45_000_000)
+        self.assertGreater(float(previsto["pct"]), 15)
+
+    def test_un_pico_de_un_dia_no_se_repite_siete_veces(self) -> None:
+        precio = 10_000_000
+        pico = proyectar_7d(precio, 1_000_000, 50_000, 4.0, 2_000_000, en_forma=True)
+        self.assertLess(pico["valor_en_7d"], precio + 1_000_000 * 7)
+
+    def test_ayer_sale_de_la_suma_de_dos_dias_no_de_la_aceleracion(self) -> None:
+        board = {
+            "trends": {
+                "players": [
+                    {
+                        "player_id": "3077",
+                        "position": "MC",
+                        "fantasy_price": 38_865_975,
+                        "price_delta": 969_556,
+                        "ff_price_delta_2": 1_992_597,
+                        "acceleration": 20_559,
+                        "own_expected_points": 5.7,
+                        "p_titular": 0.7,
+                        "week_points": [8, 11, 6],
+                    }
+                ]
+            },
+            "squads": {"squads": []},
+            "market": {"listings": []},
+            "optimize": {},
+        }
+        records = _collect(board, datetime(2026, 11, 3, tzinfo=timezone.utc))
+        self.assertEqual(records["3077"]["delta_ayer"], 1_992_597 - 969_556)
+
     def test_el_porcentaje_lleva_signo_y_un_decimal(self) -> None:
         self.assertEqual(formatear_pct(10.94), "+10.9%")
         self.assertEqual(formatear_pct(-2.14), "-2.1%")

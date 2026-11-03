@@ -209,13 +209,37 @@ def schedule_snipe(
     }
 
 
+def hidden_auction_count(listing: dict[str, Any]) -> int:
+    """Pujas u ofertas ya hechas cuyo importe no viene en el JSON.
+
+    LaLiga publica ``numberOfBids`` o ``numberOfOffers``, no la cifra. Si el
+    líder sí trae importe, el recuento no se usa: manda ese importe.
+    """
+    leading = listing.get("leading_bid")
+    if isinstance(leading, int) and not isinstance(leading, bool):
+        return 0
+    best = 0
+    for key in ("bid_count", "offer_count"):
+        value = listing.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value > best:
+            best = value
+    return best
+
+
 def bid_amount(listing: dict[str, Any]) -> int | None:
-    """Un euro por encima de la puja líder, o el precio de venta si no hay puja."""
+    """Un euro por encima de la puja líder, o el precio de venta si no hay puja.
+
+    Con pujas ocultas el empate lo gana quien entró antes, así que el mínimo
+    legal para no perder contra una puja al precio de salida es ese precio + 1.
+    El importe real puede ser más alto: no está en la API.
+    """
     leading = listing.get("leading_bid")
     sale = listing.get("sale_price")
     if isinstance(leading, int) and not isinstance(leading, bool):
         return leading + 1
     if isinstance(sale, int) and not isinstance(sale, bool):
+        if hidden_auction_count(listing) > 0:
+            return sale + 1
         return sale
     return None
 

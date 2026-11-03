@@ -143,6 +143,14 @@ function priceNote(player: MarketDecision): string | null {
   return null;
 }
 
+function hiddenPressure(player: MarketDecision): { noun: string; count: number } | null {
+  const bids = player.bid_count;
+  const offers = player.offer_count;
+  if (typeof bids === "number" && bids > 0) return { noun: bids === 1 ? "puja" : "pujas", count: bids };
+  if (typeof offers === "number" && offers > 0) return { noun: offers === 1 ? "oferta" : "ofertas", count: offers };
+  return null;
+}
+
 function rivalLine(player: MarketDecision): string | null {
   const bids = player.rival_bids || [];
   if (typeof player.leading_bid === "number") {
@@ -150,6 +158,11 @@ function rivalLine(player: MarketDecision): string | null {
     const who = leader?.manager_name ? ` (${leader.manager_name})` : "";
     const extra = bids.length > 1 ? ` Hay ${bids.length} pujas.` : "";
     return `Ahora va ganando ${eur(player.leading_bid)}${who}.${extra}`;
+  }
+  const pressure = hiddenPressure(player);
+  if (pressure) {
+    const who = pressure.count === 1 ? `Hay 1 ${pressure.noun}` : `Hay ${pressure.count} ${pressure.noun}`;
+    return `${who}. LaLiga no dice cuánto van, así que la cifra es tu tope, no la puja de ellos.`;
   }
   if (typeof player.sale_price === "number" || typeof player.bid_eur === "number") {
     return `Nadie ha pujado. La salida es ${eur(player.sale_price ?? player.bid_eur)}.`;
@@ -254,12 +267,23 @@ function actionText(player: MarketDecision): string {
   }
   if (player.bid_limit === "snipe_techo" && typeof bid === "number") {
     const when = clock ? `A las ${clock}` : "En el cierre";
-    return `${when} ofrece ${eur(bid)}, el tope. No entres antes: lo verían y sumarían 1 €.`;
+    const pressure = hiddenPressure(player);
+    const hidden = pressure ? ` Ya hay ${pressure.count === 1 ? `1 ${pressure.noun}` : `${pressure.count} ${pressure.noun}`} y el importe no se ve.` : "";
+    return `${when} ofrece ${eur(bid)}, el tope.${hidden} No entres antes: lo verían y sumarían 1 €.`;
   }
   if (player.bid_limit === "snipe_liga" && typeof bid === "number") {
     const when = clock ? `A las ${clock}` : "En el cierre";
     const blocked = leagueBlocked(player);
     return `${when} ofrece ${eur(bid)}. Es lo que ha hecho falta en esta liga para ganar cuando alguien puja de verdad, no un euro más que el líder.${blocked}`;
+  }
+  if (player.bid_limit === "puja_oculta" && typeof bid === "number") {
+    const pressure = hiddenPressure(player);
+    const who = pressure
+      ? pressure.count === 1
+        ? `Hay 1 ${pressure.noun}`
+        : `Hay ${pressure.count} ${pressure.noun}`
+      : "Hay pujas";
+    return `${who} y el importe no se ve. Ofrece ${eur(bid)}, tu tope. Por debajo puedes quedarte corto sin enterarte.`;
   }
   if (player.bid_limit === "abrir" && typeof bid === "number") {
     const league =
@@ -516,8 +540,17 @@ function facts(player: MarketDecision): BidFact[] {
   }
   if (typeof player.leading_bid === "number") {
     rows.push({ label: "Va ganando", value: eur(player.leading_bid), note: "La puja más alta ahora mismo" });
-  } else if (typeof (player.sale_price ?? player.bid_eur) === "number") {
-    rows.push({ label: "Precio de salida", value: eur(player.sale_price ?? player.bid_eur), note: "Todavía no hay puja" });
+  } else {
+    const pressure = hiddenPressure(player);
+    if (pressure) {
+      rows.push({
+        label: pressure.noun.startsWith("ofert") ? "Ofertas" : "Pujas",
+        value: String(pressure.count),
+        note: "LaLiga no publica el importe",
+      });
+    } else if (typeof (player.sale_price ?? player.bid_eur) === "number") {
+      rows.push({ label: "Precio de salida", value: eur(player.sale_price ?? player.bid_eur), note: "Todavía no hay puja" });
+    }
   }
   if (typeof player.own_expected_points === "number") {
     rows.push({

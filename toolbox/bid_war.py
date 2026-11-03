@@ -15,7 +15,7 @@ from scipy.optimize import minimize_scalar
 from scipy.stats import norm
 
 from toolbox.analyzer import POSITIONS, candidates_from_squad, index_trends, own_squad
-from toolbox.bidding import URGENCIA_HUECO, URGENCIA_JUSTO, _depth, urgencia_posicional
+from toolbox.bidding import URGENCIA_HUECO, URGENCIA_JUSTO, _depth, hidden_auction_count, urgencia_posicional
 from toolbox.rival_intel import ROJO_SEGURO, estado_rojo
 from toolbox.engine.auction_intel import techo_puja_dinamico
 from toolbox.league_history import RivalProfile, apply_league_clearing, clearing_quote
@@ -75,9 +75,33 @@ def recommend_bid(
     """
     floor = bid_floor(listing)
     leading = _int(listing.get("leading_bid"))
+    hidden = hidden_auction_count(listing)
     how = "unknown"
     amount: int | None = None
     reason = "sin_techo"
+
+    if leading is None and hidden > 0:
+        # Hay gente dentro y LaLiga no dice cuánto. No eres el primero: el
+        # precio de apertura pierde el empate y puede quedar por debajo.
+        ceiling = maximum if maximum is not None else ideal
+        if ceiling is None:
+            how, amount, reason = "unknown", floor, "puja_oculta"
+        elif isinstance(cash, int) and not isinstance(cash, bool) and ceiling > cash:
+            how, reason = "esperar", "caja_insuficiente"
+        elif floor is not None and ceiling < floor:
+            how, reason = "esperar", "sobreprecio"
+        elif snipe_status in {"hidden", "inside_window"}:
+            how, amount, reason = "snipe", ceiling, "puja_oculta"
+        else:
+            how, amount, reason = "ahora", ceiling, "puja_oculta"
+        return {
+            "floor_eur": floor,
+            "ideal_bid": ideal,
+            "max_bid": maximum,
+            "how": how,
+            "recommended_bid_eur": amount,
+            "reason": reason,
+        }
 
     if leading is None:
         if ideal is not None and floor is not None and ideal < floor:
@@ -337,6 +361,7 @@ def economic_bid(
     ideal: int | None,
     cash: int | None,
     snipe_status: str | None,
+    hidden_bids: int = 0,
 ) -> dict[str, Any]:
     """Importe para llevártelo sin pasar el techo más bajo de las fuentes presentes.
 
@@ -368,7 +393,7 @@ def economic_bid(
             result["bid_limit"] = "sin_caja"
             return result
         result["suggested_bid"] = to_lead
-        result["bid_limit"] = "sin_techo"
+        result["bid_limit"] = "puja_oculta" if hidden_bids > 0 else "sin_techo"
         return result
 
     strict_src, strict = min(caps, key=lambda item: (item[1], item[0]))
@@ -395,6 +420,12 @@ def economic_bid(
 
     has_leader = isinstance(leading, int) and not isinstance(leading, bool)
     schedulable = snipe_status in {"hidden", "inside_window"}
+    if not has_leader and hidden_bids > 0:
+        # El líder existe pero su cifra no. Para no quedarte corto se puja el
+        # tope: leader+1 no se puede calcular.
+        result["suggested_bid"] = ceiling
+        result["bid_limit"] = "snipe_techo" if schedulable else "puja_oculta"
+        return result
     if not has_leader:
         open_bid = to_lead
         ideal_bid = _int(ideal)
@@ -642,10 +673,30 @@ def profiles_for_listing(
         for row in public_bids(listing, own_team_id)
         if isinstance(row, dict) and isinstance(row.get("team_id"), str) and not row.get("own")
     }
-    return [
+    profiles = [
         replace(profile, already_bidding=profile.team_id in bidding_teams)
         for profile in base_profiles.values()
     ]
+    if bidding_teams:
+        return profiles
+    hidden = hidden_auction_count(listing)
+    if hidden <= 0:
+        return profiles
+    # Alguien ya pujó y la API no dice quién. Los rivales con más motivos
+    # para estar dentro se tratan como comprometidos, hasta cubrir el recuento.
+    position = listing.get("position") if isinstance(listing.get("position"), str) else None
+    ranked = sorted(profiles, key=lambda profile: _commit_rank(profile, position), reverse=True)
+    able = [profile for profile in ranked if profile.cash_eur > 0 or (profile.legal_bid_limit_eur or 0) > 0]
+    chosen = {profile.team_id for profile in able[:hidden]}
+    if not chosen:
+        return profiles
+    return [replace(profile, already_bidding=profile.team_id in chosen) for profile in profiles]
+
+
+def _commit_rank(profile: RivalProfile, position: str | None) -> tuple[int, int, float, float]:
+    gap = 1 if position and position in profile.xi_gaps else 0
+    thin = 1 if position and position in profile.thin_positions else 0
+    return (gap, thin, profile.cash_eur, profile.alpha_aggressiveness)
 
 
 def rivals_state_for_auction(
@@ -927,6 +978,7 @@ def plan_market_auction_bid(
     history: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """Puja operativa (suggested_bid) + métricas v2 (optimal_bid_eur, win_probability, …)."""
+    hidden = hidden_auction_count(listing)
     caps = economic_bid(
         to_lead=to_lead,
         leading=leading,
@@ -936,6 +988,7 @@ def plan_market_auction_bid(
         ideal=ideal,
         cash=cash,
         snipe_status=snipe_status,
+        hidden_bids=hidden,
     )
     sale = listing.get("sale_price") if isinstance(listing.get("sale_price"), int) else None
     if isinstance(sale, int):
@@ -995,13 +1048,30 @@ def plan_market_auction_bid(
     # calibra en el Laboratorio. La regla queda como referencia.
     caps["smart_bid_rule_pct"] = smart["probabilidad_exito"]
     caps["smart_bid_success_pct"] = smart["probabilidad_exito"]
-    smart_bid = smart.get("puja_smart")
-    if profiles and isinstance(smart_bid, int) and smart_bid > 0:
+    if hidden > 0:
+        # La puja de apertura asume que eres el primero. Con gente ya dentro
+        # y el importe oculto, la cifra que se enseña es el tope financiero.
+        ceiling_eur = caps.get("financial_max_bid_eur")
+        current = caps.get("smart_bid_eur")
+        if isinstance(ceiling_eur, int) and isinstance(current, int) and current < ceiling_eur:
+            raised = _within_cash(ceiling_eur, own_cash)
+            if raised > current:
+                caps["smart_bid_eur"] = raised
+        if lead <= 0 and sale_price > 0:
+            lead = sale_price
+    smart_bid = caps.get("smart_bid_eur")
+    if profiles and isinstance(smart_bid, int) and not isinstance(smart_bid, bool) and smart_bid > 0:
         min_legal = max(sale_price, lead + 1.0 if lead > 0 else sale_price)
         caps["smart_bid_success_pct"] = int(
             round(100.0 * probability_of_winning_bid(float(smart_bid), max(mv, sale_price), min_legal, pos, pts, profiles))
         )
     caps["smart_bid_analysis"] = smart["analisis"]
+    if hidden > 0:
+        offers = listing.get("offer_count")
+        bids_only = listing.get("bid_count")
+        noun = "oferta" if isinstance(offers, int) and offers > 0 and not (isinstance(bids_only, int) and bids_only > 0) else "puja"
+        label = f"1 {noun}" if hidden == 1 else f"{hidden} {noun}s"
+        caps["smart_bid_analysis"] = f"Hay {label} y LaLiga no publica el importe. {caps['smart_bid_analysis'] or ''}".strip()
     caps["smart_bid_rivals"] = smart["rivales_peligrosos"]
 
     if caps.get("suggested_bid") is not None and isinstance(v2.optimal_bid_eur, int) and v2.optimal_bid_eur > 0:

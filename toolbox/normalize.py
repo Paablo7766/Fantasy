@@ -554,6 +554,17 @@ def normalize_listing(item: dict[str, Any], *, now: datetime | None = None) -> d
     seller_team = item.get("sellerTeam") if isinstance(item.get("sellerTeam"), dict) else {}
     bids = _normalize_bids(item.get("bids") or item.get("offers"))
     amounts = [bid["amount"] for bid in bids if isinstance(bid["amount"], int)]
+    # La API actual no manda el array ``bids``: solo el recuento. El importe
+    # de las pujas ajenas no es público. Un 0 es «nadie ha pujado»; si la
+    # clave no viene, el recuento es desconocido.
+    bid_count = _as_int(item.get("numberOfBids")) if "numberOfBids" in item else None
+    offer_count = _as_int(item.get("numberOfOffers")) if "numberOfOffers" in item else None
+    if bid_count is not None and bid_count < 0:
+        bid_count = None
+    if offer_count is not None and offer_count < 0:
+        offer_count = None
+    if bid_count is None and amounts:
+        bid_count = len(amounts)
     expires_at, expires_local = _listing_expiry(item)
     return {
         "market_id": _as_str(_first(item, "id", "marketId")),
@@ -571,6 +582,8 @@ def normalize_listing(item: dict[str, Any], *, now: datetime | None = None) -> d
         "seller_manager": _coalesce(_manager_name(seller), _manager_name(seller_team)),
         "bids": bids,
         "leading_bid": max(amounts) if amounts else None,
+        "bid_count": bid_count,
+        "offer_count": offer_count,
         "own_bid": _own_bid(item),
         "listing_expires_at": expires_at,
         "listing_expires_local_time": expires_local,

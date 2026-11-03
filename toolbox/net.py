@@ -89,10 +89,11 @@ if socket.getdefaulttimeout() is None:
 
 from toolbox import api_meter
 from toolbox.auth import league_id_from_env
-from toolbox.cache import ResponseCache, cache_root
+from toolbox.cache import ResponseCache, cache_key, cache_root
 from toolbox.normalize import (
     attach_image_urls,
     build_market_document,
+    normalize_listing,
     build_squads_document,
     empty_squad,
     image_index_from_players,
@@ -1290,6 +1291,59 @@ def league_list_urls() -> list[str]:
     respaldo: una URL que responde 5xx no es un respaldo, es una mina.
     """
     return [with_lang(f"{COMPETITION_BASE}/leagues")]
+
+
+def auction_counts_from_cache(league_id: str) -> dict[str, dict[str, int | None]]:
+    """Recuento de pujas del JSON de mercado ya guardado. No abre red.
+
+    La foto del tablero se guardó antes de leer el recuento. Esta lectura
+    recupera ``numberOfBids`` / ``numberOfOffers``
+    del cuerpo en caché y los indexa por id de anuncio y de jugador.
+    """
+    found: dict[str, dict[str, int | None]] = {}
+    try:
+        urls = market_urls(league_id)
+    except FantasyHttpError:
+        return found
+    for url in urls:
+        path = cache_root() / "scraper_bodies" / cache_key(url)
+        if not path.is_file():
+            continue
+        try:
+            stored = json.loads(path.read_text(encoding="utf-8"))
+            body = stored.get("body")
+            payload = json.loads(body) if isinstance(body, str) else body
+        except (OSError, ValueError):
+            continue
+        rows: list[Any]
+        if isinstance(payload, list):
+            rows = payload
+        elif isinstance(payload, dict):
+            rows = []
+            for key in ("elements", "items", "players", "market", "data", "content"):
+                candidate = payload.get(key)
+                if isinstance(candidate, list):
+                    rows = candidate
+                    break
+        else:
+            continue
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            listing = normalize_listing(item)
+            entry = {
+                "bid_count": listing.get("bid_count") if isinstance(listing.get("bid_count"), int) else None,
+                "offer_count": listing.get("offer_count") if isinstance(listing.get("offer_count"), int) else None,
+            }
+            market_id = listing.get("market_id")
+            if isinstance(market_id, str) and market_id:
+                found[market_id] = entry
+            player_id = listing.get("player_id")
+            if isinstance(player_id, str) and player_id:
+                found[f"player:{player_id}"] = entry
+        if found:
+            break
+    return found
 
 
 def market_urls(league_id: str) -> list[str]:
