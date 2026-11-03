@@ -1272,3 +1272,99 @@
     height: 5.25rem;
   }
 }
+
+/* Saldo que alterna: etiqueta con fundido, cifra que cuenta y respira. */
+.ini-swap {
+  display: flex;
+  min-height: 1.5rem;
+  justify-content: center;
+}
+
+.ini-swap__in {
+  animation: ini-swap 700ms var(--ini-ease) both;
+}
+
+@keyframes ini-swap {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+.ini-cash__in {
+  display: inline-block;
+  animation: ini-breathe 1200ms var(--ini-ease) both;
+}
+
+@keyframes ini-breathe {
+  0% {
+    opacity: 0.35;
+    transform: scale(0.96);
+    filter: blur(8px);
+  }
+  60% {
+    opacity: 1;
+    filter: none;
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* Indicador de qué cifra se muestra: la activa se alarga y se llena en 5 s. */
+.ini-steps {
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 1rem;
+}
+
+.ini-steps > span {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: width 500ms var(--ini-ease);
+}
+
+.ini-steps > span[data-on="true"] {
+  width: 26px;
+}
+
+.ini-steps > span[data-on="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #fff;
+  transform-origin: left;
+  animation: ini-fill 5s linear both;
+}
+
+@keyframes ini-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.ini-hero .ini-cta {
+  margin-top: 1.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ini-swap__in,
+  .ini-cash__in,
+  .ini-steps > span::after {
+    animation: none;
+  }
+}

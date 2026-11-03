@@ -3,7 +3,7 @@
 import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { money, signedMoney } from "@/components/ui/kit";
 import { points } from "@/lib/core/format";
-import { buildClockReport, countdownParts, eventTitle, signedPoints } from "@/lib/inicio/hoy";
+import { buildClockReport, countdownParts, eventTitle } from "@/lib/inicio/hoy";
 import { useNow } from "@/lib/core/useClock";
 import { useCountUp } from "@/components/inicio/ui";
 import type { PlanPayload, SquadsPayload } from "@/lib/types";
@@ -94,7 +94,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
 
   const own = squads?.self ?? null;
   const cash = typeof plan?.cash_eur === "number" ? plan.cash_eur : (own?.cash_eur ?? null);
-  const animatedCash = useCountUp(cash);
   const value = own?.market_value_total ?? null;
   const valueDay = own?.price_delta_day ?? null;
   const rank = typeof own?.rank === "number" ? own.rank : (plan?.mode?.own_rank ?? null);
@@ -105,15 +104,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   const leagueName = squads?.league_name || plan?.league_name || null;
 
   const fichajes = plan?.plan_fichajes;
-  const now = typeof fichajes?.puntos_once_actual === "number" ? fichajes.puntos_once_actual : (plan?.lineup?.saved_points ?? null);
-  const target = typeof fichajes?.puntos_once === "number" ? fichajes.puntos_once : (plan?.lineup?.expected_points ?? null);
-  const delta =
-    typeof fichajes?.mejora_puntos_jornada === "number"
-      ? fichajes.mejora_puntos_jornada
-      : typeof now === "number" && typeof target === "number"
-        ? target - now
-        : null;
-  const gain = delta !== null && Math.abs(delta) >= 0.05 ? delta : null;
   const cashEnd = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
 
   const dash = loading ? "…" : "—";
@@ -128,20 +118,17 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   ) ?? null;
   const dateText = mounted ? DATE_FMT.format(nowMs) : "";
 
-  // Dato vivo sobre el botón: rota cada 3,5 s entre las cifras que importan hoy.
-  const danger = plan?.asesor_clausulas?.resumen?.en_peligro ?? 0;
-  const offers = plan?.resumen_ventas?.ofertas_activas ?? 0;
-  const ticker: { text: string; tone?: "up" | "down" }[] = [
-    gain !== null ? { text: `${signedPoints(gain)} pts si sigues el plan de hoy`, tone: gain > 0 ? ("up" as const) : ("down" as const) } : null,
-    typeof valueDay === "number" && valueDay !== 0
-      ? { text: `Tu plantilla ${signedMoney(valueDay)} hoy`, tone: valueDay > 0 ? ("up" as const) : ("down" as const) }
-      : null,
-    danger > 0 ? { text: `${danger} ${danger === 1 ? "jugador" : "jugadores"} con la cláusula en peligro`, tone: "down" as const } : null,
-    offers > 0 ? { text: `${offers} ${offers === 1 ? "oferta activa" : "ofertas activas"} por tus jugadores` } : null,
-    typeof gap === "number" && gap < 0 ? { text: `A ${Math.abs(gap)} pts del líder` } : null,
-    onceTarget !== null ? { text: `Once previsto: ${points(onceTarget)} pts` } : null,
-  ].filter((x): x is { text: string; tone?: "up" | "down" } => x !== null);
-  const tick = ticker.length && mounted ? Math.floor(nowMs / 3500) % ticker.length : 0;
+  // Cifra protagonista: alterna cada 5 s entre el saldo de ahora y el que
+  // queda tras el plan. El número cuenta hasta el nuevo valor y la etiqueta
+  // cambia con un fundido suave.
+  const figures = [
+    { key: "now", label: "Saldo disponible", v: cash, other: cashEnd !== null ? `Tras el plan · ${money(cashEnd)}` : null },
+    cashEnd !== null ? { key: "end", label: "Saldo tras el plan", v: cashEnd, other: cash !== null ? `Disponible ahora · ${money(cash)}` : null } : null,
+  ].filter((f): f is { key: string; label: string; v: number | null; other: string | null } => f !== null);
+  const slide = figures.length > 1 && mounted && typeof cash === "number" ? Math.floor(nowMs / 5000) % figures.length : 0;
+  const shown = figures[slide];
+  const animatedCash = useCountUp(shown.v, 1200);
+  const shownNegative = typeof shown.v === "number" && shown.v < 0;
 
   const timeText = parts ? `${parts.days > 0 ? `${parts.days}d ` : ""}${pad(parts.hours)}:${pad(parts.minutes)}:${pad(parts.seconds)}` : null;
 
@@ -159,26 +146,33 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
         </div>
 
         <div className="ini-hero__center">
-          <p className="ini-kicker">Saldo disponible</p>
-          <p className="ini-cash tabular-nums" data-negative={negative ? "true" : undefined} data-ui="home-cash">
-            {animatedCash !== null ? <Figure text={money(animatedCash)} /> : dash}
+          <p className="ini-swap" aria-live="polite">
+            <span key={shown.key} className="ini-kicker ini-swap__in">
+              {shown.label}
+            </span>
           </p>
-          {cashEnd !== null ? (
-            <p className="ini-pill mt-3" data-tone={cashEnd < 0 ? "down" : undefined}>
-              Tras el plan · {money(cashEnd)}
-            </p>
-          ) : null}
-
-          {ticker.length ? (
-            <p className="ini-ticker" aria-live="off" data-ui="home-ticker">
-              <span key={tick} className="ini-ticker__item" data-tone={ticker[tick].tone}>
-                {ticker[tick].text}
+          <p className="ini-cash tabular-nums" data-negative={shownNegative ? "true" : undefined} data-ui="home-cash">
+            <span key={shown.key} className="ini-cash__in">
+              {animatedCash !== null ? <Figure text={money(animatedCash)} /> : dash}
+            </span>
+          </p>
+          <p className="ini-swap mt-3">
+            {shown.other ? (
+              <span key={shown.key} className="ini-pill ini-swap__in">
+                {shown.other}
               </span>
-            </p>
+            ) : null}
+          </p>
+          {figures.length > 1 ? (
+            <span className="ini-steps" aria-hidden="true">
+              {figures.map((f, i) => (
+                <span key={f.key} data-on={i === slide ? "true" : undefined} />
+              ))}
+            </span>
           ) : null}
 
           {clock.next && timeText ? (
-            <p className="ini-cta mt-3"data-urgent={urgent ? "true" : undefined} role="timer" data-ui="home-countdown">
+            <p className="ini-cta" data-urgent={urgent ? "true" : undefined} role="timer" data-ui="home-countdown">
               <span className="ini-live" aria-hidden="true" />
               <span className="max-w-[14rem] truncate">{eventTitle(clock.next)}</span>
               <span className="ini-cta__time">{timeText}</span>
