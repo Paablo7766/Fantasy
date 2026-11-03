@@ -1,28 +1,58 @@
 "use client";
 
-import { useMemo, type CSSProperties } from "react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { money, signedMoney } from "@/components/ui/kit";
 import { points } from "@/lib/core/format";
-import { buildClockReport, countdownClock, countdownParts, eventTitle, signedPoints } from "@/lib/inicio/hoy";
+import { buildClockReport, countdownParts, eventTitle, signedPoints } from "@/lib/inicio/hoy";
 import { useNow } from "@/lib/core/useClock";
 import { useCountUp } from "@/components/inicio/ui";
 import type { PlanPayload, SquadsPayload } from "@/lib/types";
 
-function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string | null; tone?: string }) {
+const pad = (n: number) => String(n).padStart(2, "0");
+
+function Stat({
+  label,
+  value,
+  sub,
+  tone,
+  meter,
+  icon,
+}: {
+  label: string;
+  value: string;
+  sub?: string | null;
+  tone?: string;
+  /** 0..1: barra fina bajo la cifra (p. ej. posición en la liga). */
+  meter?: number | null;
+  icon: ReactNode;
+}) {
   return (
-    <div className="min-w-0">
-      <p className="truncate text-[12px] text-white/45">{label}</p>
-      <p className="mt-1.5 truncate text-[20px] font-semibold leading-none tracking-[-0.02em] tabular-nums" style={{ color: tone || "#fff" }}>
+    <div className="ini-stat min-w-0" data-ui="hero-stat">
+      <p className="flex items-center gap-1.5 truncate text-[12px] text-white/45">
+        <span className="ini-stat__icon" aria-hidden="true">
+          {icon}
+        </span>
+        {label}
+      </p>
+      <p className="mt-2 truncate text-[22px] font-semibold leading-none tracking-[-0.025em] tabular-nums" style={{ color: tone || "#fff" }}>
         {value}
       </p>
+      {typeof meter === "number" ? (
+        <span className="ini-meter mt-2.5" aria-hidden="true">
+          <span style={{ width: `${Math.max(4, Math.min(100, meter * 100))}%` }} />
+        </span>
+      ) : null}
       <p className="mt-1.5 h-4 truncate text-[12px] tabular-nums text-white/40">{sub || ""}</p>
     </div>
   );
 }
 
+const ico = { viewBox: "0 0 16 16", width: 12, height: 12, fill: "none", stroke: "currentColor", strokeWidth: 1.6 } as const;
+
 /**
- * Cabecera única de Inicio: saldo como cifra protagonista, cuenta atrás al
- * próximo hito y cuatro datos clave en una tira. Lo que hay que hacer va debajo.
+ * Cabecera de Inicio: saldo como cifra protagonista, cuenta atrás grande al
+ * próximo hito y cuatro datos clave en una tira. En escritorio ocupa todo el
+ * ancho; lo que hay que hacer va debajo, en dos columnas.
  */
 export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null; squads: SquadsPayload | null; loading: boolean }) {
   const nowMs = useNow();
@@ -57,71 +87,130 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   const dash = loading ? "…" : "—";
   const negative = typeof cash === "number" && cash < 0;
   const alert = redLine && redLine.status && redLine.status !== "ok" ? redLine : null;
+  const rankMeter = rank !== null && field && field > 1 ? (field - rank) / (field - 1) : null;
+  const urgent = parts ? parts.totalMs < 3 * 3600 * 1000 : false;
+
+  const tiles = parts
+    ? ([
+        ...(parts.days > 0 ? [["días", String(parts.days)]] : []),
+        ["horas", pad(parts.hours)],
+        ["min", pad(parts.minutes)],
+        ["seg", pad(parts.seconds)],
+      ] as const)
+    : null;
 
   return (
-    <section className="ini-card ini-hero ini-in" style={{ "--i": 0 } as CSSProperties} aria-label="Tu cuenta">
-      <div className="flex items-center justify-between gap-3 px-5 pt-5">
-        <p className="ini-eyebrow min-w-0 truncate">{leagueName || "Tu cuenta"}</p>
-        {clock.next && parts ? (
-          <p className="flex shrink-0 items-center gap-2 rounded-full bg-black/30 px-3 py-1.5 text-[12px] text-white/60">
-            <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--ini-copper)]" aria-hidden="true" />
-            <span className="max-w-[11rem] truncate max-[420px]:hidden">{eventTitle(clock.next)}</span>
-            <span className="font-medium tabular-nums text-white">
-              {parts.days > 0 ? `${parts.days}d ` : ""}
-              {countdownClock(parts)}
-            </span>
-          </p>
-        ) : null}
-      </div>
+    <section className="ini-card ini-hero ini-in" style={{ "--i": 0 } as CSSProperties} aria-label="Tu cuenta" data-ui="home-hero">
+      <span className="ini-hero__grid-bg" aria-hidden="true" />
 
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 px-5 pb-5 pt-6">
-        <div className="min-w-0">
-          <p className="text-[12px] text-white/50">Saldo disponible</p>
+      <div className="ini-hero__body">
+        <div className="ini-hero__main min-w-0">
+          <p className="ini-chip">
+            <span className="ini-chip__dot" aria-hidden="true" />
+            <span className="truncate">{leagueName || "Tu cuenta"}</span>
+          </p>
+
+          <p className="mt-6 text-[12px] font-medium uppercase tracking-[0.14em] text-white/45">Saldo disponible</p>
           <p
-            className="mt-1.5 text-[44px] font-semibold leading-none tracking-[-0.045em] tabular-nums"
-            style={{ color: negative ? "var(--ini-red)" : "#fff" }}
+            className="ini-cash mt-2 tabular-nums"
+            data-negative={negative ? "true" : undefined}
+            data-ui="home-cash"
           >
             {animatedCash !== null ? money(animatedCash) : dash}
           </p>
-        </div>
-        {gain !== null ? (
-          <div className="text-right">
-            <p className="text-[12px] text-white/50">Con el plan de hoy</p>
-            <p className="mt-1.5 text-[20px] font-semibold leading-none tabular-nums" style={{ color: gain > 0 ? "var(--ini-mint)" : "var(--ini-red)" }}>
-              {signedPoints(gain)} <span className="text-[13px] font-medium text-white/45">pts</span>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {gain !== null ? (
+              <span className="ini-pill" data-tone={gain > 0 ? "up" : "down"}>
+                <svg {...ico} aria-hidden="true">
+                  <path d={gain > 0 ? "M4 10l4-4 4 4" : "M4 6l4 4 4-4"} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {signedPoints(gain)} pts con el plan de hoy
+              </span>
+            ) : null}
+            {cashEnd !== null ? (
+              <span className="ini-pill" data-tone={cashEnd < 0 ? "down" : undefined}>
+                Tras el plan · {money(cashEnd)}
+              </span>
+            ) : null}
+          </div>
+
+          {negative || alert ? (
+            <p
+              className="mt-4 flex items-center gap-2 rounded-xl px-3 py-2 text-[13px]"
+              style={{
+                color: negative || alert?.status === "fail" ? "var(--ini-red)" : "var(--ini-amber)",
+                background: negative || alert?.status === "fail" ? "rgba(255,125,102,0.1)" : "rgba(245,181,68,0.1)",
+              }}
+              role="alert"
+            >
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
+              {negative ? "Saldo negativo: puntúas 0 hasta volver a positivo." : alert?.headline || "Revisa tu línea roja"}
             </p>
+          ) : null}
+        </div>
+
+        {clock.next && tiles ? (
+          <div className="ini-clock" data-urgent={urgent ? "true" : undefined} data-ui="home-countdown">
+            <p className="flex items-center gap-2 text-[12px] text-white/55">
+              <span className="ini-live" aria-hidden="true" />
+              Próximo hito
+            </p>
+            <p className="mt-1.5 truncate text-[15px] font-semibold tracking-[-0.01em] text-white">{eventTitle(clock.next)}</p>
+            <div className="ini-clock__tiles mt-4" role="timer" aria-label={`Faltan ${tiles.map(([u, v]) => `${v} ${u}`).join(", ")}`}>
+              {tiles.map(([unit, v], idx) => (
+                <div key={unit} className="ini-tile">
+                  <span className="ini-tile__v tabular-nums">{v}</span>
+                  <span className="ini-tile__u">{unit}</span>
+                  {idx < tiles.length - 1 ? <span className="ini-tile__sep" aria-hidden="true">:</span> : null}
+                </div>
+              ))}
+            </div>
+            {clock.next.localLabel ? <p className="mt-3 truncate text-[12px] text-white/40">{clock.next.localLabel}</p> : null}
           </div>
         ) : null}
       </div>
 
-      {negative || alert ? (
-        <p
-          className="mx-5 mb-5 flex items-center gap-2 rounded-xl px-3 py-2 text-[13px]"
-          style={{
-            color: negative || alert?.status === "fail" ? "var(--ini-red)" : "var(--ini-amber)",
-            background: negative || alert?.status === "fail" ? "rgba(255,125,102,0.1)" : "rgba(245,181,68,0.1)",
-          }}
-        >
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
-          {negative ? "Saldo negativo: puntúas 0 hasta volver a positivo." : alert?.headline || "Revisa tu línea roja"}
-        </p>
-      ) : null}
-
       <div className="ini-stats">
         <Stat
           label="Valor de plantilla"
+          icon={
+            <svg {...ico}>
+              <path d="M2.5 12.5 6 8.5l2.5 2.5 5-6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          }
           value={typeof value === "number" ? money(value) : dash}
           sub={typeof valueDay === "number" && valueDay !== 0 ? `${signedMoney(valueDay)} hoy` : null}
-          tone={undefined}
         />
-        <Stat label="Posición" value={rank !== null ? `${rank}º` : dash} sub={field ? `de ${field}` : null} />
+        <Stat
+          label="Posición"
+          icon={
+            <svg {...ico}>
+              <path d="M5 2.5h6v3a3 3 0 0 1-6 0v-3ZM8 8.5v3M5.5 13.5h5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          }
+          value={rank !== null ? `${rank}º` : dash}
+          meter={rankMeter}
+          sub={field ? `de ${field}` : null}
+        />
         <Stat
           label="Puntos"
+          icon={
+            <svg {...ico}>
+              <path d="M8 2.5l1.7 3.5 3.8.5-2.8 2.6.7 3.8L8 11.1l-3.4 1.8.7-3.8-2.8-2.6 3.8-.5L8 2.5Z" strokeLinejoin="round" />
+            </svg>
+          }
           value={pts !== null ? String(Math.round(pts)) : dash}
           sub={typeof gap === "number" && gap !== 0 ? `${gap > 0 ? "+" : "−"}${Math.abs(gap)} vs líder` : gap === 0 ? "Líder" : null}
         />
         <Stat
           label="Saldo tras el plan"
+          icon={
+            <svg {...ico}>
+              <rect x="2.5" y="4" width="11" height="8.5" rx="1.8" />
+              <path d="M10.5 8.2h1" strokeLinecap="round" />
+            </svg>
+          }
           value={cashEnd !== null ? money(cashEnd) : dash}
           tone={cashEnd !== null && cashEnd < 0 ? "var(--ini-red)" : undefined}
           sub={typeof target === "number" ? `Once: ${points(target)} pts` : null}

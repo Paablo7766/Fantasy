@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
+import { useNow } from "@/lib/core/useClock";
 
 type NavItem = {
   href: string;
@@ -133,6 +134,15 @@ function DockLink({ item, active, href }: { item: NavItem; active: boolean; href
 
 const HOUR = 3600;
 
+const DATE_FMT = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Madrid" });
+
+/** Fecha de hoy junto al título; vacía hasta montar para no romper la hidratación. */
+function TodayStamp() {
+  const now = useNow();
+  if (!now) return null;
+  return <span className="topbar-date truncate max-sm:hidden">{DATE_FMT.format(now)}</span>;
+}
+
 /**
  * Frescura de los datos y botón Actualizar en una sola pastilla. El punto pasa
  * de verde (< 1 h) a ámbar (< 6 h) y a rojo con pulso cuando conviene descargar.
@@ -200,18 +210,23 @@ function Freshness({
             : "Sin datos";
 
   return (
-    <div className={`fresh fresh--${state}`}>
+    <div className={`fresh fresh--${state}`} data-ui="freshness" data-state={state}>
       <button type="button" className="fresh__label" onClick={onOpen} aria-haspopup="dialog" aria-expanded={open} title="Ver detalle de los datos">
         <span className="fresh__dot" style={{ color }} aria-hidden="true" />
         <span aria-live="polite">{label}</span>
       </button>
+      <kbd className="fresh__kbd max-md:hidden" title="Pulsa R para actualizar">R</kbd>
       <button
         type="button"
         className="fresh__btn"
         onClick={onRefresh}
         disabled={disabled}
         aria-label={error ? "Reintentar la descarga" : "Actualizar datos"}
-        title="Descarga una foto nueva de LALIGA y los scrapers"
+        aria-keyshortcuts="R"
+        title="Descarga una foto nueva de LALIGA y los scrapers (R)"
+        data-ui="refresh"
+        data-progress={refreshing || busy ? "true" : undefined}
+        style={{ "--p": `${Math.max(0, Math.min(100, pct))}%`, "--c": color } as CSSProperties}
       >
         {justDone && !refreshing ? (
           <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-[#34d399]" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
@@ -263,6 +278,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     markShellReady();
   }, [markShellReady]);
+
+  // Atajo «R»: actualiza los datos sin buscar el botón (ignorado al escribir).
+  const canRefresh = !connecting && !refreshing;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "r" || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+      const el = event.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (!canRefresh) return;
+      event.preventDefault();
+      void refresh();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canRefresh, refresh]);
 
   return (
     <div className="app-shell">
@@ -319,9 +349,18 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div className="app-frame">
         <header className="app-topbar relative">
-          <div className="flex h-14 items-center justify-between gap-3 px-4 lg:px-7">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <h1 className="truncate text-lg font-bold tracking-tight text-ink">{section.title}</h1>
+          <div className="app-topbar__row" data-ui="topbar">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="topbar-mark lg:hidden" aria-hidden="true">
+                <Icon name={section.label === "Laboratorio" ? "Liga" : (section.label as SectionLabel)} />
+              </span>
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-baseline gap-2.5">
+                  <h1 className="topbar-title truncate">{section.title}</h1>
+                  <TodayStamp />
+                </div>
+                <p className="topbar-hint truncate">{section.hint}</p>
+              </div>
             </div>
             <Freshness
               ageSeconds={photoAgeSeconds}

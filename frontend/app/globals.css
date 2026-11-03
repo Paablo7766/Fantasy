@@ -1951,7 +1951,7 @@ body {
 .home-stack {
   position: relative;
   width: 100%;
-  max-width: 40rem;
+  max-width: none;
   margin-inline: auto;
   gap: 1.5rem;
   padding-top: 0.25rem;
