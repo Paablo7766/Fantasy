@@ -116,11 +116,8 @@ function isActive(pathname: string, href: string): boolean {
 function DockLink({ item, active, href }: { item: NavItem; active: boolean; href: string }) {
   const label = item.label === "Recomendaciones" ? "Inicio" : item.label;
   return (
-    <Link href={href} className="dock-link" data-active={active ? "true" : undefined} aria-current={active ? "page" : undefined} aria-label={label}>
-      <span className="dock-link__pill">
-        <Icon name={item.label} />
-        <span className="dock-link__label">{label}</span>
-      </span>
+    <Link href={href} className="dock-link" data-active={active ? "true" : undefined} aria-current={active ? "page" : undefined} aria-label={label} title={label}>
+      <Icon name={item.label} />
     </Link>
   );
 }
@@ -289,6 +286,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   // En Inicio no hay barra superior: la recarga vive en la barra lateral
   // (escritorio) y en un botón flotante sobre el dock (móvil).
+  const dockIndex = SECTIONS.findIndex((item) => isActive(pathname, item.href));
   const home = pathname === "/" || pathname === "/equipo" || pathname.startsWith("/equipo/");
   const freshness = (
     <Freshness
@@ -439,7 +437,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {home ? <div className="fab-fresh lg:hidden">{freshness}</div> : null}
 
-        <nav className="dock lg:hidden" aria-label="Navegación principal">
+        <nav
+          className="dock lg:hidden"
+          aria-label="Navegación principal"
+          style={{ "--dock-i": Math.max(0, dockIndex) } as CSSProperties}
+          data-has-active={dockIndex >= 0 ? "true" : undefined}
+        >
+          <span className="dock__ind" aria-hidden="true" />
           {SECTIONS.map((item) => (
             <DockLink key={item.label} item={item} active={isActive(pathname, item.href)} href={withQuery(item.href)} />
           ))}
