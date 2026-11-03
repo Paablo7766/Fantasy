@@ -81,6 +81,17 @@ export type ClausulazoSugerido = {
   motivo_detallado: string;
 };
 
+export type AlertaClausula = {
+  tipo: "escudo" | "francotirador" | string;
+  tono: "rojo" | "verde" | string;
+  mensaje: string;
+  player_id?: string | null;
+  nombre?: string | null;
+  posicion?: string | null;
+  rival?: string | null;
+  ratio_clausula?: number | null;
+};
+
 export type RadarAntiRobo = {
   player_id: string;
   nombre: string;
@@ -113,4 +124,6 @@ export type AsesorClausulas = {
   proteger: ClausulaEnPeligro[];
   clausulazos: ClausulazoSugerido[];
   radar_anti_robo?: RadarAntiRobo[];
+  /** Escudo (te la pueden robar) y francotirador (cláusula barata de un rival en rojo). */
+  alertas_clausulas?: AlertaClausula[];
 };

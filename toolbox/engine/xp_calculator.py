@@ -68,12 +68,24 @@ def ajuste_prior_por_precio(slot: str, precio: float | None) -> float:
 LIGA_AVG_XG = 1.25
 # Partidos de titular que vale el prior. Con n=0 manda el puesto; con n grande, el jugador.
 K_PRIOR = 4.0
+# Racha viva: los últimos partidos seguidos con >= 60' y una media de 6 en los 3 finales.
+# Ahí el prior de 4 aplasta un cambio de rol (7, 8, 9). Para el resto de la liga sigue en 4:
+# un parche de uno o dos partidos no abre la puerta.
+K_PRIOR_RACHA = 2.0
+RACHA_PARTIDOS = 3
+RACHA_MINUTOS = 60
+RACHA_MEDIA = 6.0
 # Ventana de forma. El recuento bayesiano sigue usando todos los partidos de titular.
 EWMA_WINDOW = 5
 EWMA_DECAY = 0.25
-# En el reglamento, jugar ya suma 1 y llegar a 60' suma otro. Sin minutos por
-# jornada, 2 o más puntos es la firma de quien cumplió minutos de titular.
-TITULAR_POINTS_FLOOR = 2.0
+# Aparecer ya suma 1. Sin el acta, un marcador positivo no dice si fue titular:
+# un 1 puede ser un titular que no llegó a 60' y un 3 un suplente que marcó.
+# Esos partidos quedan fuera de las dos medias (ver ``_infer_minutes``).
+MINUTOS_ROL_DESCONOCIDO = -1
+# Solo para la logística de titularidad: por debajo de 45, así que no es un
+# titular, pero tampoco un cero. Sirve cuando el marcador dice que jugó y no
+# hay acta. No entra en la media de titular ni en la de revulsivo.
+MINUTOS_APARICION_DESCONOCIDA = 40
 CS_BASELINE = 0.28
 
 
@@ -143,6 +155,42 @@ def _number(value: Any) -> float | None:
     return number
 
 
+def racha_viva(partidos: list[PartidoHistorico]) -> list[PartidoHistorico]:
+    """Sufijo de partidos seguidos con al menos 60 minutos.
+
+    Se recorre el historial desde el más reciente. El primer partido por debajo
+    de 60' (o sin acta) corta la racha: un revulsivo no alarga el estado de gracia.
+    """
+    ordered = sorted(partidos, key=lambda partido: partido.jornada)
+    viva: list[PartidoHistorico] = []
+    for partido in reversed(ordered):
+        if partido.minutos >= RACHA_MINUTOS:
+            viva.append(partido)
+        else:
+            break
+    viva.reverse()
+    return viva
+
+
+def k_prior_efectivo(partidos: list[PartidoHistorico]) -> float:
+    """Peso del prior. Baja a 2 solo si la racha viva consolida un cambio de rol.
+
+    Hacen falta al menos 3 partidos seguidos de 60' o más, y la media de los 3
+    más recientes de esa racha tiene que llegar a 6. La EWMA no se toca: lo que
+    se afloja es el ancla del prior sobre esa media. Medir solo los 3 últimos
+    evita que un pasado mediocre de 60' (que el prior ya representa) diluya
+    un 7-8-9 recién consolidado.
+    """
+    viva = racha_viva(partidos)
+    if len(viva) < RACHA_PARTIDOS:
+        return K_PRIOR
+    cola = viva[-RACHA_PARTIDOS:]
+    media = sum(partido.puntos for partido in cola) / len(cola)
+    if media >= RACHA_MEDIA:
+        return K_PRIOR_RACHA
+    return K_PRIOR
+
+
 def _ewma(partidos: list[PartidoHistorico]) -> float:
     """Media de los últimos partidos de titular, con más peso en el más reciente."""
     ordered = sorted(partidos, key=lambda partido: partido.jornada)[-EWMA_WINDOW:]
@@ -163,17 +211,62 @@ def _std_titular(partidos: list[PartidoHistorico], posicion: str) -> float:
 
 
 def _infer_minutes(puntos: float) -> int:
-    """Sin el acta de minutos, el propio marcador dice si cumplió titular.
+    """Sin acta ni otra fuente, no se inventa la titularidad a partir de los puntos.
 
-    Un 0 es no jugar (o un dato vacío): no entra en la media de titular ni en
-    la de revulsivo. Entre 0 y 2 jugó sin el punto de los 60'. De 2 en adelante
-    cumplió minutos de titular, también si el marcador se fue a negativo.
+    Un 0 es no jugar: pisar el campo ya suma 1, así que no entra en ninguna
+    media. Cualquier otro marcador solo dice que jugó. Clasificarlo como
+    suplente (el 1 de un titular corto) o como titular (el 3 de un revulsivo)
+    corrompe la media. Esos partidos quedan fuera de las dos, con un minuto
+    negativo que ni ``>= 45`` ni el tramo de revulsivo recogen.
     """
     if puntos == 0:
         return 0
-    if 0 < puntos < TITULAR_POINTS_FLOOR:
-        return 20
-    return 75
+    return MINUTOS_ROL_DESCONOCIDO
+
+
+def _minutos_explicitos(item: dict[str, Any], puntos: float) -> int | None:
+    """Minutos del acta, o el papel que declara el propio partido.
+
+    ``started`` / ``titular`` es una fuente fiable: manda sobre el marcador.
+    Un titular declarado con 1 punto sigue siendo titular; un suplente
+    declarado con 3 puntos sigue siendo suplente.
+    """
+    for key in ("minutos", "minutes", "minutesPlayed", "totalPlayingTime"):
+        minutes = _number(item.get(key))
+        if minutes is not None:
+            return int(minutes)
+    for key in ("started", "is_starter", "titular", "was_starter"):
+        value = item.get(key)
+        if value is True:
+            return 75
+        if value is False:
+            return 0 if puntos == 0 else 20
+    return None
+
+
+def _reparto_fiable(puntos: list[float], player: dict[str, Any]) -> list[int] | None:
+    """Reparte los minutos de temporada solo cuando el papel no admite duda.
+
+    Si cada aparición fue titular (los starts cubren los partidos con puntos y
+    la media de minutos pasa de 45), esos partidos son de titular. Si no hubo
+    ningún start, son revulsivos. Si hubo de las dos cosas, no se adivina cuál
+    jornada fue cuál.
+    """
+    form = player.get("form") if isinstance(player.get("form"), dict) else {}
+    starts = _number(form.get("starts"))
+    minutes = _number(form.get("minutes"))
+    if starts is None or minutes is None or starts < 0 or minutes < 0:
+        return None
+    jugados = [valor for valor in puntos if valor != 0]
+    if not jugados:
+        return [0 for _ in puntos]
+    if starts >= len(jugados) and minutes / len(jugados) >= STARTER_MINUTES:
+        each = int(min(90, round(minutes / len(jugados))))
+        return [each if valor != 0 else 0 for valor in puntos]
+    if starts == 0:
+        each = int(min(STARTER_MINUTES - 1, max(1, round(minutes / len(jugados))))) if minutes > 0 else 1
+        return [each if valor != 0 else 0 for valor in puntos]
+    return None
 
 
 def _partido_from_mapping(item: dict[str, Any], index: int) -> PartidoHistorico | None:
@@ -184,11 +277,7 @@ def _partido_from_mapping(item: dict[str, Any], index: int) -> PartidoHistorico 
             break
     if raw_points is None:
         return None
-    minutes = None
-    for key in ("minutos", "minutes", "minutesPlayed", "totalPlayingTime"):
-        minutes = _number(item.get(key))
-        if minutes is not None:
-            break
+    minutes = _minutos_explicitos(item, raw_points)
     week = None
     for key in ("jornada", "weekNumber", "week"):
         week = _number(item.get(key))
@@ -196,7 +285,7 @@ def _partido_from_mapping(item: dict[str, Any], index: int) -> PartidoHistorico 
             break
     return PartidoHistorico(
         puntos=raw_points,
-        minutos=int(minutes) if minutes is not None else _infer_minutes(raw_points),
+        minutos=minutes if minutes is not None else _infer_minutes(raw_points),
         jornada=int(week) if week is not None else index + 1,
     )
 
@@ -227,17 +316,20 @@ def historial_desde_jugador(player: dict[str, Any]) -> list[PartidoHistorico]:
     if not isinstance(series, list):
         series = form.get("week_points")
     if isinstance(series, list) and series:
+        numeros = [_number(item) for item in series]
+        serie_desnuda = all(not isinstance(item, dict) for item in series) and all(valor is not None for valor in numeros)
+        reparto = _reparto_fiable([float(valor) for valor in numeros], player) if serie_desnuda else None
         partidos: list[PartidoHistorico] = []
         for index, item in enumerate(series):
             if isinstance(item, dict):
                 partido = _partido_from_mapping(item, index)
             else:
-                puntos = _number(item)
-                partido = (
-                    PartidoHistorico(puntos=puntos, minutos=_infer_minutes(puntos), jornada=index + 1)
-                    if puntos is not None
-                    else None
-                )
+                puntos = numeros[index]
+                if puntos is None:
+                    partido = None
+                else:
+                    minutos = reparto[index] if reparto is not None else _infer_minutes(puntos)
+                    partido = PartidoHistorico(puntos=puntos, minutos=minutos, jornada=index + 1)
             if partido is not None:
                 partidos.append(partido)
         if partidos:
@@ -326,7 +418,12 @@ class FantasyXPEngine:
         if not historial:
             return None
         ordered = sorted(historial, key=lambda partido: partido.jornada)
-        features = features_from_minutes([partido.minutos for partido in ordered])
+        # El papel desconocido no es un cero: jugó, pero no sabemos si salió.
+        minutos = [
+            MINUTOS_APARICION_DESCONOCIDA if partido.minutos == MINUTOS_ROL_DESCONOCIDO else partido.minutos
+            for partido in ordered
+        ]
+        features = features_from_minutes(minutos)
         if features is None:
             return None
         probability = predict(current_weights(), features)
@@ -360,7 +457,13 @@ class FantasyXPEngine:
             std_jugador = STD_DEFAULT.get(slot, 3.5)
 
         prior_pos = PRIORS_TITULAR.get(slot, 4.5) + ajuste_prior
-        base_titular = ((n_tit * media_titular_real) + (K_PRIOR * prior_pos)) / (n_tit + K_PRIOR)
+        # La racha se mide sobre todo el historial: un partido de 50' es titular
+        # para la media (>= 45') pero corta el estado de gracia, que pide 60'.
+        viva = racha_viva(historial)
+        k_prior = k_prior_efectivo(historial)
+        cola = viva[-RACHA_PARTIDOS:] if len(viva) >= RACHA_PARTIDOS else []
+        racha_media = sum(partido.puntos for partido in cola) / len(cola) if cola else 0.0
+        base_titular = ((n_tit * media_titular_real) + (k_prior * prior_pos)) / (n_tit + k_prior)
         if sofascore_rating_medio is not None and sofascore_rating_medio > 6.70:
             bonus_sofa = (sofascore_rating_medio - 6.80) * 2.8
             base_titular += max(-0.6, min(1.8, bonus_sofa))
@@ -420,6 +523,9 @@ class FantasyXPEngine:
             "n_titular": float(n_tit),
             "factor_partido": round(factor_partido, 4),
             "std_jugador": round(std_jugador, 4),
+            "k_prior": k_prior,
+            "racha_partidos": float(len(viva)),
+            "racha_media": round(racha_media, 4),
         }
 
 

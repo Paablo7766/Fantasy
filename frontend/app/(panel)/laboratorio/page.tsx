@@ -5,6 +5,7 @@ import { Suspense, useMemo } from "react";
 import { AfIntel } from "@/components/laboratorio/AfIntel";
 import { ApiUsagePanel } from "@/components/laboratorio/ApiUsagePanel";
 import { CalibrationDashboard } from "@/components/laboratorio/CalibrationDashboard";
+import { PostMortemPanel } from "@/components/laboratorio/PostMortemPanel";
 import { DataHealthPanel } from "@/components/laboratorio/DataHealthPanel";
 import { useDashboard } from "@/components/DashboardProvider";
 import { ExpertNotePanel } from "@/components/laboratorio/ExpertNotePanel";
@@ -22,7 +23,7 @@ type Tab = "radar" | "calibracion" | "senales" | "datos";
  */
 const TABS: { id: Tab; label: string; hint: string }[] = [
   { id: "radar", label: "Radar técnico", hint: "Pesos de la nota, tóxicos descartados y precio de referencia por posición." },
-  { id: "calibracion", label: "Calibración", hint: "Cuánto acierta el modelo frente a lo que ocurrió." },
+  { id: "calibracion", label: "Calibración", hint: "Cuánto acierta el modelo, y el post-mortem del lunes: puntos dejados en el banquillo e impacto de haber operado." },
   { id: "senales", label: "Señales", hint: "Fuentes externas, discrepancias entre ellas y la nota del experto." },
   { id: "datos", label: "Datos y API", hint: "Frescura de cada bloque y consumo de peticiones." },
 ];
@@ -81,7 +82,10 @@ function LaboratorioContent() {
         {tab === "radar" ? (
           <RadarTecnico photos={photos} />
         ) : tab === "calibracion" ? (
-          <CalibrationDashboard />
+          <div className="flex min-w-0 flex-col gap-6">
+            <PostMortemPanel />
+            <CalibrationDashboard />
+          </div>
         ) : tab === "senales" ? (
           <div className="flex min-w-0 flex-col gap-6">
             <SignalDiscrepanciesPanel trends={trends} loading={trendsLoading} />

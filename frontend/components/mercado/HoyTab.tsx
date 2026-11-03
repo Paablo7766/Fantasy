@@ -8,7 +8,7 @@ import { Disclosure, Empty, Face, HeroStat, Skeleton, TONE, compact, money, pars
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { errorMessage, playerName } from "@/lib/core/format";
 import { executableBid, marketAction } from "@/lib/mercado/marketAction";
-import type { JornadaClub, MarketDecision, PlanFichajeAccion, PlanFichajes, TrendsPayload } from "@/lib/types";
+import type { AlertaClausula, JornadaClub, MarketDecision, PlanFichajeAccion, PlanFichajes, TrendsPayload } from "@/lib/types";
 
 type Source = "liga" | "rival" | "todos";
 
@@ -122,6 +122,42 @@ function PlanRow({ accion }: { accion: PlanFichajeAccion }) {
         </span>
       </span>
     </li>
+  );
+}
+
+function AlertaRow({ alerta }: { alerta: AlertaClausula }) {
+  const tone = alerta.tono === "verde" ? TONE.green : TONE.red;
+  return (
+    <li className="border-b border-white/[0.06] py-2.5 last:border-b-0">
+      <p className="text-[13.5px] leading-snug" style={{ color: tone }}>
+        {alerta.mensaje}
+      </p>
+    </li>
+  );
+}
+
+function AlertasClausulaBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
+  const alertas = Array.isArray(plan?.alertas_clausulas) ? plan.alertas_clausulas : [];
+  if (!alertas.length) return null;
+  const rojas = alertas.filter((alerta) => alerta.tono === "rojo").length;
+  const verdes = alertas.length - rojas;
+  return (
+    <Disclosure
+      title="Escudo y francotirador"
+      meta={
+        <span>
+          {rojas ? <span style={{ color: TONE.red }}>{rojas} en riesgo</span> : null}
+          {rojas && verdes ? <span className="text-white/35"> · </span> : null}
+          {verdes ? <span style={{ color: TONE.green }}>{verdes} a tiro</span> : null}
+        </span>
+      }
+    >
+      <ul>
+        {alertas.map((alerta, index) => (
+          <AlertaRow key={`${alerta.tipo}-${alerta.player_id || alerta.nombre}-${index}`} alerta={alerta} />
+        ))}
+      </ul>
+    </Disclosure>
   );
 }
 
@@ -389,6 +425,7 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
         )}
       </section>
 
+      <AlertasClausulaBlock plan={trends.plan_fichajes} />
       <PlanBlock plan={trends.plan_fichajes} />
       <TradingBlock plan={trends.plan_fichajes} />
       <LiquidacionBlock plan={trends.plan_fichajes} />

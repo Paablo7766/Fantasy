@@ -70,6 +70,7 @@ from toolbox.jornada_plan import (
     read_expert_note,
     write_expert_note,
 )
+from toolbox.engine.auditoria_jornada import construir_post_mortem
 from toolbox.engine.comparador_liga import comparar_jugadores_liga
 from toolbox.engine.strategy_layer import publish_strategy
 from toolbox.engine_calibration import build_calibration_report, persist_market_decisions
@@ -3160,6 +3161,29 @@ def api_calibration(
     if isinstance(board, dict):
         payload.update(_photo_fields(board))
     return payload
+
+
+@app.get("/api/laboratorio/post-mortem")
+@_read_only
+def api_post_mortem(league: str | None = Query(default=None)) -> Any:
+    """Fuga de alineación e impacto del trading contra la foto del lunes pasado.
+
+    La lectura no descarga. Si hay plantilla, deja escrita la foto de hoy
+    (la primera del día no se pisa) para que el próximo lunes tenga contra qué comparar.
+    """
+    board = _board("post-mortem", league, tier="core")
+    if isinstance(board, JSONResponse):
+        return board
+    try:
+        report = construir_post_mortem(board)
+    except Exception as exc:
+        return error_response("post-mortem", exc)
+    report["ok"] = True
+    report["schema_version"] = SCHEMA_VERSION
+    report["command"] = "post-mortem"
+    report["league_id"] = _board_league_id(board, league)
+    report.update(_photo_fields(board))
+    return report
 
 
 @app.get("/api/plan")

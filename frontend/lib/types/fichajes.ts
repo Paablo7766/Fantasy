@@ -1,4 +1,5 @@
 // Plan de fichajes, auditoría de ventas y ventas forzadas.
+import type { AlertaClausula } from "./clausulas";
 
 export type PlanFichajeAccion = {
   tipo?: "VENDE" | "VENDER HOY" | "ESCAPARATE" | "PUJA" | "CLAUSULAZO" | "BUSCA" | string;
@@ -86,6 +87,8 @@ export type PlanFichajes = {
   en_radar?: PlanFichajeAccion[];
   trading?: TradingDesk;
   liquidacion?: PlanLiquidacion;
+  /** Escudo y francotirador: cláusulas en riesgo y chollos de rivales en rojo. */
+  alertas_clausulas?: AlertaClausula[];
   once?: Array<{
     player_id?: string | null;
     nombre?: string | null;

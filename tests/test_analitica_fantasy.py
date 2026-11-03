@@ -12,6 +12,7 @@ from toolbox.analitica_fantasy import (
     AfMarketRow,
     AfPointsRow,
     AfPredictionRow,
+    AfTrendAlertRow,
     apply_analitica_fantasy,
     parse_calendar,
     parse_form_players,
@@ -21,6 +22,7 @@ from toolbox.analitica_fantasy import (
     parse_points_predictions,
     parse_set_pieces,
     parse_status_players,
+    parse_trend_alerts,
 )
 from toolbox.cache import EntityStore
 from toolbox.matching import CanonicalPlayer, EntityResolver
@@ -116,6 +118,12 @@ SETPIECE_HTML = """
 <span>Penaltis</span><span>Principal#9</span><span>Toni Martínez</span>
 """
 
+ALERT_HTML = (
+    '<script>\\"posiblesCambiosAlAlza\\":[{\\"id\\":46746,\\"n\\":\\"Budimir\\",\\"pid\\":4}],'
+    '\\"posiblesCambiosALaBaja\\":[{\\"id\\":184277,\\"n\\":\\"Fer Niño\\",\\"pid\\":4,\\"su\\":690218}]'
+    "</script>"
+)
+
 CALENDAR_HTML = r"""
 {\"matchday\":1,\"round\":\"Regular Season - 10\",\"fixtureId\":100012040,\"fixtureDate\":\"2026-10-23T19:00:00+00:00\",\"opponentId\":4665,\"opponentName\":\"Racing Santander\",\"isHome\":true,\"predictedScore\":\"7-2\",\"predictedHome\":7,\"predictedAway\":2,\"winProb\":1,\"drawProb\":0,\"lossProb\":0,\"recommendationPct\":99,\"difficulty\":\"very_easy\",\"hasPrediction\":true},\"teamId\":529,\"teamName\":\"Barcelona\"
 """
@@ -135,6 +143,13 @@ class AnaliticaFantasyParsersTest(unittest.TestCase):
         self.assertEqual(rows[0].ideal_bid, 78404383)
         self.assertEqual(rows[0].max_bid, 79000000)
         self.assertEqual(rows[0].club, "Real Madrid")
+
+    def test_cambios_de_tendencia(self) -> None:
+        rows = {row.name: row for row in parse_trend_alerts(ALERT_HTML)}
+        self.assertEqual(rows["Fer Niño"].direction, "down")
+        self.assertEqual(rows["Fer Niño"].external_id, "184277")
+        self.assertEqual(rows["Fer Niño"].position, "DEL")
+        self.assertEqual(rows["Budimir"].direction, "up")
 
     def test_prediction_jsonld(self) -> None:
         rows = parse_market_predictions(PREDICTION_HTML)
@@ -229,6 +244,60 @@ class AnaliticaFantasyParsersTest(unittest.TestCase):
         self.assertEqual(by_id["p2"].get("af_expected_points"), 12.5)
         self.assertTrue(summary["prediction_rising"])
         self.assertTrue(summary["oracle_points"])
+
+    def test_alerta_de_tendencia_es_binaria(self) -> None:
+        catalog = [
+            CanonicalPlayer(
+                player_id="nino",
+                name="Fer Niño",
+                nickname="Fer Niño",
+                club="Las Palmas",
+                position="DEL",
+                fantasy_price=50_000_000,
+            ),
+            CanonicalPlayer(
+                player_id="budimir",
+                name="Budimir",
+                nickname="Budimir",
+                club="Osasuna",
+                position="DEL",
+                fantasy_price=60_000_000,
+            ),
+            CanonicalPlayer(
+                player_id="otro",
+                name="Koski",
+                nickname="Koski",
+                club="Alaves",
+                position="DEF",
+                fantasy_price=10_000_000,
+            ),
+        ]
+        players = [
+            {"player_id": "nino", "name": "Fer Niño", "af_alerta_bajada": False},
+            {"player_id": "budimir", "name": "Budimir"},
+            {"player_id": "otro", "name": "Koski", "af_alerta_bajada": True, "af_alerta_subida": True},
+        ]
+        bundle = AfBundle(
+            trend_alerts=[
+                AfTrendAlertRow(name="Fer Niño", direction="down", external_id="184277", position="DEL"),
+                AfTrendAlertRow(name="Budimir", direction="up", external_id="46746", position="DEL"),
+            ],
+            sources={"analiticafantasy_trend_alerts": {"ok": True, "count": 2}},
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            store = EntityStore(Path(directory))
+            try:
+                resolver = EntityResolver(store)
+                apply_analitica_fantasy(catalog, resolver, bundle, players)
+            finally:
+                store.close()
+        by_id = {row["player_id"]: row for row in players}
+        self.assertIs(by_id["nino"].get("af_alerta_bajada"), True)
+        self.assertNotIn("af_alerta_subida", by_id["nino"])
+        self.assertIs(by_id["budimir"].get("af_alerta_subida"), True)
+        self.assertNotIn("af_alerta_bajada", by_id["budimir"])
+        self.assertNotIn("af_alerta_bajada", by_id["otro"])
+        self.assertNotIn("af_alerta_subida", by_id["otro"])
 
 
 if __name__ == "__main__":

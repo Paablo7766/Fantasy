@@ -77,7 +77,7 @@ from zoneinfo import ZoneInfo
 
 from toolbox import project_root
 from toolbox.cache import cache_root
-from toolbox.normalize import SCHEMA_VERSION
+from toolbox.normalize import SCHEMA_VERSION, exclusion_from_status
 
 _MADRID = ZoneInfo("Europe/Madrid")
 
@@ -708,6 +708,56 @@ def _balance_floor(
 
 
 # --- Termómetro de control --------------------------------------------------
+
+
+_PUESTO = {
+    "PT": "POR",
+    "POR": "POR",
+    "GK": "POR",
+    "DF": "DEF",
+    "DEF": "DEF",
+    "MC": "MC",
+    "MED": "MC",
+    "MID": "MC",
+    "DL": "DEL",
+    "DEL": "DEL",
+    "FW": "DEL",
+    "ATT": "DEL",
+}
+
+
+def sanos_por_puesto(squad: dict[str, Any] | None) -> dict[str, int]:
+    """Cuántos jugadores sanos hay en cada línea. Lesión y sanción no cuentan."""
+    counts = {"POR": 0, "DEF": 0, "MC": 0, "DEL": 0}
+    if not isinstance(squad, dict):
+        return counts
+    for player in squad.get("players") or []:
+        if not isinstance(player, dict):
+            continue
+        raw = player.get("position")
+        position = _PUESTO.get(str(raw).strip().upper()) if isinstance(raw, str) else None
+        if position is None:
+            continue
+        status = player.get("player_status") if isinstance(player.get("player_status"), str) else player.get("status")
+        if exclusion_from_status(status if isinstance(status, str) else None):
+            continue
+        counts[position] += 1
+    return counts
+
+
+def bid_limit_por_puesto(squad: dict[str, Any] | None, *, en_rojo: bool, legal: int) -> dict[str, int]:
+    """Tope de puja por línea.
+
+    Fuera del rojo, todas las líneas comparten el tope legal. En rojo el tope
+    es 0, salvo la línea con 0 sanos: ahí puede pujar hoy a crédito, y el
+    filtro del precio (``legal > precio del jugador``) se aplica al cruzarlo
+    con un objetivo concreto.
+    """
+    techo = max(0, int(legal))
+    counts = sanos_por_puesto(squad)
+    if not en_rojo:
+        return {position: techo for position in counts}
+    return {position: techo if counts[position] == 0 else 0 for position in counts}
 
 
 def estado_rojo(calculated_cash: int | None, cash_expected: int | None = None) -> str | None:
@@ -2239,6 +2289,9 @@ class LedgerAuditor:
                 "risk_adjusted_cash": int(risk_adjusted_cash),
                 "risk_adjusted_bid_limit": 0 if rojo else int(max(0, risk_adjusted_cash + debt)),
                 "legal_bid_limit": int(max(0, cash + debt)),
+                "bid_limit_por_puesto": bid_limit_por_puesto(
+                    squad, en_rojo=bool(rojo), legal=int(max(0, cash + debt))
+                ),
                 "en_rojo": rojo,
                 "debt_limit_eur": debt,
                 "cash_is_upper_bound": anchor is None,

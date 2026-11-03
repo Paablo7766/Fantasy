@@ -1463,3 +1463,14 @@ def _probability(value: Any) -> float | None:
     if number < 0.0 or number > 1.0:
         return None
     return round(number, 4)
+
+
+def alertas_escudo_francotirador(
+    titulares: list[dict[str, Any]],
+    rivales: list[dict[str, Any]],
+    jugadores_rivales: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Escudo y francotirador de cláusulas. La regla vive en el trading desk."""
+    from toolbox.engine.trading_desk import alertas_escudo_francotirador as _alertas
+
+    return _alertas(titulares, rivales, jugadores_rivales)

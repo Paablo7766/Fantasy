@@ -33,9 +33,12 @@ from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, evaluar_c
 from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
 from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes
+from toolbox.engine.trading_desk import alertas_escudo_francotirador
+from toolbox.jornada_plan import earliest_kickoff
 from toolbox.plan_memory import load_objetivos_previos, save_plan
 from toolbox.market_intel import _jornada_kickoff, _parse_kickoff
 from toolbox.normalize import exclusion_from_status, parse_clause_lock
+from toolbox.rival_intel import ROJO_SEGURO, estado_rojo
 
 logger = logging.getLogger("fantasy.strategy")
 
@@ -401,6 +404,8 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
         _set_calendar(row, player)
         if isinstance(player.get("own_xp_siguientes"), list) and not row.get("xp_siguientes"):
             row["xp_siguientes"] = player["own_xp_siguientes"]
+        if player.get("af_alerta_bajada") is True:
+            row["af_alerta_bajada"] = True
         if isinstance(player.get("own_sancion_partidos"), int) and not isinstance(player.get("own_sancion_partidos"), bool):
             row["sancion_partidos"] = player["own_sancion_partidos"]
         if exclusion_from_status(player.get("player_status") if isinstance(player.get("player_status"), str) else None):
@@ -568,7 +573,29 @@ def _lineup_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _rivals(records: dict[str, dict[str, Any]], cash: dict[str, int]) -> list[dict[str, Any]]:
+def _poder_map(board: dict[str, Any], cash: dict[str, int]) -> dict[str, int]:
+    """Caja más crédito: el tope legal del libro, o la caja más la deuda del equipo."""
+    poder = dict(cash)
+    squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
+    for squad in squads.get("squads") or []:
+        if not isinstance(squad, dict):
+            continue
+        team_id = _pid(squad.get("team_id"))
+        debt = squad.get("debt_limit_eur")
+        if team_id and team_id in cash and isinstance(debt, int) and not isinstance(debt, bool):
+            poder[team_id] = max(poder[team_id], cash[team_id] + max(0, debt))
+    needs = board.get("needs") if isinstance(board.get("needs"), dict) else {}
+    for ledger in needs.get("ledgers") or []:
+        if not isinstance(ledger, dict):
+            continue
+        team_id = _pid(ledger.get("team_id"))
+        legal = ledger.get("legal_bid_limit")
+        if team_id and isinstance(legal, int) and not isinstance(legal, bool):
+            poder[team_id] = max(poder.get(team_id, legal), legal)
+    return poder
+
+
+def _rivals(records: dict[str, dict[str, Any]], cash: dict[str, int], poder: dict[str, int] | None = None) -> list[dict[str, Any]]:
     by_team: dict[str, dict[str, Any]] = {}
     for row in records.values():
         if row.get("is_self") is True or not row.get("team_id"):
@@ -584,14 +611,23 @@ def _rivals(records: dict[str, dict[str, Any]], cash: dict[str, int]) -> list[di
         if position in POSITIONS and not row.get("excluded"):
             bucket["counts"][position] += 1
     salida: list[dict[str, Any]] = []
+    caja_credito = poder or cash
     for team_id, bucket in by_team.items():
-        thin = [position for position in POSITIONS if bucket["counts"][position] <= MIN_HEADCOUNT[position]]
+        counts = bucket["counts"]
+        thin = [position for position in POSITIONS if counts[position] <= MIN_HEADCOUNT[position]]
+        saldo = cash.get(team_id)
+        rojo = estado_rojo(saldo)
         salida.append(
             {
                 "team_id": team_id,
                 "manager": bucket.get("manager"),
-                "saldo": cash.get(team_id),
+                "saldo": saldo,
+                "poder": caja_credito.get(team_id, saldo),
                 "posiciones": thin,
+                "huecos": [position for position in POSITIONS if counts[position] == 0],
+                "flojas": [position for position in POSITIONS if 0 < counts[position] <= MIN_HEADCOUNT[position]],
+                "en_rojo": rojo,
+                "en_rojo_seguro": rojo == ROJO_SEGURO,
             }
         )
     return salida
@@ -665,7 +701,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
     war = war_del_once(xi, bench)
     caps = capitanes(xi)
     cajas = _cash_map(board if isinstance(board, dict) else {})
-    rivales = _rivals(records, cajas)
+    rivales = _rivals(records, cajas, _poder_map(board if isinstance(board, dict) else {}, cajas))
     propio = own_squad(board.get("squads") if isinstance(board, dict) and isinstance(board.get("squads"), dict) else None)
     own_id = _pid(propio.get("team_id")) if isinstance(propio, dict) else None
     saldo = propio.get("cash") if isinstance(propio, dict) and isinstance(propio.get("cash"), int) and not isinstance(propio.get("cash"), bool) else None
@@ -760,6 +796,11 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         current,
         dias_al_cierre=_num(plan.get("dias_al_cierre")) if isinstance(plan, dict) else None,
     )
+    if isinstance(plan, dict):
+        plan["alertas_clausulas"] = clausulas.get("alertas_clausulas") or []
+        trading = plan.get("trading")
+        if isinstance(trading, dict):
+            trading["alertas_clausulas"] = plan["alertas_clausulas"]
     return {
         "ratio_mercado": round(ratio, 2),
         "ratio_detalle": {
@@ -871,6 +912,7 @@ def _clausulas_vacias() -> dict[str, Any]:
         "proteger": [],
         "clausulazos": [],
         "radar_anti_robo": [],
+        "alertas_clausulas": [],
     }
 
 
@@ -1030,6 +1072,11 @@ def _asesorar_clausulas(
         logger.exception("asesor de cláusulas")
         informe = _clausulas_vacias()
     informe["radar_anti_robo"] = radar
+    informe["alertas_clausulas"] = alertas_escudo_francotirador(
+        [fila for fila in propios if fila.get("en_xi") is True],
+        rivales,
+        ajenos,
+    )
     return informe
 
 
@@ -1132,6 +1179,7 @@ def _plan(
                 "pct": _pct_previsto(previsto, row["player_id"]),
                 "valor": row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None,
                 "p_titular": row.get("p_titular") if isinstance(row.get("p_titular"), (int, float)) and not isinstance(row.get("p_titular"), bool) else row.get("prob_titular"),
+                "si_titular": row.get("si_titular") if isinstance(row.get("si_titular"), (int, float)) and not isinstance(row.get("si_titular"), bool) else None,
                 "kickoff": row.get("kickoff"),
                 "tiene_oferta_laliga": row.get("tiene_oferta_laliga") is True,
                 "futuro": _futuro(row),
@@ -1198,6 +1246,7 @@ def _plan(
                 "futuro": _futuro(row),
                 "pct": _pct_previsto(previsto, player_id),
                 "valor": row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None,
+                "af_alerta_bajada": row.get("af_alerta_bajada") is True,
             }
         )
     mercado.sort(key=lambda item: float(item["jornada"]), reverse=True)
@@ -1235,6 +1284,7 @@ def _plan(
                 "futuro": _futuro(row),
                 "pct": _pct_previsto(previsto, player_id),
                 "valor": valor if isinstance(valor, int) and valor > 0 else None,
+                "af_alerta_bajada": row.get("af_alerta_bajada") is True,
             }
         )
     clausulas.sort(key=lambda item: float(item["eficiencia"]), reverse=True)
@@ -1256,8 +1306,9 @@ def _plan(
         logger.exception("plan de fichajes")
         return _empty_plan(saldo, ratio)
     try:
+        # La cobertura mira el primer silbato real, no el día con más partidos.
         plan["liquidacion"] = _liquidacion(
-            records, owned_rows, saldo, _days_to_kickoff(trends, now), own_id, _jornada_kickoff(trends, now)
+            records, owned_rows, saldo, _days_to_kickoff(trends, now), own_id, earliest_kickoff(trends, now=now)
         )
     except Exception:
         logger.exception("plan de liquidación")

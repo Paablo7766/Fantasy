@@ -36,6 +36,11 @@ class RojoLeveConHuecoTest(unittest.TestCase):
         risk = overbid_risk("DEF", 2_000_000, [_rojo()])
         self.assertEqual(risk["status"], "low")
 
+    def test_rojo_con_sanos_en_ese_puesto_no_recupera_el_credito(self) -> None:
+        risk = overbid_risk("POR", 2_000_000, [_rojo(depth={"POR": 2})])
+        self.assertEqual(risk["status"], "low")
+        self.assertEqual(risk["rivales_sin_caja"], ["Naviis10"])
+
     def test_rojo_con_tope_legal_agotado_se_queda_en_cero(self) -> None:
         risk = overbid_risk("POR", 2_000_000, [_rojo(legal_bid_limit_eur=1_500_000)])
         self.assertEqual(risk["status"], "low")

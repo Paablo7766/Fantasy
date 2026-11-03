@@ -25,6 +25,7 @@ from toolbox.matching import (
 from toolbox.net import ExternalClient, ExternalHttpError, inherited
 
 AF_MARKET_URL = "https://www.analiticafantasy.com/fantasy-la-liga/mercado"
+# La misma página trae «Cambios de tendencia» (posiblesCambiosALaBaja / AlAlza).
 AF_PREDICTION_URL = "https://www.analiticafantasy.com/fantasy-la-liga/prediccion-de-mercado"
 AF_IDEAL_BID_URL = "https://www.analiticafantasy.com/fantasy-la-liga/puja-ideal"
 AF_POINTS_URL = "https://www.analiticafantasy.com/fantasy-la-liga/predicciones"
@@ -100,6 +101,20 @@ class AfPredictionRow:
 
 
 @dataclass
+class AfTrendAlertRow:
+    """Cambio de tendencia: el rendimiento reciente ya no acompaña al precio.
+
+    ``down`` es un jugador que aún sube (o subía) pero AnalíticaFantasy cree
+    que la inercia se va a frenar. ``up`` es el caso contrario.
+    """
+
+    name: str
+    direction: str  # down | up
+    external_id: str | None = None
+    position: str | None = None
+
+
+@dataclass
 class AfPointsRow:
     name: str
     club: str | None = None
@@ -165,6 +180,7 @@ class AfBundle:
     market: list[AfMarketRow] = field(default_factory=list)
     bids: list[AfBidRow] = field(default_factory=list)
     predictions: list[AfPredictionRow] = field(default_factory=list)
+    trend_alerts: list[AfTrendAlertRow] = field(default_factory=list)
     points: list[AfPointsRow] = field(default_factory=list)
     injured: list[AfStatusRow] = field(default_factory=list)
     suspended: list[AfStatusRow] = field(default_factory=list)
@@ -323,6 +339,53 @@ def _ld_props(item: dict[str, Any]) -> dict[str, Any]:
         if isinstance(key, str) and key.strip():
             props[key.strip()] = entry.get("value")
     return props
+
+
+def _first_list(page: str, markers: tuple[str, ...]) -> list[Any]:
+    for marker in markers:
+        payload = _json_after(page, marker)
+        if isinstance(payload, list):
+            return payload
+    return []
+
+
+def parse_trend_alerts(page: str) -> list[AfTrendAlertRow]:
+    """Lee «Cambios de tendencia» de la predicción de mercado.
+
+    El bloque vive en el vuelo RSC (``posiblesCambiosALaBaja`` /
+    ``posiblesCambiosAlAlza``), no en el JSON-LD de subidas y bajadas. Un
+    jugador puede seguir con la subida de ayer en positivo y aun así estar
+    en la lista de bajada: es justo el giro que el trading no debe comprar.
+    """
+    specs = (
+        ("posiblesCambiosALaBaja", "down"),
+        ("posiblesCambiosAlAlza", "up"),
+    )
+    rows: list[AfTrendAlertRow] = []
+    seen: set[tuple[str, str]] = set()
+    for key, direction in specs:
+        markers = (f'\\"{key}\\":', f'"{key}":')
+        for raw in _first_list(page, markers):
+            if not isinstance(raw, dict):
+                continue
+            name = raw.get("n") or raw.get("name") or raw.get("nickname")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            external = raw.get("id") or raw.get("playerId")
+            external_id = str(external) if external is not None else None
+            token = external_id or normalize_name(name)
+            if (direction, token) in seen:
+                continue
+            seen.add((direction, token))
+            rows.append(
+                AfTrendAlertRow(
+                    name=name.strip(),
+                    direction=direction,
+                    external_id=external_id,
+                    position=_position(raw.get("pid") or raw.get("positionId")),
+                )
+            )
+    return rows
 
 
 def parse_market_predictions(page: str) -> list[AfPredictionRow]:
@@ -662,6 +725,8 @@ def load_analitica_fantasy(
     bundle.market = list(market_rows)
     bundle.bids = list(bid_rows)
     bundle.predictions = list(pred_rows)
+    alert_s, alert_rows = _fetch(client, AF_PREDICTION_URL, parse_trend_alerts, ttl=ttl, fresh=fresh)
+    bundle.trend_alerts = list(alert_rows)
     # Prefer dedicated points page; fill gaps from oracle objects.
     by_id = {row.external_id: row for row in pts_rows if row.external_id}
     by_name = {normalize_name(row.name): row for row in pts_rows}
@@ -689,6 +754,7 @@ def load_analitica_fantasy(
     bundle.sources = {
         "analiticafantasy_market": market_s,
         "analiticafantasy_prediction": pred_s,
+        "analiticafantasy_trend_alerts": alert_s,
         "analiticafantasy_ideal_bid": bid_s,
         "analiticafantasy_points": pts_s,
         "analiticafantasy_oracle": ora_s,
@@ -792,6 +858,7 @@ def apply_analitica_fantasy(
     market_map, d1 = _link_rows(catalog, resolver, bundle.market, "analiticafantasy_market")
     bid_map, d2 = _link_rows(catalog, resolver, bundle.bids, "analiticafantasy_ideal_bid")
     pred_map, d3 = _link_rows(catalog, resolver, bundle.predictions, "analiticafantasy_prediction")
+    alert_map, d_alert = _link_rows(catalog, resolver, bundle.trend_alerts, "analiticafantasy_trend_alert")
     pts_map, d4 = _link_rows(catalog, resolver, bundle.points, "analiticafantasy_points")
     inj_map, d5 = _link_rows(catalog, resolver, bundle.injured, "analiticafantasy_injured")
     sus_map, d6 = _link_rows(catalog, resolver, bundle.suspended, "analiticafantasy_suspended")
@@ -808,6 +875,8 @@ def apply_analitica_fantasy(
         key = normalize_club(cell.team_name) or normalize_name(cell.team_name)
         calendar_by_club.setdefault(key, []).append(cell)
 
+    alerts_ok = (bundle.sources.get("analiticafantasy_trend_alerts") or {}).get("ok") is True
+
     for player in players:
         pid = player.get("player_id")
         if not isinstance(pid, str):
@@ -815,6 +884,7 @@ def apply_analitica_fantasy(
         market = market_map.get(pid)
         bid = bid_map.get(pid)
         pred = pred_map.get(pid)
+        alert = alert_map.get(pid)
         pts = pts_map.get(pid)
         injured = inj_map.get(pid)
         suspended = sus_map.get(pid)
@@ -840,6 +910,13 @@ def apply_analitica_fantasy(
             player["af_market_signal"] = pred.direction
             player["af_signal_strength"] = pred.signal_strength
             player["af_predicted_delta"] = pred.predicted_delta
+        if alerts_ok:
+            player.pop("af_alerta_bajada", None)
+            player.pop("af_alerta_subida", None)
+        if alert is not None and alert.direction == "down":
+            player["af_alerta_bajada"] = True
+        elif alert is not None and alert.direction == "up":
+            player["af_alerta_subida"] = True
         if pts is not None:
             if pts.predicted_points is not None:
                 player["af_expected_points"] = pts.predicted_points
@@ -970,7 +1047,7 @@ def apply_analitica_fantasy(
         "oracle_chollos": oracle_chollos,
         "in_form": in_form,
     }
-    return [*d1, *d2, *d3, *d4, *d5, *d6, *d7, *d8], summary
+    return [*d1, *d2, *d3, *d_alert, *d4, *d5, *d6, *d7, *d8], summary
 
 
 def _prediction_cards(

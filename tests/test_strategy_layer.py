@@ -25,7 +25,7 @@ from toolbox.engine.signing_plan import (
     factor_peaje,
     penalizacion_por_millon,
 )
-from toolbox.engine.strategy_layer import build_strategy
+from toolbox.engine.strategy_layer import _collect, build_strategy
 
 
 def _jugador(player_id: str, position: str, jornada: float, **extra: object) -> dict:
@@ -396,6 +396,30 @@ class LiquidezTests(unittest.TestCase):
         self.assertEqual(tarde["acciones"], [])
         self.assertEqual(tarde["saldo_al_final"], 4_000_000)
         self.assertEqual(tarde["trading"]["operaciones"], [])
+
+    def test_alerta_bajada_queda_fuera_del_trading_aunque_suba(self) -> None:
+        mercado = [_jugador("nino", "DEL", 3.0, euros=1_000_000, pct=16.0, af_alerta_bajada=True)]
+        plan = self._plan(dias=4, cash=4_000_000, mercado=mercado)
+        self.assertEqual(plan["acciones"], [])
+        self.assertEqual(plan["trading"]["operaciones"], [])
+
+    def test_la_alerta_de_bajada_viaja_desde_trends(self) -> None:
+        records = _collect(
+            {
+                "trends": {
+                    "players": [
+                        {
+                            "player_id": "nino",
+                            "name": "Fer Niño",
+                            "position": "DEL",
+                            "af_alerta_bajada": True,
+                        }
+                    ]
+                }
+            },
+            datetime(2026, 11, 3, tzinfo=timezone.utc),
+        )
+        self.assertIs(records["nino"]["af_alerta_bajada"], True)
 
     def test_el_factor_de_peaje_es_continuo_y_decrece_con_la_mejora(self) -> None:
         self.assertAlmostEqual(factor_peaje(0.4), 0.985, places=3)

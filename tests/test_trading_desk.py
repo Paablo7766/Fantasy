@@ -40,6 +40,15 @@ class TradingDeskTests(unittest.TestCase):
         self.assertFalse(desk["activo"])
         self.assertEqual(desk["operaciones"], [])
 
+    def test_alerta_bajada_no_se_apalanca_aunque_el_pct_siga_positivo(self) -> None:
+        sano = _cand("sano", 1_000_000, 20.0)
+        giro = _cand("nino", 1_000_000, 20.0)
+        giro["af_alerta_bajada"] = True
+        desk = build_trading_desk(
+            [giro, sano], saldo_sobrante=5_000_000, valor_equipo=0, dias_para_jornada=4
+        )
+        self.assertEqual([op["player_id"] for op in desk["operaciones"]], ["sano"])
+
     def test_la_prima_pagada_se_descuenta(self) -> None:
         self.assertLess(ganancia_esperada(1_000_000, 1_300_000, 20.0), ganancia_esperada(1_000_000, 1_000_000, 20.0))
         desk = build_trading_desk(

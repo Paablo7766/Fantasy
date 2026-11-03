@@ -134,9 +134,11 @@ def rival_snapshots(squads: dict[str, Any] | None, trends: dict[str, Any] | None
             continue
         if isinstance(own_id, str) and squad.get("team_id") == own_id:
             continue
-        urgencia = urgencia_posicional(_depth(candidates_from_squad(squad, indexed)))
+        depth = _depth(candidates_from_squad(squad, indexed))
+        urgencia = urgencia_posicional(depth)
         cash = squad.get("cash") if isinstance(squad.get("cash"), int) and not isinstance(squad.get("cash"), bool) else None
         rojo = estado_rojo(cash)
+        legal = _legal_limit(cash, squad.get("debt_limit_eur"))
         rows.append(
             {
                 "team_id": squad.get("team_id"),
@@ -145,7 +147,10 @@ def rival_snapshots(squads: dict[str, Any] | None, trends: dict[str, Any] | None
                 "en_rojo": rojo,
                 "en_rojo_seguro": rojo == ROJO_SEGURO,
                 "bid_limit_eur": 0 if rojo else cash,
-                "legal_bid_limit_eur": _legal_limit(cash, squad.get("debt_limit_eur")),
+                "legal_bid_limit_eur": legal,
+                # En rojo el tope global es 0. Solo el puesto con 0 sanos recupera el tope legal.
+                "bid_limit_por_puesto": _bid_limit_por_puesto(depth, urgencia, legal) if rojo else None,
+                "depth": depth,
                 "urgencia": urgencia,
                 "thin_positions": [position for position in POSITIONS if position in urgencia],
                 "xi_gaps": [position for position in POSITIONS if urgencia.get(position) == URGENCIA_HUECO],
@@ -171,16 +176,41 @@ def _legal_limit(cash: int | None, debt: Any) -> int | None:
     return max(0, cash + max(0, extra))
 
 
+def _bid_limit_por_puesto(
+    depth: dict[str, int],
+    urgencia: dict[str, str],
+    legal: int | None,
+) -> dict[str, int]:
+    """En rojo, 0 en cada puesto salvo el hueco sin ningún sano, que conserva el tope legal."""
+    techo = legal if isinstance(legal, int) and not isinstance(legal, bool) else 0
+    return {
+        position: techo if depth.get(position, 0) == 0 and urgencia.get(position) == URGENCIA_HUECO else 0
+        for position in POSITIONS
+    }
+
+
+def _cero_sanos(row: dict[str, Any], position: str) -> bool:
+    """Hueco de verdad: 0 sanos en ese puesto. Sin recuento, vale el hueco declarado."""
+    if _urgencia_en(row, position) != URGENCIA_HUECO:
+        return False
+    depth = row.get("depth") if isinstance(row.get("depth"), dict) else None
+    if depth is None or position not in depth:
+        return True
+    value = depth.get(position)
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and int(value) == 0
+
+
 def _rojo_leve_con_hueco(row: dict[str, Any], position: str, price: int | float) -> int | None:
     """Tope legal de un rival en rojo que aun así puja por cubrir un hueco.
 
-    En rojo leve (su tope legal supera el precio) y sin titulares sanos justo
-    en este puesto, puja hoy a crédito y vende el jueves: no se le baja a 0.
-    Sin hueco ahí, o con el tope legal agotado, se queda en 0.
+    En rojo (su tope legal supera el precio) y con 0 sanos justo en este
+    puesto, puja hoy a crédito y vende el jueves: su ``bid_limit`` de ese
+    puesto es el tope legal. En el resto de puestos se queda en 0.
     """
-    if not row.get("en_rojo") or _urgencia_en(row, position) != URGENCIA_HUECO:
+    if not row.get("en_rojo") or not _cero_sanos(row, position):
         return None
-    legal = row.get("legal_bid_limit_eur")
+    por_puesto = row.get("bid_limit_por_puesto") if isinstance(row.get("bid_limit_por_puesto"), dict) else None
+    legal = por_puesto.get(position) if por_puesto is not None and position in por_puesto else row.get("legal_bid_limit_eur")
     if isinstance(legal, bool) or not isinstance(legal, (int, float)) or legal <= price:
         return None
     return int(legal)
@@ -208,8 +238,10 @@ def overbid_risk(
     ``guerra``: alguien tiene un hueco ahí (sin fichar no forma 11) y caja
     para el ideal. ``high``: alguien va justo en esa línea y tiene caja.
     ``low``: quien necesita la posición no puede pagarla o nadie la necesita.
-    Un rival en rojo no puja. Si falta la caja de alguien y nadie conocido
-    puede cubrir, el riesgo es ``unknown``. No se devuelve un porcentaje.
+    Un rival en rojo no puja, salvo que tenga 0 sanos en ese puesto y su tope
+    legal supere el precio: entonces puja a crédito. Si falta la caja de
+    alguien y nadie conocido puede cubrir, el riesgo es ``unknown``. No se
+    devuelve un porcentaje.
     """
     if not isinstance(ideal, int) or isinstance(ideal, bool) or not isinstance(position, str) or not position:
         return {"status": "unknown", "count": None, "reason": "sin_ideal"}
@@ -427,10 +459,14 @@ def probability_of_winning_bid(
     p_win_all = 1.0
 
     for rv in rivals:
-        # Rojo leve con hueco en este puesto: puja a crédito y vende después.
+        # Rojo con 0 sanos en este puesto: puja a crédito y vende después.
+        # Sin recuento de sanos, el hueco declarado sigue valiendo.
+        huecos_credito = rv.xi_gaps
+        if rv.cero_sanos is not None:
+            huecos_credito = [puesto for puesto in rv.xi_gaps if puesto in rv.cero_sanos]
         credito = (
             rv.legal_bid_limit_eur
-            if rv.en_rojo and position in rv.xi_gaps and rv.legal_bid_limit_eur is not None
+            if rv.en_rojo and position in huecos_credito and rv.legal_bid_limit_eur is not None
             and rv.legal_bid_limit_eur > min_legal_bid
             else None
         )

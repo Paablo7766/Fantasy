@@ -808,6 +808,28 @@ def anotar_urgencia_compras(
     return fechadas
 
 
+def _legal_desde_libro(cash: int | None, ledger: dict[str, Any] | None, squad: dict[str, Any]) -> int | None:
+    """Caja más crédito. El libro manda si ya trae el tope; si no, se suma la deuda del equipo."""
+    if isinstance(ledger, dict):
+        legal = ledger.get("legal_bid_limit")
+        if isinstance(legal, int) and not isinstance(legal, bool):
+            return legal
+    if cash is None:
+        return None
+    debt = squad.get("debt_limit_eur")
+    extra = debt if isinstance(debt, int) and not isinstance(debt, bool) else 0
+    return max(0, cash + max(0, extra))
+
+
+def _limite_por_puesto(depth: dict[str, int], urgencia: dict[str, str], legal: int | None) -> dict[str, int]:
+    """0 en cada línea. El puesto con 0 sanos y hueco conserva el tope legal."""
+    techo = legal if isinstance(legal, int) and not isinstance(legal, bool) else 0
+    return {
+        position: techo if depth.get(position, 0) == 0 and urgencia.get(position) == URGENCIA_HUECO else 0
+        for position in POSITIONS
+    }
+
+
 def _rival_risk(
     squad: dict[str, Any],
     *,
@@ -850,6 +872,7 @@ def _rival_risk(
                 )
             )
     lacks_liquidity = _lacks_liquidity(cash, thin, listings)
+    legal = _legal_desde_libro(cash, ledger, squad)
     return {
         "team_id": squad.get("team_id"),
         "manager_name": squad.get("manager_name"),
@@ -860,9 +883,10 @@ def _rival_risk(
         "cash_is_ceiling": bool(ceiling),
         "en_rojo": rojo,
         "en_rojo_seguro": rojo == ROJO_SEGURO,
-        # En rojo no puja: hacerlo le hunde más y saca 0 si no vende antes del saque.
+        # En rojo no puja, salvo el puesto con 0 sanos: ahí el tope es el legal.
         "bid_limit_eur": 0 if rojo else cash,
-        "legal_bid_limit_eur": ledger.get("legal_bid_limit") if isinstance(ledger, dict) else None,
+        "legal_bid_limit_eur": legal,
+        "bid_limit_por_puesto": _limite_por_puesto(available, urgencia, legal) if rojo else None,
         "ledger": ledger,
         "depth": available,
         "minimum": dict(MIN_HEADCOUNT),

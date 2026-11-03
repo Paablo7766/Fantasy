@@ -210,6 +210,60 @@ export type NetworkLogEntry = {
   url?: string | null;
 };
 
+export type PostMortemJugador = {
+  player_id?: string;
+  nombre?: string;
+  position?: string | null;
+  puntos?: number | null;
+};
+
+export type PostMortemFuga = {
+  disponible?: boolean;
+  motivo?: string | null;
+  detalle?: string | null;
+  puntos_once?: number | null;
+  puntos_maximos?: number | null;
+  fuga?: number | null;
+  formacion_optima?: string | null;
+  dejados_fuera?: PostMortemJugador[];
+  sobraban?: PostMortemJugador[];
+};
+
+export type PostMortemBloque = {
+  valor?: number | null;
+  caja?: number | null;
+  puntos?: number | null;
+};
+
+export type PostMortemTrading = {
+  disponible?: boolean;
+  motivo?: string | null;
+  detalle?: string | null;
+  snapshot_day?: string | null;
+  snapshot_es_lunes?: boolean;
+  operaciones?: number;
+  compras_eur?: number;
+  ventas_eur?: number;
+  valores_congelados?: number;
+  hoy?: PostMortemBloque;
+  sin_operar?: PostMortemBloque;
+  delta_valor?: number | null;
+  delta_caja?: number | null;
+  delta_puntos?: number | null;
+};
+
+export type PostMortemPayload = ApiError & PhotoMeta & {
+  ok?: boolean;
+  command?: string;
+  es_lunes?: boolean;
+  hoy?: string;
+  jornada?: string | null;
+  once_fuente?: "guardado" | "recomendado" | "ninguno" | string;
+  fuga?: PostMortemFuga;
+  trading?: PostMortemTrading;
+  snapshot_guardado?: { day?: string; nuevo?: boolean } | null;
+};
+
 export type NetworkErrorBucket = {
   fuente: string;
   total: number;

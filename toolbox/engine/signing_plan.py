@@ -186,6 +186,7 @@ def _vacio(cash: int | None, ratio: float, baseline: float, meta: dict[str, Any]
         "ratio_mercado": round(ratio, 2) if ratio else None,
         "once": [],
         "en_radar": [],
+        "huecos_obligatorios": [],
         **meta,
     }
 
@@ -668,16 +669,17 @@ def _plan_once(
         if especulativo:
             # Fuera del solver del once: lo reparte el trading desk.
             if ventana and trading_out is not None:
-                trading_out.append(
-                    {
-                        "player_id": player_id,
-                        "nombre": _nombre(row),
-                        "origen": origen,
-                        "euros": euros,
-                        "valor": _valor_jugador(row) or euros,
-                        "pct": pct,
-                    }
-                )
+                candidato = {
+                    "player_id": player_id,
+                    "nombre": _nombre(row),
+                    "origen": origen,
+                    "euros": euros,
+                    "valor": _valor_jugador(row) or euros,
+                    "pct": pct,
+                }
+                if row.get("af_alerta_bajada") is True:
+                    candidato["af_alerta_bajada"] = True
+                trading_out.append(candidato)
             return
         ficha = {
             "row": row,
@@ -739,7 +741,12 @@ def _plan_once(
         else:
             problem += juega <= 1
 
-    sanos = [player_id for player_id in vende if player_id in xi_ids and player_id not in bajas]
+    # Un titular con p <= 30 % es hueco obligatorio: no gasta el cupo de sanos.
+    sanos = [
+        player_id
+        for player_id in vende
+        if player_id in xi_ids and player_id not in bajas and player_id not in huecos
+    ]
     if sanos:
         # Tope de rotación: un lesionado no gasta plaza de este cupo.
         problem += pulp.lpSum(vende[player_id] for player_id in sanos) <= MAX_VENTAS_TITULARES_SANOS
@@ -1136,6 +1143,7 @@ def _plan_once(
         vacio = _vacio(saldo, ratio, baseline_puntos, meta)
         vacio["en_radar"] = radar
         vacio["acciones"] = _escaparate(set())
+        vacio["huecos_obligatorios"] = _publicar_huecos(plantilla, huecos)
         return vacio
 
     def _on(variable: pulp.LpVariable | None) -> bool:
@@ -1397,6 +1405,7 @@ def _plan_once(
         vacio = _vacio(saldo, ratio, baseline_puntos, meta)
         vacio["en_radar"] = radar
         vacio["acciones"] = _escaparate(set())
+        vacio["huecos_obligatorios"] = _publicar_huecos(plantilla, huecos)
         return vacio
     saldo_final = int(saldo + ingreso - gasto)
     nota, veredicto = nota_y_veredicto(mejora, acciones)
@@ -1418,17 +1427,7 @@ def _plan_once(
         "formacion": chosen_form,
         "puntos_once": round(puntos_once, 2),
         "puntos_once_actual": round(float(baseline_puntos), 2),
-        "huecos_obligatorios": [
-            {
-                "player_id": row["player_id"],
-                "nombre": _nombre(row),
-                "posicion": row.get("position"),
-                "p_titular": _prob_titular(row),
-                "etiqueta": HUECO_OBLIGATORIO,
-            }
-            for row in plantilla
-            if row["player_id"] in huecos
-        ],
+        "huecos_obligatorios": _publicar_huecos(plantilla, huecos),
         "ratio_mercado": round(ratio, 2) if ratio else None,
         "once": once,
         "en_radar": radar,
@@ -1438,6 +1437,21 @@ def _plan_once(
         "umbral_cambio_xp": umbral,
         **meta,
     }
+
+
+def _publicar_huecos(plantilla: list[dict[str, Any]], huecos: set[str]) -> list[dict[str, Any]]:
+    """Titulares con ``p_titular <= 30 %``: el solver ya los trata como hueco."""
+    return [
+        {
+            "player_id": row["player_id"],
+            "nombre": _nombre(row),
+            "posicion": row.get("position"),
+            "p_titular": _prob_titular(row),
+            "etiqueta": HUECO_OBLIGATORIO,
+        }
+        for row in plantilla
+        if row["player_id"] in huecos
+    ]
 
 
 def _nombre(row: dict[str, Any]) -> str:

@@ -6,9 +6,12 @@ import unittest
 
 from toolbox.analyzer import ObjectiveWeights, candidate_from_player
 from toolbox.engine.xp_calculator import (
+    K_PRIOR,
+    K_PRIOR_RACHA,
     ContextoEquipo,
     FantasyXPEngine,
     PartidoHistorico,
+    k_prior_efectivo,
     lambdas_de_fuerzas,
     predecir_desde_jugador,
 )
@@ -25,6 +28,13 @@ def _titulares(puntos: list[float], minutos: int = 80) -> list[PartidoHistorico]
     return [
         PartidoHistorico(puntos=puntos_jornada, minutos=minutos, jornada=index + 1)
         for index, puntos_jornada in enumerate(puntos)
+    ]
+
+
+def _con_minutos(filas: list[tuple[float, int]]) -> list[PartidoHistorico]:
+    return [
+        PartidoHistorico(puntos=puntos, minutos=minutos, jornada=index + 1)
+        for index, (puntos, minutos) in enumerate(filas)
     ]
 
 
@@ -137,8 +147,47 @@ class BayesianShrinkageTests(unittest.TestCase):
             lambda_favor=1.25,
             lambda_contra=1.25,
         )
-        self.assertEqual(inferred["n_titular"], 1.0)
+        # Sin minutos, un 5 no demuestra titularidad: no entra en la media.
+        self.assertEqual(inferred["n_titular"], 0.0)
         self.assertGreater(inferred["base_titular"], 4.0)
+
+    def test_minutes_beat_the_score_when_they_disagree(self) -> None:
+        titular_de_un_punto = predecir_desde_jugador(
+            {"position": "DEF", "historial": [{"puntos": 1, "minutos": 80, "jornada": 1}]},
+            prob_titular=0.8,
+            lambda_favor=1.25,
+            lambda_contra=1.25,
+        )
+        suplente_de_tres = predecir_desde_jugador(
+            {
+                "position": "DEF",
+                "historial": [
+                    {"puntos": 3, "minutos": 12, "jornada": 1},
+                    {"puntos": 4, "minutos": 20, "jornada": 2},
+                ],
+            },
+            prob_titular=0.8,
+            lambda_favor=1.25,
+            lambda_contra=1.25,
+        )
+        self.assertEqual(titular_de_un_punto["n_titular"], 1.0)
+        self.assertEqual(suplente_de_tres["n_titular"], 0.0)
+
+    def test_season_minutes_count_only_when_the_role_is_unambiguous(self) -> None:
+        claro = predecir_desde_jugador(
+            {"position": "DEF", "week_points": [0, 0, 5], "form": {"starts": 1, "minutes": 80}},
+            prob_titular=0.8,
+            lambda_favor=1.25,
+            lambda_contra=1.25,
+        )
+        mezclado = predecir_desde_jugador(
+            {"position": "DEF", "week_points": [1, 5], "form": {"starts": 1, "minutes": 100}},
+            prob_titular=0.8,
+            lambda_favor=1.25,
+            lambda_contra=1.25,
+        )
+        self.assertEqual(claro["n_titular"], 1.0)
+        self.assertEqual(mezclado["n_titular"], 0.0)
 
     def test_goalkeeper_prior_is_a_starter_score(self) -> None:
         propio, rival = _neutral()
@@ -172,6 +221,41 @@ class BayesianShrinkageTests(unittest.TestCase):
         home, _ = lambdas_de_fuerzas(1.4, 1.1, 1.2, 1.3, es_local=True)
         away, _ = lambdas_de_fuerzas(1.4, 1.1, 1.2, 1.3, es_local=False)
         self.assertGreater(home, away)
+
+
+class HotStreakTests(unittest.TestCase):
+    def test_three_games_at_six_or_more_loosen_the_prior(self) -> None:
+        """Pepelu: 7, 8 y 9 con 60' o más no se ancla al prior de un medio."""
+        propio, rival = _neutral()
+        en_racha = _con_minutos([(2, 20), (2, 20), (2, 20), (7, 80), (8, 80), (9, 80)])
+        cortada = _con_minutos([(2, 20), (2, 20), (2, 20), (7, 80), (8, 80), (9, 50)])
+        hot = FantasyXPEngine.calcular_prediccion_completa(
+            "MC", en_racha, 0.9, propio, rival, lambda_favor=1.25, lambda_contra=1.25
+        )
+        cold = FantasyXPEngine.calcular_prediccion_completa(
+            "MC", cortada, 0.9, propio, rival, lambda_favor=1.25, lambda_contra=1.25
+        )
+        self.assertEqual(hot["k_prior"], K_PRIOR_RACHA)
+        self.assertEqual(hot["racha_partidos"], 3.0)
+        self.assertGreaterEqual(hot["racha_media"], 6.0)
+        self.assertEqual(cold["k_prior"], K_PRIOR)
+        self.assertEqual(cold["racha_partidos"], 0.0)
+        self.assertEqual(hot["n_titular"], cold["n_titular"])
+        self.assertGreater(hot["base_titular"], cold["base_titular"])
+
+    def test_two_games_and_a_low_mean_keep_the_strong_prior(self) -> None:
+        self.assertEqual(k_prior_efectivo(_titulares([9, 9])), K_PRIOR)
+        self.assertEqual(k_prior_efectivo(_titulares([5, 6, 6])), K_PRIOR)
+        self.assertEqual(k_prior_efectivo(_titulares([6, 6, 6])), K_PRIOR_RACHA)
+
+    def test_a_cameo_or_unknown_minutes_breaks_the_live_streak(self) -> None:
+        self.assertEqual(k_prior_efectivo(_con_minutos([(8, 80), (8, 80), (8, 80), (1, 20)])), K_PRIOR)
+        self.assertEqual(k_prior_efectivo(_con_minutos([(7, -1), (8, -1), (9, -1)])), K_PRIOR)
+        self.assertEqual(k_prior_efectivo(_titulares([2, 2, 2, 2, 2, 10])), K_PRIOR)
+
+    def test_sixty_minutes_counts_and_fifty_nine_does_not(self) -> None:
+        self.assertEqual(k_prior_efectivo(_con_minutos([(7, 60), (8, 60), (9, 60)])), K_PRIOR_RACHA)
+        self.assertEqual(k_prior_efectivo(_con_minutos([(7, 80), (8, 80), (9, 59)])), K_PRIOR)
 
 
 class MatchupTests(unittest.TestCase):
@@ -294,7 +378,8 @@ class PipelineTests(unittest.TestCase):
         self.assertGreater(result["expected_points"], 3.0)
         self.assertGreater(result["xp_condicional"], result["expected_points"])
         self.assertGreater(result["ceiling_points"], result["xp_condicional"])
-        self.assertEqual(result["n_titular"], 1.0)
+        # Un start y dos partidos con puntos: no se adivina cuál fue el titular.
+        self.assertEqual(result["n_titular"], 0.0)
 
     def test_candidate_splits_jornada_and_if_starts(self) -> None:
         player = {

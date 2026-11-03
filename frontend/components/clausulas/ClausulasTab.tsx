@@ -15,6 +15,7 @@ import type {
   ClausulazoSugerido,
   NeedsPayload,
   PlanPayload,
+  AlertaClausula,
   RadarAntiRobo,
   RivalPlayer,
   SquadsPayload,
@@ -317,6 +318,30 @@ function Calendar({ timeline, photos }: { timeline: DateBucket[]; photos: PhotoI
 /** «Mías» defiende tu plantilla; «Clausulazos» ataca la de los rivales. */
 export type ClausulasView = "mias" | "clausulazos";
 
+function ClausulaAlertas({ alertas }: { alertas: AlertaClausula[] }) {
+  if (!alertas.length) return null;
+  return (
+    <section aria-label="Escudo y francotirador" className="flex flex-col gap-3">
+      <SectionHead title="Escudo y francotirador" meta={`${alertas.length}`} />
+      <ul className="home-glass overflow-hidden">
+        {alertas.map((alerta, index) => {
+          const tone = alerta.tono === "verde" ? TONE.green : TONE.red;
+          return (
+            <li
+              key={`${alerta.tipo}-${alerta.player_id || alerta.nombre}-${index}`}
+              className="border-b border-white/[0.06] px-4 py-3 last:border-b-0"
+            >
+              <p className="text-[13.5px] leading-snug" style={{ color: tone }}>
+                {alerta.mensaje}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 export function ClausulasTab({
   plan,
   squads,
@@ -361,6 +386,7 @@ export function ClausulasTab({
 
   const advisor = plan?.asesor_clausulas || null;
   const radar = advisor?.radar_anti_robo?.length ? advisor.radar_anti_robo : plan?.radar_anti_robo || [];
+  const alertas = advisor?.alertas_clausulas?.length ? advisor.alertas_clausulas : plan?.plan_fichajes?.alertas_clausulas || [];
   if (loading && !plan) return <Skeleton />;
   if (!advisor && !timeline.length) {
     return <Empty title="Sin informe de cláusulas" detail="Pulsa Actualizar para calcular tus cláusulas y los clausulazos." />;
@@ -433,6 +459,7 @@ export function ClausulasTab({
     return (
       <div className="flex min-w-0 flex-col gap-4">
         {heroBlock}
+        <ClausulaAlertas alertas={alertas} />
         <section aria-label="Clausulazos disponibles" className="flex flex-col gap-3">
           <SectionHead title="Clausulazos" meta={clausulazos.length ? `${clausulazos.length}` : undefined} />
           {clausulazos.length ? (
@@ -454,6 +481,7 @@ export function ClausulasTab({
     <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] min-[1100px]:items-start">
       <div className="flex min-w-0 flex-col gap-4">
         {heroBlock}
+        <ClausulaAlertas alertas={alertas} />
         {radar.length ? (
           <section aria-label="Radar anti-robo" className="flex flex-col gap-3">
             <SectionHead title="Radar anti-robo" meta={`${radar.length}`} />

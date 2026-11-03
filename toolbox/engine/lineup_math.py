@@ -16,8 +16,8 @@ from toolbox.analyzer import FORMATIONS, POSITIONS, XI_SIZE
 
 
 #: Peso de la varianza de titularidad: un once que depende de un dudoso vale menos
-#: que su media. Pequeño a propósito, solo desempata entre alternativas parejas.
-LAMBDA_VAR = 0.02
+#: que su media. 0,05 es el castigo conservador de la ruleta rusa (p · (1 − p) · xP²).
+LAMBDA_VAR = 0.05
 #: Un titular con esta probabilidad o menos es un hueco que hay que tapar.
 UMBRAL_HUECO = 0.30
 HUECO_OBLIGATORIO = "HUECO_OBLIGATORIO"

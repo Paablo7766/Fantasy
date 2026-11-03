@@ -69,6 +69,8 @@ def build_trading_desk(
 
     Cada candidato trae ``player_id``, ``nombre``, ``origen`` (bid/clause),
     ``euros`` (lo que sale de la caja), ``valor`` y ``pct`` (previsión a 7 días).
+    ``af_alerta_bajada`` saca al jugador de la mochila: AnalíticaFantasy ya ve
+    el giro aunque la inercia de ayer (``pct``) siga en positivo.
     """
     vacio: dict[str, Any] = {"activo": False, "operaciones": [], "capital": 0, "ganancia_esperada": 0}
     if saldo_sobrante is None or dias_para_jornada is None or dias_para_jornada < DIAS_MINIMOS:
@@ -82,6 +84,8 @@ def build_trading_desk(
         valor = _num(item.get("valor")) or euros
         pct = _num(item.get("pct"))
         player_id = item.get("player_id")
+        if item.get("af_alerta_bajada") is True:
+            continue
         if not isinstance(player_id, str) or player_id in vistos or euros is None or euros <= 0 or pct is None:
             continue
         ganancia = ganancia_esperada(int(valor or 0), int(euros), pct, dias)
@@ -122,3 +126,214 @@ def build_trading_desk(
         }
     )
     return resultado
+
+
+#: Por debajo de esto, tu titular está a tiro de cláusula.
+RATIO_ESCUDO = 1.20
+#: Por debajo de esto, la cláusula del rival en rojo es un objetivo de trading.
+RATIO_FRANCOTIRADOR = 1.15
+
+
+def _texto_pct(value: Any) -> float | None:
+    number = _num(value)
+    if number is not None:
+        return number
+    if not isinstance(value, str):
+        return None
+    texto = value.strip().replace("%", "").replace(",", ".")
+    if texto.startswith("+"):
+        texto = texto[1:]
+    try:
+        return float(texto)
+    except ValueError:
+        return None
+
+
+def _euros(*values: Any) -> int | None:
+    for value in values:
+        number = _num(value)
+        if number is not None and number > 0:
+            return int(number)
+    return None
+
+
+def _nombre_persona(row: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return "Rival"
+
+
+def _puesto(row: dict[str, Any]) -> str | None:
+    for key in ("position", "posicion"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _en_rojo_seguro(row: dict[str, Any]) -> bool:
+    if row.get("en_rojo_seguro") is True:
+        return True
+    marca = row.get("en_rojo")
+    return marca == "seguro"
+
+
+def _poder_rival(rival: dict[str, Any]) -> float | None:
+    """Saldo contando el crédito: el mayor entre el tope legal y la caja más la deuda."""
+    valores: list[float] = []
+    for key in ("poder", "legal_bid_limit_eur", "legal_bid_limit"):
+        number = _num(rival.get(key))
+        if number is not None:
+            valores.append(number)
+    saldo = None
+    for key in ("saldo", "cash_eur", "cash"):
+        saldo = _num(rival.get(key))
+        if saldo is not None:
+            break
+    deuda = _num(rival.get("debt_limit_eur")) or 0.0
+    if saldo is not None:
+        valores.append(saldo + max(0.0, deuda))
+    return max(valores) if valores else None
+
+
+def _lineas(rival: dict[str, Any]) -> tuple[set[str], set[str]]:
+    huecos = {str(item) for item in rival.get("huecos") or [] if isinstance(item, str)}
+    flojas = {
+        str(item) for item in (rival.get("flojas") or rival.get("posiciones_flojas") or []) if isinstance(item, str)
+    }
+    urgencia = rival.get("urgencia") if isinstance(rival.get("urgencia"), dict) else {}
+    for puesto, nivel in urgencia.items():
+        if not isinstance(puesto, str):
+            continue
+        if nivel == "hueco":
+            huecos.add(puesto)
+        elif nivel in {"justo", "floja", "posicion_floja"}:
+            flojas.add(puesto)
+    return huecos, flojas
+
+
+def alertas_escudo_francotirador(
+    titulares: list[dict[str, Any]],
+    rivales: list[dict[str, Any]],
+    jugadores_rivales: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Escudo (te pueden clausular) y francotirador (clausulazo a un rojo seguro).
+
+    El escudo mira a los 11 titulares. Si ``clausula / precio < 1,20`` y un
+    rival con saldo (crédito incluido) tiene un hueco o una línea floja en
+    ese puesto, hay alerta roja. El francotirador mira a los rivales en rojo
+    seguro: cláusula por debajo de 1,15 veces el precio y previsión a 7 días
+    en positivo.
+    """
+    alertas: list[dict[str, Any]] = []
+    roster = [row for row in rivales if isinstance(row, dict)]
+    for titular in titulares:
+        if not isinstance(titular, dict) or titular.get("en_xi") is False:
+            continue
+        if titular.get("blindado") is True or titular.get("shielded") is True:
+            continue
+        clausula = _euros(titular.get("clausula"), titular.get("clause"), titular.get("buyout_clause"))
+        precio = _euros(
+            titular.get("precio_mercado"),
+            titular.get("valor_mercado"),
+            titular.get("valor"),
+            titular.get("market_value"),
+        )
+        posicion = _puesto(titular)
+        if clausula is None or precio is None or posicion is None:
+            continue
+        ratio = clausula / precio
+        if ratio >= RATIO_ESCUDO:
+            continue
+        nombre = _nombre_persona(titular, "nombre", "nickname", "name", "player_id")
+        for rival in roster:
+            poder = _poder_rival(rival)
+            if poder is None or poder < clausula:
+                continue
+            huecos, flojas = _lineas(rival)
+            if posicion not in huecos and posicion not in flojas:
+                continue
+            rival_nombre = _nombre_persona(rival, "manager", "manager_name", "team_id")
+            alertas.append(
+                {
+                    "tipo": "escudo",
+                    "tono": "rojo",
+                    "mensaje": (
+                        f"🛡️ ALERTA: {rival_nombre} necesita un {posicion} y tu {nombre} está a tiro de cláusula"
+                    ),
+                    "player_id": titular.get("player_id"),
+                    "nombre": nombre,
+                    "posicion": posicion,
+                    "rival": rival_nombre,
+                    "ratio_clausula": round(ratio, 3),
+                }
+            )
+
+    seguros: dict[str, str] = {}
+    for rival in roster:
+        if not _en_rojo_seguro(rival):
+            continue
+        nombre = _nombre_persona(rival, "manager", "manager_name", "team_id")
+        team_id = rival.get("team_id")
+        if isinstance(team_id, str) and team_id:
+            seguros[team_id] = nombre
+        seguros[nombre] = nombre
+    vistos: set[tuple[str, str]] = set()
+    candidatos = [row for row in (jugadores_rivales or []) if isinstance(row, dict)]
+    for rival in roster:
+        if _en_rojo_seguro(rival):
+            candidatos.extend(row for row in rival.get("jugadores") or [] if isinstance(row, dict))
+    for jugador in candidatos:
+        if not isinstance(jugador, dict):
+            continue
+        owner = None
+        if _en_rojo_seguro(jugador):
+            owner = _nombre_persona(jugador, "manager", "manager_name", "team_id")
+        else:
+            team_id = jugador.get("team_id")
+            if isinstance(team_id, str) and team_id in seguros:
+                owner = seguros[team_id]
+            else:
+                manager = jugador.get("manager") if isinstance(jugador.get("manager"), str) else jugador.get("manager_name")
+                if isinstance(manager, str) and manager in seguros:
+                    owner = seguros[manager]
+        if not owner:
+            continue
+        clausula = _euros(jugador.get("clausula"), jugador.get("clause"), jugador.get("buyout_clause"))
+        precio = _euros(
+            jugador.get("precio_mercado"),
+            jugador.get("valor_mercado"),
+            jugador.get("valor"),
+            jugador.get("market_value"),
+        )
+        pct = _texto_pct(jugador.get("prevision_7d_pct"))
+        if pct is None:
+            pct = _texto_pct(jugador.get("pct"))
+        if clausula is None or precio is None or pct is None or pct <= 0:
+            continue
+        ratio = clausula / precio
+        if ratio >= RATIO_FRANCOTIRADOR:
+            continue
+        player_id = jugador.get("player_id") if isinstance(jugador.get("player_id"), str) else ""
+        if (owner, player_id) in vistos:
+            continue
+        vistos.add((owner, player_id))
+        nombre = _nombre_persona(jugador, "nombre", "nickname", "name", "player_id")
+        alertas.append(
+            {
+                "tipo": "francotirador",
+                "tono": "verde",
+                "mensaje": (
+                    f"🎯 OPORTUNIDAD: {nombre} de {owner} está subiendo de precio y su cláusula es baja. "
+                    "Clausúlalo para Trading antes del viernes"
+                ),
+                "player_id": player_id or None,
+                "nombre": nombre,
+                "posicion": _puesto(jugador),
+                "rival": owner,
+                "ratio_clausula": round(ratio, 3),
+            }
+        )
+    return alertas
