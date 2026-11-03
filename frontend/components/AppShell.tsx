@@ -114,19 +114,12 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 function DockLink({ item, active, href }: { item: NavItem; active: boolean; href: string }) {
+  const label = item.label === "Recomendaciones" ? "Inicio" : item.label;
   return (
-    <Link
-      href={href}
-      className="flex h-full min-w-0 flex-1 items-center justify-center"
-      aria-current={active ? "page" : undefined}
-    >
-      <span
-        className={`flex flex-col items-center gap-0.5 rounded-xl px-3.5 py-1.5 text-[10px] font-medium tracking-tight transition-all duration-200 ${
-          active ? "bg-[#FF7A3D] text-[#120C09] shadow-[0_0_18px_rgba(255,122,61,0.45)]" : "text-white/50"
-        }`}
-      >
+    <Link href={href} className="dock-link" data-active={active ? "true" : undefined} aria-current={active ? "page" : undefined} aria-label={label}>
+      <span className="dock-link__pill">
         <Icon name={item.label} />
-        <span>{item.label === "Recomendaciones" ? "Inicio" : item.label}</span>
+        <span className="dock-link__label">{label}</span>
       </span>
     </Link>
   );
@@ -446,10 +439,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {home ? <div className="fab-fresh lg:hidden">{freshness}</div> : null}
 
-        <nav
-          className="fixed inset-x-5 bottom-3 z-50 flex h-14 items-stretch overflow-hidden rounded-2xl border border-white/[0.08] bg-[#060E14]/90 backdrop-blur-2xl lg:hidden"
-          aria-label="Navegación principal"
-        >
+        <nav className="dock lg:hidden" aria-label="Navegación principal">
           {SECTIONS.map((item) => (
             <DockLink key={item.label} item={item} active={isActive(pathname, item.href)} href={withQuery(item.href)} />
           ))}

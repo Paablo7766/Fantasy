@@ -1571,3 +1571,92 @@
   border-radius: 9999px;
   background-color: var(--eq-surface-2);
 }
+
+/* ══ Menú inferior (móvil): cápsula flotante negra; la sección activa se
+   abre en una píldora naranja con su nombre, las demás solo icono. ═══════ */
+.dock {
+  position: fixed;
+  left: 50%;
+  bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px));
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  transform: translateX(-50%);
+  border-radius: 9999px;
+  background: rgba(20, 20, 20, 0.82);
+  padding: 0.4rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 40px -12px rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(22px) saturate(1.4);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+}
+
+.dock-link {
+  display: flex;
+  border-radius: 9999px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dock-link__pill {
+  display: inline-flex;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border-radius: 9999px;
+  padding: 0 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  transition:
+    background-color 500ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 300ms ease,
+    gap 500ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 500ms ease;
+}
+
+.dock-link__pill svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.dock-link__label {
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  opacity: 0;
+  transition: max-width 500ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease;
+}
+
+.dock-link:hover .dock-link__pill {
+  color: #fff;
+}
+
+.dock-link:active .dock-link__pill {
+  transform: scale(0.94);
+}
+
+.dock-link[data-active="true"] .dock-link__pill {
+  gap: 0.45rem;
+  background: linear-gradient(180deg, #ff8a3d, #ff6a1f);
+  color: #160a04;
+  box-shadow: 0 0 22px -2px rgba(255, 106, 31, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.dock-link[data-active="true"] .dock-link__label {
+  max-width: 6.5rem;
+  opacity: 1;
+}
+
+@media (max-width: 360px) {
+  .dock-link__pill {
+    padding: 0 0.7rem;
+  }
+}
+
+/* El botón flotante de recarga se apoya encima del menú, a la derecha. */
+.fab-fresh {
+  bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+}
