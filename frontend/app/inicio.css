@@ -123,11 +123,149 @@
 }
 
 .ini-hero__bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 0.75rem;
-  padding: 1.1rem 1.25rem 0;
+  padding: 1rem 1rem 0 1.25rem;
+}
+
+.ini-hero__date {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.ini-hero__date::first-letter {
+  text-transform: uppercase;
+}
+
+@media (max-width: 520px) {
+  .ini-hero__date {
+    visibility: hidden;
+  }
+}
+
+.ini-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.28);
+  padding: 3px 3px 3px 0.75rem;
+  backdrop-filter: blur(12px);
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.ini-refresh__age {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ini-refresh__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+}
+
+.ini-refresh__btn {
+  position: relative;
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 9999px;
+  background: #fff;
+  color: #0b0b0b;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.ini-refresh__btn:hover:not(:disabled) {
+  transform: rotate(-30deg);
+}
+
+.ini-refresh__btn:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.ini-refresh__btn:disabled {
+  cursor: default;
+}
+
+.ini-refresh__btn[data-progress="true"]::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  background: conic-gradient(#fff var(--p, 0%), rgba(255, 255, 255, 0.15) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+}
+
+/* Dato vivo que rota encima del botón del hito. */
+.ini-ticker {
+  position: relative;
+  height: 1.5rem;
+  margin-top: 1.5rem;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.ini-ticker__item {
+  display: inline-flex;
+  height: 1.5rem;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+  animation: ini-tick 3.5s var(--ini-ease) both;
+}
+
+.ini-ticker__item::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.ini-ticker__item[data-tone="up"] {
+  color: #7ff0c0;
+}
+
+.ini-ticker__item[data-tone="down"] {
+  color: #ffb3a4;
+}
+
+@keyframes ini-tick {
+  0% {
+    opacity: 0;
+    transform: translateY(70%);
+    filter: blur(4px);
+  }
+  12%,
+  86% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-70%);
+    filter: blur(4px);
+  }
 }
 
 .ini-hero__center {
@@ -395,27 +533,199 @@
   font-weight: 600;
 }
 
-/* Matriz de puntos: hábito / progreso, como en la referencia. */
-.ini-dots {
+/* Tú frente al líder. */
+.ini-vs {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ini-vs__row {
   display: grid;
-  grid-template-columns: repeat(10, 6px);
-  gap: 5px;
+  grid-template-columns: 2.4rem minmax(0, 1fr) 2rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
 }
 
-.ini-dots > span {
-  width: 6px;
+.ini-vs__track {
   height: 6px;
+  overflow: hidden;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.07);
 }
 
-.ini-dots > span[data-on="true"] {
+.ini-vs__track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.35);
+  transition: width 900ms var(--ini-ease);
+}
+
+.ini-vs__track > span[data-me="true"] {
+  background: linear-gradient(90deg, #ff6a1f, #ffb27a);
+  box-shadow: 0 0 10px rgba(255, 122, 61, 0.5);
+}
+
+.ini-vs__v {
+  text-align: right;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* ── Plan de hoy y Tu plantilla: filas como tarjetas, pestañas en píldora ── */
+
+.ini .ini-divide {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  border-top: 0 !important;
+  padding: 0 0.625rem 0.625rem;
+}
+
+.ini .ini-divide > * + * {
+  border-top: 0;
+}
+
+.ini .ini-divide > li {
+  border-radius: 1.25rem;
+  background: var(--ini-surface-2);
+  transition: background-color 200ms ease, box-shadow 240ms ease;
+}
+
+.ini .ini-divide > li:hover {
+  background: #232325;
+}
+
+.ini .ini-row:has([aria-expanded="true"]) {
+  background: #232325;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.ini .ini-row > button,
+.ini .ini-row > div:first-child {
+  padding-inline: 0.875rem;
+}
+
+/* Detalle desplegado: datos en mini-tarjetas. */
+.ini-facts {
+  gap: 0.375rem !important;
+}
+
+.ini-facts > div {
+  border-radius: 0.875rem;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.55rem 0.7rem;
+}
+
+.ini .ini-collapse > div > div {
+  padding-left: 0.875rem !important;
+  padding-right: 0.875rem !important;
+}
+
+.ini .ini-collapse a {
+  display: inline-flex;
+  border-radius: 9999px;
   background: #fff;
+  padding: 0.45rem 0.9rem;
+  color: #0b0b0b !important;
+  font-weight: 600;
+  text-decoration: none !important;
 }
 
-.ini-dots > span[data-hot="true"] {
-  background: var(--ini-copper);
-  box-shadow: 0 0 8px rgba(255, 122, 61, 0.7);
+/* Disclosures «Después» / «En el radar»: filas redondas. */
+.ini-disclosure {
+  margin: 0 0.625rem 0.5rem;
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ini-disclosure > button {
+  border-radius: 1.25rem;
+}
+
+.ini-disclosure > button:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Pestañas: indicador blanco con texto negro. */
+.ini .ini-tabs {
+  border: 0;
+  border-radius: 9999px;
+  background: var(--ini-surface-2);
+}
+
+.ini .ini-tabs__ind {
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.8);
+}
+
+.ini .ini-tab[aria-selected="true"] {
+  color: #0b0b0b;
+}
+
+.ini .ini-tab[aria-selected="true"] span {
+  color: rgba(11, 11, 11, 0.5);
+}
+
+.ini .ini-tag {
+  border-radius: 9999px;
+  padding: 2px 8px;
+}
+
+.ini .ini-amount {
+  border: 0;
+  border-radius: 9999px;
+  background: #fff;
+  color: #0b0b0b;
+}
+
+.ini .ini-amount svg {
+  color: rgba(11, 11, 11, 0.45);
+}
+
+.ini .ini-amount:hover {
+  background: #e9e9e9;
+}
+
+.ini .ini-check {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.ini .ini-bar {
+  height: 6px;
+}
+
+.ini .ini-bar > span {
+  background: linear-gradient(90deg, #ff6a1f, #ffb27a);
+  box-shadow: 0 0 12px rgba(255, 122, 61, 0.5);
+}
+
+.ini-more {
+  display: block;
+  margin: 0 auto 0.875rem;
+  border-radius: 9999px;
+  background: var(--ini-surface-2);
+  padding: 0.5rem 1.1rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+.ini-more:hover {
+  background: #fff;
+  color: #0b0b0b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ini-ticker__item {
+    animation: none;
+  }
 }
 
 
@@ -635,6 +945,19 @@
   transform: translateY(8px);
 }
 
+/* En Inicio no hay barra: solo quedan la línea de progreso y los avisos. */
+.app-topbar.app-topbar--bare {
+  border-bottom: 0;
+  background: transparent !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.app-topbar--bare::after,
+.app-topbar__row[hidden] {
+  display: none !important;
+}
+
 /* ── Barra superior: título, fecha, pista y pastilla de frescura ─────────── */
 .app-topbar__row {
   display: flex;
@@ -848,3 +1171,7 @@
   }
 }
 
+
+.ini-hero__bar .ini-chip {
+  max-width: 16rem;
+}

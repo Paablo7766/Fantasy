@@ -105,7 +105,7 @@ export type Fact = { label: string; value: string; tone?: string };
 export function FactGrid({ facts }: { facts: Fact[] }) {
   if (!facts.length) return null;
   return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 min-[560px]:grid-cols-3">
+    <dl className="ini-facts grid grid-cols-2 min-[560px]:grid-cols-3">
       {facts.map((fact) => (
         <div key={fact.label} className="min-w-0">
           <dt className="truncate text-[12px] text-white/45">{fact.label}</dt>

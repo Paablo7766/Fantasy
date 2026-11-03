@@ -134,7 +134,7 @@ export function SquadDesk({ plan, photos, loading }: { plan: PlanPayload | null;
       <div key={desk}>
         {head}
         {shown.length ? (
-          <ul className="ini-divide mt-4 border-t border-[var(--ini-line)]">{shown}</ul>
+          <ul className="ini-divide mt-4">{shown}</ul>
         ) : (
           <p className="px-5 pb-5 pt-3 text-[13.5px] text-white/50">{empty}</p>
         )}
@@ -142,7 +142,7 @@ export function SquadDesk({ plan, photos, loading }: { plan: PlanPayload | null;
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="w-full border-t border-[var(--ini-line)] px-5 py-3 text-center text-[13px] font-medium text-white/55 transition-colors hover:bg-white/[0.02] hover:text-white"
+            className="ini-more"
           >
             {expanded ? "Mostrar menos" : `Mostrar ${hidden} más`}
           </button>

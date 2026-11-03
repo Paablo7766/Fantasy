@@ -271,7 +271,7 @@ function Disclosure({ title, count, children }: { title: string; count: number; 
   const [open, setOpen] = useState(false);
   if (!count) return null;
   return (
-    <div>
+    <div className="ini-disclosure">
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left sm:px-5">
         <span className="text-[13px] font-medium text-white/60">
           {title} <span className="ml-1 tabular-nums text-white/35">{count}</span>
@@ -400,10 +400,10 @@ export function TodayPlan({
         ) : null}
       </header>
 
-      {today.length ? <ol className="ini-divide border-t border-[var(--ini-line)]">{today.map((step, i) => renderRow(step, i, true))}</ol> : null}
+      {today.length ? <ol className="ini-divide">{today.map((step, i) => renderRow(step, i, true))}</ol> : null}
 
       {later.length || radar.length ? (
-        <div className="ini-divide border-t border-[var(--ini-line)]">
+        <div className="pb-1">
           <Disclosure title="Después" count={later.length}>
             <ol className="ini-divide border-t border-[var(--ini-line)]">{later.map((step, i) => renderRow(step, i, false))}</ol>
           </Disclosure>

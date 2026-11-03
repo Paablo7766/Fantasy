@@ -6,6 +6,7 @@ import { points } from "@/lib/core/format";
 import { buildClockReport, countdownParts, eventTitle, signedPoints } from "@/lib/inicio/hoy";
 import { useNow } from "@/lib/core/useClock";
 import { useCountUp } from "@/components/inicio/ui";
+import { useDashboard } from "@/components/DashboardProvider";
 import type { PlanPayload, SquadsPayload } from "@/lib/types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -57,15 +58,64 @@ function Ring({ value, ratio }: { value: string; ratio: number | null }) {
   );
 }
 
-/** Matriz 10×3: un punto por cada 10 % del valor; el último encendido brilla. */
-function Dots({ ratio }: { ratio: number | null }) {
-  const total = 30;
-  const on = ratio === null ? 0 : Math.round(Math.max(0, Math.min(1, ratio)) * total);
+/** Tus puntos frente a los del líder: dos barras con su cifra. */
+function VsLeader({ you, leader }: { you: number | null; leader: number | null }) {
+  if (you === null || leader === null) return <span className="ini-vs" />;
+  const top = Math.max(you, leader, 1);
+  const rows = [
+    { label: "Tú", v: you, me: true },
+    { label: "Líder", v: leader, me: false },
+  ];
   return (
-    <span className="ini-dots" aria-hidden="true">
-      {Array.from({ length: total }, (_, i) => (
-        <span key={i} data-on={i < on ? "true" : undefined} data-hot={i === on - 1 ? "true" : undefined} />
+    <span className="ini-vs" aria-hidden="true">
+      {rows.map((row) => (
+        <span key={row.label} className="ini-vs__row">
+          <span className="ini-vs__label">{row.label}</span>
+          <span className="ini-vs__track">
+            <span data-me={row.me ? "true" : undefined} style={{ width: `${Math.max(4, (row.v / top) * 100)}%` }} />
+          </span>
+          <span className="ini-vs__v tabular-nums">{Math.round(row.v)}</span>
+        </span>
       ))}
+    </span>
+  );
+}
+
+const DATE_FMT = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Madrid" });
+
+/**
+ * Recarga dentro del hero (en Inicio no hay barra superior): edad de la foto,
+ * botón redondo con anillo de progreso y atajo «R».
+ */
+function HeroRefresh() {
+  const { refresh, refreshing, busy, connecting, refreshError, photoAge, photoAgeSeconds, refreshPct, progress } = useDashboard();
+  const working = refreshing || busy;
+  const pct = refreshing ? refreshPct : progress.pct;
+  const old = photoAgeSeconds === null || photoAgeSeconds >= 6 * 3600;
+  const tone = working ? "#38bdf8" : refreshError || old ? "#ff7d66" : photoAgeSeconds >= 3600 ? "#f5b544" : "#34d399";
+  const label = working ? `${pct}%` : refreshError ? "Falló" : photoAge || "Sin datos";
+  return (
+    <span className="ini-refresh" data-ui="refresh">
+      <span className="ini-refresh__age">
+        <span className="ini-refresh__dot" style={{ background: tone }} aria-hidden="true" />
+        <span aria-live="polite">{label}</span>
+      </span>
+      <button
+        type="button"
+        className="ini-refresh__btn"
+        onClick={() => void refresh()}
+        disabled={connecting || refreshing}
+        aria-label={refreshError ? "Reintentar la descarga" : "Actualizar datos"}
+        aria-keyshortcuts="R"
+        title="Actualizar datos (R)"
+        data-progress={working ? "true" : undefined}
+        style={{ "--p": `${Math.max(0, Math.min(100, pct))}%` } as CSSProperties}
+      >
+        <svg viewBox="0 0 20 20" className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+          <path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.1" strokeLinecap="round" />
+          <path d="M16.4 3.6v3.2h-3.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
     </span>
   );
 }
@@ -111,8 +161,28 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   const alert = redLine && redLine.status && redLine.status !== "ok" ? redLine : null;
   const rankRatio = rank !== null && field && field > 1 ? (field - rank) / (field - 1) : null;
   const leaderPts = typeof pts === "number" && typeof gap === "number" ? pts - gap : null;
-  const ptsRatio = typeof pts === "number" && leaderPts && leaderPts > 0 ? pts / Math.max(leaderPts, pts) : null;
   const urgent = parts ? parts.totalMs < 3 * 3600 * 1000 : false;
+  // Once previsto: primera cifra positiva (el plan puede traer 0 si aún no calculó).
+  const onceTarget = [fichajes?.puntos_once, plan?.lineup?.expected_points, fichajes?.puntos_once_actual, plan?.lineup?.saved_points].find(
+    (v): v is number => typeof v === "number" && v > 0,
+  ) ?? null;
+  const dateText = mounted ? DATE_FMT.format(nowMs) : "";
+
+  // Dato vivo sobre el botón: rota cada 3,5 s entre las cifras que importan hoy.
+  const danger = plan?.asesor_clausulas?.resumen?.en_peligro ?? 0;
+  const offers = plan?.resumen_ventas?.ofertas_activas ?? 0;
+  const ticker: { text: string; tone?: "up" | "down" }[] = [
+    gain !== null ? { text: `${signedPoints(gain)} pts si sigues el plan de hoy`, tone: gain > 0 ? ("up" as const) : ("down" as const) } : null,
+    typeof valueDay === "number" && valueDay !== 0
+      ? { text: `Tu plantilla ${signedMoney(valueDay)} hoy`, tone: valueDay > 0 ? ("up" as const) : ("down" as const) }
+      : null,
+    danger > 0 ? { text: `${danger} ${danger === 1 ? "jugador" : "jugadores"} con la cláusula en peligro`, tone: "down" as const } : null,
+    offers > 0 ? { text: `${offers} ${offers === 1 ? "oferta activa" : "ofertas activas"} por tus jugadores` } : null,
+    typeof gap === "number" && gap < 0 ? { text: `A ${Math.abs(gap)} pts del líder` } : null,
+    onceTarget !== null ? { text: `Once previsto: ${points(onceTarget)} pts` } : null,
+  ].filter((x): x is { text: string; tone?: "up" | "down" } => x !== null);
+  const tick = ticker.length && mounted ? Math.floor(nowMs / 3500) % ticker.length : 0;
+
   const timeText = parts ? `${parts.days > 0 ? `${parts.days}d ` : ""}${pad(parts.hours)}:${pad(parts.minutes)}:${pad(parts.seconds)}` : null;
 
   return (
@@ -121,17 +191,13 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
         <span className="ini-hero__glow" aria-hidden="true" />
 
         <div className="ini-hero__bar">
-          <p className="ini-chip">
+          <span className="ini-hero__date">{dateText}</span>
+          <p className="ini-chip justify-self-center">
             <span className="truncate">{leagueName || "Tu cuenta"}</span>
           </p>
-          {gain !== null ? (
-            <p className="ini-chip">
-              <span className="ini-pill" data-tone={gain > 0 ? "up" : "down"}>
-                {signedPoints(gain)} pts
-              </span>
-              <span className="max-[420px]:hidden">con el plan</span>
-            </p>
-          ) : null}
+          <div className="justify-self-end">
+            <HeroRefresh />
+          </div>
         </div>
 
         <div className="ini-hero__center">
@@ -145,8 +211,16 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
             </p>
           ) : null}
 
+          {ticker.length ? (
+            <p className="ini-ticker" aria-live="off" data-ui="home-ticker">
+              <span key={tick} className="ini-ticker__item" data-tone={ticker[tick].tone}>
+                {ticker[tick].text}
+              </span>
+            </p>
+          ) : null}
+
           {clock.next && timeText ? (
-            <p className="ini-cta" data-urgent={urgent ? "true" : undefined} role="timer" data-ui="home-countdown">
+            <p className="ini-cta mt-3"data-urgent={urgent ? "true" : undefined} role="timer" data-ui="home-countdown">
               <span className="ini-live" aria-hidden="true" />
               <span className="max-w-[14rem] truncate">{eventTitle(clock.next)}</span>
               <span className="ini-cta__time">{timeText}</span>
@@ -183,7 +257,7 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
           label="Puntos"
           sub={typeof gap === "number" && gap !== 0 ? `${gap > 0 ? "+" : "−"}${Math.abs(gap)} vs líder` : gap === 0 ? "Eres líder" : null}
         >
-          <Dots ratio={ptsRatio} />
+          <VsLeader you={pts} leader={leaderPts} />
         </Tile>
         <Tile
           value={typeof value === "number" ? <Figure text={money(value)} /> : dash}
@@ -196,7 +270,7 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
           }
         />
         <Tile
-          value={typeof target === "number" ? <Figure text={`${points(target)} pts`} /> : dash}
+          value={onceTarget !== null ? <Figure text={`${points(onceTarget)} pts`} /> : dash}
           label="Once previsto"
           sub={cashEnd !== null ? `Saldo final ${money(cashEnd)}` : null}
           icon={

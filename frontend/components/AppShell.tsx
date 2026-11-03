@@ -348,8 +348,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="app-frame">
-        <header className="app-topbar relative">
-          <div className="app-topbar__row" data-ui="topbar">
+        <header className={`app-topbar relative ${pathname === "/" ? "app-topbar--bare" : ""}`}>
+          <div className="app-topbar__row" data-ui="topbar" hidden={pathname === "/"}>
             <div className="flex min-w-0 items-center gap-3">
               <span className="topbar-mark lg:hidden" aria-hidden="true">
                 <Icon name={section.label === "Laboratorio" ? "Liga" : (section.label as SectionLabel)} />
