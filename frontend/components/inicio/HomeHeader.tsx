@@ -146,14 +146,16 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   // entra con su propio conteo desde cero y un fundido largo.
   const gain = typeof fichajes?.mejora_puntos_jornada === "number" && Math.abs(fichajes.mejora_puntos_jornada) >= 0.05 ? fichajes.mejora_puntos_jornada : null;
   const pts1 = (v: number) => `${points(v)} pts`;
-  const figures = [
+  type Fig = { key: string; label: string; v: number | null; fmt: (v: number) => string; other: string };
+  const rawFigures: (Fig | null)[] = [
     { key: "cash", label: "Saldo disponible", v: cash, fmt: money, other: cashEnd !== null ? `Tras el plan · ${money(cashEnd)}` : "Listo para pujar hoy" },
     gain !== null ? { key: "gain", label: "Mejora con el plan de hoy", v: gain, fmt: (v: number) => `${v > 0 ? "+" : "−"}${points(Math.abs(v))} pts`, other: "Puntos extra en tu once si lo sigues" } : null,
     cashEnd !== null ? { key: "end", label: "Saldo tras el plan", v: cashEnd, fmt: money, other: "Lo que te queda tras pujas y ventas" } : null,
     typeof value === "number" ? { key: "value", label: "Valor de tu plantilla", v: value, fmt: money, other: typeof valueDay === "number" && valueDay !== 0 ? `${signedMoney(valueDay)} desde ayer` : "Suma del valor de mercado" } : null,
     onceTarget !== null ? { key: "once", label: "Once previsto", v: onceTarget, fmt: pts1, other: "Puntos esperados de tu mejor alineación" } : null,
     typeof gap === "number" && gap < 0 ? { key: "gap", label: "Distancia al líder", v: Math.abs(gap), fmt: (v: number) => `${Math.round(v)} pts`, other: rank !== null && field ? `Vas ${rank}º de ${field}` : "Por recortar esta jornada" } : null,
-  ].filter((f): f is { key: string; label: string; v: number | null; fmt: (v: number) => string; other: string } => f !== null);
+  ];
+  const figures = rawFigures.filter((f): f is Fig => f !== null);
   const slide = figures.length > 1 && mounted && typeof cash === "number" ? Math.floor(nowMs / 6000) % figures.length : 0;
   const shown = figures[slide];
   const shownNegative = typeof shown.v === "number" && shown.v < 0 && shown.key !== "gain";
