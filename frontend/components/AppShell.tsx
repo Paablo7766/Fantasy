@@ -433,7 +433,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         ) : null}
 
-        <div className="app-page min-w-0 app-page--dock">{children}</div>
+        <div className="app-page min-w-0 app-page--dock">
+          {/* Clave por ruta: cada sección entra con un único fundido suave. */}
+          <div key={pathname} className="page-in">
+            {children}
+          </div>
+        </div>
 
         {home ? <div className="fab-fresh lg:hidden">{freshness}</div> : null}
 
