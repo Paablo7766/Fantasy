@@ -124,10 +124,16 @@
 
 .ini-hero__bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  /* Tres columnas iguales: la liga sigue centrada y la recarga tiene sitio
+     propio. Si no cabe, el texto se corta dentro de su columna. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
   gap: 0.75rem;
   padding: 1rem 1rem 0 1.25rem;
+}
+
+.ini-hero > .ini-hero__bar {
+  z-index: 4;
 }
 
 .ini-hero__date {
@@ -1173,7 +1179,13 @@
 
 
 .ini-hero__bar .ini-chip {
-  max-width: 16rem;
+  min-width: 0;
+  max-width: min(16rem, 100%);
+  overflow: hidden;
+}
+
+.ini-hero__bar .ini-chip > span {
+  min-width: 0;
 }
 
 /* Tarjetas bento centradas: visual arriba, cifra grande, etiqueta debajo. */
@@ -1781,17 +1793,33 @@
 
 /* Recarga discreta dentro del hero de Inicio (solo aquí). */
 .ini-refresh--quiet {
+  max-width: 100%;
+  min-width: 0;
   gap: 0.25rem;
   padding: 2px 2px 2px 0.65rem;
   font-size: 11.5px;
   color: rgba(255, 255, 255, 0.72);
 }
 
+.ini-hero__bar [data-ui="refresh-chip"] {
+  min-width: 0;
+  max-width: 100%;
+  z-index: 2;
+}
+
 .ini-refresh--quiet .ini-refresh__age {
+  min-width: 0;
+  overflow: hidden;
   cursor: pointer;
   padding: 0.2rem 0.15rem;
   border-radius: 9999px;
   transition: color 160ms ease;
+}
+
+.ini-refresh--quiet .ini-refresh__age > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ini-refresh--quiet .ini-refresh__age:hover {
@@ -1799,6 +1827,7 @@
 }
 
 .ini-refresh--quiet .ini-refresh__btn {
+  flex-shrink: 0;
   width: 1.75rem;
   height: 1.75rem;
   background: rgba(255, 255, 255, 0.1);
@@ -1854,7 +1883,7 @@
 /* Móvil: sin fecha, liga a la izquierda y recarga a la derecha sin pisarse. */
 @media (max-width: 520px) {
   .ini-hero__bar {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) max-content;
   }
 
   .ini-hero__bar .ini-hero__date {

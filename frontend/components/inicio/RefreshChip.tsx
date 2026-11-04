@@ -85,7 +85,7 @@ export function RefreshChip() {
           onClick={() => setOpen((value) => !value)}
           aria-haspopup="menu"
           aria-expanded={open}
-          title="Ver la foto de datos"
+          title={`${label} · ver la foto`}
         >
           <span className="ini-refresh__dot" style={{ background: tone, boxShadow: old && !working ? `0 0 0 3px ${tone}33` : undefined }} aria-hidden="true" />
           <span aria-live="polite">{label}</span>
