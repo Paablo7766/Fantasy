@@ -30,7 +30,7 @@ const SECTIONS: readonly NavItem[] = [
     href: "/mercado",
     label: "Mercado",
     title: "Mercado",
-    hint: "Qué comprar hoy, oportunidades y buscador",
+    hint: "Qué comprar hoy y a qué precio",
   },
   {
     href: "/clausulas",
@@ -287,7 +287,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // En Inicio no hay barra superior: la recarga vive en la barra lateral
   // (escritorio) y en un botón flotante sobre el dock (móvil).
   const dockIndex = SECTIONS.findIndex((item) => isActive(pathname, item.href));
-  const home = pathname === "/" || pathname === "/equipo" || pathname.startsWith("/equipo/");
+  const home = pathname === "/" || ["/equipo", "/mercado"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
   const freshness = (
     <Freshness
       ageSeconds={photoAgeSeconds}

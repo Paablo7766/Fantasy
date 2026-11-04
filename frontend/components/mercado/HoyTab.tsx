@@ -4,11 +4,11 @@ import { useMemo, useState } from "react";
 import { gradeColor } from "@/components/mercado/MarketGrade";
 import { PlayerCard } from "@/components/mercado/PlayerCard";
 import { ACTION_VERDICT, auctionLabel, budgetLine, difficultyLabel, historyLine } from "@/components/mercado/shared";
-import { Disclosure, Empty, Face, HeroStat, Skeleton, TONE, compact, money, parsePct, signedPct, toneOf } from "@/components/ui/kit";
+import { Disclosure, Empty, Face, HeroStat, SectionHead, Skeleton, TONE, compact, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { errorMessage, playerName } from "@/lib/core/format";
 import { executableBid, marketAction } from "@/lib/mercado/marketAction";
-import type { AlertaClausula, JornadaClub, MarketDecision, PlanFichajeAccion, PlanFichajes, TrendsPayload } from "@/lib/types";
+import type { AlertaClausula, CatalogPlayer, JornadaClub, MarketDecision, PlanFichajeAccion, PlanFichajes, TrendsPayload } from "@/lib/types";
 
 type Source = "liga" | "rival" | "todos";
 
@@ -332,6 +332,49 @@ function FixtureList({ clubs }: { clubs: JornadaClub[] }) {
   );
 }
 
+const OWNER_TAG: Record<string, { label: string; color: string }> = {
+  libre: { label: "Libre", color: TONE.green },
+  rival: { label: "De un rival", color: TONE.amber },
+  propio: { label: "Tuyo", color: TONE.blue },
+};
+
+/** Jugadores que coinciden con la búsqueda pero no están en venta hoy. */
+function CatalogMatches({ rows, photos }: { rows: CatalogPlayer[]; photos: PhotoIndex }) {
+  if (!rows.length) return null;
+  return (
+    <section className="flex flex-col gap-3" aria-label="Fuera del mercado">
+      <SectionHead title="Fuera del mercado" meta={`${rows.length}`} />
+      <ul className="home-glass overflow-hidden">
+        {rows.map((player, index) => {
+          const name = playerName(player);
+          const tag = OWNER_TAG[player.owner || "libre"] || OWNER_TAG.libre;
+          const forecast = (player.price_points?.length ?? 0) >= 3 ? player.own_predicted_delta : null;
+          return (
+            <li key={String(player.player_id)} className="row-in" style={{ animationDelay: `${Math.min(index, 10) * 25}ms` }}>
+              <span className="flex min-h-[3.75rem] items-center gap-3 px-3.5 py-2.5">
+                <Face name={name} src={player.image_url || photoFor(photos, String(player.player_id), name)} size={40} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14.5px] font-medium text-white">{name}</span>
+                  <span className="block truncate text-[12px] text-white/45">
+                    {[player.position, player.club].filter(Boolean).join(" · ")}
+                    <span style={{ color: tag.color }}> · {tag.label}</span>
+                  </span>
+                </span>
+                <span className="shrink-0 text-right">
+                  <span className="block text-[14.5px] font-semibold tabular-nums text-white">{money(player.market_value)}</span>
+                  <span className="block text-[12px] tabular-nums" style={{ color: toneOf(forecast) }}>
+                    {typeof forecast === "number" ? `${signedMoney(forecast)} hoy` : ""}
+                  </span>
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | null; photos: PhotoIndex; loading: boolean }) {
   const [source, setSource] = useState<Source>("liga");
   const [query, setQuery] = useState("");
@@ -345,6 +388,18 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
       .filter((row) => (row.offer_source || "liga") !== "propio")
       .sort((a, b) => (b.nota_mercado ?? -1) - (a.nota_mercado ?? -1));
   }, [trends]);
+
+  const outside = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (needle.length < 2 || !trends || trends.ok === false) return [] as CatalogPlayer[];
+    const onSale = new Set(decisions.map((row) => String(row.player_id)));
+    const catalog = Array.isArray(trends.catalog) ? trends.catalog : [];
+    return catalog
+      .filter((player) => !onSale.has(String(player.player_id)))
+      .filter((player) => `${player.nickname || ""} ${player.name || ""} ${player.club || ""}`.toLowerCase().includes(needle))
+      .sort((a, b) => (b.market_value ?? 0) - (a.market_value ?? 0))
+      .slice(0, 12);
+  }, [decisions, query, trends]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -375,23 +430,21 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
 
   return (
     <div className="flex flex-col gap-5">
-      <section className="home-hero" aria-label="Resumen del mercado">
-        <div className="flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[13px] font-medium text-white/60">Mercado de hoy</p>
-            <p className="mt-1 text-[2.4rem] font-semibold leading-none tabular-nums text-white">
-              {pujar}
-              <span className="ml-2 text-[1rem] font-medium text-white/60">{pujar === 1 ? "puja recomendada" : "pujas recomendadas"}</span>
-            </p>
-          </div>
-          <span className="shrink-0 text-[12.5px] tabular-nums text-white/55">{decisions.length} en venta</span>
+      <section className="home-feature" aria-label="Resumen del mercado">
+        <div className="relative flex items-center justify-between gap-3">
+          <p className="text-[13px] font-medium text-white/60">Mercado de hoy</p>
+          <p className="text-[12px] tabular-nums text-white/45">{decisions.length} en venta</p>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          <HeroStat value={compact(summary.cash_eur ?? trends.cash_eur)} label="caja" />
-          <HeroStat value={summary.day_budget_eur != null ? compact(summary.day_budget_eur) : "—"} label="tope hoy" tone="#FFC08A" />
-          <HeroStat value={summary.plan_cash_after_eur != null ? compact(summary.plan_cash_after_eur) : "—"} label="te queda" tone={toneOf(summary.plan_cash_after_eur)} />
+        <p className="relative mt-2 flex items-baseline gap-2 tabular-nums">
+          <span className="text-[3rem] font-semibold leading-none tracking-[-0.045em] text-white">{pujar}</span>
+          <span className="text-base font-medium text-white/60">{pujar === 1 ? "puja recomendada" : "pujas recomendadas"}</span>
+        </p>
+        {budget ? <p className="relative mt-2 text-[13px] leading-snug text-white/55">{budget}</p> : null}
+        <div className="relative mt-5 grid grid-cols-3 gap-2.5">
+          <HeroStat value={compact(summary.cash_eur ?? trends.cash_eur)} label="Caja" />
+          <HeroStat value={summary.day_budget_eur != null ? compact(summary.day_budget_eur) : "—"} label="Tope hoy" tone="#FFC08A" />
+          <HeroStat value={summary.plan_cash_after_eur != null ? compact(summary.plan_cash_after_eur) : "—"} label="Te queda" tone={toneOf(summary.plan_cash_after_eur)} />
         </div>
-        {budget ? <p className="mt-3 text-[12.5px] leading-snug text-white/55">{budget}</p> : null}
       </section>
 
       <section className="flex flex-col gap-3">
@@ -410,16 +463,19 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
             </button>
           ))}
         </div>
-        <div className="flex items-center justify-between gap-3 px-1">
-          <p className="text-[12.5px] text-white/45">Ordenados por nota de la app</p>
+        <label className="relative block">
+          <span className="sr-only">Buscar jugador o equipo</span>
+          <svg viewBox="0 0 20 20" className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <circle cx="9" cy="9" r="5.5" />
+            <path d="m13.5 13.5 3 3" strokeLinecap="round" />
+          </svg>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Buscar"
-            aria-label="Buscar jugador o equipo"
-            className="h-9 w-40 rounded-full border border-white/[0.08] bg-white/[0.04] px-4 text-[13px] text-white outline-none transition-colors placeholder:text-white/30 focus:border-[#FF9A5A]/60"
+            placeholder="Buscar cualquier jugador o equipo"
+            className="h-12 w-full rounded-full bg-[#1c1c1e] pl-11 pr-4 text-[14px] text-white outline-none transition-shadow duration-200 placeholder:text-white/35 focus-visible:outline-none focus:shadow-[inset_0_0_0_1px_rgba(255,154,90,0.6)]"
           />
-        </div>
+        </label>
         {filtered.length ? (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {filtered.map((player, index) => (
@@ -427,9 +483,13 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
             ))}
           </ul>
         ) : (
-          <p className="px-1 py-6 text-center text-[13.5px] text-white/45">{query ? "Nadie coincide con la búsqueda." : empty}</p>
+          <p className="px-1 py-6 text-center text-[13.5px] text-white/45">
+            {query ? (outside.length ? "Nadie en venta coincide con la búsqueda." : "Nadie coincide con la búsqueda.") : empty}
+          </p>
         )}
       </section>
+
+      <CatalogMatches rows={outside} photos={photos} />
 
       <AlertasClausulaBlock plan={trends.plan_fichajes} />
       <PlanBlock plan={trends.plan_fichajes} />

@@ -12,6 +12,8 @@ import { ExpertNotePanel } from "@/components/laboratorio/ExpertNotePanel";
 import { SignalDiscrepanciesPanel } from "@/components/laboratorio/SignalDiscrepanciesPanel";
 import { Skeleton } from "@/components/ui/kit";
 import { RadarTecnico } from "@/components/laboratorio/RadarTecnico";
+import { LabSection } from "@/components/mercado/LabSection";
+import { OportunidadesTab } from "@/components/mercado/OportunidadesTab";
 import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
@@ -22,7 +24,11 @@ type Tab = "radar" | "calibracion" | "senales" | "datos";
  * compra; sirve para fiarse (o no) del modelo y de la foto.
  */
 const TABS: { id: Tab; label: string; hint: string }[] = [
-  { id: "radar", label: "Radar técnico", hint: "Pesos de la nota, tóxicos descartados y precio de referencia por posición." },
+  {
+    id: "radar",
+    label: "Radar técnico",
+    hint: "Fichables fuera del mercado por valor y momentum, pesos de la nota, tóxicos descartados y precio de referencia por posición.",
+  },
   { id: "calibracion", label: "Calibración", hint: "Cuánto acierta el modelo, y el post-mortem del lunes: puntos dejados en el banquillo e impacto de haber operado." },
   { id: "senales", label: "Señales", hint: "Fuentes externas, discrepancias entre ellas y la nota del experto." },
   { id: "datos", label: "Datos y API", hint: "Frescura de cada bloque y consumo de peticiones." },
@@ -80,7 +86,11 @@ function LaboratorioContent() {
 
       <div key={tab} id={`lab-panel-${tab}`} role="tabpanel" aria-labelledby={`lab-tab-${tab}`} className="row-in min-w-0">
         {tab === "radar" ? (
-          <RadarTecnico photos={photos} />
+          <div className="flex min-w-0 flex-col gap-6">
+            <OportunidadesTab photos={photos} />
+            <LabSection photos={photos} />
+            <RadarTecnico photos={photos} />
+          </div>
         ) : tab === "calibracion" ? (
           <div className="flex min-w-0 flex-col gap-6">
             <PostMortemPanel />
