@@ -2374,6 +2374,11 @@ EXTERNAL_HOSTS = frozenset(
         "transfermarkt-api.fly.dev",
         "api.oddspapi.io",
         "api.sportsgameodds.com",
+        # Respaldo de Understat (toolbox/stats_fallback.py).
+        "www.fotmob.com",
+        "data.fotmob.com",
+        "football-data.co.uk",
+        "www.football-data.co.uk",
     }
 )
 

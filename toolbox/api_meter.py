@@ -65,6 +65,8 @@ _SOURCE_LABELS: dict[str, str] = {
     "jornadaperfecta": "Jornada Perfecta",
     "predicted11": "Predicted11",
     "odds": "The Odds API",
+    "fotmob": "FotMob",
+    "football_data": "football-data.co.uk",
 }
 
 # Se compara por subcadena del host, en este orden.
@@ -81,6 +83,8 @@ _HOST_RULES: tuple[tuple[str, str], ...] = (
     ("predicted11.com", "predicted11"),
     ("oddspapi.io", "odds"),
     ("sportsgameodds.com", "odds"),
+    ("fotmob.com", "fotmob"),
+    ("football-data.co.uk", "football_data"),
 )
 
 RISK_RULES: tuple[str, ...] = (

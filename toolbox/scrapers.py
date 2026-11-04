@@ -2005,7 +2005,7 @@ def _cross(
 ]:
     from toolbox.fantasy_scraper import load_lineups
     from toolbox.jornada_perfecta import load_jornada_perfecta
-    from toolbox.understat import load_understat
+    from toolbox.stats_fallback import load_understat_with_fallback
 
     # Páginas independientes en paralelo: la primera carga en frío no las encadena.
     # Solo el mercado de FútbolFantasy y las alineaciones respetan ``fresh``:
@@ -2027,7 +2027,7 @@ def _cross(
         lineups_future = pool.submit(inherited(load_lineups), client, ttl=clocks.market, fresh=fresh)
         fbref_future = pool.submit(inherited(_load_fbref), client, ttl=clocks.stats, fresh=False)
         sofa_future = pool.submit(inherited(_load_sofascore), client, ttl=clocks.stats, fresh=False)
-        understat_future = pool.submit(inherited(load_understat), client, ttl=clocks.stats, fresh=False)
+        understat_future = pool.submit(inherited(load_understat_with_fallback), client, ttl=clocks.stats, fresh=False)
         jp_future = pool.submit(inherited(load_jornada_perfecta), client, ttl=clocks.market, fresh=False)
         market_fetch = market_future.result()
         fitness_fetch = fitness_future.result()

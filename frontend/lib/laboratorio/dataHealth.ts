@@ -72,7 +72,7 @@ const SOURCE_META: Record<string, { label: string; group: string; impacts: strin
   own_intel_bids: { label: "Pujas propias", group: "Motor propio", impacts: ["Techo de puja own_*"] },
   own_intel_signal: { label: "Señal de mercado propia", group: "Motor propio", impacts: ["Flip / motivo de revalorización"] },
   understat: {
-    label: "Understat (xG, fixtures)",
+    label: "xG y calendario (Understat · respaldo FotMob + football-data)",
     group: "Forma y calendario",
     impacts: ["Motor OPTA v2", "FDR y rival en forma"],
     critical: true,
@@ -403,6 +403,16 @@ export function buildDataHealthReport(state: DashboardState): DataHealthReport |
     notes.push(
       `${market.sinMotivo} de ${market.listings} en mercado salen «sin motivo claro»: suele ser criterio (no mejora el once), no solo un fallo de datos.`,
     );
+  }
+  const understatRow = sources.find((s) => s.id === "understat");
+  if (understatRow?.ok && understatRow.error && /caído/i.test(understatRow.error)) {
+    notes.push(
+      "Understat está caído: el xG de jugadores y partidos viene del respaldo (FotMob + football-data), ajustado a la escala de Understat. Es fiable, pero no idéntico.",
+    );
+  }
+  const oddsRow = sources.find((s) => s.id === "laliga_odds");
+  if (oddsRow && !oddsRow.ok && oddsRow.error && /simuladas/i.test(oddsRow.error)) {
+    notes.push("Sin cuotas reales: el calendario usa cuotas simuladas con el modelo propio, no el mercado.");
   }
   if (formExtrasMissing && !failedCritical) {
     notes.push(
