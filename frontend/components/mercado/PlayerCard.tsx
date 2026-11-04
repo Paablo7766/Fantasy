@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { gradeColor } from "@/components/mercado/MarketGrade";
 import { ValueChart } from "@/components/mercado/ValueChart";
 import { CompararConSugerido } from "@/components/comparador/ComparadorReal";
-import { Face, TONE, money, parsePct, signedPct } from "@/components/ui/kit";
+import { Face, TONE, cleanText, money, parsePct, signedPct } from "@/components/ui/kit";
 import { ACTION_VERDICT, auctionLabel, winShare } from "@/components/mercado/shared";
 import { bidStory } from "@/lib/mercado/bidStory";
 import { playerName } from "@/lib/core/format";
@@ -176,7 +176,8 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
     if (!player) return null;
     const name = playerName(player);
     const story = bidStory(player);
-    const verdict = ACTION_VERDICT[marketAction(player)];
+    const action = marketAction(player);
+    const verdict = ACTION_VERDICT[action];
     const ideal = executableBid(player);
     const max = isVetoed(player) ? null : maxBid(player);
     const value = num(player.market_value) ?? num(player.sale_price);
@@ -198,7 +199,7 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
     const matches = upcoming(player);
     const accent = note === null ? TONE.gray : gradeColor(note);
     const heat = auctionLabel(player);
-    const reason = player.frase_mercado || actionReason(player, story.motive) || story.headline;
+    const reason = cleanText(player.frase_mercado || actionReason(player, story.motive) || story.headline);
     const closing = closesIn(player.listing_expires_at);
     const seller = player.offer_source === "rival" ? `Lo vende ${player.seller_manager || "un rival"}` : "Lo vende LaLiga";
     const risk =
@@ -209,7 +210,16 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
           : titular !== null && titular < 0.6
             ? `No es titular seguro: ${Math.round(titular * 100)}% de salir de inicio.`
             : null;
-    const overbid = player.bid_plan?.overbid?.etiqueta;
+    const overbid = cleanText(player.bid_plan?.overbid?.etiqueta);
+    const bidLabel = ideal === null ? "Valor de mercado" : action === "PUJAR" ? "Puja recomendada" : "Si decides pujar";
+    const howTo =
+      ideal === null
+        ? null
+        : action === "PUJAR"
+          ? `Ofrece ${money(ideal)}${max !== null && max > ideal ? ` y, si te superan, no pases de ${money(max)}` : ""}.`
+          : action === "ESPERAR"
+            ? "Hoy no compensa pujar: espera a que baje o a que cambie tu once."
+            : null;
 
     return (
       <article className="flex flex-col gap-2.5 p-2.5 sm:p-3">
@@ -225,7 +235,7 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
             type="button"
             onClick={onClose}
             aria-label="Cerrar"
-            className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-black/30 text-white/70 backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white"
+            className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-black/30 text-white/70 outline-none backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.4)]"
           >
             <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
@@ -253,7 +263,7 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
         <section className="rounded-[1.5rem] bg-[#141414] p-4" aria-label="Tu puja">
           <div className="flex items-center gap-4">
             <div className="min-w-0 flex-1">
-              <p className="text-[12px] text-white/45">{ideal !== null ? "Puja recomendada" : "Valor de mercado"}</p>
+              <p className="text-[12px] text-white/45">{bidLabel}</p>
               <p className="mt-1 text-[2.1rem] font-semibold leading-none tracking-[-0.03em] tabular-nums text-white">
                 {money(ideal ?? value)}
               </p>
@@ -267,9 +277,10 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
           </div>
           {overbid ? (
             <p
-              className="mt-3 text-[12.5px] font-medium"
+              className="mt-3 flex items-center gap-2 text-[12.5px] font-medium"
               style={{ color: player.bid_plan?.overbid?.status === "guerra" ? TONE.red : player.bid_plan?.overbid?.status === "high" ? TONE.copper : TONE.green }}
             >
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
               {overbid}
             </p>
           ) : null}
@@ -294,12 +305,12 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
               </p>
             </div>
           </div>
-          {story.action && !(ideal !== null && story.action === "No hay una cifra recomendada.") ? (
+          {howTo ? (
             <p className="mt-3 flex gap-2 rounded-2xl bg-white/[0.04] px-3 py-2.5 text-[13px] leading-snug text-white/75">
               <span className="font-semibold text-[#FF9A5A]" aria-hidden="true">
                 →
               </span>
-              <span>{story.action}</span>
+              <span>{howTo}</span>
             </p>
           ) : null}
           {risk ? (

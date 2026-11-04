@@ -1,5 +1,5 @@
-import { TONE } from "@/components/ui/kit";
-import { eur, pct } from "@/lib/core/format";
+import { TONE, money } from "@/components/ui/kit";
+import { pct } from "@/lib/core/format";
 import type { MarketAction } from "@/lib/mercado/marketAction";
 import type { MarketDecision, MarketDecisionSummary } from "@/lib/types";
 
@@ -24,7 +24,7 @@ export function difficultyLabel(key: string | null | undefined): string {
 
 /** Texto corto cuando ya hay gente dentro y el importe no es público, o sí lo es. */
 export function auctionLabel(player: MarketDecision): string | null {
-  if (typeof player.leading_bid === "number") return `Van ${eur(player.leading_bid)}`;
+  if (typeof player.leading_bid === "number") return `Van ${money(player.leading_bid)}`;
   const bids = player.bid_count;
   const offers = player.offer_count;
   if (typeof bids === "number" && bids > 0) return bids === 1 ? "1 puja" : `${bids} pujas`;
@@ -49,7 +49,7 @@ export function budgetLine(summary: MarketDecisionSummary): string | null {
   const markets = summary.markets_left;
   const day = summary.day_budget_eur;
   if (typeof markets === "number" && markets > 1 && typeof day === "number") {
-    return `Quedan ${markets} mercados hasta la jornada: hoy como mucho ${eur(day)}; el resto se guarda.`;
+    return `Quedan ${markets} mercados hasta la jornada: hoy gasta como mucho ${money(day)} y guarda el resto.`;
   }
   return null;
 }

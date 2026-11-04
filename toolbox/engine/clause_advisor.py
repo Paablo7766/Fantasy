@@ -44,7 +44,7 @@ DIAS_GOLPE_RIVAL = 1.0
 TOP_RIVALES_GOLPE = 5
 #: Menos de 11 sanos en plantilla obliga a alinear un hueco que puntúa 0.
 TITULARES_MINIMOS = 11
-MENSAJE_GOLPE_RIVAL = "🎯 GOLPE AL RIVAL: Lo dejas sin recambio en su XI"
+MENSAJE_GOLPE_RIVAL = "Golpe al rival: lo dejas sin recambio en su once"
 MAX_NIVELES = 4
 _DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 
@@ -799,7 +799,7 @@ def auditar_clausulas_plantilla(
             badge = "rojo"
             origen = "el sustituto más barato" if hay_sustituto else "1,6× su valor (no hay sustituto libre)"
             consejo = (
-                f"🧱 ESCASEZ: si pagan {clausula_txt}M, reponerlo cuesta {_millones_txt(reposicion)}M "
+                f"Difícil de reponer: si pagan {clausula_txt}M, sustituirlo cuesta {_millones_txt(reposicion)}M "
                 f"({origen}). Pierdes {_millones_txt(perdida)}M de poder competitivo. Blíndalo."
             )
             beneficio = 0
@@ -808,22 +808,22 @@ def auditar_clausulas_plantilla(
             estado = "SOBREPROTEGIDO"
             badge = "verde"
             consejo = (
-                f"🛡️ SOBREPROTEGIDO: Si pagan {clausula_txt}M, ganas +{_millones_txt(beneficio)}M. "
-                "No subir cláusula."
+                f"Bien protegido: si pagan {clausula_txt}M, ganas {_millones_txt(beneficio)}M. "
+                "No hace falta subir la cláusula."
             )
         elif clausula < valor * _UMBRAL_VULNERABLE and rivales_con_caja >= 1:
             estado = "RIESGO_ALTO"
             badge = "rojo"
             consejo = (
-                f"⚠️ RIESGO ALTO: {rivales_con_caja} rivales tienen caja. "
-                f"Su cláusula ({clausula_txt}M) es un chollo. ¡Blíndalo hoy!"
+                f"Riesgo alto: {rivales_con_caja} {'rival tiene' if rivales_con_caja == 1 else 'rivales tienen'} caja "
+                f"y su cláusula ({clausula_txt}M) está barata. Súbela hoy."
             )
             beneficio = max(0, clausula - valor)
         elif clausula < valor * _UMBRAL_VULNERABLE:
             estado = "RIESGO_CERO"
             badge = "gris"
             consejo = (
-                f"💤 RIESGO CERO: Es un chollo ({clausula_txt}M) pero ningún rival tiene saldo para robarlo hoy."
+                f"Sin riesgo hoy: la cláusula ({clausula_txt}M) está barata, pero ningún rival tiene caja para pagarla."
             )
             beneficio = max(0, clausula - valor)
         else:

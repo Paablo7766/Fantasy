@@ -161,7 +161,6 @@ function Picker({
   etiqueta,
   opciones,
   excluir,
-  otro,
   photos,
   onPick,
   onCancel,
@@ -170,7 +169,6 @@ function Picker({
   etiqueta: string;
   opciones: Opcion[];
   excluir: string | null;
-  otro: Opcion | null;
   photos: PhotoIndex;
   onPick: (id: string) => void;
   onCancel: () => void;
@@ -184,38 +182,28 @@ function Picker({
       .slice(0, 40);
   }, [opciones, texto, excluir]);
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col rounded-3xl bg-[#141414] p-3">
+      <div className="flex items-center gap-2 px-1">
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
         <p className="flex-1 text-[13px] font-semibold text-white">Buscar {etiqueta}</p>
         <button type="button" onClick={onCancel} className="text-[13px] font-medium text-white/50 hover:text-white">
-          Cerrar
+          Cancelar
         </button>
       </div>
       <input
-        autoFocus
         value={texto}
         onChange={(event) => setTexto(event.target.value)}
         placeholder="Nombre, equipo o dueño"
         aria-label={`Buscar ${etiqueta}`}
-        className="mt-3 h-12 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[15px] text-white outline-none placeholder:text-white/30 focus:border-white/25"
+        className="mt-3 h-12 w-full rounded-full bg-[#1c1c1e] px-5 text-[15px] text-white outline-none placeholder:text-white/35 focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.25)]"
       />
-      {otro ? (
-        <p className="mt-3 flex items-center gap-2 rounded-2xl bg-white/[0.04] px-3 py-2 text-[13px] text-white/75">
-          <Face name={otro.nombre} src={otro.foto || photoFor(photos, otro.id, otro.nombre)} size={28} />
-          <span className="min-w-0 truncate">
-            <span className="text-white/40">Ya elegido · </span>
-            {otro.nombre}
-          </span>
-        </p>
-      ) : null}
       <ul className="mt-2 max-h-[18rem] overflow-y-auto">
         {filtradas.map((opcion) => (
           <li key={opcion.id}>
             <button
               type="button"
               onClick={() => onPick(opcion.id)}
-              className="flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left transition-colors hover:bg-white/[0.05]"
+              className="flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left transition-colors hover:bg-[#1c1c1e]"
             >
               <Face name={opcion.nombre} src={opcion.foto || photoFor(photos, opcion.id, opcion.nombre)} size={36} />
               <span className="min-w-0 flex-1">
@@ -260,8 +248,8 @@ function Slot({
       aria-pressed={active}
       className="group relative flex min-w-0 flex-1 flex-col items-center rounded-3xl px-2 pb-3 pt-4 text-center transition-colors"
       style={{
-        background: winner || active ? `${color}14` : "rgba(255,255,255,0.03)",
-        boxShadow: `inset 0 0 0 ${active ? 2 : 1}px ${winner || active ? color : "rgba(255,255,255,0.06)"}`,
+        background: winner || active ? `radial-gradient(90% 80% at 50% 0%, ${color}30, transparent 70%), #141414` : "#141414",
+        boxShadow: winner || active ? `inset 0 0 0 ${active ? 2 : 1}px ${color}` : "none",
       }}
       aria-label={active ? `Eligiendo. Ahora es ${nombre}` : `Cambiar ${nombre}`}
     >
@@ -269,17 +257,11 @@ function Slot({
         <span className="absolute -top-2.5 rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold text-[#0a0706]" style={{ background: color }}>
           Mejor opción
         </span>
-      ) : (
-        <span className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded-full text-[11px] font-bold text-[#0a0706]" style={{ background: color }} aria-hidden="true">
-          ✓
-        </span>
-      )}
+      ) : null}
       <Face name={nombre} src={foto} size={64} ring={color} />
       <span className="mt-2 block w-full truncate text-[15px] font-semibold text-white">{nombre}</span>
       <span className="block w-full truncate text-[11.5px] text-white/45">{sub || " "}</span>
-      <span className="mt-2 rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-white/60 transition-colors group-hover:bg-white/[0.12] group-hover:text-white">
-        {active ? "Cambiando" : "Elegido · cambiar"}
-      </span>
+      <span className="mt-2 text-[11.5px] font-medium text-white/45 transition-colors group-hover:text-white">{active ? "Eligiendo…" : "Cambiar"}</span>
     </button>
   );
 }
@@ -290,16 +272,13 @@ function EmptySlot({ color, etiqueta, active, onPick }: { color: string; etiquet
       type="button"
       onClick={onPick}
       aria-pressed={active}
-      className="flex min-h-[10.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-2 rounded-3xl border border-dashed text-center transition-colors hover:bg-white/[0.03]"
+      className="flex min-h-[10.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-2.5 rounded-3xl border border-dashed bg-[#141414] text-center transition-colors hover:bg-[#1c1c1e]"
       style={{ borderColor: active ? color : `${color}66`, background: active ? `${color}14` : undefined, boxShadow: active ? `inset 0 0 0 1px ${color}` : undefined }}
     >
-      <span className="text-[10.5px] font-semibold uppercase tracking-[0.16em]" style={{ color }}>
-        {active ? "Eligiendo" : "Vacío"}
-      </span>
       <span className="grid h-12 w-12 place-items-center rounded-full text-[22px]" style={{ color, background: `${color}1a` }}>
         +
       </span>
-      <span className="text-[13px] font-semibold text-white/80">{active ? `Busca ${etiqueta}` : `Elegir ${etiqueta}`}</span>
+      <span className="text-[13px] font-medium text-white/70">{active ? "Elige abajo" : `Elegir ${etiqueta}`}</span>
     </button>
   );
 }
@@ -460,10 +439,9 @@ export function ComparadorModal({
   const [idA, setIdA] = useState<string | null>(inicialA);
   const [idB, setIdB] = useState<string | null>(inicialB);
   const [picking, setPicking] = useState<"A" | "B" | null>(!inicialA ? "A" : !inicialB ? "B" : null);
-  const [loaded, setLoaded] = useState<{ pair: string; data: ComparacionLiga } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  // Un único resultado por par e intento: cargando es «aún no ha llegado el de este intento».
+  const [result, setResult] = useState<{ key: string; data?: ComparacionLiga; error?: string } | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const photos = useMemo(() => buildPhotoIndex(state.plan, optimize, squads, trends), [state.plan, optimize, squads, trends]);
 
@@ -485,10 +463,8 @@ export function ComparadorModal({
     const pair = `${idA}|${idB}`;
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 45_000);
+    const key = `${pair}#${attempt}`;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setLoaded((current) => (current?.pair === pair ? null : current));
     const params = new URLSearchParams(window.location.search);
     const query = new URLSearchParams();
     const league = params.get("league");
@@ -507,17 +483,17 @@ export function ComparadorModal({
         return payload;
       })
       .then((payload) => {
-        if (!cancelled) setLoaded({ pair, data: payload });
+        if (!cancelled) setResult({ key, data: payload });
       })
       .catch((reason: unknown) => {
         if (cancelled) return;
         const aborted = reason instanceof Error && reason.name === "AbortError";
-        setError(aborted ? "La comparación está tardando demasiado. Vuelve a intentarlo." : reason instanceof Error ? reason.message : "No se ha podido comparar.");
+        setResult({
+          key,
+          error: aborted ? "La comparación está tardando demasiado. Vuelve a intentarlo." : reason instanceof Error ? reason.message : "No se ha podido comparar.",
+        });
       })
-      .finally(() => {
-        window.clearTimeout(timer);
-        if (!cancelled) setLoading(false);
-      });
+      .finally(() => window.clearTimeout(timer));
     return () => {
       cancelled = true;
       controller.abort();
@@ -543,7 +519,10 @@ export function ComparadorModal({
   };
 
   const pair = idA && idB ? `${idA}|${idB}` : "";
-  const data = loaded?.pair === pair ? loaded.data : null;
+  const current = pair && result?.key === `${pair}#${attempt}` ? result : null;
+  const data = current?.data ?? null;
+  const error = current?.error ?? null;
+  const loading = Boolean(pair) && !current;
   const a = data?.jugador_a;
   const b = data?.jugador_b;
   const opcionA = opciones.find((opcion) => opcion.id === idA) || null;
@@ -556,20 +535,12 @@ export function ComparadorModal({
   const why = data ? reasons(data) : [];
   const winnerColor = ganaB ? COLOR_B : COLOR_A;
   const aviso = (() => {
-    if (picking === "A") {
-      if (!idA && idB) return `Has elegido a ${nombreB}. Ahora toca uno para el hueco naranja.`;
-      if (idA) return `El naranja es ${nombreA}. Toca otro si quieres cambiarlo.`;
-      return "Paso 1 de 2. Toca un jugador: se queda arriba, en el hueco naranja.";
-    }
-    if (picking === "B") {
-      if (idA && !idB) return `Has elegido a ${nombreA}. Ahora toca uno para el hueco azul.`;
-      if (idB) return `El azul es ${nombreB}. Toca otro si quieres cambiarlo.`;
-      return "Paso 1 de 2. Toca un jugador: se queda arriba, en el hueco azul.";
-    }
-    if (idA && idB && error) return "No se ha podido comparar. Los dos jugadores siguen elegidos.";
+    if (picking === "A") return idB ? `Elige con quién comparar a ${nombreB}` : "Elige el primer jugador";
+    if (picking === "B") return idA ? `Elige con quién comparar a ${nombreA}` : "Elige el segundo jugador";
+    if (idA && idB && error) return null;
     if (idA && idB && !data) return `Comparando ${nombreA} con ${nombreB}…`;
-    if (idA && idB) return "Toca un jugador si quieres cambiarlo.";
-    return "Elige los dos jugadores. El que toques se queda en su hueco.";
+    if (idA && idB) return null;
+    return "Elige los dos jugadores";
   })();
 
   const body = (
@@ -579,21 +550,18 @@ export function ComparadorModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="comparador-titulo"
-        className="relative flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-[2rem] border border-white/[0.08] shadow-[0_40px_120px_rgba(0,0,0,0.7)] sm:max-w-2xl sm:rounded-[2rem]"
-        style={{ background: "linear-gradient(180deg,#121016 0%,#0a090c 100%)" }}
+        className="cmp-sheet relative flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-[2rem] bg-black shadow-[0_40px_120px_rgba(0,0,0,0.8),inset_0_0_0_1px_rgba(255,255,255,0.06)] sm:max-w-2xl sm:rounded-[2rem]"
       >
-        <header className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-4">
-          <div>
-            <h2 id="comparador-titulo" className="text-[17px] font-semibold text-white">
-              Comparar jugadores
-            </h2>
-            <p className="text-[12px] text-white/40">Los dos se quedan visibles arriba</p>
-          </div>
+        <span className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-white/20 sm:hidden" aria-hidden="true" />
+        <header className="flex items-center justify-between gap-3 px-5 pb-2 pt-4">
+          <h2 id="comparador-titulo" className="text-[1.25rem] font-semibold tracking-tight text-white">
+            Comparar
+          </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Cerrar"
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/[0.07] text-white/70 transition-colors hover:bg-white/[0.14] hover:text-white"
+            className="grid h-9 w-9 place-items-center rounded-full bg-[#1c1c1e] text-white/70 outline-none transition-colors hover:text-white"
           >
             <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
@@ -601,7 +569,7 @@ export function ComparadorModal({
           </button>
         </header>
 
-        <div ref={scroller} className="flex-1 overflow-y-auto px-5 pb-6 pt-5">
+        <div ref={scroller} className="flex-1 overflow-y-auto px-3 pb-6 pt-3 sm:px-4">
           {!opciones.length ? (
             <p className="py-10 text-center text-[14px] text-white/55">Todavía no hay jugadores en la foto. Actualiza y vuelve a comparar.</p>
           ) : (
@@ -617,7 +585,7 @@ export function ComparadorModal({
                   onClick={swap}
                   disabled={!idA && !idB}
                   aria-label="Intercambiar jugadores"
-                  className="grid h-9 w-9 shrink-0 place-items-center self-center rounded-full bg-white/[0.07] text-white/60 transition-colors hover:bg-white/[0.14] hover:text-white disabled:opacity-30"
+                  className="grid h-9 w-9 shrink-0 place-items-center self-center rounded-full bg-[#1c1c1e] text-white/60 transition-colors hover:bg-white/[0.14] hover:text-white disabled:opacity-30"
                 >
                   <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                     <path d="M5 3 2 6l3 3M2 6h9M11 13l3-3-3-3M14 10H5" strokeLinecap="round" strokeLinejoin="round" />
@@ -630,13 +598,12 @@ export function ComparadorModal({
                 )}
               </div>
 
-              <p
-                aria-live="polite"
-                className="rounded-2xl px-4 py-3 text-[13.5px] leading-snug text-white/85"
-                style={{ background: picking ? `${picking === "B" ? COLOR_B : COLOR_A}18` : "rgba(255,255,255,0.04)" }}
-              >
-                {aviso}
-              </p>
+              {aviso ? (
+                <p aria-live="polite" className="flex items-center justify-center gap-2 text-center text-[13px] font-medium text-white/60">
+                  {picking ? <span className="h-1.5 w-1.5 rounded-full" style={{ background: picking === "B" ? COLOR_B : COLOR_A }} aria-hidden="true" /> : null}
+                  {aviso}
+                </p>
+              ) : null}
 
               {picking ? (
                 <Picker
@@ -645,7 +612,6 @@ export function ComparadorModal({
                   etiqueta={picking === "A" ? "el primero" : "el segundo"}
                   opciones={opciones}
                   excluir={picking === "A" ? idB : idA}
-                  otro={picking === "A" ? opcionB : opcionA}
                   photos={photos}
                   onPick={pick}
                   onCancel={() => setPicking(null)}
@@ -684,9 +650,9 @@ export function ComparadorModal({
                 <>
                   <section
                     className="rounded-3xl px-5 py-5"
-                    style={{ background: `radial-gradient(120% 120% at 0% 0%, ${winnerColor}26, transparent 60%), rgba(255,255,255,0.03)`, boxShadow: `inset 0 0 0 1px ${winnerColor}40` }}
+                    style={{ background: `radial-gradient(ellipse 120% 90% at 50% 0%, ${winnerColor}38, transparent 70%), #141414` }}
                   >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: winnerColor }}>
+                    <p className="text-[12.5px] font-medium" style={{ color: winnerColor }}>
                       Veredicto
                     </p>
                     <p className="mt-1.5 text-[1.6rem] font-semibold leading-tight tracking-tight text-white">
@@ -705,7 +671,7 @@ export function ComparadorModal({
                     ) : null}
                   </section>
 
-                  <section className="rounded-3xl bg-white/[0.03] px-4 py-1 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]">
+                  <section className="rounded-3xl bg-[#141414] px-4 py-1">
                     <div className="divide-y divide-white/[0.05]">
                       <Duel label="Puntos próxima jornada" a={dec(a?.xp_j1)} b={dec(b?.xp_j1)} va={num(a?.xp_j1)} vb={num(b?.xp_j1)} />
                       <Duel label="Puntos por jornada · próximas 4" a={dec(a?.xp_4j)} b={dec(b?.xp_4j)} va={num(a?.xp_4j)} vb={num(b?.xp_4j)} />
@@ -734,13 +700,13 @@ export function ComparadorModal({
                   </section>
 
                   <section className="grid grid-cols-2 gap-3">
-                    <div className="rounded-3xl bg-white/[0.03] p-4">
+                    <div className="rounded-3xl bg-[#141414] p-4">
                       <p className="mb-2 text-[11px] font-medium text-white/40">Últimas jornadas</p>
                       <LastWeeks values={a?.ultimas || []} color={COLOR_A} align="left" />
                       <p className="mb-2 mt-4 text-[11px] font-medium text-white/40">Próximos rivales</p>
                       <Fixtures items={a?.proximos} align="left" />
                     </div>
-                    <div className="rounded-3xl bg-white/[0.03] p-4 text-right">
+                    <div className="rounded-3xl bg-[#141414] p-4 text-right">
                       <p className="mb-2 text-[11px] font-medium text-white/40">Últimas jornadas</p>
                       <LastWeeks values={b?.ultimas || []} color={COLOR_B} align="right" />
                       <p className="mb-2 mt-4 text-[11px] font-medium text-white/40">Próximos rivales</p>
@@ -779,7 +745,7 @@ export function ComparadorLauncher({ className = "" }: { className?: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-[#0297DE]/40 bg-[#0297DE]/10 px-4 text-[13.5px] font-semibold text-[#7fd4ff] transition-colors hover:bg-[#0297DE]/20 ${className}`}
+        className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-[#1c1c1e] px-4 text-[13.5px] font-semibold text-white transition-colors hover:bg-[#262628] ${className}`}
       >
         <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
           <path d="M5 3 2 6l3 3M2 6h9M11 13l3-3-3-3M14 10H5" strokeLinecap="round" strokeLinejoin="round" />

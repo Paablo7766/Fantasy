@@ -67,6 +67,17 @@ export function ringColor(share: number | null | undefined): string {
   return TONE.red;
 }
 
+/**
+ * Texto del motor listo para la interfaz: sin emojis y sin frases enteras en
+ * mayúsculas («LIBRE DE RIVALES» → «Libre de rivales»).
+ */
+export function cleanText(value: string | null | undefined): string {
+  if (!value) return "";
+  let text = value.replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu, "").replace(/\s{2,}/g, " ").trim();
+  text = text.replace(/^([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ ]{3,}[A-ZÁÉÍÓÚÑÜ])(?=[\s:(]|$)/u, (word) => word.charAt(0) + word.slice(1).toLowerCase());
+  return text;
+}
+
 export function lastName(name: string): string {
   const parts = name.trim().split(/\s+/);
   return parts.length > 1 && parts.at(-1)!.length > 2 ? parts.at(-1)! : name;

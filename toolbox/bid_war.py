@@ -303,7 +303,7 @@ def overbid_risk(
                 "count": len(able),
                 "reason": "hueco_y_caja",
                 "team_ids": team_ids,
-                "etiqueta": f"🔴 GUERRA SEGURA ({nombres} {verbo} cubrir este puesto sí o sí)",
+                "etiqueta": f"Habrá guerra de pujas: {nombres} {verbo} cubrir este puesto",
             }
         return {
             **base,
@@ -311,7 +311,7 @@ def overbid_risk(
             "count": len(able),
             "reason": "caja_y_hueco",
             "team_ids": team_ids,
-            "etiqueta": f"🟠 RIVAL JUSTO ({', '.join(base['rivales_justo'])} {'van' if len(justo) > 1 else 'va'} al mínimo en este puesto)",
+            "etiqueta": f"Competencia: {', '.join(base['rivales_justo'])} {'van' if len(justo) > 1 else 'va'} justo en este puesto",
         }
     if unknown_cash:
         return {**base, "status": "unknown", "count": None, "reason": "caja_desconocida"}
@@ -320,9 +320,9 @@ def overbid_risk(
         "status": "low",
         "count": 0,
         "reason": "nadie_cubre",
-        "etiqueta": "🟢 LIBRE DE RIVALES (nadie cojea en este puesto)"
+        "etiqueta": "Sin competencia: ningún rival necesita este puesto"
         if not sin_caja
-        else "🟢 LIBRE DE RIVALES (quien cojea aquí no tiene caja)",
+        else "Sin competencia: quien lo necesita no tiene caja",
     }
 
 

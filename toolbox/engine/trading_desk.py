@@ -261,7 +261,7 @@ def alertas_escudo_francotirador(
                     "tipo": "escudo",
                     "tono": "rojo",
                     "mensaje": (
-                        f"🛡️ ALERTA: {rival_nombre} necesita un {posicion} y tu {nombre} está a tiro de cláusula"
+                        f"{rival_nombre} necesita un {posicion} y la cláusula de {nombre} está a su alcance"
                     ),
                     "player_id": titular.get("player_id"),
                     "nombre": nombre,
@@ -326,8 +326,8 @@ def alertas_escudo_francotirador(
                 "tipo": "francotirador",
                 "tono": "verde",
                 "mensaje": (
-                    f"🎯 OPORTUNIDAD: {nombre} de {owner} está subiendo de precio y su cláusula es baja. "
-                    "Clausúlalo para Trading antes del viernes"
+                    f"{nombre} ({owner}) sube de precio y tiene la cláusula baja. "
+                    "Clausúlalo antes del viernes para revenderlo"
                 ),
                 "player_id": player_id or None,
                 "nombre": nombre,

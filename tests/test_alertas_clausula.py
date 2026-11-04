@@ -19,7 +19,7 @@ class EscudoFrancotiradorTest(unittest.TestCase):
         self.assertEqual(alertas[0]["tono"], "rojo")
         self.assertEqual(
             alertas[0]["mensaje"],
-            "🛡️ ALERTA: Sausor10 necesita un DEL y tu Nico está a tiro de cláusula",
+            "Sausor10 necesita un DEL y la cláusula de Nico está a su alcance",
         )
 
     def test_escudo_no_salta_si_la_clausula_esta_alta_o_el_rival_no_llega(self) -> None:
@@ -73,7 +73,7 @@ class EscudoFrancotiradorTest(unittest.TestCase):
         self.assertEqual(alertas[0]["tono"], "verde")
         self.assertIn("Gol", alertas[0]["mensaje"])
         self.assertIn("gerardo_vp", alertas[0]["mensaje"])
-        self.assertTrue(alertas[0]["mensaje"].startswith("🎯 OPORTUNIDAD:"))
+        self.assertTrue(alertas[0]["mensaje"].endswith("Clausúlalo antes del viernes para revenderlo"))
 
     def test_el_rojo_solo_recupera_el_tope_en_el_puesto_vacio(self) -> None:
         limites = bid_limit_por_puesto(

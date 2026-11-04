@@ -94,7 +94,7 @@ class GolpeAlRivalTests(unittest.TestCase):
         self.assertIsNotNone(golpe)
         self.assertTrue(golpe["sin_recambio"])
         self.assertEqual(golpe["impacto_pts"], 4.0)
-        self.assertIn("GOLPE AL RIVAL", golpe["mensaje"])
+        self.assertIn("Golpe al rival", golpe["mensaje"])
 
     def test_activo_si_queda_con_menos_de_once(self) -> None:
         # Tiene recambio de portero, pero solo 10 sanos tras quitarle al titular.
@@ -164,7 +164,7 @@ class GolpeAlRivalTests(unittest.TestCase):
         self.assertEqual(fila["veredicto_codigo"], "GOLPE_RIVAL")
         self.assertTrue(fila["bono_rosco_rival"]["activo"])
         self.assertGreater(fila["prioridad_estrategica"], fila["mejora_once"])
-        self.assertIn("GOLPE AL RIVAL", fila["motivo_detallado"])
+        self.assertIn("Golpe al rival", fila["motivo_detallado"])
         self.assertEqual(informe["resumen"]["golpes_al_rival"], 1)
 
 

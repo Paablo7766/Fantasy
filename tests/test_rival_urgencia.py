@@ -62,7 +62,7 @@ class OverbidRiskTest(unittest.TestCase):
         risk = overbid_risk("POR", 2_000_000, rivals)
         self.assertEqual(risk["status"], "guerra")
         self.assertIn("PABS FC", risk["etiqueta"])
-        self.assertTrue(risk["etiqueta"].startswith("🔴 GUERRA SEGURA"))
+        self.assertTrue(risk["etiqueta"].startswith("Habrá guerra de pujas"))
 
     def test_justo_es_high(self) -> None:
         rivals = [{"team_id": "s", "manager_name": "Sausor10", "cash_eur": 50_000_000, "urgencia": {"POR": URGENCIA_JUSTO}}]
@@ -82,12 +82,12 @@ class OverbidRiskTest(unittest.TestCase):
         risk = overbid_risk("POR", 2_000_000, rivals)
         self.assertEqual(risk["status"], "low")
         self.assertEqual(risk["rivales_sin_caja"], ["gerardo_vp"])
-        self.assertTrue(risk["etiqueta"].startswith("🟢 LIBRE DE RIVALES"))
+        self.assertTrue(risk["etiqueta"].startswith("Sin competencia"))
 
     def test_libre_si_nadie_cojea(self) -> None:
         rivals = [{"team_id": "a", "cash_eur": 50_000_000, "urgencia": {}}]
         risk = overbid_risk("DEF", 2_000_000, rivals)
-        self.assertEqual(risk["etiqueta"], "🟢 LIBRE DE RIVALES (nadie cojea en este puesto)")
+        self.assertEqual(risk["etiqueta"], "Sin competencia: ningún rival necesita este puesto")
 
     def test_compat_thin_positions_sin_urgencia(self) -> None:
         risk = overbid_risk("DEL", 1_000_000, [{"team_id": "r", "cash_eur": 2_000_000, "thin_positions": ["DEL"]}])

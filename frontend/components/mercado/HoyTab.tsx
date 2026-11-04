@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { gradeColor } from "@/components/mercado/MarketGrade";
 import { PlayerCard } from "@/components/mercado/PlayerCard";
 import { ACTION_VERDICT, auctionLabel, budgetLine, difficultyLabel, historyLine } from "@/components/mercado/shared";
-import { Disclosure, Empty, Face, HeroStat, SectionHead, Skeleton, TONE, compact, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
+import { Disclosure, Empty, Face, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { errorMessage, playerName } from "@/lib/core/format";
 import { executableBid, marketAction } from "@/lib/mercado/marketAction";
@@ -23,6 +23,27 @@ const PLAN_TONE: Record<string, string> = {
   Recomendable: TONE.blue,
   Opcional: TONE.gray,
 };
+
+const TIPO_LABEL: Record<string, string> = {
+  PUJA: "Pujar",
+  CLAUSULAZO: "Clausular",
+  VENDE: "Vender",
+  "VENDER HOY": "Vender hoy",
+  ESCAPARATE: "Poner en venta",
+  BUSCA: "Buscar",
+};
+
+const MOMENTO_LABEL: Record<string, string> = {
+  hoy: "Hoy",
+  radar: "Vigilar",
+  condicional: "Si se da",
+};
+
+/** «MANTENER» → «Mantener»: las acciones llegan en mayúsculas del motor. */
+function sentence(value: string | null | undefined): string {
+  const text = cleanText(value);
+  return text && text === text.toUpperCase() ? text.charAt(0) + text.slice(1).toLowerCase() : text;
+}
 
 const TIPO_TONE: Record<string, string> = {
   PUJA: TONE.green,
@@ -64,7 +85,7 @@ function Tile({ player, photo, index, onOpen }: { player: MarketDecision; photo:
             </span>
           ) : null}
           {player.offer_source === "rival" ? (
-            <span className="absolute left-2.5 top-2.5 rounded-full bg-[#F59E0B]/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#F59E0B]">
+            <span className="absolute left-2.5 top-2.5 rounded-full bg-[#F59E0B]/15 px-2 py-0.5 text-[10.5px] font-semibold text-[#F59E0B]">
               Rival
             </span>
           ) : null}
@@ -81,13 +102,13 @@ function Tile({ player, photo, index, onOpen }: { player: MarketDecision; photo:
         </span>
         <span className="mt-auto flex items-end justify-between gap-2 border-t border-white/[0.06] px-3 py-2.5">
           <span className="min-w-0">
-            <span className="block text-[10.5px] text-white/40">{typeof bid === "number" ? (heat ? "Tu tope" : "Puja") : "Valor"}</span>
-            <span className="block truncate text-[15px] font-semibold tabular-nums text-white">{money(typeof bid === "number" ? bid : player.market_value ?? player.sale_price)}</span>
+            <span className="block text-[10.5px] text-white/40">{typeof bid === "number" && action === "PUJAR" ? "Puja" : "Valor"}</span>
+            <span className="block truncate text-[15px] font-semibold tabular-nums text-white">{money(typeof bid === "number" && action === "PUJAR" ? bid : player.market_value ?? player.sale_price)}</span>
           </span>
           <span className="shrink-0 text-right">
             <span className="block text-[10.5px] tabular-nums text-white/40">{typeof xp === "number" ? `${decimal(xp)} pts` : ""}</span>
             <span className="block text-[12.5px] font-semibold tabular-nums" style={{ color: toneOf(trend) }}>
-              {trend === null ? "—" : `${trend >= 0 ? "↗" : "↘"} ${signedPct(trend)}`}
+              {trend === null ? "—" : signedPct(trend)}
             </span>
           </span>
         </span>
@@ -104,27 +125,28 @@ function PlanRow({ accion }: { accion: PlanFichajeAccion }) {
   const tipo = accion.tipo || "PUJA";
   const color = TIPO_TONE[tipo] || TONE.gray;
   const hoy = accion.momento === "hoy";
+  const detail = [
+    accion.posicion,
+    typeof accion.jornada === "number" ? `${decimal(accion.jornada)} pts` : "",
+    typeof accion.mejora_neta === "number" && accion.mejora_neta !== 0 ? `${accion.mejora_neta > 0 ? "+" : ""}${decimal(accion.mejora_neta)} pts a tu once` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <li className="flex items-center gap-3 border-b border-white/[0.06] py-2.5 last:border-b-0">
-      <span className="w-[5.5rem] shrink-0 text-[11px] font-semibold uppercase tracking-wide" style={{ color }}>
-        {tipo}
+    <li className="flex items-center gap-3 py-2.5">
+      <span className="w-[5.75rem] shrink-0">
+        <span className="inline-flex rounded-full px-2.5 py-1 text-[11.5px] font-semibold" style={{ color, background: `${color}1c` }}>
+          {TIPO_LABEL[tipo] || sentence(tipo)}
+        </span>
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14.5px] font-medium text-white">{accion.nombre || "Jugador"}</span>
-        <span className="block truncate text-[12px] tabular-nums text-white/45">
-          {[
-            accion.posicion,
-            typeof accion.jornada === "number" ? `${decimal(accion.jornada)} pts` : "",
-            typeof accion.mejora_neta === "number" ? `${accion.mejora_neta > 0 ? "+" : ""}${decimal(accion.mejora_neta)} xP netos` : "",
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
+        {detail ? <span className="block truncate text-[12px] tabular-nums text-white/45">{detail}</span> : null}
       </span>
       <span className="shrink-0 text-right">
         {typeof accion.euros === "number" ? <span className="block text-[14.5px] font-semibold tabular-nums text-white">{money(accion.euros)}</span> : null}
-        <span className={`block text-[11px] font-semibold uppercase tracking-wide ${hoy ? "text-[#FFC08A]" : "text-white/35"}`}>
-          {hoy ? "hoy" : accion.momento === "radar" ? "radar" : accion.momento === "condicional" ? "condicional" : "luego"}
+        <span className={`block text-[11.5px] font-medium ${hoy ? "text-[#FFC08A]" : "text-white/40"}`}>
+          {MOMENTO_LABEL[accion.momento || ""] || "Más adelante"}
         </span>
       </span>
     </li>
@@ -132,12 +154,28 @@ function PlanRow({ accion }: { accion: PlanFichajeAccion }) {
 }
 
 function AlertaRow({ alerta }: { alerta: AlertaClausula }) {
-  const tone = alerta.tono === "verde" ? TONE.green : TONE.red;
+  const defend = alerta.tono !== "verde";
+  const tone = defend ? TONE.red : TONE.green;
   return (
-    <li className="border-b border-white/[0.06] py-2.5 last:border-b-0">
-      <p className="text-[13.5px] leading-snug" style={{ color: tone }}>
-        {alerta.mensaje}
-      </p>
+    <li className="flex items-start gap-3 py-2.5">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full" style={{ color: tone, background: `${tone}1c` }} aria-hidden="true">
+        {defend ? (
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.7">
+            <path d="M10 2.5 4 5v4.5c0 3.6 2.5 6.6 6 8 3.5-1.4 6-4.4 6-8V5l-6-2.5Z" strokeLinejoin="round" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.7">
+            <circle cx="10" cy="10" r="6.5" />
+            <circle cx="10" cy="10" r="2.5" />
+          </svg>
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-semibold" style={{ color: tone }}>
+          {defend ? `Protege a ${alerta.nombre || "tu jugador"}` : `Oportunidad: ${alerta.nombre || "jugador"}`}
+        </span>
+        <span className="mt-0.5 block text-[13px] leading-snug text-white/65">{cleanText(alerta.mensaje)}</span>
+      </span>
     </li>
   );
 }
@@ -149,16 +187,16 @@ function AlertasClausulaBlock({ plan }: { plan: PlanFichajes | null | undefined 
   const verdes = alertas.length - rojas;
   return (
     <Disclosure
-      title="Escudo y francotirador"
+      title="Cláusulas"
       meta={
         <span>
-          {rojas ? <span style={{ color: TONE.red }}>{rojas} en riesgo</span> : null}
+          {rojas ? <span style={{ color: TONE.red }}>{rojas} {rojas === 1 ? "riesgo" : "riesgos"}</span> : null}
           {rojas && verdes ? <span className="text-white/35"> · </span> : null}
-          {verdes ? <span style={{ color: TONE.green }}>{verdes} a tiro</span> : null}
+          {verdes ? <span style={{ color: TONE.green }}>{verdes} {verdes === 1 ? "oportunidad" : "oportunidades"}</span> : null}
         </span>
       }
     >
-      <ul>
+      <ul className="divide-y divide-white/[0.05]">
         {alertas.map((alerta, index) => (
           <AlertaRow key={`${alerta.tipo}-${alerta.player_id || alerta.nombre}-${index}`} alerta={alerta} />
         ))}
@@ -175,23 +213,23 @@ function PlanBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
   return (
     <Disclosure title="Tu plan de fichajes" meta={<span style={{ color: PLAN_TONE[veredicto] || TONE.gray }}>{veredicto}</span>}>
       <div className="grid grid-cols-3 gap-2">
-        <HeroStat value={typeof gain === "number" && gain > 0 ? `+${decimal(gain)}` : "0"} label="pts en el once" tone={typeof gain === "number" && gain > 0 ? TONE.green : undefined} />
-        <HeroStat value={`${plan?.nota ?? 0}/10`} label="nota del plan" tone="#FFC08A" />
-        <HeroStat value={compact(plan?.saldo_al_final)} label="saldo al final" tone={toneOf(plan?.saldo_al_final)} />
+        <HeroStat value={typeof gain === "number" && gain > 0 ? `+${decimal(gain)}` : "0"} label="Al once" tone={typeof gain === "number" && gain > 0 ? TONE.green : undefined} />
+        <HeroStat value={`${plan?.nota ?? 0}/10`} label="Nota del plan" tone="#FFC08A" />
+        <HeroStat value={compact(plan?.saldo_al_final)} label="Caja al final" tone={toneOf(plan?.saldo_al_final)} />
       </div>
       {acciones.length ? (
-        <ul className="mt-3">
+        <ul className="mt-2 divide-y divide-white/[0.05]">
           {acciones.map((accion, index) => (
             <PlanRow key={`${accion.tipo}-${accion.player_id || accion.nombre}-${index}`} accion={accion} />
           ))}
         </ul>
       ) : (
-        <p className="mt-3 text-[13.5px] text-white/50">Hoy el mercado no mejora el once. Ninguna operación merece la caja.</p>
+        <p className="mt-3 text-[13.5px] text-white/50">Hoy nada del mercado mejora tu once lo bastante para gastar caja.</p>
       )}
       {radar.length ? (
         <div className="mt-3 border-t border-white/[0.06] pt-3">
-          <p className="text-[12px] font-medium text-white/45">En el radar · no pujar hoy</p>
-          <ul className="mt-1">
+          <p className="text-[12px] font-medium text-white/45">Para vigilar, sin pujar hoy</p>
+          <ul className="mt-1 divide-y divide-white/[0.05]">
             {radar.map((accion, index) => (
               <PlanRow key={`radar-${accion.player_id || accion.nombre}-${index}`} accion={accion} />
             ))}
@@ -208,11 +246,11 @@ function TradingBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
   if (!trading?.activo || !operaciones.length) return null;
   return (
     <Disclosure
-      title="Operaciones especulativas"
+      title="Compra para revender"
       meta={<span style={{ color: TONE.green }}>{`+${compact(trading.ganancia_esperada)} esperados`}</span>}
     >
       <p className="text-[12.5px] text-white/50">
-        No tocan tu once. Compra hoy y vende el viernes por la mañana, antes del cierre.
+        No tocan tu once: compras hoy y vendes el viernes por la mañana, antes del cierre.
         {typeof trading.usa_deuda === "number" && trading.usa_deuda > 0
           ? ` Usan ${compact(trading.usa_deuda)} de deuda: el viernes tienes que acabar en positivo.`
           : ""}
@@ -262,8 +300,8 @@ function LiquidacionBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
   const fase = FASE_TEXTO[liq.fase] ?? { title: liq.fase, text: "", color: TONE.gray };
   return (
     <Disclosure
-      title={`Salida del #12 en adelante · ${fase.title}`}
-      meta={<span style={{ color: fase.color }}>{`${sobrantes.length} fuera del once`}</span>}
+      title="Jugadores que sobran"
+      meta={<span style={{ color: fase.color }}>{`${sobrantes.length} · ${fase.title}`}</span>}
     >
       <p className="text-[12.5px] text-white/50">
         {fase.text}
@@ -284,11 +322,11 @@ function LiquidacionBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
               <span className="block truncate text-[14.5px] font-medium text-white">
                 {[item.nombre || "Jugador", item.position].filter(Boolean).join(" · ")}
               </span>
-              <span className="block text-[12px] text-white/45">{item.etiqueta || item.motivo}</span>
+              <span className="block text-[12px] text-white/45">{cleanText(item.etiqueta || item.motivo)}</span>
             </span>
             <span className="shrink-0 text-right">
-              <span className="block text-[11px] font-semibold uppercase tracking-wider" style={{ color: fase.color }}>
-                {item.accion}
+              <span className="block text-[12px] font-semibold" style={{ color: fase.color }}>
+                {sentence(item.accion)}
               </span>
               {typeof item.oferta_eur === "number" ? (
                 <span className="block text-[13px] tabular-nums text-white">{`Oferta ${money(item.oferta_eur)}`}</span>
@@ -304,27 +342,37 @@ function LiquidacionBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
 }
 
 function FixtureList({ clubs }: { clubs: JornadaClub[] }) {
-  if (!clubs.length) return <p className="text-[13.5px] text-white/50">Estos fichajes no traen calendario contrastado.</p>;
   return (
-    <ul>
+    <ul className="divide-y divide-white/[0.05]">
       {clubs.map((club) => {
         const share = typeof club.recommendation_pct === "number" ? club.recommendation_pct : null;
         const color = share === null ? TONE.gray : share >= 72 ? TONE.green : share <= 38 ? TONE.red : TONE.amber;
-        const home = club.is_home === true ? "casa" : club.is_home === false ? "fuera" : "";
+        const diff = difficultyLabel(club.difficulty);
         return (
-          <li key={club.club || club.opponent || "club"} className="flex items-center gap-3 border-b border-white/[0.06] py-2.5 last:border-b-0">
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[14.5px] font-medium text-white">{club.club}</span>
-              <span className="block truncate text-[12px] text-white/45">
-                {[home, `vs ${club.opponent || "s/d"}`, club.predicted_score, difficultyLabel(club.difficulty)].filter(Boolean).join(" · ")}
+          <li key={club.club || club.opponent || "club"} className="py-3">
+            <div className="flex items-center gap-3">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14.5px] font-medium text-white">{club.club}</span>
+                <span className="block truncate text-[12px] text-white/45">
+                  {club.is_home === true ? "En casa" : club.is_home === false ? "Fuera" : "Partido"} contra {club.opponent || "—"}
+                  {club.predicted_score ? ` · ${club.predicted_score}` : ""}
+                  {diff ? ` · ${diff.charAt(0).toUpperCase()}${diff.slice(1)}` : ""}
+                </span>
               </span>
-            </span>
-            <span className="shrink-0 text-right">
-              <span className="block text-[15px] font-semibold tabular-nums" style={{ color }}>
-                {share === null ? "s/d" : `${Math.round(share)}%`}
+              <span className="shrink-0 text-right">
+                <span className="block text-[15px] font-semibold tabular-nums" style={{ color }}>
+                  {share === null ? "—" : `${Math.round(share)}%`}
+                </span>
+                <span className="block text-[11px] text-white/40">
+                  {club.market_count} en venta
+                </span>
               </span>
-              <span className="block text-[11.5px] text-white/40">{club.market_count} en mercado</span>
-            </span>
+            </div>
+            {share !== null ? (
+              <span className="mt-2 block h-1 overflow-hidden rounded-full bg-white/[0.06]">
+                <span className="block h-full rounded-full" style={{ width: `${Math.max(4, Math.min(100, share))}%`, background: color }} />
+              </span>
+            ) : null}
           </li>
         );
       })}
@@ -496,9 +544,12 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
       <TradingBlock plan={trends.plan_fichajes} />
       <LiquidacionBlock plan={trends.plan_fichajes} />
 
-      <Disclosure title="Calendario de estos fichajes" meta={`${board.length} equipos`}>
-        <FixtureList clubs={board} />
-      </Disclosure>
+      {board.length ? (
+        <Disclosure title="Calendario" meta={`${board.length} ${board.length === 1 ? "equipo" : "equipos"}`}>
+          <p className="mb-1 text-[12.5px] text-white/45">Próximo partido de cada equipo con jugadores en venta. El porcentaje indica lo favorable que es el partido para sus jugadores (victoria, empate y diferencia de goles esperada).</p>
+          <FixtureList clubs={board} />
+        </Disclosure>
+      ) : null}
 
       <p className="px-1 text-[12px] leading-relaxed text-white/40">{historyLine(summary)}</p>
 

@@ -314,7 +314,7 @@ class IntegracionTests(unittest.TestCase):
         radar = {fila["player_id"]: fila for fila in informe["radar_anti_robo"]}
         self.assertEqual(radar["DEL-0"]["estado"], "RIESGO_ALTO")
         self.assertEqual(radar["DEL-0"]["badge"], "rojo")
-        self.assertIn("1 rivales tienen caja", radar["DEL-0"]["consejo"])
+        self.assertIn("1 rival tiene caja", radar["DEL-0"]["consejo"])
         self.assertEqual(radar["DEL-1"]["estado"], "SOBREPROTEGIDO")
         self.assertEqual(radar["DEL-1"]["badge"], "verde")
 
@@ -339,7 +339,7 @@ class RadarAntiRoboTests(unittest.TestCase):
         self.assertEqual(len(filas), 1)
         self.assertEqual(filas[0]["estado"], "RIESGO_ALTO")
         self.assertEqual(filas[0]["rivales_con_caja"], 1)
-        self.assertIn("¡Blíndalo hoy!", filas[0]["consejo"])
+        self.assertIn("Súbela hoy.", filas[0]["consejo"])
 
     def test_vulnerable_sin_caja_es_riesgo_cero(self) -> None:
         filas = auditar_clausulas_plantilla(
@@ -359,8 +359,8 @@ class RadarAntiRoboTests(unittest.TestCase):
         )
         self.assertEqual(filas[0]["estado"], "SOBREPROTEGIDO")
         self.assertEqual(filas[0]["badge"], "verde")
-        self.assertIn("ganas +3,0M", filas[0]["consejo"])
-        self.assertIn("No subir cláusula", filas[0]["consejo"])
+        self.assertIn("ganas 3,0M", filas[0]["consejo"])
+        self.assertIn("No hace falta subir la cláusula", filas[0]["consejo"])
 
     def test_escasez_si_lo_que_cobras_no_alcanza_para_reponerlo(self) -> None:
         # Cláusula 1,33× el valor: antes "sobreprotegido". Pero el sustituto cuesta 31 M.
