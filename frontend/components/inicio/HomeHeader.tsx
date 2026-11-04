@@ -5,6 +5,7 @@ import { money, signedMoney } from "@/components/ui/kit";
 import { points } from "@/lib/core/format";
 import { buildClockReport, countdownParts, eventTitle } from "@/lib/inicio/hoy";
 import { useNow } from "@/lib/core/useClock";
+import { RefreshChip } from "@/components/inicio/RefreshChip";
 import type { PlanPayload, SquadsPayload } from "@/lib/types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -172,7 +173,7 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
           <p className="ini-chip justify-self-center">
             <span className="truncate">{leagueName || "Tu cuenta"}</span>
           </p>
-          <span aria-hidden="true" />
+          <RefreshChip />
         </div>
 
         <div className="ini-hero__center">

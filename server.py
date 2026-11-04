@@ -3229,6 +3229,34 @@ def api_post_mortem(league: str | None = Query(default=None)) -> Any:
     return report
 
 
+@app.get("/api/laboratorio/modelo")
+@_read_only
+def api_model_report(league: str | None = Query(default=None)) -> Any:
+    """Fuentes, mercado frente a modelo, goleadores, histórico guardado y modo sombra.
+
+    Incluye ``text``: el mismo informe en texto plano para pegarlo en una conversación.
+    """
+    board = _board("modelo", league, tier="core")
+    if isinstance(board, JSONResponse):
+        return board
+    from toolbox.model_report import build_model_report
+
+    calibration: dict[str, Any] | None = None
+    try:
+        calibration = _calibration_for_client(_calibration_report(board))
+    except Exception:  # noqa: BLE001 — sin calibración el informe sigue
+        calibration = None
+    try:
+        report = build_model_report(board, calibration=calibration)
+    except Exception as exc:
+        return error_response("modelo", exc)
+    report["ok"] = True
+    report["schema_version"] = SCHEMA_VERSION
+    report["command"] = "modelo"
+    report.update(_photo_fields(board))
+    return report
+
+
 @app.get("/api/plan")
 @_read_only
 def api_plan(

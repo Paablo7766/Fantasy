@@ -1778,3 +1778,91 @@
 @media (prefers-reduced-motion: reduce) {
   .mk-card[open] { animation: none; }
 }
+
+/* Recarga discreta dentro del hero de Inicio (solo aquí). */
+.ini-refresh--quiet {
+  gap: 0.25rem;
+  padding: 2px 2px 2px 0.65rem;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.ini-refresh--quiet .ini-refresh__age {
+  cursor: pointer;
+  padding: 0.2rem 0.15rem;
+  border-radius: 9999px;
+  transition: color 160ms ease;
+}
+
+.ini-refresh--quiet .ini-refresh__age:hover {
+  color: #fff;
+}
+
+.ini-refresh--quiet .ini-refresh__btn {
+  width: 1.75rem;
+  height: 1.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.ini-refresh--quiet .ini-refresh__btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.ini-refresh--quiet .ini-refresh__btn:disabled {
+  opacity: 0.6;
+}
+
+.ini-refresh__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.5rem);
+  z-index: 30;
+  width: min(17rem, calc(100vw - 2.5rem));
+  border-radius: 1rem;
+  background: rgba(14, 16, 20, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.85rem;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  text-align: left;
+}
+
+.ini-refresh__item {
+  display: block;
+  width: 100%;
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+  text-align: left;
+  text-decoration: none;
+  transition: background 140ms ease;
+}
+
+.ini-refresh__item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.ini-refresh__item:disabled {
+  opacity: 0.5;
+}
+
+/* Móvil: sin fecha, liga a la izquierda y recarga a la derecha sin pisarse. */
+@media (max-width: 520px) {
+  .ini-hero__bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ini-hero__bar .ini-hero__date {
+    display: none;
+  }
+
+  .ini-hero__bar .ini-chip {
+    justify-self: start;
+    max-width: 100%;
+  }
+}

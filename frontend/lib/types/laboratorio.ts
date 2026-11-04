@@ -284,3 +284,85 @@ export type NetworkDiagnosticsPayload = ApiError & {
   errors?: NetworkErrorBucket[];
   notes?: string[];
 };
+
+// Informe del modelo (/api/laboratorio/modelo): fuentes, mercado frente a
+// modelo, goleadores, histórico guardado y modo sombra. ``text`` es el mismo
+// informe en texto plano para pegarlo en una conversación.
+export type ModelSourceRow = {
+  id: string;
+  label: string;
+  state: "ok" | "respaldo" | "fallo" | string;
+  count?: number | null;
+  source?: string | null;
+  detail?: string | null;
+};
+
+export type ModelMatchSide = {
+  club: string;
+  lambda_for?: number | null;
+  p_cs?: number | null;
+  predicted_score?: string | null;
+};
+
+export type ModelMatchRow = {
+  match_key: string;
+  kickoff?: string | null;
+  home?: ModelMatchSide | null;
+  away?: ModelMatchSide | null;
+  market_weight?: number | null;
+  market?: {
+    odds_1x2: [number, number, number];
+    p_home: number;
+    p_draw: number;
+    p_away: number;
+    lambda_home?: number | null;
+    lambda_away?: number | null;
+    captured_day?: string | null;
+    days_stored?: number | null;
+  } | null;
+};
+
+export type ModelScorerRow = {
+  player_id: string;
+  name: string;
+  club?: string | null;
+  position?: string | null;
+  mine: boolean;
+  price?: number | null;
+  market_p?: number | null;
+  own_p?: number | null;
+  gap?: number | null;
+  match_key: string;
+};
+
+export type ModelHistoryRow = {
+  jornada: string;
+  players: number;
+  evaluated: number;
+  mae?: number | null;
+  xi: number;
+  days_logged: number;
+};
+
+export type ModelShadowItem = {
+  id: string;
+  label: string;
+  state: string;
+  progress: number;
+  progress_text: string;
+  rule: string;
+};
+
+export type ModelReportPayload = ApiError & PhotoMeta & {
+  ok?: boolean;
+  generated_at?: string;
+  dashboard_at?: string | null;
+  league_id?: string | null;
+  jornada?: string | null;
+  sources?: ModelSourceRow[];
+  matches?: ModelMatchRow[];
+  scorers?: { rows: ModelScorerRow[]; linked: number; listed: number };
+  history?: { jornadas: ModelHistoryRow[]; odds_days: number; odds_matches: number; scorer_rows: number };
+  shadow?: ModelShadowItem[];
+  text?: string;
+};

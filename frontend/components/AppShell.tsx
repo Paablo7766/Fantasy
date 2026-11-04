@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { useNow } from "@/lib/core/useClock";
 
@@ -122,8 +122,6 @@ function DockLink({ item, active, href }: { item: NavItem; active: boolean; href
   );
 }
 
-const HOUR = 3600;
-
 const DATE_FMT = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Madrid" });
 
 /** Fecha de hoy junto al título; vacía hasta montar para no romper la hidratación. */
@@ -133,117 +131,12 @@ function TodayStamp() {
   return <span className="topbar-date truncate max-sm:hidden">{DATE_FMT.format(now)}</span>;
 }
 
-/**
- * Frescura de los datos y botón Actualizar en una sola pastilla. El punto pasa
- * de verde (< 1 h) a ámbar (< 6 h) y a rojo con pulso cuando conviene descargar.
- */
-function Freshness({
-  ageSeconds,
-  age,
-  refreshing,
-  busy,
-  pct,
-  error,
-  disabled,
-  onRefresh,
-  onOpen,
-  open,
-}: {
-  ageSeconds: number | null;
-  age: string;
-  refreshing: boolean;
-  busy: boolean;
-  pct: number;
-  error: boolean;
-  disabled: boolean;
-  onRefresh: () => void;
-  onOpen: () => void;
-  open: boolean;
-}) {
-  const [justDone, setJustDone] = useState(false);
-  const [wasRefreshing, setWasRefreshing] = useState(refreshing);
-  if (wasRefreshing !== refreshing) {
-    setWasRefreshing(refreshing);
-    if (!refreshing && !error) setJustDone(true);
-  }
-  useEffect(() => {
-    if (!justDone) return;
-    const id = window.setTimeout(() => setJustDone(false), 2400);
-    return () => window.clearTimeout(id);
-  }, [justDone]);
-
-  const old = ageSeconds === null || ageSeconds >= 6 * HOUR;
-  const state = refreshing || busy ? "busy" : error ? "error" : justDone ? "done" : old ? "old" : ageSeconds >= HOUR ? "aging" : "fresh";
-  const color = {
-    busy: "#38bdf8",
-    error: "#ff7d66",
-    done: "#34d399",
-    old: "#ff7d66",
-    aging: "#f5b544",
-    fresh: "#34d399",
-  }[state];
-  const label = refreshing
-    ? `Actualizando · ${pct}%`
-    : busy
-      ? `Cargando · ${pct}%`
-      : error
-        ? "Falló la descarga"
-        : justDone
-          ? "Actualizado ahora"
-          : age
-            ? (
-                <>
-                  <span className="max-[420px]:hidden">Actualizado </span>
-                  {age}
-                </>
-              )
-            : "Sin datos";
-
-  return (
-    <div className={`fresh fresh--${state}`} data-ui="freshness" data-state={state}>
-      <button type="button" className="fresh__label" onClick={onOpen} aria-haspopup="dialog" aria-expanded={open} title="Ver detalle de los datos">
-        <span className="fresh__dot" style={{ color }} aria-hidden="true" />
-        <span aria-live="polite">{label}</span>
-      </button>
-      <kbd className="fresh__kbd max-md:hidden" title="Pulsa R para actualizar">R</kbd>
-      <button
-        type="button"
-        className="fresh__btn"
-        onClick={onRefresh}
-        disabled={disabled}
-        aria-label={error ? "Reintentar la descarga" : "Actualizar datos"}
-        aria-keyshortcuts="R"
-        title="Descarga una foto nueva de LALIGA y los scrapers (R)"
-        data-ui="refresh"
-        data-progress={refreshing || busy ? "true" : undefined}
-        style={{ "--p": `${Math.max(0, Math.min(100, pct))}%`, "--c": color } as CSSProperties}
-      >
-        {justDone && !refreshing ? (
-          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-[#34d399]" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-            <path d="M3.4 8.4 6.3 11.3 12.6 5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        ) : (
-          <svg viewBox="0 0 20 20" className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.1" strokeLinecap="round" />
-            <path d="M16.4 3.6v3.2h-3.2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
-      </button>
-    </div>
-  );
-}
-
 export function AppShell({ children }: { children: ReactNode }) {
   const {
-    trends,
     leagueName,
     busy,
     refreshing,
-    refreshError,
-    photoAge,
-    photoAgeSeconds,
     photoLine,
-    progress,
     refreshLine,
     refreshPct,
     connecting,
@@ -254,7 +147,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   } = useDashboard();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [toolsOpen, setToolsOpen] = useState(false);
   const section = sectionFromPath(pathname);
   const query = searchParams.toString();
   const withQuery = (href: string) => (query ? `${href}?${query}` : href);
@@ -284,24 +176,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [canRefresh, refresh]);
 
-  // En Inicio no hay barra superior: la recarga vive en la barra lateral
-  // (escritorio) y en un botón flotante sobre el dock (móvil).
+  // La recarga vive solo en Inicio, dentro del hero (RefreshChip). Aquí queda
+  // el atajo «R» y la barra de progreso mientras descarga.
   const dockIndex = SECTIONS.findIndex((item) => isActive(pathname, item.href));
   const home = pathname === "/" || ["/equipo", "/mercado", "/clausulas", "/liga"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
-  const freshness = (
-    <Freshness
-      ageSeconds={photoAgeSeconds}
-      age={photoAge}
-      refreshing={refreshing}
-      busy={busy}
-      pct={refreshing ? refreshPct : progress.pct}
-      error={Boolean(refreshError)}
-      disabled={connecting || refreshing}
-      onRefresh={() => void refresh()}
-      onOpen={() => setToolsOpen(true)}
-      open={toolsOpen}
-    />
-  );
 
   return (
     <div className="app-shell">
@@ -342,7 +220,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mt-4 border-t border-[color:var(--sidebar-line)] px-2 pt-4">
           <p className="truncate text-sm font-medium text-white">{leagueName}</p>
           <p className="mt-1 font-mono text-[11px] text-[color:var(--sidebar-muted)]">{photoLine}</p>
-          {home ? <div className="side-fresh mt-3">{freshness}</div> : null}
           <Link
             href={labHref()}
             className={`mt-3 block text-sm no-underline ${pathname.startsWith("/laboratorio") ? "text-white" : "text-[color:var(--sidebar-muted)] hover:text-white"}`}
@@ -375,7 +252,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <p className="topbar-hint truncate">{section.hint}</p>
               </div>
             </div>
-            {freshness}
           </div>
           {refreshing ? (
             <div className="absolute inset-x-0 bottom-0" role="status" aria-live="polite" aria-label={refreshLine}>
@@ -390,60 +266,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           ) : null}
         </header>
-        {toolsOpen ? (
-          <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/55 px-4 pt-16" onClick={() => setToolsOpen(false)}>
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label="Foto y conexión"
-              className="card w-full max-w-sm p-4"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8B9EB0]">Foto</p>
-                  <p className="mt-1 font-mono text-xs text-[#F0F6FC]">{photoLine}</p>
-                  {refreshError ? <p className="mt-1 text-xs text-[#FC734D]">{refreshError}</p> : null}
-                  {trends?.partial ? <p className="mt-1 text-xs text-[#FC734D]">Lectura parcial</p> : null}
-                  <p className="mt-3 text-xs leading-5 text-[#8B9EB0]">
-                    Solo lectura. Las horas de cláusula salen de la API en Europe/Madrid. Actualiza antes de decidir con dinero real.
-                  </p>
-                </div>
-                <button type="button" className="btn btn-secondary !px-2.5 !py-1 text-xs" onClick={() => setToolsOpen(false)}>
-                  Cerrar
-                </button>
-              </div>
-              <div className="flex flex-col items-start gap-2">
-                <Link
-                  href={labHref("datos")}
-                  onClick={() => setToolsOpen(false)}
-                  className="btn btn-secondary w-full no-underline"
-                  title="Frescura de los datos, consumo de API, calibración y señales"
-                >
-                  Laboratorio · datos y API
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => void connectAccount()}
-                  disabled={connecting || busy}
-                  className="btn btn-secondary w-full"
-                  title="Abre Chrome para elegir la cuenta de Google de LALIGA Fantasy"
-                >
-                  {connecting ? "Elige tu cuenta en Chrome…" : "Conectar cuenta"}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
         <div className="app-page min-w-0 app-page--dock">
           {/* Clave por ruta: cada sección entra con un único fundido suave. */}
           <div key={pathname} className="page-in">
             {children}
           </div>
         </div>
-
-        {home ? <div className="fab-fresh lg:hidden">{freshness}</div> : null}
 
         <nav
           className="dock lg:hidden"

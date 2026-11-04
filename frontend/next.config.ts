@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // NEXT_DIST_DIR permite un segundo ``next dev`` en la misma carpeta sin chocar con el bloqueo de .next.
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   async redirects() {
     return [
       { source: "/once", destination: "/equipo", permanent: false },
@@ -21,7 +23,8 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://127.0.0.1:8000/api/:path*",
+        // BACKEND_ORIGIN permite un segundo dev contra otro uvicorn (pruebas en paralelo).
+        destination: `${process.env.BACKEND_ORIGIN || "http://127.0.0.1:8000"}/api/:path*`,
       },
     ];
   },
