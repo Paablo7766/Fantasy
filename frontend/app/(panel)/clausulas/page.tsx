@@ -10,8 +10,8 @@ import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { NeedsPayload, OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
 const TABS: { id: ClausulasView; label: string }[] = [
-  { id: "mias", label: "Mías" },
-  { id: "clausulazos", label: "Clausulazos" },
+  { id: "mias", label: "Defender" },
+  { id: "clausulazos", label: "Atacar" },
 ];
 
 function asTab(value: string | null): ClausulasView {
@@ -46,7 +46,12 @@ function ClausulasContent() {
           <h1 className="text-[1.6rem] font-semibold leading-tight tracking-tight text-white">Cláusulas</h1>
           <ComparadorLauncher />
         </div>
-        <div className="desk-switch" role="tablist" aria-label="Secciones de cláusulas">
+        <div className="desk-switch eq-tabs" role="tablist" aria-label="Secciones de cláusulas">
+          <span
+            className="eq-tabs__ind"
+            style={{ transform: `translateX(${TABS.findIndex((item) => item.id === tab) * 100}%)` }}
+            aria-hidden="true"
+          />
           {TABS.map((item) => (
             <button
               key={item.id}
@@ -55,7 +60,7 @@ function ClausulasContent() {
               role="tab"
               aria-selected={tab === item.id}
               aria-controls={`cl-panel-${item.id}`}
-              className={tab === item.id ? "desk-switch__btn desk-switch__btn--on" : "desk-switch__btn"}
+              className="desk-switch__btn eq-tabs__btn"
               onClick={() => select(item.id)}
             >
               {item.label}
