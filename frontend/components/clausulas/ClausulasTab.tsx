@@ -83,11 +83,45 @@ type ClauseBrowseItem = {
   board?: ClauseBoardRow;
 };
 
+/** La foto de la liga ya trae a cada rival. No hace falta esperar a `/api/clause-board`. */
+function rowsFromSquads(squads: SquadsPayload | null): ClauseBoardRow[] {
+  const rows: ClauseBoardRow[] = [];
+  for (const squad of squads?.rivals || []) {
+    for (const player of squad.players || []) {
+      const clause = player.buyout_clause;
+      if (!player.player_id || player.is_shielded || !(typeof clause === "number" && clause > 0)) continue;
+      rows.push({
+        team_id: squad.team_id,
+        manager_name: squad.manager_name,
+        fantasy_team_name: squad.fantasy_team_name,
+        player_id: String(player.player_id),
+        name: player.name,
+        nickname: player.nickname,
+        position: player.position,
+        club: player.club,
+        image_url: player.image_url,
+        buyout_clause_eur: clause,
+        market_value: player.market_value,
+        average_points: player.average_points,
+        clause_multiple: player.clause_multiple,
+        is_shielded: false,
+        is_locked: player.clause_lock?.is_locked === true,
+        clause_lock: player.clause_lock,
+      });
+    }
+  }
+  return rows;
+}
+
 /**
  * Todas las cláusulas rivales que se pueden mirar, partidas en abiertas y candado.
  * Las recomendadas se quedan delante; el resto se ve igual aunque no mejore el once.
  */
-function browseClauses(board: ClauseBoardPayload | null, suggested: ClausulazoSugerido[]): {
+function browseClauses(
+  board: ClauseBoardPayload | null,
+  suggested: ClausulazoSugerido[],
+  squads: SquadsPayload | null,
+): {
   abiertas: ClauseBrowseItem[];
   candado: ClauseBrowseItem[];
 } {
@@ -95,7 +129,8 @@ function browseClauses(board: ClauseBoardPayload | null, suggested: ClausulazoSu
   const order = new Map(suggested.map((row, index) => [String(row.player_id), index]));
   const seen = new Set<string>();
   const items: ClauseBrowseItem[] = [];
-  for (const row of board?.ok === false ? [] : board?.rows || []) {
+  const source = board?.ok !== false && board?.rows?.length ? board.rows : rowsFromSquads(squads);
+  for (const row of source) {
     const id = row.player_id ? String(row.player_id) : "";
     if (!id || row.is_shielded || !(typeof row.buyout_clause_eur === "number" && row.buyout_clause_eur > 0)) continue;
     seen.add(id);
@@ -536,8 +571,8 @@ export function ClausulasTab({
 
   const advisor = plan?.asesor_clausulas || null;
   const catalog = useMemo(
-    () => browseClauses(boardPayload, advisor?.clausulazos || []),
-    [boardPayload, advisor],
+    () => browseClauses(boardPayload, advisor?.clausulazos || [], squads),
+    [boardPayload, advisor, squads],
   );
   const radarRows = useMemo(
     () => (advisor?.radar_anti_robo?.length ? advisor.radar_anti_robo : plan?.radar_anti_robo || []),
@@ -656,52 +691,45 @@ export function ClausulasTab({
                 Ninguna mejora tu once lo bastante para recomendarla. Aquí están todas, abiertas o con candado.
               </p>
             ) : null}
-            {abiertas.length || cerradas.length ? (
-              <>
-                <div className="desk-switch eq-tabs" role="tablist" aria-label="Estado de la cláusula">
-                  <span className="eq-tabs__ind" style={{ transform: `translateX(${estado === "abiertas" ? 0 : 100}%)` }} aria-hidden="true" />
-                  {(
-                    [
-                      { id: "abiertas", label: "Abiertas", count: abiertas.length },
-                      { id: "candado", label: "Con candado", count: cerradas.length },
-                    ] as const
-                  ).map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={estado === item.id}
-                      className="desk-switch__btn eq-tabs__btn"
-                      onClick={() => setEstado(item.id)}
-                    >
-                      {item.label}
-                      <span className="ml-1.5 tabular-nums opacity-50">{item.count}</span>
-                    </button>
-                  ))}
-                </div>
-                {shown.length ? (
-                  <ul key={estado} className="home-glass overflow-hidden">
-                    {shown.map((item, index) =>
-                      item.suggestion ? (
-                        <AttackCard key={item.key} row={item.suggestion} photos={photos} index={index} />
-                      ) : item.board ? (
-                        <PlainClauseRow key={item.key} row={item.board} photos={photos} index={index} />
-                      ) : null,
-                    )}
-                  </ul>
-                ) : (
-                  <p className="home-glass flex items-center gap-2.5 px-4 py-4 text-[14px] text-white/60">
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-white/30" aria-hidden="true" />
-                    {estado === "abiertas" ? "Ahora mismo ninguna cláusula está abierta." : "Ninguna cláusula tiene candado."}
-                  </p>
+            <div className="desk-switch eq-tabs" role="tablist" aria-label="Estado de la cláusula">
+              <span className="eq-tabs__ind" style={{ transform: `translateX(${estado === "abiertas" ? 0 : 100}%)` }} aria-hidden="true" />
+              {(
+                [
+                  { id: "abiertas", label: "Abiertas", count: abiertas.length },
+                  { id: "candado", label: "Con candado", count: cerradas.length },
+                ] as const
+              ).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={estado === item.id}
+                  className="desk-switch__btn eq-tabs__btn"
+                  onClick={() => setEstado(item.id)}
+                >
+                  {item.label}
+                  <span className="ml-1.5 tabular-nums opacity-50">{item.count}</span>
+                </button>
+              ))}
+            </div>
+            {shown.length ? (
+              <ul key={estado} className="home-glass overflow-hidden">
+                {shown.map((item, index) =>
+                  item.suggestion ? (
+                    <AttackCard key={item.key} row={item.suggestion} photos={photos} index={index} />
+                  ) : item.board ? (
+                    <PlainClauseRow key={item.key} row={item.board} photos={photos} index={index} />
+                  ) : null,
                 )}
-              </>
+              </ul>
             ) : (
               <p className="home-glass flex items-center gap-2.5 px-4 py-4 text-[14px] text-white/60">
                 <span className="h-2 w-2 shrink-0 rounded-full bg-white/30" aria-hidden="true" />
-                {boardPending
+                {boardPending && !abiertas.length && !cerradas.length
                   ? "Cargando las cláusulas de la liga."
-                  : "Hoy ningún clausulazo mejora tu once ni sale barato."}
+                  : estado === "abiertas"
+                    ? "Ahora mismo ninguna cláusula está abierta."
+                    : "Ninguna cláusula tiene candado."}
               </p>
             )}
           </section>
