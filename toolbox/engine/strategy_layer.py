@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -32,7 +32,7 @@ from toolbox.engine.market_predictor import (
 from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, evaluar_clausulas, inicio_jornada_estimado
 from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
-from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes
+from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes, conserva_esqueleto
 from toolbox.engine.trading_desk import alertas_escudo_francotirador
 from toolbox.jornada_plan import earliest_kickoff
 from toolbox.plan_memory import load_objetivos_previos, save_plan
@@ -364,11 +364,27 @@ def _expires_today(value: Any, now: datetime) -> bool:
     return moment.astimezone(_MADRID).date() == now.astimezone(_MADRID).date()
 
 
+def _proximo_viernes_2100(now: datetime) -> datetime:
+    """Viernes 21:00 hora peninsular. Si esa hora ya pasó, el viernes siguiente."""
+    local = now.astimezone(_MADRID)
+    dias = (4 - local.weekday()) % 7
+    candidato = (local + timedelta(days=dias)).replace(hour=21, minute=0, second=0, microsecond=0)
+    if candidato <= local:
+        candidato += timedelta(days=7)
+    return candidato
+
+
 def _days_to_kickoff(trends: dict[str, Any] | None, now: datetime) -> float | None:
+    """Días hasta el primer silbato. Sin hora de partido, el próximo viernes a las 21:00.
+
+    Un ``kickoff`` vacío no puede caer en ``SIN_RELOJ``: ese modo apaga el peaje
+    de liquidez y deja vender sin oferta. El viernes a las 21:00 es el cierre
+    habitual de la jornada cuando la API no trae el calendario.
+    """
     raw = _jornada_kickoff(trends, now)
     moment = _parse_kickoff(raw) if isinstance(raw, str) else None
     if moment is None:
-        return None
+        moment = _proximo_viernes_2100(now)
     return (moment - now).total_seconds() / 86400.0
 
 
@@ -1358,6 +1374,24 @@ def _plan(
     try:
         # El mismo plan sin ventas condicionales: solo caja y ventas de hoy.
         prudente = build_plan_fichajes(**entrada, permitir_condicionales=False)
+        ventas_prudentes = {
+            accion["player_id"]
+            for accion in prudente.get("acciones") or []
+            if accion.get("tipo") in {"VENDE", "VENDER HOY"} and isinstance(accion.get("player_id"), str)
+        }
+        if ventas_prudentes and not conserva_esqueleto(owned_rows, ventas_prudentes):
+            prudente = {
+                "acciones": [],
+                "mejora_puntos_jornada": 0.0,
+                "mejora_horizonte": 0.0,
+                "saldo_al_final": saldo,
+                "presupuesto": None,
+                "valido": False,
+                "motivo": (
+                    "Invalidado: las ventas dejarían la plantilla sin un once legal "
+                    "si no ganas la puja."
+                ),
+            }
         plan["comparativa"] = {
             "completo": _resumen_plan(plan),
             "prudente": _resumen_plan(prudente),
@@ -1379,11 +1413,12 @@ def _resumen_plan(plan: dict[str, Any]) -> dict[str, Any]:
     acciones = plan.get("acciones") or []
     compras = [a for a in acciones if a.get("tipo") in {"PUJA", "CLAUSULAZO"}]
     ventas = [a for a in acciones if a.get("tipo") in {"VENDE", "VENDER HOY"}]
-    return {
+    resumen = {
         "mejora_puntos_jornada": plan.get("mejora_puntos_jornada"),
         "mejora_horizonte": plan.get("mejora_horizonte"),
         "saldo_al_final": plan.get("saldo_al_final"),
         "presupuesto": plan.get("presupuesto"),
+        "valido": plan.get("valido") is not False,
         "compras": [
             {k: a.get(k) for k in ("player_id", "nombre", "etiqueta", "euros", "mejora_neta", "momento")}
             for a in compras
@@ -1393,6 +1428,9 @@ def _resumen_plan(plan: dict[str, Any]) -> dict[str, Any]:
             for a in ventas
         ],
     }
+    if isinstance(plan.get("motivo"), str) and plan["motivo"]:
+        resumen["motivo"] = plan["motivo"]
+    return resumen
 
 
 def _liquidacion(

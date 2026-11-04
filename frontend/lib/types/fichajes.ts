@@ -95,6 +95,8 @@ export type PlanResumen = {
   presupuesto?: PlanPresupuesto | null;
   compras?: Array<{ player_id?: string | null; nombre?: string | null; etiqueta?: string | null; euros?: number | null; mejora_neta?: number | null }>;
   ventas?: Array<{ player_id?: string | null; nombre?: string | null; euros?: number | null; momento?: string | null }>;
+  valido?: boolean;
+  motivo?: string | null;
 };
 
 export type PlanFichajes = {

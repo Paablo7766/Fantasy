@@ -8,7 +8,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from toolbox.engine.auction_intel import calcular_pujas, capitanes, nota_y_veredicto
+from toolbox.engine.auction_intel import calcular_pujas, capitanes, nota_y_veredicto, prima_quemada_mercado
 from toolbox.engine.lineup_math import war_del_once
 from toolbox.engine.market_predictor import (
     EUROS_POR_PUNTO,
@@ -21,11 +21,12 @@ from toolbox.engine.signing_plan import (
     BUSCA_PUNTOS,
     MAX_VENTAS_TITULARES_SANOS,
     build_plan_fichajes,
+    conserva_esqueleto,
     evaluar_patrimonio_clausula,
     factor_peaje,
     penalizacion_por_millon,
 )
-from toolbox.engine.strategy_layer import _collect, build_strategy
+from toolbox.engine.strategy_layer import _collect, _days_to_kickoff, build_strategy
 
 
 def _jugador(player_id: str, position: str, jornada: float, **extra: object) -> dict:
@@ -245,7 +246,9 @@ class PlanFichajesTests(unittest.TestCase):
         )
         self.assertEqual([accion["tipo"] for accion in plan["acciones"]], ["CLAUSULAZO"])
         self.assertEqual(plan["acciones"][0]["momento"], "luego")
-        self.assertEqual(plan["mejora_puntos_jornada"], 6.0)
+        self.assertEqual(plan["acciones"][0]["mejora_neta"], 6.0)
+        # «Después» no entra en el encabezado: el once de hoy no cambia.
+        self.assertEqual(plan["mejora_puntos_jornada"], 0.0)
 
     def test_busca_solo_si_faltan_dos_dias_y_hay_un_hueco(self) -> None:
         owned = []
@@ -318,8 +321,10 @@ class LiquidezTests(unittest.TestCase):
         self.assertEqual(viernes["modo_liquidez"], "ALL-IN")
         self.assertEqual([accion["tipo"] for accion in viernes["acciones"]], ["PUJA"])
         self.assertEqual(viernes["acciones"][0]["impulso"], "ALL-IN")
+        self.assertEqual(viernes["acciones"][0]["momento"], "luego")
+        self.assertEqual(viernes["acciones"][0]["mejora_neta"], 0.5)
         self.assertEqual(viernes["en_radar"], [])
-        self.assertEqual(viernes["mejora_puntos_jornada"], 0.5)
+        self.assertEqual(viernes["mejora_puntos_jornada"], 0.0)
 
     def test_un_millon_que_no_rinde_el_peaje_se_queda_en_caja(self) -> None:
         # +1,0 xP por 8 M€. El lunes el peaje es 1,6 puntos: no se gasta.
@@ -331,7 +336,9 @@ class LiquidezTests(unittest.TestCase):
 
         viernes = self._plan(dias=0, cash=8_000_000, mercado=mercado)
         self.assertEqual(viernes["acciones"][0]["tipo"], "PUJA")
-        self.assertEqual(viernes["mejora_puntos_jornada"], 1.0)
+        self.assertEqual(viernes["acciones"][0]["momento"], "luego")
+        self.assertEqual(viernes["acciones"][0]["mejora_neta"], 1.0)
+        self.assertEqual(viernes["mejora_puntos_jornada"], 0.0)
         self.assertEqual(viernes["saldo_al_final"], 0)
 
     def test_must_buy_se_ejecuta_el_lunes_aunque_el_peaje_se_lo_comeria(self) -> None:
@@ -483,7 +490,9 @@ class LiquidezTests(unittest.TestCase):
         con_subida = [_jugador("nueve", "DEL", 6.2, euros=7_700_000, valor=7_700_000, pct=8.0)]
         plan = self._plan(dias=4, cash=7_700_000, mercado=con_subida)
         self.assertEqual(plan["acciones"][0]["tipo"], "PUJA")
-        self.assertEqual(plan["mejora_puntos_jornada"], 1.2)
+        self.assertEqual(plan["acciones"][0]["momento"], "luego")
+        self.assertEqual(plan["acciones"][0]["mejora_neta"], 1.2)
+        self.assertEqual(plan["mejora_puntos_jornada"], 0.0)
         self.assertEqual(plan["saldo_al_final"], 0)
 
         # La misma mejora de +1,0 por 8 M€ no pasa el peaje en bruto (1,6 pts).
@@ -505,6 +514,9 @@ class LiquidezTests(unittest.TestCase):
         self.assertIn("PUJA", tipos)
         self.assertIn("ESCAPARATE", tipos)
         self.assertTrue(any(accion["momento"] == "condicional" for accion in rotacion["acciones"] if accion["tipo"] == "VENDE"))
+        puja_rotacion = next(accion for accion in rotacion["acciones"] if accion["tipo"] == "PUJA")
+        self.assertEqual(puja_rotacion["momento"], "hoy")
+        self.assertEqual(puja_rotacion["mejora_neta"], 1.0)
         self.assertEqual(rotacion["mejora_puntos_jornada"], 1.0)
         self.assertEqual(rotacion["saldo_al_final"], 0)
 
@@ -853,6 +865,94 @@ class CapaIntegradaTests(unittest.TestCase):
         self.assertTrue(report["ventas_forzadas"][0]["venta_forzada_rival"])
         self.assertEqual(report["capitan_seguro"]["player_id"], "DEL-0")
         self.assertTrue(str(report["previsiones"]["DEL-0"]["prevision_7d_pct"]).endswith("%"))
+
+    def test_sin_kickoff_el_reloj_cae_en_el_viernes_a_las_21(self) -> None:
+        # Miércoles 4 nov 2026, 19:00 en Madrid (18:00 UTC). El viernes 6 a las 21:00
+        # son 50 horas después. No puede salir None: eso apagaba el peaje.
+        ahora = datetime(2026, 11, 4, 18, 0, tzinfo=timezone.utc)
+        dias = _days_to_kickoff(None, ahora)
+        self.assertIsNotNone(dias)
+        self.assertAlmostEqual(dias, 50 / 24, places=4)
+        self.assertGreater(dias, 2.0)
+        # Un silbato real no se sustituye por el viernes.
+        con_partido = _days_to_kickoff(
+            {"players": [{"player_id": "1", "club": "A", "fixture": {"kickoff": "2026-11-08T15:00:00+00:00"}}]},
+            ahora,
+        )
+        self.assertAlmostEqual(con_partido, 4.0 - 3 / 24, places=3)
+
+
+class PrimaMercadoYEsqueletoTests(unittest.TestCase):
+    def test_la_prima_de_mercado_crece_si_el_precio_va_a_bajar(self) -> None:
+        # Kike: 20,86 sobre 19,03 y una subida del 30,9 % cubre el sobreprecio.
+        self.assertEqual(prima_quemada_mercado(20_860_000, 19_027_871, 30.91), 0.0)
+        # 2 M€ de más y el valor baja un 10 %: se castigan 3 M€.
+        self.assertEqual(prima_quemada_mercado(12_000_000, 10_000_000, -10), 3_000_000)
+        self.assertEqual(prima_quemada_mercado(12_000_000, None, 0), 0.0)
+
+    def test_el_solver_rechaza_quemar_2m_por_un_punto_si_el_jugador_baja(self) -> None:
+        owned = _once(5.0)
+        plan = build_plan_fichajes(
+            cash=12_000_000,
+            owned=owned,
+            mercado=[_jugador("caro", "DEL", 6.0, euros=12_000_000, valor=10_000_000, pct=-10)],
+            clausulas=[],
+            ratio=2_000_000,
+            dias_para_jornada=0,
+            baseline_puntos=55.0,
+        )
+        self.assertEqual(plan["acciones"], [])
+        self.assertEqual(plan["saldo_al_final"], 12_000_000)
+
+        cubierto = build_plan_fichajes(
+            cash=12_000_000,
+            owned=owned,
+            mercado=[_jugador("justo", "DEL", 6.0, euros=12_000_000, valor=10_000_000, pct=30)],
+            clausulas=[],
+            ratio=2_000_000,
+            dias_para_jornada=0,
+            baseline_puntos=55.0,
+        )
+        self.assertEqual(cubierto["acciones"][0]["tipo"], "PUJA")
+        self.assertNotIn("Prima quemada", cubierto["acciones"][0]["detalle"])
+
+    def test_el_plan_prudente_no_vende_el_ultimo_defensa(self) -> None:
+        # 3 defensas y un medio de más: la caja solo llega vendiendo, y el
+        # único cuerpo que sobra es un medio. Vender un defensa dejaría el
+        # once pendiente de ganar la puja.
+        owned = []
+        for position, count in (("POR", 1), ("DEF", 3), ("MC", 6), ("DEL", 2)):
+            for index in range(count):
+                owned.append(
+                    _jugador(
+                        f"{position}-{index}",
+                        position,
+                        4.0,
+                        venta_eur=8_000_000,
+                        valor=8_000_000,
+                        tiene_oferta_laliga=True,
+                        pct=-5.0,
+                    )
+                )
+        self.assertFalse(conserva_esqueleto(owned, {"DEF-0", "DEF-1", "DEF-2"}))
+        plan = build_plan_fichajes(
+            cash=1_000_000,
+            owned=owned,
+            mercado=[_jugador("lateral", "DEF", 9.0, euros=8_000_000, valor=8_000_000)],
+            clausulas=[],
+            ratio=2_000_000,
+            dias_para_jornada=4,
+            baseline_puntos=48.0,
+            permitir_condicionales=False,
+        )
+        vendidos = {
+            accion["player_id"]
+            for accion in plan["acciones"]
+            if accion.get("tipo") in {"VENDE", "VENDER HOY"}
+        }
+        self.assertTrue(conserva_esqueleto(owned, vendidos))
+        self.assertFalse(any(str(player_id).startswith("DEF-") for player_id in vendidos))
+        self.assertTrue(any(accion["tipo"] == "PUJA" and accion["player_id"] == "lateral" for accion in plan["acciones"]))
 
 
 if __name__ == "__main__":

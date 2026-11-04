@@ -435,6 +435,9 @@ export function TodayPlan({
                     <p className="text-[12px] tabular-nums text-white/40">
                       Gasto {eurShort(r.presupuesto?.gasto_pujas ?? 0)} · sobran {eurShort(r.saldo_al_final ?? 0)}
                     </p>
+                    {r.valido === false ? (
+                      <p className="mt-1.5 text-[12px] text-[var(--ini-amber)]">{r.motivo || "Invalidado: sin once legal si fallan las pujas."}</p>
+                    ) : (
                     <ul className="mt-1.5 text-[12px] text-white/55">
                       {(r.compras || []).map((c, i) => (
                         <li key={`c${i}`} className="truncate">+ {c.nombre} · {eurShort(c.euros ?? 0)}{typeof c.mejora_neta === "number" ? ` · ${signedPoints(c.mejora_neta)} pts` : ""}</li>
@@ -443,6 +446,7 @@ export function TodayPlan({
                         <li key={`v${i}`} className="truncate text-white/40">− {v.nombre} · {eurShort(v.euros ?? 0)}{v.momento === "condicional" ? " · si ganas" : ""}</li>
                       ))}
                     </ul>
+                    )}
                   </div>
                 ))}
               </div>

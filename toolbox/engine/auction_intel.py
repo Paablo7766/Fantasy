@@ -76,6 +76,21 @@ def prevision_a_puntos(value: Any) -> float:
     return 0.0
 
 
+def prima_quemada_mercado(puja: Any, valor: Any, prevision_7d_pct: Any = None) -> float:
+    """Euros que no vuelven al pujar por encima del valor de mercado.
+
+    ``max(0, puja − valor − subida_7d)``. La subida prevista a 7 días descuenta
+    el sobreprecio; una bajada lo agranda. Sin valor de mercado no se puede
+    medir y la prima queda en cero, igual que en un clausulazo sin valor.
+    """
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)) or valor <= 0:
+        return 0.0
+    if isinstance(puja, bool) or not isinstance(puja, (int, float)) or puja <= 0:
+        return 0.0
+    subida = float(valor) * (prevision_a_puntos(prevision_7d_pct) / 100.0)
+    return max(0.0, float(puja) - float(valor) - subida)
+
+
 def bono_dificultad(dificultad: str | None) -> float:
     """Fácil suma 2 puntos al multiplicador. Difícil resta 1. El resto, nada."""
     clave = _clave_dificultad(dificultad)

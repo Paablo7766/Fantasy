@@ -14,7 +14,7 @@ from typing import Any
 import pulp
 
 from toolbox.analyzer import FORMATIONS, POSITIONS, XI_SIZE
-from toolbox.engine.auction_intel import nota_y_veredicto
+from toolbox.engine.auction_intel import nota_y_veredicto, prima_quemada_mercado
 from toolbox.engine.lineup_math import HUECO_OBLIGATORIO, penalizacion_varianza, solve_best_xi
 from toolbox.engine.trading_desk import DEUDA_PCT_EQUIPO, build_trading_desk
 
@@ -77,6 +77,9 @@ _SEQ = 0
 ETIQUETA_COMPRA = {"PUJA": "PUJAR", "CLAUSULAZO": "CLAUSULAR"}
 # Fichajes fuertes que no caben en la caja de hoy y se enseñan como alternativa.
 MAX_ALTERNATIVAS = 5
+# Esqueleto que tiene que quedar en propiedad, sin contar pujas. Por debajo de
+# esto no hay formación legal (el mínimo real lo marca FORMATIONS).
+ESQUELETO_MINIMO = {"POR": 1, "DEF": 3, "MC": 3, "DEL": 1}
 
 
 def _presupuesto(
@@ -433,6 +436,69 @@ def evaluar_patrimonio_clausula(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _cuenta_en_esqueleto(row: dict[str, Any]) -> bool:
+    return row.get("elegible") is not False and row.get("position") in POSITIONS and isinstance(row.get("player_id"), str)
+
+
+def conserva_esqueleto(plantilla: list[dict[str, Any]], ventas_ids: set[str]) -> bool:
+    """Tras esas ventas, y sin contar ningún fichaje, sigue habiendo once legal.
+
+    El mínimo de línea (1 portero, 3 defensas, 3 medios, 1 delantero) es el
+    suelo. Además tiene que caber una formación real: si vender a un defensa
+    deja el once pendiente de ganar una puja ciega, el plan no vale.
+    """
+    quedan = [row for row in plantilla if _cuenta_en_esqueleto(row) and row["player_id"] not in ventas_ids]
+    conteo = {position: 0 for position in POSITIONS}
+    for row in quedan:
+        conteo[row["position"]] += 1
+    if any(conteo[position] < minimo for position, minimo in ESQUELETO_MINIMO.items()):
+        return False
+    pool = [
+        {
+            "player_id": row["player_id"],
+            "position": row["position"],
+            "jornada": float(row.get("jornada") or 0.0),
+            "p_titular": row.get("p_titular"),
+        }
+        for row in quedan
+    ]
+    return solve_best_xi(pool)["ok"]
+
+
+def _bloquear_ventas_sin_esqueleto(
+    problem: pulp.LpProblem,
+    plantilla: list[dict[str, Any]],
+    vende: dict[str, pulp.LpVariable],
+    prefix: str,
+) -> None:
+    """El plan prudente no puede vender el último cuerpo de una línea.
+
+    Solo se impone si hoy ya hay once legal. Vender cero siempre es factible:
+    la restricción recorta ventas, no obliga a fichar.
+    """
+    cuerpos = [row for row in plantilla if _cuenta_en_esqueleto(row)]
+    if not conserva_esqueleto(cuerpos, set()):
+        return
+    for position, minimo in ESQUELETO_MINIMO.items():
+        ids = [row["player_id"] for row in cuerpos if row["position"] == position and row["player_id"] in vende]
+        fijos = sum(1 for row in cuerpos if row["position"] == position and row["player_id"] not in vende)
+        if ids:
+            problem += pulp.lpSum(vende[player_id] for player_id in ids) <= max(0, fijos + len(ids) - minimo)
+    cubre = {
+        name: pulp.LpVariable(f"{prefix}_sk{name.replace('-', '_')}", cat=pulp.LpBinary) for name in FORMATIONS
+    }
+    problem += pulp.lpSum(cubre.values()) >= 1
+    for name, slots in FORMATIONS.items():
+        for position, need in slots.items():
+            ids = [row["player_id"] for row in cuerpos if row["position"] == position and row["player_id"] in vende]
+            fijos = sum(1 for row in cuerpos if row["position"] == position and row["player_id"] not in vende)
+            if not ids:
+                if fijos < need:
+                    problem += cubre[name] == 0
+                continue
+            problem += pulp.lpSum(vende[player_id] for player_id in ids) <= (fijos + len(ids) - need) + need * (1 - cubre[name])
+
+
 def _es_suplente(player_id: str, plantilla: list[dict[str, Any]], xi_ids: set[str]) -> bool:
     """Sobran cuerpos y este jugador no está en el once: venderlo deja 11 reales."""
     reales = [row for row in plantilla if isinstance(row.get("player_id"), str)]
@@ -731,6 +797,7 @@ def _plan_once(
             "pct": pct,
             "impulso": impulso,
             "origen": origen,
+            "prima": prima_quemada_mercado(euros, _valor_mercado(row), pct) if origen == "bid" else 0.0,
         }
         if impulso == "HOLD":
             dias_txt = _dias_texto(dias or 0.0)
@@ -793,6 +860,9 @@ def _plan_once(
     if sanos:
         # Tope de rotación: un lesionado no gasta plaza de este cupo.
         problem += pulp.lpSum(vende[player_id] for player_id in sanos) <= MAX_VENTAS_TITULARES_SANOS
+    if not permitir_condicionales:
+        # Prudente: las ventas de hoy tienen que dejar once legal sin ninguna puja.
+        _bloquear_ventas_sin_esqueleto(problem, plantilla, vende, prefix)
 
     def _alta_compra(
         origen: str,
@@ -1121,9 +1191,21 @@ def _plan_once(
     else:
         peaje = 0
     # La prima quemada es dinero que no vuelve. Se resta aunque el peaje de liquidez esté apagado.
+    # En el mercado es el mismo castigo que en un clausulazo: el sobreprecio que
+    # la subida a 7 días no cubre. Un jugador que va a bajar lo agranda.
     castigo_patrimonio = pulp.lpSum(
-        (primas.get(player_id, 0.0) / _MILLON) * PENALIZACION_PRIMA_POR_MILLON * variable
-        for player_id, variable in clausula.items()
+        [
+            *(
+                (primas.get(player_id, 0.0) / _MILLON) * PENALIZACION_PRIMA_POR_MILLON * variable
+                for player_id, variable in clausula.items()
+            ),
+            *(
+                (float(ficha_compra[f"bid:{player_id}"].get("prima") or 0.0) / _MILLON)
+                * PENALIZACION_PRIMA_POR_MILLON
+                * variable
+                for player_id, variable in puja.items()
+            ),
+        ]
     )
     bonus_baja = pulp.lpSum(BONUS_REEMPLAZO_BAJA * vende[player_id] for player_id in bajas | huecos if player_id in vende)
     continuidad = pulp.lpSum(
@@ -1357,6 +1439,9 @@ def _plan_once(
             puntos_once += float(row.get("jornada") or 0.0)
             once.append(_ficha(row, "puja"))
         momento, detalle = _momento_y_detalle(ficha)
+        prima = float(ficha.get("prima") or 0.0)
+        if prima > 0:
+            detalle += f" Prima quemada de {prima / _MILLON:.2f} M€: ese sobreprecio no vuelve al venderlo."
         if row["player_id"] in pujas_protegidas:
             # La puja va hoy; la venta que la paga espera a saber si se gana.
             momento = "hoy"
@@ -1498,6 +1583,16 @@ def _plan_once(
         vacio["alternativas_liquidez"] = alternativas
         return vacio
     saldo_final = int(saldo + ingreso - gasto)
+    # El encabezado es el once de HOY: plantilla menos ventas ya aceptadas, más
+    # los fichajes con momento «hoy». «Después» y las alternativas no suman.
+    hoy = _xi_ejecutable_hoy(plantilla, compras, raids, acciones)
+    if hoy["ok"]:
+        puntos_once = hoy["puntos"]
+        once = hoy["once"]
+    else:
+        puntos_once = 0.0
+        once = []
+    mejora = round(puntos_once - float(baseline_puntos), 2)
     nota, veredicto = nota_y_veredicto(mejora, acciones)
     if hay_urgente:
         veredicto = "Hazlo ya"
@@ -1544,6 +1639,75 @@ def _publicar_huecos(plantilla: list[dict[str, Any]], huecos: set[str]) -> list[
         for row in plantilla
         if row["player_id"] in huecos
     ]
+
+
+def _xi_ejecutable_hoy(
+    plantilla: list[dict[str, Any]],
+    compras: list[dict[str, Any]],
+    raids: list[dict[str, Any]],
+    acciones: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """``solve_best_xi`` con lo que es tuyo al cerrar el día, sin «Después».
+
+    Una venta condicional sigue en la plantilla: solo se va si ganas la puja.
+    Un fichaje de momento ``luego`` o ``alternativa`` no entra en la suma.
+    """
+    ventas_hoy = {
+        accion["player_id"]
+        for accion in acciones
+        if accion.get("tipo") in {"VENDE", "VENDER HOY"}
+        and accion.get("momento") == "hoy"
+        and isinstance(accion.get("player_id"), str)
+    }
+    fichajes_hoy = {
+        accion["player_id"]
+        for accion in acciones
+        if accion.get("tipo") in {"PUJA", "CLAUSULAZO"}
+        and accion.get("momento") == "hoy"
+        and isinstance(accion.get("player_id"), str)
+    }
+    pool: list[dict[str, Any]] = []
+    ficha: dict[str, tuple[dict[str, Any], str]] = {}
+    for row in plantilla:
+        if row["player_id"] in ventas_hoy or not _cuenta_en_esqueleto(row):
+            continue
+        pool.append(
+            {
+                "player_id": row["player_id"],
+                "position": row["position"],
+                "jornada": float(row.get("jornada") or 0.0),
+                "p_titular": row.get("p_titular"),
+                "si_titular": row.get("si_titular"),
+            }
+        )
+        ficha[row["player_id"]] = (row, "plantilla")
+    origen = {row["player_id"]: ("puja", row) for row in compras}
+    origen.update({row["player_id"]: ("clausulazo", row) for row in raids})
+    for player_id in fichajes_hoy:
+        par = origen.get(player_id)
+        if par is None:
+            continue
+        etiqueta, row = par
+        if row.get("position") not in POSITIONS:
+            continue
+        pool.append(
+            {
+                "player_id": player_id,
+                "position": row["position"],
+                "jornada": float(row.get("jornada") or 0.0),
+                "p_titular": row.get("p_titular"),
+                "si_titular": row.get("si_titular"),
+            }
+        )
+        ficha[player_id] = (row, etiqueta)
+    resultado = solve_best_xi(pool)
+    if not resultado["ok"]:
+        return {"ok": False, "puntos": 0.0, "once": []}
+    once = []
+    for player_id in resultado["player_ids"]:
+        row, etiqueta = ficha[player_id]
+        once.append(_ficha(row, etiqueta))
+    return {"ok": True, "puntos": float(resultado["puntos"]), "once": once}
 
 
 def _nombre(row: dict[str, Any]) -> str:
