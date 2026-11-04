@@ -13,6 +13,7 @@ from toolbox.engine.clause_shield import (
     disposicion_a_pagar,
     liquidez_rival,
     necesidad_rival,
+    prescindibles_valor,
 )
 
 JUEVES = datetime(2026, 11, 5, 10, 0, tzinfo=timezone.utc)
@@ -26,7 +27,7 @@ def _plantilla(n_del: int = 3, xp_del: float = 4.0, banquillo: int = 0) -> list[
     filas += [{"position": "MC", "sano": True, "jornada": 4.0, "valor": 5_000_000} for _ in range(3)]
     filas += [{"position": "DEL", "sano": True, "jornada": xp_del, "valor": 5_000_000} for _ in range(n_del)]
     filas += [{"position": "DEF", "sano": True, "jornada": 0.5, "valor": 2_000_000} for _ in range(banquillo)]
-    return filas
+    return [{**fila, "player_id": f"p{indice}"} for indice, fila in enumerate(filas)]
 
 
 def _rival(saldo: int, **kw: object) -> dict:
@@ -62,6 +63,31 @@ class LiquidezTests(unittest.TestCase):
 
     def test_con_menos_de_24h_solo_cuenta_la_caja_de_hoy(self) -> None:
         self.assertEqual(liquidez_rival(_rival(1_000_000, banquillo=2), 23.9)["en_24h"], 1_000_000)
+
+
+class LiquidezRealTests(unittest.TestCase):
+    def test_la_caja_esperada_manda_sobre_la_cota(self) -> None:
+        rival = {"cash_expected_eur": 3_000_000, "calculated_cash": 20_000_000, "saldo": 20_000_000, "plantilla": []}
+        self.assertEqual(liquidez_rival(rival, 48)["inmediata"], 3_000_000)
+
+    def test_sin_caja_esperada_cae_a_la_cota(self) -> None:
+        self.assertEqual(liquidez_rival({"calculated_cash": 7_000_000, "plantilla": []}, 48)["inmediata"], 7_000_000)
+
+    def test_suplentes_son_los_que_quedan_fuera_del_mejor_once(self) -> None:
+        plantilla = [{"player_id": "g", "position": "POR", "jornada": 3.0, "valor": 1_000_000}]
+        plantilla += [{"player_id": f"d{i}", "position": "DEF", "jornada": 3.0, "valor": 1_000_000} for i in range(4)]
+        plantilla += [{"player_id": f"m{i}", "position": "MC", "jornada": 3.0, "valor": 1_000_000} for i in range(3)]
+        plantilla += [{"player_id": f"f{i}", "position": "DEL", "jornada": 9.0 - i, "valor": 4_000_000 + i} for i in range(5)]
+        # Con 3 MC solo cabe 4-3-3: se queda fuera los 2 DEL de menos xP (f3, f4).
+        self.assertEqual(prescindibles_valor(plantilla), (4_000_000 + 3) + (4_000_000 + 4))
+
+    def test_un_lesionado_no_es_vendible_ni_titular(self) -> None:
+        plantilla = _plantilla(banquillo=1)
+        plantilla.append({"player_id": "lesion", "position": "DEF", "sano": False, "jornada": 5.0, "valor": 9_000_000})
+        self.assertEqual(prescindibles_valor(plantilla), 2_000_000)
+
+    def test_sin_once_legal_no_se_asume_nada_vendible(self) -> None:
+        self.assertEqual(prescindibles_valor(_plantilla(n_del=0, banquillo=3)[:6]), 0.0)
 
 
 class WillingnessTests(unittest.TestCase):
@@ -125,6 +151,18 @@ class VeredictoTests(unittest.TestCase):
         fila = _una(_mio(13_000_000, perdida=1.0), _rival(99_000_000, n_del=0))
         self.assertEqual(fila["estado"], "CEBO")
         self.assertIn("Si pagan 13,0M te regalan +3,0M", fila["consejo"])
+
+    def test_con_ratio_menor_de_1_25_no_es_cebo_aunque_no_compense_blindar(self) -> None:
+        fila = _una(_mio(11_000_000, perdida=0.5), _rival(99_000_000, n_del=0))
+        self.assertEqual(fila["estado"], "ASUMIR")
+
+    def test_valor_a_la_baja_y_pierdes_poco_si_es_cebo(self) -> None:
+        mio = {**_mio(11_000_000, perdida=0.5), "prevision_7d_pct": -3}
+        self.assertEqual(_una(mio, _rival(99_000_000, n_del=0))["estado"], "CEBO")
+
+    def test_valor_a_la_baja_pero_pierdes_mucho_no_es_cebo(self) -> None:
+        r = cebo_o_blindaje(clausula=11_000_000, valor=10_000_000, amenaza_max=30_000_000, perdida_xp=1.0, ratio_eur_xp=2e6, valor_a_la_baja=True)
+        self.assertEqual(r["codigo"], "ASUMIR")
 
     def test_cebo_si_apenas_pesa_y_la_clausula_es_alta(self) -> None:
         resultado = cebo_o_blindaje(clausula=13_000_000, valor=10_000_000, amenaza_max=14_000_000, perdida_xp=0.5, ratio_eur_xp=2_000_000)

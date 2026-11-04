@@ -39,7 +39,7 @@ from toolbox.jornada_plan import earliest_kickoff
 from toolbox.plan_memory import load_objetivos_previos, save_plan
 from toolbox.market_intel import _jornada_kickoff, _parse_kickoff
 from toolbox.normalize import exclusion_from_status, parse_clause_lock
-from toolbox.rival_intel import ROJO_SEGURO, estado_rojo
+from toolbox.rival_intel import ROJO_SEGURO, estado_rojo, events_from_ledgers, get_financial_intel
 
 logger = logging.getLogger("fantasy.strategy")
 
@@ -963,6 +963,31 @@ def _plantillas_rivales(records: dict[str, dict[str, Any]]) -> dict[str, list[di
     return plantillas
 
 
+def _caja_esperada_rivales(board: dict[str, Any]) -> dict[str, int]:
+    """``cash_expected_eur`` por equipo, reconstruido de la foto ya cargada (sin red).
+
+    Si falta algún dato el radar cae a ``calculated_cash``/``saldo``.
+    """
+    squads = board.get("squads") if isinstance(board.get("squads"), dict) else None
+    needs = board.get("needs") if isinstance(board.get("needs"), dict) else {}
+    ledgers = [row for row in needs.get("ledgers") or [] if isinstance(row, dict)]
+    # Sin libro contable la reconstrucción parte de una base inventada: no se usa.
+    con_libro = {_pid(row.get("team_id")) for row in ledgers} - {None}
+    if not squads or not con_libro:
+        return {}
+    try:
+        documento = get_financial_intel(squads, events_from_ledgers(needs.get("ledgers")), persist=False)
+    except Exception:
+        logger.exception("caja esperada de rivales")
+        return {}
+    salida: dict[str, int] = {}
+    for team_id, team in (documento.get("teams") or {}).items():
+        valor = team.get("cash_expected_eur") if isinstance(team, dict) else None
+        if isinstance(valor, int) and not isinstance(valor, bool) and _pid(team_id) in con_libro:
+            salida[str(team_id)] = valor
+    return salida
+
+
 def _alternativas_reposicion(records: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """Jugadores que se pueden comprar hoy: libres de LaLiga a su valor y ajenos a su cláusula."""
     salida: list[dict[str, Any]] = []
@@ -1038,6 +1063,7 @@ def _asesorar_clausulas(
                 }
             )
     trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
+    esperadas = _caja_esperada_rivales(board)
     radar = blindaje_quirurgico(
         [
             {
@@ -1057,6 +1083,7 @@ def _asesorar_clausulas(
         [
             {
                 "saldo": rival.get("saldo"),
+                "cash_expected_eur": esperadas.get(str(rival.get("team_id"))),
                 "manager": rival.get("manager"),
                 "team_id": rival.get("team_id"),
                 "plantilla": plantillas.get(str(rival.get("team_id")), []),

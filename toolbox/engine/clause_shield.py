@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from toolbox.engine.lineup_math import solve_best_xi
+
 _MADRID = ZoneInfo("Europe/Madrid")
 
 #: Lo que se recupera al vender un suplente a LaLiga: el 95 % de su valor.
@@ -25,8 +27,8 @@ URGENCIA_JUSTO = 2_000_000
 URGENCIA_CUBIERTO = 1_200_000
 #: Margen por encima de la mayor amenaza para que ya no compense pagar.
 MARGEN_OPTIMA = 200_000
-#: Con una cláusula así de alta sobre el valor, si el jugador apenas pesa, es un cebo.
-MULTIPLO_CEBO = 1.30
+#: Solo es un cebo si la cláusula supera el valor en un 25 %: la prima tiene que ser real.
+MULTIPLO_CEBO = 1.25
 PERDIDA_IRRELEVANTE = 1.0
 #: Con un sustituto comprable, perder al jugador cuesta como mucho esto en xP.
 TOLERANCIA_SUSTITUTO_XP = 0.3
@@ -34,7 +36,7 @@ TOLERANCIA_SUSTITUTO_XP = 0.3
 DIAS_REPOSICION = (0, 1, 2)
 #: Sin saque conocido, un candado a 3 días o más se da por activo.
 VENTANA_SIN_SAQUE_DIAS = 3.0
-#: 4-3-3: titulares por puesto cuando no se conoce el once del rival.
+#: 4-3-3: titulares por puesto para medir el hueco de un rival (no para sus suplentes).
 TITULARES = {"POR": 1, "DEF": 4, "MC": 3, "DEL": 3}
 
 TEXTO_CANDADO = "🔒 CANDADO ACTIVO (No gastar caja hasta la próxima semana)"
@@ -101,12 +103,25 @@ def _sanos_por_puesto(plantilla: list[dict[str, Any]]) -> dict[str, list[dict[st
 
 
 def prescindibles_valor(plantilla: list[dict[str, Any]]) -> float:
-    """Valor de los sanos fuera del once aproximado (los mejores por puesto se quedan)."""
-    total = 0.0
-    for puesto, filas in _sanos_por_puesto(plantilla).items():
-        for fila in filas[TITULARES[puesto]:]:
-            total += _num(fila.get("valor")) or 0.0
-    return total
+    """Valor de los sanos que quedan fuera de su mejor once legal por xP.
+
+    El once sale de ``solve_best_xi`` sin penalizar varianza, con la formación
+    válida que más puntos da. Sin once legal no se asume nada vendible.
+    """
+    sanos = [
+        {**fila, "jornada": _num(fila.get("jornada")) or 0.0}
+        for fila in plantilla
+        if isinstance(fila, dict) and fila.get("sano") is not False and isinstance(fila.get("player_id"), str)
+    ]
+    once = solve_best_xi(sanos, lambda_var=0.0)
+    if not once.get("ok"):
+        return 0.0
+    titulares = set(once["player_ids"])
+    return sum(
+        _num(fila.get("valor")) or 0.0
+        for fila in sanos
+        if fila["player_id"] not in titulares and fila.get("position") in TITULARES
+    )
 
 
 def liquidez_rival(rival: dict[str, Any], horas_al_saque: float | None) -> dict[str, int]:
@@ -115,9 +130,12 @@ def liquidez_rival(rival: dict[str, Any], horas_al_saque: float | None) -> dict[
     Sin crédito: la cláusula exige el 100 % en saldo positivo. Si faltan menos
     de 24 h para el primer saque, mañana no cuenta y el techo es la caja de hoy.
     """
-    caja = _num(rival.get("saldo"))
-    if caja is None:
-        caja = _num(rival.get("calculated_cash"))
+    # La caja esperada no sobreestima como la cota (``calculated_cash``), que es el techo.
+    caja = None
+    for clave in ("cash_expected_eur", "calculated_cash", "saldo"):
+        caja = _num(rival.get(clave))
+        if caja is not None:
+            break
     caja = caja or 0.0
     inmediata = max(0.0, caja)
     en_24h = max(0.0, caja + FACTOR_VENTA_24H * prescindibles_valor(rival.get("plantilla") or []))
@@ -179,20 +197,32 @@ def amenazas_jugador(
 
 
 def cebo_o_blindaje(
-    *, clausula: int, valor: int, amenaza_max: int, perdida_xp: float, ratio_eur_xp: float
+    *,
+    clausula: int,
+    valor: int,
+    amenaza_max: int,
+    perdida_xp: float,
+    ratio_eur_xp: float,
+    valor_a_la_baja: bool = False,
 ) -> dict[str, Any]:
     """Decide entre blindar, dejarlo como cebo o asumir el riesgo.
 
     El daño neto de perderlo es ``pérdida × ratio − prima`` (la prima que cobras
-    por encima del valor compensa). Si blindar cuesta más que eso, no se sube.
+    por encima del valor compensa). Si blindar cuesta más que eso no se sube,
+    pero solo es ``CEBO`` si la cláusula es ≥ 1,25× el valor, o si el jugador
+    baja de valor, apenas pesa (< 1 xP) y la cláusula sigue sobre su valor.
+    En otro caso es ``ASUMIR``.
     """
     optima = int(round(round(amenaza_max / 1_000_000 + MARGEN_OPTIMA / 1_000_000, 1) * 1_000_000))
     coste = max(0, (optima - clausula) // 2)
     prima = clausula - valor
     dano = perdida_xp * ratio_eur_xp - prima
+    es_cebo = clausula >= MULTIPLO_CEBO * valor or (
+        valor_a_la_baja and perdida_xp < PERDIDA_IRRELEVANTE and prima > 0
+    )
     irrelevante = perdida_xp < PERDIDA_IRRELEVANTE and clausula >= MULTIPLO_CEBO * valor
     if irrelevante or coste > dano:
-        codigo = "CEBO" if prima > 0 else "ASUMIR"
+        codigo = "CEBO" if es_cebo else "ASUMIR"
     else:
         codigo = "BLINDAR"
     return {
@@ -287,7 +317,12 @@ def blindaje_quirurgico(
             jugador, _num(jugador.get("tu_once_pierde_sin_el")) or 0.0, clausula_i, ahora, alternativas
         )
         v = cebo_o_blindaje(
-            clausula=clausula_i, valor=valor_i, amenaza_max=amenaza_max, perdida_xp=perdida, ratio_eur_xp=ratio_eur_xp
+            clausula=clausula_i,
+            valor=valor_i,
+            amenaza_max=amenaza_max,
+            perdida_xp=perdida,
+            ratio_eur_xp=ratio_eur_xp,
+            valor_a_la_baja=(base["prevision_7d_pct"] or 0.0) < 0,
         )
         extra = {
             "clausula_optima": v["clausula_optima"],
