@@ -3250,9 +3250,39 @@ def api_model_report(league: str | None = Query(default=None)) -> Any:
         report = build_model_report(board, calibration=calibration)
     except Exception as exc:
         return error_response("modelo", exc)
+    try:
+        from toolbox.previa import previa_report, render_text as previa_text
+
+        report["text"] = f"{report['text']}\n\n{previa_text(previa_report(board))}"
+    except Exception:  # noqa: BLE001 — sin previa el informe sigue
+        logger.debug("previa fuera del informe", exc_info=True)
     report["ok"] = True
     report["schema_version"] = SCHEMA_VERSION
     report["command"] = "modelo"
+    report.update(_photo_fields(board))
+    return report
+
+
+@app.get("/api/laboratorio/previa")
+@_read_only
+def api_previa(league: str | None = Query(default=None)) -> Any:
+    """Previa de la jornada (en pruebas): en vivo, ediciones congeladas y evaluación.
+
+    La primera lectura de cada edición (martes: lun-mié; jueves: jue-dom) la deja
+    guardada y ya no cambia: así se puede medir después sin trampas.
+    """
+    board = _board("previa", league, tier="core")
+    if isinstance(board, JSONResponse):
+        return board
+    from toolbox.previa import previa_report
+
+    try:
+        report = previa_report(board)
+    except Exception as exc:
+        return error_response("previa", exc)
+    report["ok"] = True
+    report["schema_version"] = SCHEMA_VERSION
+    report["command"] = "previa"
     report.update(_photo_fields(board))
     return report
 
