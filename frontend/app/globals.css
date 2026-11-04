@@ -2173,6 +2173,12 @@ body {
   filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.55));
 }
 
+/* Foto de pecho con camiseta: algo más grande para que se vea la camiseta. */
+.eq-card__img--bust {
+  transform: scale(1.12);
+  transform-origin: 50% 100%;
+}
+
 .eq-card__initials {
   font-size: clamp(14px, 5cqw, 20px);
   font-weight: 600;

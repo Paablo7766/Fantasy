@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { initials, jornadaEv, playerName, points, projectedLineupPoints, titularShare } from "@/lib/core/format";
 import { signedPoints } from "@/lib/inicio/hoy";
+import { bustPhotoFor } from "@/lib/core/bustPhoto";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { CapitanPick, Gap, OptimizePayload, PlanPayload, Player, SquadsPayload } from "@/lib/types";
 import {
@@ -117,12 +118,21 @@ function redLine(plan: PlanPayload | null, optimize: OptimizePayload, differs: b
 }
 
 /** Busto del jugador: foto recortada del pecho para arriba; iniciales si no hay foto. */
-function Bust({ name, src }: { name: string; src?: string | null }) {
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  if (src && failedSrc !== src) {
+function Bust({ name, src, fallback }: { name: string; src?: string | null; fallback?: string | null }) {
+  const [failed, setFailed] = useState<string[]>([]);
+  // Primero la foto de pecho con camiseta; si falta o no carga, la de cara.
+  const current = [src, fallback].find((url): url is string => Boolean(url) && !failed.includes(url as string));
+  if (current) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={src} alt="" className="eq-card__img" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailedSrc(src)} />
+      <img
+        src={current}
+        alt=""
+        className={current === src ? "eq-card__img eq-card__img--bust" : "eq-card__img"}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed((list) => [...list, current])}
+      />
     );
   }
   return <span className="eq-card__initials">{initials(name)}</span>;
@@ -197,7 +207,11 @@ function Pitch({
           >
             <span className="eq-card row-in" style={{ animationDelay: `${index * 30}ms` }}>
               <span className="eq-card__photo">
-                <Bust name={name} src={slot.image_url || photoFor(photos, slot.player_id, name)} />
+                <Bust
+                  name={name}
+                  src={bustPhotoFor(slot.player_id)}
+                  fallback={slot.image_url || photoFor(photos, slot.player_id, name)}
+                />
                 {badge ? (
                   <span className="eq-badge" style={{ background: badge === "C" ? "#fff" : TONE.copper, color: "#120C09" }}>
                     {badge}
