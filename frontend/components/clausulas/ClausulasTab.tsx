@@ -11,6 +11,7 @@ import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { useNow } from "@/lib/core/useClock";
 import type {
   ClauseBoardPayload,
+  ClauseBoardRow,
   ClausulaEnPeligro,
   ClausulazoSugerido,
   NeedsPayload,
@@ -63,6 +64,57 @@ const RULES = [
   "Caja negativa o menos de 11 al empezar: la jornada vale 0.",
   "Desde aquí no se envía nada: confirma en la app oficial.",
 ];
+
+const OPEN_MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+/** Cuándo se puede pagar: «Abierta ahora» o «Abre 4 nov · 14:08». */
+function opensLabel(row: ClauseBoardRow): string {
+  if (!row.is_locked) return "Abierta ahora";
+  const lock = row.clause_lock;
+  if (!lock?.local_date) return "Con candado";
+  const [, month, day] = lock.local_date.split("-");
+  const when = `${Number(day)} ${OPEN_MONTHS[Number(month) - 1] || month}${lock.local_time ? ` · ${lock.local_time}` : ""}`;
+  return `Abre ${when}`;
+}
+
+type ClauseBrowseItem = {
+  key: string;
+  suggestion?: ClausulazoSugerido;
+  board?: ClauseBoardRow;
+};
+
+/**
+ * Todas las cláusulas rivales que se pueden mirar, partidas en abiertas y candado.
+ * Las recomendadas se quedan delante; el resto se ve igual aunque no mejore el once.
+ */
+function browseClauses(board: ClauseBoardPayload | null, suggested: ClausulazoSugerido[]): {
+  abiertas: ClauseBrowseItem[];
+  candado: ClauseBrowseItem[];
+} {
+  const byId = new Map(suggested.map((row) => [String(row.player_id), row]));
+  const order = new Map(suggested.map((row, index) => [String(row.player_id), index]));
+  const seen = new Set<string>();
+  const items: ClauseBrowseItem[] = [];
+  for (const row of board?.ok === false ? [] : board?.rows || []) {
+    const id = row.player_id ? String(row.player_id) : "";
+    if (!id || row.is_shielded || !(typeof row.buyout_clause_eur === "number" && row.buyout_clause_eur > 0)) continue;
+    seen.add(id);
+    items.push({ key: id, board: row, suggestion: byId.get(id) });
+  }
+  for (const row of suggested) {
+    const id = String(row.player_id);
+    if (seen.has(id)) continue;
+    items.push({ key: id, suggestion: row });
+  }
+  const rank = (item: ClauseBrowseItem) => order.get(item.key) ?? 1000;
+  const pointsOf = (item: ClauseBrowseItem) => item.board?.average_points ?? item.suggestion?.xp_jornada ?? 0;
+  const priceOf = (item: ClauseBrowseItem) => item.board?.buyout_clause_eur ?? item.suggestion?.clausula_eur ?? 0;
+  items.sort((a, b) => rank(a) - rank(b) || pointsOf(b) - pointsOf(a) || priceOf(a) - priceOf(b));
+  return {
+    abiertas: items.filter((item) => (item.board ? !item.board.is_locked : item.suggestion?.abierta_ahora)),
+    candado: items.filter((item) => (item.board ? item.board.is_locked : item.suggestion ? !item.suggestion.abierta_ahora : false)),
+  };
+}
 
 function dayChip(localDate: string): { week: string; day: string } {
   const date = new Date(`${localDate}T12:00:00`);
@@ -276,6 +328,51 @@ function AttackCard({ row, photos, index }: { row: ClausulazoSugerido; photos: P
   );
 }
 
+/** Cláusula de la liga que el asesor no recomienda, pero que se puede mirar igual. */
+function PlainClauseRow({ row, photos, index }: { row: ClauseBoardRow; photos: PhotoIndex; index: number }) {
+  const [open, setOpen] = useState(false);
+  const name = row.nickname || row.name || "Jugador";
+  const pts = typeof row.average_points === "number" ? row.average_points : null;
+  const openNow = !row.is_locked;
+  return (
+    <li className="row-in" style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="block w-full px-3.5 py-3.5 text-left">
+        <span className="flex items-center gap-3">
+          <Face name={name} src={row.image_url || photoFor(photos, row.player_id, name)} size={44} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] font-medium leading-tight text-white">{name}</span>
+            <span className="mt-0.5 block truncate text-[12.5px] text-white/45">
+              {[row.position, row.manager_name ? `de ${row.manager_name}` : ""].filter(Boolean).join(" · ")}
+            </span>
+          </span>
+          <span className="shrink-0 text-right">
+            <span className="block text-[15px] font-semibold tabular-nums text-white">{money(row.buyout_clause_eur)}</span>
+            {pts !== null ? <span className="block text-[12px] tabular-nums text-white/45">{points(pts)} pts</span> : null}
+          </span>
+          <Chevron open={open} />
+        </span>
+        <span className="mt-3 flex flex-wrap items-center gap-1.5 pl-[3.5rem]">
+          <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11.5px] font-medium" style={{ color: openNow ? TONE.green : "rgba(255,255,255,0.6)" }}>
+            {opensLabel(row)}
+          </span>
+        </span>
+      </button>
+      {open ? (
+        <div className="row-in border-t border-white/[0.05] px-3.5 pb-4 pt-3">
+          <div className="grid grid-cols-3 gap-3">
+            <Fact label="Valor" value={money(row.market_value)} />
+            <Fact label="Media" value={pts !== null ? `${points(pts)} pts` : "—"} tone="#FFC08A" />
+            <Fact label="Múltiplo" value={typeof row.clause_multiple === "number" ? row.clause_multiple.toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} />
+          </div>
+          <div className="mt-3 flex justify-end">
+            <CompararButton objetivoId={row.player_id || undefined} posicion={row.position} className="!bg-[#1c1c1e] !px-4 !py-2 !text-white" />
+          </div>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 /** Jugador propio sin peligro hoy: desplegable para prepararse antes de que se abra su cláusula. */
 function RestRow({
   player,
@@ -438,6 +535,10 @@ export function ClausulasTab({
   }, [plan, squads, needs, boardPayload, minute]);
 
   const advisor = plan?.asesor_clausulas || null;
+  const catalog = useMemo(
+    () => browseClauses(boardPayload, advisor?.clausulazos || []),
+    [boardPayload, advisor],
+  );
   const radarRows = useMemo(
     () => (advisor?.radar_anti_robo?.length ? advisor.radar_anti_robo : plan?.radar_anti_robo || []),
     [advisor, plan],
@@ -453,11 +554,12 @@ export function ClausulasTab({
   const resumen = advisor?.resumen;
   const proteger = advisor?.proteger || [];
   const clausulazos = advisor?.clausulazos || [];
-  const abiertas = clausulazos.filter((row) => row.abierta_ahora);
-  const cerradas = clausulazos.filter((row) => !row.abierta_ahora);
+  const abiertas = catalog.abiertas;
+  const cerradas = catalog.candado;
   // Por defecto, las abiertas; si no hay ninguna, directamente las que tienen candado.
   const estado = estadoElegido ?? (abiertas.length || !cerradas.length ? "abiertas" : "candado");
   const shown = estado === "abiertas" ? abiertas : cerradas;
+  const boardPending = !board || board.league !== league;
   const preparar = advisor?.preparar || [];
   const watched = new Set([...proteger, ...preparar].map((row) => String(row.player_id)));
   const rest = ((squads?.self?.players || []) as RivalPlayer[])
@@ -514,7 +616,7 @@ export function ClausulasTab({
           {attack ? (
             <>
               <HeroStat value={String(resumen.clausulazos)} label="Candidatos" />
-              <HeroStat value={String(clausulazos.filter((row) => row.abierta_ahora).length)} label="Abiertas" tone={TONE.green} />
+              <HeroStat value={String(abiertas.length)} label="Abiertas" tone={TONE.green} />
               <HeroStat value={compact(plan?.cash_eur)} label="Caja" />
             </>
           ) : (
@@ -548,8 +650,13 @@ export function ClausulasTab({
         <div className="flex min-w-0 flex-col gap-4">
           {hero}
           <section aria-label="Clausulazos" className="flex flex-col gap-3">
-            <SectionHead title="A quién clausular" meta={clausulazos.length ? `${clausulazos.length}` : undefined} />
-            {clausulazos.length ? (
+            <SectionHead title="A quién clausular" meta={abiertas.length + cerradas.length ? `${abiertas.length + cerradas.length}` : undefined} />
+            {!clausulazos.length && (abiertas.length || cerradas.length) ? (
+              <p className="-mt-1 px-1 text-[12.5px] leading-snug text-white/45">
+                Ninguna mejora tu once lo bastante para recomendarla. Aquí están todas, abiertas o con candado.
+              </p>
+            ) : null}
+            {abiertas.length || cerradas.length ? (
               <>
                 <div className="desk-switch eq-tabs" role="tablist" aria-label="Estado de la cláusula">
                   <span className="eq-tabs__ind" style={{ transform: `translateX(${estado === "abiertas" ? 0 : 100}%)` }} aria-hidden="true" />
@@ -574,21 +681,27 @@ export function ClausulasTab({
                 </div>
                 {shown.length ? (
                   <ul key={estado} className="home-glass overflow-hidden">
-                    {shown.map((row, index) => (
-                      <AttackCard key={row.player_id} row={row} photos={photos} index={index} />
-                    ))}
+                    {shown.map((item, index) =>
+                      item.suggestion ? (
+                        <AttackCard key={item.key} row={item.suggestion} photos={photos} index={index} />
+                      ) : item.board ? (
+                        <PlainClauseRow key={item.key} row={item.board} photos={photos} index={index} />
+                      ) : null,
+                    )}
                   </ul>
                 ) : (
                   <p className="home-glass flex items-center gap-2.5 px-4 py-4 text-[14px] text-white/60">
                     <span className="h-2 w-2 shrink-0 rounded-full bg-white/30" aria-hidden="true" />
-                    {estado === "abiertas" ? "Ahora mismo ninguna recomendada está abierta." : "Ninguna recomendada tiene candado."}
+                    {estado === "abiertas" ? "Ahora mismo ninguna cláusula está abierta." : "Ninguna cláusula tiene candado."}
                   </p>
                 )}
               </>
             ) : (
               <p className="home-glass flex items-center gap-2.5 px-4 py-4 text-[14px] text-white/60">
                 <span className="h-2 w-2 shrink-0 rounded-full bg-white/30" aria-hidden="true" />
-                Hoy ningún clausulazo mejora tu once ni sale barato.
+                {boardPending
+                  ? "Cargando las cláusulas de la liga."
+                  : "Hoy ningún clausulazo mejora tu once ni sale barato."}
               </p>
             )}
           </section>
