@@ -101,6 +101,42 @@ class CosteTests(unittest.TestCase):
         self.assertEqual(coste_subida(8_000_000, 7_000_000), 0)
 
 
+class ProtegerAnclajeTests(unittest.TestCase):
+    def test_valor_justo_inflado_no_justifica_una_clausula_enorme(self) -> None:
+        """Valor de mercado 1,8 M€ y valor justo 19 M€: no se sube a 47 M€ (caso Redondo)."""
+        plantilla = _con(
+            _once(),
+            "MC-0",
+            valor=1_800_000,
+            valor_justo=19_000_000,
+            clausula=8_100_000,
+            jornada=5.2,
+            tu_once_pierde_sin_el=54.9,
+        )
+        resultado = _evaluar(plantilla, [_rival("Pablo", 103_900_000), _rival("Luis", 20_000_000)], saldo=40_000_000)
+        filas = [fila for fila in resultado["proteger"] if fila["player_id"] == "MC-0"]
+        if filas:
+            fila = filas[0]
+            self.assertIsNone(fila["subida_recomendada"])
+            self.assertLessEqual(fila["clausula_perfecta"]["clausula_objetivo"] if fila["clausula_perfecta"] else 0, 1_800_000 * 2.5)
+        self.assertEqual(resultado["resumen"]["coste_proteger_eur"], 0)
+
+    def test_el_dano_no_pasa_de_lo_que_puntua_el_jugador(self) -> None:
+        plantilla = _con(_once(), "MC-0", clausula=9_000_000, jornada=5.2, tu_once_pierde_sin_el=54.9)
+        resultado = _evaluar(plantilla, [_rival("Pablo", 30_000_000)], saldo=40_000_000)
+        fila = _fila(resultado, "proteger", "MC-0")
+        self.assertEqual(fila["tu_once_pierde_sin_el"], 5.2)
+
+    def test_proteger_no_cuesta_mas_que_el_valor_del_jugador(self) -> None:
+        plantilla = _con(_once(), "MC-0", valor=3_000_000, clausula=3_200_000, jornada=5.0, tu_once_pierde_sin_el=5.0)
+        resultado = _evaluar(plantilla, [_rival("Pablo", 100_000_000)], saldo=50_000_000)
+        for fila in resultado["proteger"]:
+            if fila["player_id"] != "MC-0":
+                continue
+            for nivel in fila["niveles"]:
+                self.assertLessEqual(nivel["coste_eur"], 3_000_000)
+
+
 class ProtegerTests(unittest.TestCase):
     def test_cubrir_a_todos_exige_superar_la_caja_del_mas_rico(self) -> None:
         plantilla = _con(_once(), "DEL-0", clausula=8_000_000, tu_once_pierde_sin_el=3.0)

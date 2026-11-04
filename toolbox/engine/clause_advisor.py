@@ -30,6 +30,8 @@ MULTIPLO_EN_PELIGRO = 1.25
 #: Un rival no paga una cláusula que pase de 2,5 veces lo que vale el jugador: la regla de oro
 #: ya llama chollo a hasta 2,2×, así que por encima nadie la compra.
 MULTIPLO_CREIBLE = 2.5
+#: Proteger no puede costar más que volver a comprar al jugador: tope de coste = valor de mercado.
+MULTIPLO_COSTE_MAX = 1.0
 #: Margen sobre la caja del rival para que no le llegue por poco.
 MARGEN_MIN_EUR = 250_000
 MARGEN_PCT = 0.02
@@ -133,13 +135,15 @@ def _niveles(
     capacidades: list[tuple[int, str | None]],
     saldo: int | None,
     tope: int | None = None,
+    coste_max: int | None = None,
 ) -> list[dict[str, Any]]:
     """Cláusulas objetivo, de la más segura a la más barata.
 
     El nivel ``i`` deja sin cubrir a los ``i`` rivales con más caja. Cubrir a
     todos exige superar la caja del más rico más un margen, pero nunca más de
     ``tope`` (lo máximo que alguien pagaría por el jugador): subir más no protege
-    nada y solo cuesta caja.
+    nada y solo cuesta caja. Un nivel que cuesta más que ``coste_max`` (lo que vale
+    volver a comprar al jugador) tampoco se ofrece.
     """
     ordenadas = sorted((caja for caja, _ in capacidades), reverse=True)
     niveles: list[dict[str, Any]] = []
@@ -150,6 +154,8 @@ def _niveles(
         if objetivo <= clausula:
             continue
         coste = coste_subida(clausula, objetivo)
+        if coste_max is not None and coste > coste_max:
+            continue
         niveles.append(
             {
                 "clausula_objetivo": int(objetivo),
@@ -184,7 +190,11 @@ def _proteger(
     def _prioridad(jugador: dict[str, Any]) -> float:
         valor_ = _int(jugador.get("valor")) or 0
         clausula_ = _int(jugador.get("clausula")) or 0
-        return -((_num(jugador.get("tu_once_pierde_sin_el")) or 0.0) * ratio + max(0, valor_ - clausula_))
+        daño = _num(jugador.get("tu_once_pierde_sin_el")) or 0.0
+        xp_ = _num(jugador.get("jornada"))
+        if xp_ is not None and xp_ > 0:
+            daño = min(daño, xp_)
+        return -(daño * ratio + max(0, valor_ - clausula_))
 
     for jugador in sorted(propios, key=_prioridad):
         clausula = _int(jugador.get("clausula"))
@@ -196,7 +206,9 @@ def _proteger(
             bloqueadas += 1
             continue
         justo = _int(jugador.get("valor_justo"))
-        referencia = max(valor or 0, justo or 0)
+        # Lo que paga un rival se ancla al valor de mercado. El valor justo del modelo
+        # (xP × ratio) solo sirve cuando no hay valor, porque puede ser varias veces el precio.
+        referencia = valor if valor else (justo or 0)
         creible = referencia > 0 and clausula <= referencia * MULTIPLO_CREIBLE
         capaces = (
             [(int(rival["saldo"]), rival) for rival in con_caja if int(rival["saldo"]) >= clausula] if creible else []
@@ -208,11 +220,17 @@ def _proteger(
             continue
         posicion = jugador.get("position")
         pierde = _num(jugador.get("tu_once_pierde_sin_el")) or 0.0
+        # Sin recambio en plantilla el WAR cuenta la jornada entera (todo el once). Aquí el daño
+        # real es lo que él puntúa: el hueco se tapa con un fichaje, no se pierde todo el once.
+        xp_propio = _num(jugador.get("jornada"))
+        if xp_propio is not None and xp_propio > 0:
+            pierde = min(pierde, xp_propio)
         en_xi = jugador.get("en_xi") is True
         necesitan = [rival for _, rival in capaces if posicion in (rival.get("posiciones") or [])]
         capacidades = [(caja, str(rival.get("manager") or "Rival")) for caja, rival in capaces]
         tope = int(referencia * MULTIPLO_CREIBLE) if referencia > 0 else None
-        niveles = _niveles(clausula, capacidades, restante, tope) if capaces else []
+        coste_max = int(referencia * MULTIPLO_COSTE_MAX) if referencia > 0 else None
+        niveles = _niveles(clausula, capacidades, restante, tope, coste_max) if capaces else []
         caja_antes = restante
 
         # Daño si te lo clausulan: los puntos que pierde tu once pagados a precio de mercado
