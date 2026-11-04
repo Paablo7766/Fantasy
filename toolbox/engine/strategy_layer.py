@@ -1078,6 +1078,7 @@ def _asesorar_clausulas(
             ahora=now,
             cierre=_cierre_ventana(board, now),
             dias_al_cierre=dias_al_cierre,
+            alternativas=alternativas,
         )
     except Exception:
         logger.exception("asesor de cláusulas")

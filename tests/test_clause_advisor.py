@@ -137,6 +137,56 @@ class ProtegerAnclajeTests(unittest.TestCase):
                 self.assertLessEqual(nivel["coste_eur"], 3_000_000)
 
 
+class ProtegerReposicionTests(unittest.TestCase):
+    def _plantilla(self) -> list[dict]:
+        return _con(_once(), "MC-0", valor=8_000_000, clausula=8_400_000, jornada=4.0, tu_once_pierde_sin_el=4.0)
+
+    def test_con_sustituto_barato_el_dano_es_solo_el_hueco(self) -> None:
+        alternativas = [{"player_id": "libre", "position": "MC", "coste": 5_000_000, "xp": 4.0}]
+        resultado = evaluar_clausulas(
+            propios=self._plantilla(),
+            ajenos=[],
+            rivales=[_rival("Pablo", 50_000_000)],
+            saldo=30_000_000,
+            ratio=RATIO,
+            ahora=AHORA,
+            cierre=CIERRE,
+            alternativas=alternativas,
+        )
+        fila = _fila(resultado, "proteger", "MC-0")
+        self.assertEqual(fila["coste_reposicion"], 5_000_000)
+        self.assertTrue(fila["hay_sustituto"])
+        self.assertEqual(fila["exposicion_eur"], 2_000_000)
+        self.assertEqual(fila["veredicto_codigo"], "ASUMIR")
+
+    def test_sin_sustituto_el_dano_es_la_escasez_y_compensa_proteger(self) -> None:
+        resultado = evaluar_clausulas(
+            propios=self._plantilla(),
+            ajenos=[],
+            rivales=[_rival("Pablo", 50_000_000)],
+            saldo=30_000_000,
+            ratio=RATIO,
+            ahora=AHORA,
+            cierre=CIERRE,
+            alternativas=[],
+        )
+        fila = _fila(resultado, "proteger", "MC-0")
+        self.assertFalse(fila["hay_sustituto"])
+        self.assertEqual(fila["coste_reposicion"], 12_800_000)
+        self.assertEqual(fila["veredicto_codigo"], "PROTEGER_YA")
+
+
+class ProtegerPrescindibleTests(unittest.TestCase):
+    def test_suplente_que_no_puntua_se_vende_y_no_gasta_caja(self) -> None:
+        plantilla = _con(_once(), "MC-banq", valor=3_000_000, clausula=2_000_000, jornada=0.5)
+        resultado = _evaluar(plantilla, [_rival("Pablo", 30_000_000)], saldo=10_000_000)
+        fila = _fila(resultado, "proteger", "MC-banq")
+        self.assertEqual(fila["veredicto_codigo"], "VENDER_ANTES")
+        self.assertTrue(fila["prescindible"])
+        self.assertIsNone(fila["subida_recomendada"])
+        self.assertEqual(resultado["resumen"]["coste_proteger_eur"], 0)
+
+
 class ProtegerTests(unittest.TestCase):
     def test_cubrir_a_todos_exige_superar_la_caja_del_mas_rico(self) -> None:
         plantilla = _con(_once(), "DEL-0", clausula=8_000_000, tu_once_pierde_sin_el=3.0)

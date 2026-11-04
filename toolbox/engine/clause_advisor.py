@@ -32,6 +32,10 @@ MULTIPLO_EN_PELIGRO = 1.25
 MULTIPLO_CREIBLE = 2.5
 #: Proteger no puede costar más que volver a comprar al jugador: tope de coste = valor de mercado.
 MULTIPLO_COSTE_MAX = 1.0
+#: Un suplente que no pasa de estos puntos de jornada no merece caja: se vende, no se protege.
+PIERDE_PRESCINDIBLE = 1.0
+#: Con sustituto comprable hoy solo se pierde el hueco de una jornada, no los puntos enteros.
+FRACCION_HUECO_REPONIBLE = 0.25
 #: Margen sobre la caja del rival para que no le llegue por poco.
 MARGEN_MIN_EUR = 250_000
 MARGEN_PCT = 0.02
@@ -178,6 +182,7 @@ def _proteger(
     ratio: float,
     ahora: datetime,
     cierre: datetime | None,
+    alternativas: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], int, int]:
     filas: list[dict[str, Any]] = []
     bloqueadas = 0
@@ -226,6 +231,8 @@ def _proteger(
         if xp_propio is not None and xp_propio > 0:
             pierde = min(pierde, xp_propio)
         en_xi = jugador.get("en_xi") is True
+        # Quien no entra en el once y apenas puntúa no merece caja: vender gana al blindaje.
+        prescindible = not en_xi and pierde < PIERDE_PRESCINDIBLE
         necesitan = [rival for _, rival in capaces if posicion in (rival.get("posiciones") or [])]
         capacidades = [(caja, str(rival.get("manager") or "Rival")) for caja, rival in capaces]
         tope = int(referencia * MULTIPLO_CREIBLE) if referencia > 0 else None
@@ -236,10 +243,20 @@ def _proteger(
         # Daño si te lo clausulan: los puntos que pierde tu once pagados a precio de mercado
         # y, si la cláusula está por debajo de su valor, lo que dejas de cobrar.
         regalo = max(0, (valor or 0) - clausula)
-        exposicion = pierde * ratio + regalo
+        # Con alternativas, el daño se mide en euros reales: lo que cuesta volver a tener sus puntos
+        # menos lo que cobras por la cláusula, más el hueco de una jornada. Sin ellas, el modelo antiguo.
+        reposicion: int | None = None
+        hay_sustituto: bool | None = None
+        if alternativas is not None and valor:
+            reposicion, hay_sustituto = coste_reposicion(jugador, alternativas, valor)
+        if reposicion is not None:
+            factor = FRACCION_HUECO_REPONIBLE if hay_sustituto else 1.0
+            exposicion = max(0, reposicion - clausula) + pierde * ratio * factor
+        else:
+            exposicion = pierde * ratio + regalo
         elegido: dict[str, Any] | None = None
         mejor_neto = 0.0
-        for nivel in niveles:
+        for nivel in () if prescindible else niveles:
             total = nivel["rivales_cubiertos"] + nivel["rivales_sin_cubrir"]
             cubierto = nivel["rivales_cubiertos"] / total if total else 0.0
             neto = exposicion * cubierto - nivel["coste_eur"]
@@ -257,7 +274,9 @@ def _proteger(
         else:
             riesgo = "MEDIO"
 
-        if elegido is not None and elegido["rivales_sin_cubrir"] == 0:
+        if prescindible and capaces and regalo > 0:
+            codigo = "VENDER_ANTES"
+        elif elegido is not None and elegido["rivales_sin_cubrir"] == 0:
             codigo = "PROTEGER_YA"
         elif elegido is not None:
             codigo = "PROTEGER_PARCIAL"
@@ -319,6 +338,9 @@ def _proteger(
                 "subida_recomendada": elegido,
                 "niveles": niveles,
                 "exposicion_eur": int(round(exposicion)),
+                "coste_reposicion": reposicion,
+                "hay_sustituto": hay_sustituto,
+                "prescindible": prescindible,
                 "veredicto_codigo": codigo,
                 "veredicto_titulo": TITULOS_PROTEGER[codigo],
                 "motivos": motivos,
@@ -366,8 +388,8 @@ def _motivo_proteger(
         )
     if codigo == "VENDER_ANTES":
         return (
-            f"{cabeza} {impacto} Proteger no compensa y su cláusula está por debajo de su valor "
-            f"({_m(valor or 0)}): véndelo a LaLiga antes de que te lo clausulen."
+            f"{cabeza} {impacto} No te aporta puntos y su cláusula está por debajo de su valor "
+            f"({_m(valor or 0)}): véndelo a LaLiga antes de que te lo clausulen, sin gastar caja en protegerlo."
         )
     cobro = f"Si lo pagan, cobras {_m(clausula)}"
     if valor:
@@ -594,6 +616,7 @@ def evaluar_clausulas(
     ahora: datetime,
     cierre: datetime | None,
     dias_al_cierre: float | None = None,
+    alternativas: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """``proteger`` (tus jugadores en peligro) y ``clausulazos`` (a quién pagar y cuándo).
 
@@ -604,7 +627,9 @@ def evaluar_clausulas(
     ``puesto_liga`` y ``plantilla`` (``player_id``, ``position``, ``sano``, ``jornada``)
     activa el bono de daño al rival en jueves y viernes.
     """
-    proteger, bloqueadas, seguros = _proteger(propios, rivales, saldo=saldo, ratio=ratio, ahora=ahora, cierre=cierre)
+    proteger, bloqueadas, seguros = _proteger(
+        propios, rivales, saldo=saldo, ratio=ratio, ahora=ahora, cierre=cierre, alternativas=alternativas
+    )
     elegibles = [
         {"player_id": fila["player_id"], "position": fila["position"], "jornada": fila.get("jornada") or 0.0}
         for fila in propios
