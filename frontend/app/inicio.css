@@ -1562,10 +1562,6 @@
     #101010;
 }
 
-.eq-stack .eq-token__ring {
-  box-shadow: 0 6px 16px -6px rgba(0, 0, 0, 0.9);
-}
-
 .eq-stack select {
   border: 0;
   border-radius: 9999px;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { jornadaEv, playerName, points, projectedLineupPoints, titularShare } from "@/lib/core/format";
+import { initials, jornadaEv, playerName, points, projectedLineupPoints, titularShare } from "@/lib/core/format";
 import { signedPoints } from "@/lib/inicio/hoy";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { CapitanPick, Gap, OptimizePayload, PlanPayload, Player, SquadsPayload } from "@/lib/types";
@@ -31,7 +31,7 @@ type View = "rec" | "saved";
 
 function xFor(index: number, count: number): number {
   if (count <= 1) return 50;
-  const margin = count >= 5 ? 10 : count === 4 ? 13 : count === 3 ? 20 : 30;
+  const margin = count >= 5 ? 11 : count === 4 ? 14 : count === 3 ? 21 : 30;
   return margin + (index * (100 - margin * 2)) / (count - 1);
 }
 
@@ -116,6 +116,18 @@ function redLine(plan: PlanPayload | null, optimize: OptimizePayload, differs: b
   return { tone: fail ? "fail" : "warn", items };
 }
 
+/** Busto del jugador: foto recortada del pecho para arriba; iniciales si no hay foto. */
+function Bust({ name, src }: { name: string; src?: string | null }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  if (src && failedSrc !== src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src} alt="" className="eq-card__img" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailedSrc(src)} />
+    );
+  }
+  return <span className="eq-card__initials">{initials(name)}</span>;
+}
+
 function Pitch({
   slots,
   selected,
@@ -133,15 +145,15 @@ function Pitch({
 }) {
   return (
     <div className="eq-pitch" role="group" aria-label="Campo con tu once">
-      <svg viewBox="0 0 68 88" preserveAspectRatio="none" aria-hidden="true">
+      <svg viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
         <g fill="none" stroke="rgba(255,255,255,0.09)" strokeWidth="0.35">
-          <rect x="2" y="2" width="64" height="84" rx="2" />
-          <line x1="2" y1="44" x2="66" y2="44" />
-          <circle cx="34" cy="44" r="7" />
+          <rect x="2" y="2" width="64" height="96" rx="2" />
+          <line x1="2" y1="50" x2="66" y2="50" />
+          <circle cx="34" cy="50" r="7" />
           <rect x="16" y="2" width="36" height="12" />
-          <rect x="16" y="74" width="36" height="12" />
+          <rect x="16" y="86" width="36" height="12" />
           <rect x="26" y="2" width="16" height="4.5" />
-          <rect x="26" y="81.5" width="16" height="4.5" />
+          <rect x="26" y="93.5" width="16" height="4.5" />
         </g>
       </svg>
       {slots.map((slot, index) => {
@@ -156,11 +168,11 @@ function Pitch({
               aria-label={`Hueco de ${slot.position}`}
               onClick={() => onSelect(slot.key)}
             >
-              <span className="eq-token__body row-in" style={{ animationDelay: `${index * 30}ms` }}>
-                <span className="eq-token__ring" style={{ background: "transparent", border: `2px dashed ${TONE.red}` }}>
-                  <span className="text-lg leading-none text-[#FC734D]">+</span>
+              <span className="eq-card row-in" style={{ animationDelay: `${index * 30}ms` }}>
+                <span className="eq-card__photo eq-card__photo--gap">
+                  <span className="text-2xl leading-none text-[#FC734D]">+</span>
                 </span>
-                <span className="eq-token__name !text-[#FFA088]">Falta {slot.position}</span>
+                <span className="eq-card__name !text-[#FFA088]">Falta {slot.position}</span>
               </span>
             </button>
           );
@@ -168,6 +180,7 @@ function Pitch({
         const name = playerName(slot);
         const id = slot.player_id ? String(slot.player_id) : null;
         const badge = id && id === safeId ? "C" : id && id === boldId ? "R" : null;
+        const share = titularShare(slot.p_titular);
         return (
           <button
             key={slot.key}
@@ -176,23 +189,26 @@ function Pitch({
             style={{
               left: `${slot.x}%`,
               top: `${slot.y}%`,
-              ["--ring" as string]: ringColor(titularShare(slot.p_titular)),
+              ["--ring" as string]: ringColor(share),
             }}
             aria-pressed={selected === slot.key}
-            aria-label={`${name}, ${points(jornadaEv(slot))} puntos esperados`}
+            aria-label={`${name}, ${share !== null ? `${Math.round(share * 100)}% de jugar, ` : ""}${points(jornadaEv(slot))} puntos esperados`}
             onClick={() => onSelect(slot.key)}
           >
-            <span className="eq-token__body row-in" style={{ animationDelay: `${index * 30}ms` }}>
-              <span className="eq-token__ring">
-                <Face name={name} src={slot.image_url || photoFor(photos, slot.player_id, name)} size={0} />
+            <span className="eq-card row-in" style={{ animationDelay: `${index * 30}ms` }}>
+              <span className="eq-card__photo">
+                <Bust name={name} src={slot.image_url || photoFor(photos, slot.player_id, name)} />
                 {badge ? (
                   <span className="eq-badge" style={{ background: badge === "C" ? "#fff" : TONE.copper, color: "#120C09" }}>
                     {badge}
                   </span>
                 ) : null}
+                <span className="eq-card__pct" aria-label="Probabilidad de jugar">
+                  {share !== null ? `${Math.round(share * 100)}%` : "—"}
+                </span>
               </span>
-              <span className="eq-token__name">{lastName(name)}</span>
-              <span className="eq-token__xp">{points(jornadaEv(slot))}</span>
+              <span className="eq-card__name">{lastName(name)}</span>
+              <span className="eq-card__xp">{points(jornadaEv(slot))}</span>
             </span>
           </button>
         );
@@ -465,7 +481,7 @@ export function OnceTab({
               {label}
             </span>
           ))}
-          <span>titular</span>
+          <span>de jugar</span>
         </p>
 
         {active ? <PlayerSheet player={active} photos={photos} onClose={() => setSelected(null)} /> : null}

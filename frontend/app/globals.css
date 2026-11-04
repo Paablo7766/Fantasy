@@ -2093,9 +2093,9 @@ body {
 .eq-pitch {
   position: relative;
   width: 100%;
-  max-width: 26rem;
+  max-width: 30rem;
   margin-inline: auto;
-  aspect-ratio: 68 / 88;
+  aspect-ratio: 68 / 100;
   container-type: inline-size;
   overflow: hidden;
   border-radius: 1.75rem;
@@ -2117,8 +2117,7 @@ body {
 .eq-token {
   position: absolute;
   display: flex;
-  width: 21cqw;
-  min-height: 40px;
+  width: 17.5cqw;
   flex-direction: column;
   align-items: center;
   transform: translate(-50%, -50%);
@@ -2129,76 +2128,102 @@ body {
   transition: transform 200ms ease-out;
 }
 
-.eq-token__body {
+.eq-token:hover,
+.eq-token[aria-pressed="true"] {
+  transform: translate(-50%, -50%) scale(1.05);
+  z-index: 2;
+}
+
+.eq-card {
   display: flex;
   width: 100%;
   flex-direction: column;
   align-items: center;
 }
 
-.eq-token:hover,
-.eq-token[aria-pressed="true"] {
-  transform: translate(-50%, -50%) scale(1.06);
-  z-index: 2;
-}
-
-.eq-token__ring {
+/* Busto del jugador: del pecho para arriba, recortado en rectángulo. */
+.eq-card__photo {
   position: relative;
   display: grid;
-  width: clamp(40px, 13cqw, 56px);
-  aspect-ratio: 1;
+  width: 100%;
+  aspect-ratio: 5 / 6;
   place-items: center;
-  border-radius: 9999px;
-  padding: 2px;
-  background: var(--ring, rgba(255, 255, 255, 0.25));
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.5);
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 10px 22px -10px rgba(0, 0, 0, 0.9);
 }
 
-.eq-token[aria-pressed="true"] .eq-token__ring {
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85), 0 0 22px var(--ring, rgba(255, 122, 61, 0.6));
+.eq-token[aria-pressed="true"] .eq-card__photo {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 12px 26px -8px rgba(0, 0, 0, 0.9);
 }
 
-.eq-token__ring > .avatar {
+.eq-card__photo--gap {
+  background: rgba(252, 115, 77, 0.06);
+  box-shadow: inset 0 0 0 1.5px rgba(252, 115, 77, 0.7);
+  border-style: dashed;
+}
+
+.eq-card__img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  border: 2px solid #120c09;
-  font-size: 11px;
+  object-fit: cover;
+  object-position: 50% 8%;
 }
 
-.eq-token__name {
-  margin-top: 4px;
+.eq-card__initials {
+  font-size: clamp(14px, 5cqw, 20px);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* Probabilidad de jugar: franja inferior de la foto, en el color del semáforo. */
+.eq-card__pct {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 10px 0 3px;
+  text-align: center;
+  font-size: clamp(10.5px, 3.3cqw, 13px);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ring, #fff);
+  background: linear-gradient(180deg, transparent, rgba(10, 7, 5, 0.88) 70%);
+}
+
+.eq-card__name {
+  margin-top: 5px;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border-radius: 6px;
-  background: rgba(10, 7, 5, 0.6);
-  padding: 1px 6px;
-  font-size: clamp(10.5px, 3.2cqw, 12.5px);
-  font-weight: 500;
-  line-height: 1.35;
+  font-size: clamp(11px, 3.4cqw, 13px);
+  font-weight: 600;
+  line-height: 1.2;
   color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
 }
 
-.eq-token__xp {
-  margin-top: 2px;
+.eq-card__xp {
+  margin-top: 1px;
   font-size: clamp(10px, 3cqw, 12px);
-  font-weight: 600;
-  line-height: 1;
+  font-weight: 500;
+  line-height: 1.2;
   color: #ffc08a;
   font-variant-numeric: tabular-nums;
 }
 
 .eq-badge {
   position: absolute;
-  top: -3px;
-  right: -5px;
+  top: 4px;
+  left: 4px;
   display: grid;
   width: 18px;
   height: 18px;
   place-items: center;
   border-radius: 9999px;
-  border: 2px solid #120c09;
   font-size: 9.5px;
   font-weight: 700;
   line-height: 1;
