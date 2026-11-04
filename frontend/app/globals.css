@@ -2117,7 +2117,7 @@ body {
 .eq-token {
   position: absolute;
   display: flex;
-  width: 17.5cqw;
+  width: 21cqw;
   flex-direction: column;
   align-items: center;
   transform: translate(-50%, -50%);
@@ -2141,27 +2141,26 @@ body {
   align-items: center;
 }
 
-/* Busto del jugador: del pecho para arriba, recortado en rectángulo. */
+/* Jugador sin caja: busto con camiseta sobre el campo, como un recorte. */
 .eq-card__photo {
   position: relative;
   display: grid;
   width: 100%;
-  aspect-ratio: 5 / 6;
+  aspect-ratio: 1;
   place-items: center;
-  border-radius: 14px;
-  overflow: hidden;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 10px 22px -10px rgba(0, 0, 0, 0.9);
+  border-radius: 9999px;
+  transition: background 200ms ease-out;
 }
 
 .eq-token[aria-pressed="true"] .eq-card__photo {
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 12px 26px -8px rgba(0, 0, 0, 0.9);
+  background: radial-gradient(circle at 50% 55%, rgba(255, 255, 255, 0.16), transparent 68%);
 }
 
 .eq-card__photo--gap {
+  border: 1.5px dashed rgba(252, 115, 77, 0.75);
   background: rgba(252, 115, 77, 0.06);
-  box-shadow: inset 0 0 0 1.5px rgba(252, 115, 77, 0.7);
-  border-style: dashed;
+  width: 70%;
+  margin-block: 15%;
 }
 
 .eq-card__img {
@@ -2169,8 +2168,9 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: 50% 8%;
+  object-fit: contain;
+  object-position: 50% 100%;
+  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.55));
 }
 
 .eq-card__initials {
@@ -2179,22 +2179,25 @@ body {
   color: rgba(255, 255, 255, 0.55);
 }
 
-/* Probabilidad de jugar: franja inferior de la foto, en el color del semáforo. */
+/* Probabilidad de jugar: píldora sobre el hombro, en el color del semáforo. */
 .eq-card__pct {
   position: absolute;
-  inset: auto 0 0 0;
-  padding: 10px 0 3px;
-  text-align: center;
-  font-size: clamp(10.5px, 3.3cqw, 13px);
+  right: 0;
+  bottom: 4%;
+  padding: 3px 7px;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--ring, #fff) 40%, transparent);
+  background: rgba(14, 10, 8, 0.85);
+  backdrop-filter: blur(6px);
+  font-size: clamp(10.5px, 3.2cqw, 13px);
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--ring, #fff);
-  background: linear-gradient(180deg, transparent, rgba(10, 7, 5, 0.88) 70%);
 }
 
 .eq-card__name {
-  margin-top: 5px;
+  margin-top: 2px;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2217,8 +2220,8 @@ body {
 
 .eq-badge {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: 6%;
+  left: 6%;
   display: grid;
   width: 18px;
   height: 18px;
