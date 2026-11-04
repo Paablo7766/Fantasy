@@ -223,6 +223,7 @@ def build_market_decisions(
     gap_positions = _gap_positions(optimize)
     gap_player_ids = _gap_player_ids(optimize)
     xi_margins = _xi_margins(optimize, indexed)
+    xi_pool = _xi_pool(optimize, indexed)
     pressure = rivals if isinstance(rivals, list) else rival_snapshots(squads, trends)
     activity_buys = (
         history.get("activity_buys")
@@ -258,6 +259,7 @@ def build_market_decisions(
             gap_player_ids=gap_player_ids,
             rivals=pressure,
             xi_margins=xi_margins,
+            xi_pool=xi_pool,
             history=history,
             base_rival_profiles=base_rival_profiles,
             free_tier_peers_count=peers_by_position.get(
@@ -438,6 +440,7 @@ def _decide_listing(
     gap_player_ids: set[str],
     rivals: list[dict[str, Any]] | None = None,
     xi_margins: dict[str, dict[str, Any]] | None = None,
+    xi_pool: list[dict[str, Any]] | None = None,
     history: dict[str, Any] | None = None,
     base_rival_profiles: dict[str, Any] | None = None,
     free_tier_peers_count: int = 0,
@@ -710,7 +713,7 @@ def _decide_listing(
         motives.append("sobreprecio")
         score += W_OVERPAY
 
-    xi_edge = _xi_edge(position, trend, usable, xi_margins)
+    xi_edge = _xi_edge(position, trend, usable, xi_margins, player_id=player_id, pool=xi_pool)
     points_delta = xi_edge.get("points_delta")
     if isinstance(points_delta, (int, float)) and not isinstance(points_delta, bool) and points_delta > 0:
         motives.append("mejora_xi")
@@ -1298,15 +1301,118 @@ def _xi_margins(
     return margins
 
 
+def _xi_pool(
+    optimize: dict[str, Any] | None,
+    indexed: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Plantilla elegible (once + banquillo) con los puntos que usa el margen del once."""
+    pool: list[dict[str, Any]] = []
+    if not isinstance(optimize, dict) or optimize.get("ok") is False:
+        return pool
+    for bucket in ("xi", "benched"):
+        rows = optimize.get(bucket)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            position = row.get("position")
+            player_id = row.get("player_id")
+            if position not in {"POR", "DEF", "MC", "DEL"} or not isinstance(player_id, str) or not player_id:
+                continue
+            trend = indexed.get(player_id)
+            if not isinstance(trend, dict):
+                trend = {}
+            points, _source = _matched_points(trend, trend_usable(trend))
+            if points is None:
+                for key in ("jornada_ev", "expected_points"):
+                    value = row.get(key)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        points = float(value)
+                        break
+            if points is None:
+                continue
+            pool.append(
+                {
+                    "player_id": player_id,
+                    "name": row.get("nickname") if isinstance(row.get("nickname"), str) else row.get("name"),
+                    "position": position,
+                    "club": row.get("club") if isinstance(row.get("club"), str) else trend.get("club"),
+                    "jornada": float(points),
+                }
+            )
+    return pool
+
+
+def _lineup_edge(
+    player_id: str | None,
+    position: str | None,
+    points: float | None,
+    pool: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """Mejora real del once al fichar: mejor once con él menos el mejor once actual.
+
+    Re-elige formación, así un delantero extra puede sacar a un defensa y no
+    solo al delantero más flojo. ``None`` si no hay once legal o no mejora.
+    """
+    if not pool or not player_id or not position or points is None:
+        return None
+    if any(row["player_id"] == player_id for row in pool):
+        return None
+    from toolbox.engine.lineup_math import solve_best_xi
+
+    actual = solve_best_xi(pool, lambda_var=0.0)
+    if not actual["ok"]:
+        return None
+    candidate = {"player_id": player_id, "position": position, "jornada": float(points)}
+    nuevo = solve_best_xi([*pool, candidate], lambda_var=0.0)
+    if not nuevo["ok"] or player_id not in nuevo["player_ids"]:
+        return None
+    delta = round(float(nuevo["puntos"]) - float(actual["puntos"]), 4)
+    if delta <= 1e-9:
+        return None
+    salen = [row for row in pool if row["player_id"] in actual["player_ids"] and row["player_id"] not in nuevo["player_ids"]]
+    if not salen:
+        return None
+    leaves = min(salen, key=lambda row: row["jornada"])
+    return {
+        "delta": delta,
+        "leaves": leaves,
+        "formation": nuevo["formacion"],
+        "formation_from": actual["formacion"],
+    }
+
+
 def _xi_edge(
     position: str | None,
     trend: dict[str, Any],
     usable: bool,
     margins: dict[str, dict[str, Any]] | None,
+    *,
+    player_id: str | None = None,
+    pool: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     empty: dict[str, Any] = {"replaces": None, "points_delta": None, "points_source": None}
     if not position or not isinstance(margins, dict):
         return empty
+    market_pts, market_src = _matched_points(trend, usable)
+    edge = _lineup_edge(player_id, position, market_pts, pool) if market_src == "own" else None
+    if edge is not None:
+        leaves = edge["leaves"]
+        return {
+            "replaces": {
+                "player_id": leaves["player_id"],
+                "name": leaves.get("name") if isinstance(leaves.get("name"), str) else None,
+                "position": leaves["position"],
+                "club": leaves.get("club") if isinstance(leaves.get("club"), str) else None,
+                "points": leaves["jornada"],
+                "points_source": "own",
+                "formation": edge["formation"],
+                "formation_from": edge["formation_from"],
+            },
+            "points_delta": edge["delta"],
+            "points_source": "own",
+        }
     slot = margins.get(position)
     if not isinstance(slot, dict):
         return empty

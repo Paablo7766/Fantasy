@@ -31,6 +31,9 @@ export type XiReplace = {
   club?: string | null;
   points?: number | null;
   points_source?: string | null;
+  /** Formación del mejor once con el fichaje; solo si el motor la recalcula. */
+  formation?: string | null;
+  formation_from?: string | null;
 };
 
 export type JornadaClub = {

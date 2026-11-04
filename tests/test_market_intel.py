@@ -543,6 +543,35 @@ class JornadaBidTests(unittest.TestCase):
         self.assertNotEqual(row["decision"], "PUJAR")
         self.assertIn("no_mejora_xi", row["motives"])
 
+    def test_forward_can_replace_a_defender_by_changing_formation(self) -> None:
+        """4-5-1 con un solo DEL: un 2.º delantero bueno saca al peor defensa (3-5-2)."""
+        xi = (
+            [{"player_id": "gk", "position": "POR", "jornada_ev": 6.0}]
+            + [{"player_id": f"d{i}", "position": "DEF", "jornada_ev": 5.0} for i in range(3)]
+            + [{"player_id": "yeray", "position": "DEF", "nickname": "Yeray", "jornada_ev": 1.8}]
+            + [{"player_id": f"m{i}", "position": "MC", "jornada_ev": 5.0} for i in range(5)]
+            + [{"player_id": "cepeda", "position": "DEL", "nickname": "Cepeda", "jornada_ev": 4.8}]
+        )
+        doc = build_market_decisions(
+            {"ok": True, "listings": [_listing("parrott", sale=900_000, position="DEL")]},
+            {
+                "ok": True,
+                "players": [
+                    _trend("parrott", position="DEL", own_expected_points=5.3, p_titular=0.7),
+                    _trend("cepeda", position="DEL", own_expected_points=4.8, p_titular=0.9),
+                    _trend("yeray", position="DEF", own_expected_points=1.8, p_titular=0.4),
+                ],
+            },
+            self.flip,
+            {"ok": True, "gaps": [], "market_fills": [], "xi": xi, "benched": []},
+            now=self.now,
+        )
+        row = doc["decisions"][0]
+        self.assertEqual(row["points_delta"], 3.5)
+        self.assertEqual(row["replaces"]["name"], "Yeray")
+        self.assertEqual(row["replaces"]["formation"], "3-5-2")
+        self.assertEqual(row["replaces"]["formation_from"], "4-5-1")
+
     def test_better_than_xi_and_board_order(self) -> None:
         doc = build_market_decisions(
             {"ok": True, "listings": [{**_listing("mkt", sale=900_000, position="DEL"), "club": "Getafe"}]},

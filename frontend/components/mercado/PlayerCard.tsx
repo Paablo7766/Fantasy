@@ -357,7 +357,13 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
             label="Tu once"
             value={delta === null || !player.replaces?.name ? "No mejora" : `${delta > 0 ? "+" : ""}${dec(delta)} pts`}
             tone={delta !== null && delta > 0 && player.replaces?.name ? TONE.green : "rgba(255,255,255,0.6)"}
-            sub={player.replaces?.name ? `por ${player.replaces.name}` : undefined}
+            sub={
+              player.replaces?.name
+                ? player.replaces.formation && player.replaces.formation !== player.replaces.formation_from
+                  ? `por ${player.replaces.name} · ${player.replaces.formation}`
+                  : `por ${player.replaces.name}`
+                : undefined
+            }
           />
           <Stat label="Media" value={average !== null ? `${dec(average)} pts` : "—"} sub="por jornada" />
         </div>
