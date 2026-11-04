@@ -18,6 +18,25 @@ export type PlanFichajeAccion = {
   puja_anti_pizarra?: number | null;
   diferencial_anti_pizarra_eur?: number | null;
   alta_demanda?: boolean;
+  /** Botón a pulsar: puja en el mercado o pago de la cláusula a un rival. */
+  etiqueta?: "PUJAR" | "CLAUSULAR" | null;
+  /** Solo en alternativas_liquidez. */
+  roi_xp_por_millon?: number | null;
+  falta_eur?: number | null;
+};
+
+/** De dónde sale cada euro del plan (lo garantiza el solver). */
+export type PlanPresupuesto = {
+  caja: number;
+  ventas_hoy: number;
+  ventas_si_ganas: number;
+  credito_20pct: number | null;
+  disponible_clausulas: number;
+  disponible_pujas: number;
+  gasto_clausulas: number;
+  gasto_pujas: number;
+  holgura: number;
+  cumple: boolean;
 };
 
 export type TradingOperacion = {
@@ -85,6 +104,9 @@ export type PlanFichajes = {
   factor_ajuste?: number | null;
   modo_liquidez?: "VENTANA" | "ALL-IN" | "SIN_RELOJ" | string | null;
   en_radar?: PlanFichajeAccion[];
+  presupuesto?: PlanPresupuesto | null;
+  /** Must-buy que no caben en la caja de hoy, por mejora por millón. */
+  alternativas_liquidez?: PlanFichajeAccion[];
   trading?: TradingDesk;
   liquidacion?: PlanLiquidacion;
   /** Escudo y francotirador: cláusulas en riesgo y chollos de rivales en rojo. */

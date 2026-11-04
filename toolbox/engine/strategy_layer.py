@@ -1260,14 +1260,12 @@ def _plan(
             continue
         ask = row.get("sale_price") if isinstance(row.get("sale_price"), int) else 0
         lead = row.get("leading_bid") if isinstance(row.get("leading_bid"), int) else 0
-        pressure = max(
-            row.get("bid_count") if isinstance(row.get("bid_count"), int) else 0,
-            row.get("offer_count") if isinstance(row.get("offer_count"), int) else 0,
-        )
+        # Fichaje del mercado: se paga la puja recomendada (nunca menos que el
+        # precio de salida ni que la puja líder conocida). El tope ``maxima`` es
+        # el techo de la subasta, no el coste del plan: con ofertas sin importe
+        # visible antes se planificaba al tope y el plan pedía un 30-40 % sobre
+        # el valor, por encima incluso de lo que recomienda la pantalla Mercado.
         coste = max(recomendada, ask, lead)
-        # Sin el importe, la puja de apertura no gana: hay que cubrir el tope.
-        if pressure > 0 and lead <= 0 and isinstance(maxima, int) and maxima >= coste:
-            coste = maxima
         if isinstance(maxima, int) and coste > maxima:
             continue
         mercado.append(

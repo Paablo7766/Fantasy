@@ -92,7 +92,9 @@ type Step = {
   guide: string;
 };
 
-function kindOf(tipo: string): Kind {
+function kindOf(tipo: string, etiqueta?: string | null): Kind {
+  if (etiqueta === "CLAUSULAR") return "clausula";
+  if (etiqueta === "PUJAR") return "puja";
   if (tipo === "VENDE" || tipo === "VENDER HOY") return "vende";
   if (tipo === "ESCAPARATE") return "escaparate";
   if (tipo === "CLAUSULAZO") return "clausula";
@@ -106,7 +108,7 @@ function pctText(value: number): string {
 
 function stepFrom(action: PlanFichajeAccion, photos: PhotoIndex): Step {
   const tipo = (action.tipo || "PUJA").toUpperCase();
-  const kind = kindOf(tipo);
+  const kind = kindOf(tipo, action.etiqueta);
   const conditional = action.momento === "condicional";
   const euros = typeof action.euros === "number" && action.euros !== 0 ? Math.abs(Math.round(action.euros)) : null;
   const impulso = (action.impulso || "").toUpperCase();
@@ -303,6 +305,8 @@ export function TodayPlan({
   const fichajes = plan?.plan_fichajes;
   const { today, later } = useMemo(() => buildSteps(fichajes, photos), [fichajes, photos]);
   const radar = fichajes?.en_radar || [];
+  const alternativas = fichajes?.alternativas_liquidez || [];
+  const presupuesto = fichajes?.presupuesto ?? null;
   const raw = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
   const done = useMemo(() => parseDone(raw), [raw]);
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -391,6 +395,14 @@ export function TodayPlan({
           ) : null}
           {income > 0 ? <span>Ingresas {eurShort(income)}</span> : null}
           {spend > 0 ? <span>Inviertes {eurShort(spend)}</span> : null}
+          {presupuesto && presupuesto.gasto_pujas + presupuesto.gasto_clausulas > 0 ? (
+            <span className="w-full text-[12px] text-white/40">
+              Lo pagas con caja {eurShort(presupuesto.caja)}
+              {presupuesto.ventas_hoy > 0 ? ` + ventas de hoy ${eurShort(presupuesto.ventas_hoy)}` : ""}
+              {presupuesto.ventas_si_ganas > 0 ? ` + ventas solo si ganas ${eurShort(presupuesto.ventas_si_ganas)}` : ""}
+              {` · sobran ${eurShort(presupuesto.holgura)} · sin usar crédito`}
+            </span>
+          ) : null}
           {!today.length ? <span>Ningún movimiento mejora tu once con los datos de ahora.</span> : null}
         </p>
         {checkable.length ? (
@@ -402,10 +414,31 @@ export function TodayPlan({
 
       {today.length ? <ol className="ini-divide">{today.map((step, i) => renderRow(step, i, true))}</ol> : null}
 
-      {later.length || radar.length ? (
+      {later.length || radar.length || alternativas.length ? (
         <div className="pb-1">
           <Disclosure title="Después" count={later.length}>
             <ol className="ini-divide border-t border-[var(--ini-line)]">{later.map((step, i) => renderRow(step, i, false))}</ol>
+          </Disclosure>
+          <Disclosure title="Alternativas si consigues liquidez" count={alternativas.length}>
+            <ul className="ini-divide border-t border-[var(--ini-line)]">
+              {alternativas.map((row, i) => {
+                const name = row.nombre || "Jugador";
+                return (
+                  <li key={`${row.player_id || name}-alt-${i}`} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                    <Avatar name={name} imageUrl={photoFor(photos, row.player_id, name)} size={32} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14px] text-white/80">{name}</span>
+                      <span className="block text-[12px] text-white/40">
+                        {row.etiqueta === "CLAUSULAR" ? "Clausular" : "Pujar"}
+                        {typeof row.mejora_neta === "number" ? ` · ${signedPoints(row.mejora_neta)} pts` : ""}
+                        {typeof row.falta_eur === "number" && row.falta_eur > 0 ? ` · faltan ${eurShort(row.falta_eur)}` : ""}
+                      </span>
+                    </span>
+                    {typeof row.euros === "number" ? <span className="text-[13px] tabular-nums text-white/60">{eurShort(row.euros)}</span> : null}
+                  </li>
+                );
+              })}
+            </ul>
           </Disclosure>
           <Disclosure title="En el radar · no pujar hoy" count={radar.length}>
             <ul className="ini-divide border-t border-[var(--ini-line)]">

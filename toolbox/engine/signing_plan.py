@@ -74,6 +74,43 @@ UMBRAL_BAJA = 0.20
 BONUS_REEMPLAZO_BAJA = 0.05
 _MILLON = 1_000_000
 _SEQ = 0
+ETIQUETA_COMPRA = {"PUJA": "PUJAR", "CLAUSULAZO": "CLAUSULAR"}
+# Fichajes fuertes que no caben en la caja de hoy y se enseñan como alternativa.
+MAX_ALTERNATIVAS = 5
+
+
+def _presupuesto(
+    *,
+    saldo: int,
+    ventas_hoy: list[dict[str, Any]],
+    pares: list[tuple[dict[str, Any], dict[str, Any]]],
+    gasto_pujas: int,
+    gasto_clausulas: int,
+    tope_deuda: int | None,
+) -> dict[str, Any]:
+    """De dónde sale cada euro del plan. Lo garantiza el solver; aquí se publica y se comprueba.
+
+    Cláusula: solo caja positiva más ventas aceptadas hoy (LaLiga no da crédito).
+    Puja: además, las ventas que se hacen solo si se gana. El crédito del 20 %
+    se publica pero el plan no lo gasta: el saldo tiene que acabar en cero o más
+    antes del saque o la jornada puntúa 0.
+    """
+    ingresos_hoy = sum(int(row["venta_eur"]) for row in ventas_hoy)
+    condicionales = sum(int(venta["venta_eur"]) for venta, _puja in pares)
+    para_clausulas = max(0, saldo) + ingresos_hoy
+    para_pujas = saldo + ingresos_hoy + condicionales - gasto_clausulas
+    return {
+        "caja": saldo,
+        "ventas_hoy": ingresos_hoy,
+        "ventas_si_ganas": condicionales,
+        "credito_20pct": tope_deuda,
+        "disponible_clausulas": para_clausulas,
+        "disponible_pujas": para_pujas,
+        "gasto_clausulas": gasto_clausulas,
+        "gasto_pujas": gasto_pujas,
+        "holgura": para_pujas - gasto_pujas,
+        "cumple": gasto_clausulas <= para_clausulas and gasto_pujas <= para_pujas,
+    }
 
 
 def _prefix() -> str:
@@ -187,6 +224,8 @@ def _vacio(cash: int | None, ratio: float, baseline: float, meta: dict[str, Any]
         "once": [],
         "en_radar": [],
         "huecos_obligatorios": [],
+        "presupuesto": None,
+        "alternativas_liquidez": [],
         **meta,
     }
 
@@ -207,6 +246,8 @@ def _accion(
 ) -> dict[str, Any]:
     return {
         "tipo": tipo,
+        # Qué botón hay que pulsar: pujar en el mercado o pagar la cláusula a un rival.
+        "etiqueta": ETIQUETA_COMPRA.get(tipo),
         "momento": momento,
         "impulso": impulso,
         "player_id": player_id,
@@ -1407,6 +1448,50 @@ def _plan_once(
         vacio["acciones"] = _escaparate(set())
         vacio["huecos_obligatorios"] = _publicar_huecos(plantilla, huecos)
         return vacio
+    presupuesto = _presupuesto(
+        saldo=saldo,
+        ventas_hoy=ventas_hoy,
+        pares=pares,
+        gasto_pujas=total_pujas,
+        gasto_clausulas=sum(int(ficha_compra[f"clause:{row['player_id']}"]["euros"]) for row in clausulas_sel),
+        tope_deuda=cobertura_pujas["tope_deuda"],
+    )
+    # Fichajes fuertes que no entran: el plan los enseña aparte, ordenados por
+    # mejora por millón, con lo que falta para pagarlos.
+    elegidos = {f"bid:{row['player_id']}" for row in pujas_sel} | {f"clause:{row['player_id']}" for row in clausulas_sel}
+    alternativas = []
+    for clave, ficha in ficha_compra.items():
+        if clave in elegidos or ficha["impulso"] != "MUST-BUY":
+            continue
+        euros = int(ficha["euros"])
+        tipo = "CLAUSULAZO" if ficha["origen"] == "clause" else "PUJA"
+        disponible = presupuesto["disponible_clausulas"] - presupuesto["gasto_clausulas"] if tipo == "CLAUSULAZO" else presupuesto["holgura"]
+        accion = _accion(
+            tipo,
+            "alternativa",
+            player_id=ficha["row"]["player_id"],
+            nombre=_nombre(ficha["row"]),
+            posicion=ficha["row"].get("position"),
+            jornada=_jornada(ficha["row"]),
+            euros=euros,
+            impulso=ficha["impulso"],
+            mejora_neta=ficha["mejora"],
+            prevision_7d_pct=ficha["pct"],
+            detalle=f"Mejora el once +{float(ficha['mejora']):.1f} xP, pero no cabe en la caja de hoy junto al resto del plan.",
+        )
+        accion["roi_xp_por_millon"] = round(float(ficha["mejora"]) / (euros / _MILLON), 3)
+        accion["falta_eur"] = max(0, euros - int(disponible))
+        alternativas.append(accion)
+    alternativas.sort(key=lambda accion: -accion["roi_xp_por_millon"])
+    alternativas = alternativas[:MAX_ALTERNATIVAS]
+    if not presupuesto["cumple"]:
+        # No debería pasar (el solver lo impide), pero un plan impagable no se publica.
+        vacio = _vacio(saldo, ratio, baseline_puntos, meta)
+        vacio["en_radar"] = radar
+        vacio["acciones"] = _escaparate(set())
+        vacio["presupuesto"] = presupuesto
+        vacio["alternativas_liquidez"] = alternativas
+        return vacio
     saldo_final = int(saldo + ingreso - gasto)
     nota, veredicto = nota_y_veredicto(mejora, acciones)
     if hay_urgente:
@@ -1433,6 +1518,8 @@ def _plan_once(
         "en_radar": radar,
         "mejora_horizonte": mejora_horizonte,
         "cobertura_pujas": cobertura_pujas,
+        "presupuesto": presupuesto,
+        "alternativas_liquidez": alternativas,
         "objetivos_previos": sorted(previos),
         "umbral_cambio_xp": umbral,
         **meta,
