@@ -96,7 +96,7 @@ export type RadarAntiRobo = {
   player_id: string;
   nombre: string;
   posicion?: string | null;
-  estado: "RIESGO_ALTO" | "RIESGO_CERO" | "SOBREPROTEGIDO" | string;
+  estado: "BLINDAR" | "CEBO" | "ASUMIR" | "FUERA_DE_ALCANCE" | "CANDADO" | string;
   badge: "rojo" | "verde" | "gris" | string;
   consejo: string;
   clausula: number;
@@ -107,6 +107,12 @@ export type RadarAntiRobo = {
   rivales_con_caja: number;
   clausula_abierta?: boolean;
   dias_para_abrir?: number | null;
+  /** Mayor min(liquidez, disposición a pagar) entre los rivales, en euros. */
+  amenaza_max?: number | null;
+  rival_amenaza?: string | null;
+  clausula_optima?: number | null;
+  coste_subida?: number | null;
+  prima_robo?: number | null;
 };
 
 export type AsesorClausulas = {

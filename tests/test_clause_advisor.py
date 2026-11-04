@@ -312,10 +312,11 @@ class IntegracionTests(unittest.TestCase):
         self.assertEqual(joya["veredicto_codigo"], "CLAUSULAR_YA")
         self.assertEqual(informe["resumen"]["clausulazos_listos"], 1)
         radar = {fila["player_id"]: fila for fila in informe["radar_anti_robo"]}
-        self.assertEqual(radar["DEL-0"]["estado"], "RIESGO_ALTO")
-        self.assertEqual(radar["DEL-0"]["badge"], "rojo")
-        self.assertIn("1 rivales tienen caja", radar["DEL-0"]["consejo"])
-        self.assertEqual(radar["DEL-1"]["estado"], "SOBREPROTEGIDO")
+        # Lunes y con la joya de Luis comprable por 5M: lo cobrado repone el hueco, no compensa blindar.
+        self.assertEqual(radar["DEL-0"]["estado"], "ASUMIR")
+        self.assertEqual(radar["DEL-0"]["amenaza_max"], 12_000_000)
+        self.assertEqual(radar["DEL-0"]["rival_amenaza"], "Luis")
+        self.assertEqual(radar["DEL-1"]["estado"], "FUERA_DE_ALCANCE")
         self.assertEqual(radar["DEL-1"]["badge"], "verde")
 
 

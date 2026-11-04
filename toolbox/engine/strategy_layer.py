@@ -29,7 +29,8 @@ from toolbox.engine.market_predictor import (
     ratio_mercado_liga,
     valor_justo_jugador,
 )
-from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, evaluar_clausulas
+from toolbox.engine.clause_advisor import evaluar_clausulas
+from toolbox.engine.clause_shield import blindaje_quirurgico
 from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
 from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes
@@ -956,6 +957,7 @@ def _plantillas_rivales(records: dict[str, dict[str, Any]]) -> dict[str, list[di
                 "position": row.get("position"),
                 "sano": row.get("excluded") is not True,
                 "jornada": row.get("jornada"),
+                "valor": row.get("valor"),
             }
         )
     return plantillas
@@ -1035,7 +1037,8 @@ def _asesorar_clausulas(
                     "valor_justo": (previsiones.get(player_id) or {}).get("valor_justo"),
                 }
             )
-    radar = auditar_clausulas_plantilla(
+    trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
+    radar = blindaje_quirurgico(
         [
             {
                 "player_id": fila.get("player_id"),
@@ -1047,16 +1050,24 @@ def _asesorar_clausulas(
                 "clausulaAbre": fila.get("bloqueo"),
                 "blindado": fila.get("blindado") is True,
                 "jornada": fila.get("jornada"),
+                "tu_once_pierde_sin_el": fila.get("tu_once_pierde_sin_el"),
             }
             for fila in propios
         ],
         [
-            {"dineroEstimado": rival.get("saldo"), "manager": rival.get("manager"), "team_id": rival.get("team_id")}
+            {
+                "saldo": rival.get("saldo"),
+                "manager": rival.get("manager"),
+                "team_id": rival.get("team_id"),
+                "plantilla": plantillas.get(str(rival.get("team_id")), []),
+            }
             for rival in rivales
             if isinstance(rival, dict)
         ],
         ahora=now,
+        primer_saque=earliest_kickoff(trends, now=now),
         alternativas=alternativas,
+        ratio_eur_xp=ratio,
     )
     try:
         informe = evaluar_clausulas(
