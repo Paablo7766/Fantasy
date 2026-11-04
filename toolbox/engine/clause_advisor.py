@@ -208,8 +208,10 @@ def _proteger(
     cierre: datetime | None,
     alternativas: list[dict[str, Any]] | None = None,
     inicio_jornada: datetime | None = None,
-) -> tuple[list[dict[str, Any]], int, int]:
+) -> tuple[list[dict[str, Any]], int, int, list[dict[str, Any]]]:
     filas: list[dict[str, Any]] = []
+    # Con candado toda la jornada: no hay riesgo hoy, pero se calcula la cláusula para dejarla puesta antes.
+    preparar: list[dict[str, Any]] = []
     bloqueadas = 0
     seguros = 0
     con_caja = [rival for rival in rivales if _int(rival.get("saldo")) is not None and int(rival["saldo"]) > 0]
@@ -235,9 +237,9 @@ def _proteger(
         # Un candado que vence antes de que empiece la jornada deja al jugador expuesto esta jornada.
         limites = [momento for momento in (cierre, inicio_jornada) if momento is not None]
         limite = max(limites) if limites else None
-        if bloqueada is True and (limite is None or desbloqueo is None or desbloqueo >= limite):
+        candado = bloqueada is True and (limite is None or desbloqueo is None or desbloqueo >= limite)
+        if candado:
             bloqueadas += 1
-            continue
         justo = _int(jugador.get("valor_justo"))
         # Lo que paga un rival se ancla al valor de mercado. El valor justo del modelo
         # (xP × ratio) solo sirve cuando no hay valor, porque puede ser varias veces el precio.
@@ -248,7 +250,7 @@ def _proteger(
         )
         multiplo = clausula / valor if valor else None
         fragil = multiplo is not None and multiplo <= MULTIPLO_EN_PELIGRO
-        if not capaces and not (fragil and creible):
+        if not capaces and not (fragil and creible) and not candado:
             seguros += 1
             continue
         posicion = jugador.get("position")
@@ -297,7 +299,7 @@ def _proteger(
                 mejor_neto = neto
                 elegido = nivel
         perfecta = None if neto_cero else (niveles[0] if niveles else None)
-        if elegido is not None and restante is not None:
+        if elegido is not None and restante is not None and not candado:
             restante -= int(elegido["coste_eur"])
 
         if not capaces or neto_cero:
@@ -351,8 +353,11 @@ def _proteger(
         expuesta_desde = desbloqueo if bloqueada is True and desbloqueo is not None else None
         if expuesta_desde is not None:
             motivo += f" Su candado vence {_cuando(expuesta_desde, ahora)}, antes de que empiece la jornada: queda expuesto entonces."
-        filas.append(
+        if candado and desbloqueo is not None:
+            motivo += f" Tiene candado hasta {_cuando(desbloqueo, ahora)}: déjala puesta al menos un día antes."
+        (preparar if candado else filas).append(
             {
+                "en_candado": candado,
                 "player_id": jugador["player_id"],
                 "nombre": nombre,
                 "posicion": posicion,
@@ -391,7 +396,8 @@ def _proteger(
         )
     orden = {"ALTO": 0, "MEDIO": 1, "BAJO": 2}
     filas.sort(key=lambda fila: (orden[fila["riesgo"]], -fila["rivales_que_pueden_pagar"], -fila["exposicion_eur"]))
-    return filas, bloqueadas, seguros
+    preparar.sort(key=lambda fila: (fila["bloqueada_hasta"] or "", -fila["exposicion_eur"]))
+    return filas, bloqueadas, seguros, preparar
 
 
 def _motivo_proteger(
@@ -687,7 +693,7 @@ def evaluar_clausulas(
     ``puesto_liga`` y ``plantilla`` (``player_id``, ``position``, ``sano``, ``jornada``)
     activa el bono de daño al rival en jueves y viernes.
     """
-    proteger, bloqueadas, seguros = _proteger(
+    proteger, bloqueadas, seguros, preparar = _proteger(
         propios,
         rivales,
         saldo=saldo,
@@ -741,7 +747,7 @@ def evaluar_clausulas(
         "ventana_abierta": cierre is None or ahora < cierre,
         "inicio_jornada": _cuando(inicio_jornada, ahora) if inicio_jornada is not None else None,
     }
-    return {"resumen": resumen, "proteger": proteger, "clausulazos": clausulazos}
+    return {"resumen": resumen, "proteger": proteger, "preparar": preparar, "clausulazos": clausulazos}
 
 
 # Por debajo de 1,15× el valor, la cláusula es un chollo. Desde 1,30×, robarlo nos beneficia.

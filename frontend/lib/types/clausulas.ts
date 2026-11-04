@@ -27,6 +27,8 @@ export type BonoRoscoRival = {
 };
 
 export type ClausulaEnPeligro = {
+  /** Candado toda la jornada: no se puede pagar aún, pero conviene dejar la cláusula puesta antes. */
+  en_candado?: boolean;
   player_id: string;
   nombre: string;
   posicion?: string | null;
@@ -126,6 +128,7 @@ export type AsesorClausulas = {
     ventana_abierta: boolean;
   };
   proteger: ClausulaEnPeligro[];
+  preparar?: ClausulaEnPeligro[];
   clausulazos: ClausulazoSugerido[];
   radar_anti_robo?: RadarAntiRobo[];
   /** Escudo (te la pueden robar) y francotirador (cláusula barata de un rival en rojo). */

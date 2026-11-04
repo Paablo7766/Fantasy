@@ -144,7 +144,15 @@ function DefendCard({
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[15px] font-medium leading-tight text-white">{row.nombre}</span>
             <span className="mt-0.5 block truncate text-[12.5px] text-white/45">
-              <span style={{ color: risk.color }}>{risk.label}</span> · la pueden pagar {row.rivales_que_pueden_pagar} de {row.rivales_total}
+              {row.en_candado ? (
+                <>
+                  <span className="text-white/70">Candado hasta {row.expuesta_cuando || "—"}</span> · hoy la pagarían {row.rivales_que_pueden_pagar} de {row.rivales_total}
+                </>
+              ) : (
+                <>
+                  <span style={{ color: risk.color }}>{risk.label}</span> · la pueden pagar {row.rivales_que_pueden_pagar} de {row.rivales_total}
+                </>
+              )}
             </span>
           </span>
           <Chevron open={open} />
@@ -153,7 +161,7 @@ function DefendCard({
           <Shield row={row} />
         </span>
         <span className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-black/25 px-3 py-2.5">
-          <Pill {...verdict} />
+          <Pill {...(row.en_candado && !raise ? { label: "De momento, bien", color: TONE.green } : row.en_candado ? { label: "Súbela antes de que abra", color: TONE.amber } : verdict)} />
           {raise ? (
             <span className="min-w-0 truncate text-right text-[12.5px] tabular-nums text-white/55">
               <span className="font-semibold text-[#FFC08A]">+{money(raise.subida_eur, 1)}</span> por {money(raise.coste_eur, 1)}
@@ -435,6 +443,7 @@ export function ClausulasTab({
     [advisor, plan],
   );
   const radarById = useMemo(() => new Map(radarRows.map((row) => [String(row.player_id), row])), [radarRows]);
+  const [estadoElegido, setEstado] = useState<"abiertas" | "candado" | null>(null);
 
   if (loading && !plan) return <Skeleton />;
   if (!advisor && !timeline.length) {
@@ -444,7 +453,13 @@ export function ClausulasTab({
   const resumen = advisor?.resumen;
   const proteger = advisor?.proteger || [];
   const clausulazos = advisor?.clausulazos || [];
-  const watched = new Set(proteger.map((row) => String(row.player_id)));
+  const abiertas = clausulazos.filter((row) => row.abierta_ahora);
+  const cerradas = clausulazos.filter((row) => !row.abierta_ahora);
+  // Por defecto, las abiertas; si no hay ninguna, directamente las que tienen candado.
+  const estado = estadoElegido ?? (abiertas.length || !cerradas.length ? "abiertas" : "candado");
+  const shown = estado === "abiertas" ? abiertas : cerradas;
+  const preparar = advisor?.preparar || [];
+  const watched = new Set([...proteger, ...preparar].map((row) => String(row.player_id)));
   const rest = ((squads?.self?.players || []) as RivalPlayer[])
     .filter((player) => player.player_id && !watched.has(String(player.player_id)))
     .sort((a, b) => (b.buyout_clause ?? 0) - (a.buyout_clause ?? 0));
@@ -532,36 +547,51 @@ export function ClausulasTab({
       <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] min-[1100px]:items-start">
         <div className="flex min-w-0 flex-col gap-4">
           {hero}
-          {clausulazos.length ? (
-            [
-              { key: "abiertas", title: "Abiertas ahora", rows: clausulazos.filter((row) => row.abierta_ahora), dot: TONE.green },
-              { key: "cerradas", title: "Con candado", rows: clausulazos.filter((row) => !row.abierta_ahora), dot: "rgba(255,255,255,0.4)" },
-            ].map((group) => (
-              <section key={group.key} aria-label={group.title} className="flex flex-col gap-3">
-                <SectionHead title={group.title} meta={`${group.rows.length}`} />
-                {group.rows.length ? (
-                  <ul className="home-glass overflow-hidden">
-                    {group.rows.map((row, index) => (
+          <section aria-label="Clausulazos" className="flex flex-col gap-3">
+            <SectionHead title="A quién clausular" meta={clausulazos.length ? `${clausulazos.length}` : undefined} />
+            {clausulazos.length ? (
+              <>
+                <div className="desk-switch eq-tabs" role="tablist" aria-label="Estado de la cláusula">
+                  <span className="eq-tabs__ind" style={{ transform: `translateX(${estado === "abiertas" ? 0 : 100}%)` }} aria-hidden="true" />
+                  {(
+                    [
+                      { id: "abiertas", label: "Abiertas", count: abiertas.length },
+                      { id: "candado", label: "Con candado", count: cerradas.length },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={estado === item.id}
+                      className="desk-switch__btn eq-tabs__btn"
+                      onClick={() => setEstado(item.id)}
+                    >
+                      {item.label}
+                      <span className="ml-1.5 tabular-nums opacity-50">{item.count}</span>
+                    </button>
+                  ))}
+                </div>
+                {shown.length ? (
+                  <ul key={estado} className="home-glass overflow-hidden">
+                    {shown.map((row, index) => (
                       <AttackCard key={row.player_id} row={row} photos={photos} index={index} />
                     ))}
                   </ul>
                 ) : (
                   <p className="home-glass flex items-center gap-2.5 px-4 py-4 text-[14px] text-white/60">
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: group.dot }} aria-hidden="true" />
-                    {group.key === "abiertas" ? "Ahora mismo no hay ninguna abierta." : "Todas las recomendadas están abiertas."}
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-white/30" aria-hidden="true" />
+                    {estado === "abiertas" ? "Ahora mismo ninguna recomendada está abierta." : "Ninguna recomendada tiene candado."}
                   </p>
                 )}
-              </section>
-            ))
-          ) : (
-            <section aria-label="Clausulazos" className="flex flex-col gap-3">
-              <SectionHead title="A quién clausular" />
+              </>
+            ) : (
               <p className="home-glass flex items-center gap-2.5 px-4 py-4 text-[14px] text-white/60">
                 <span className="h-2 w-2 shrink-0 rounded-full bg-white/30" aria-hidden="true" />
                 Hoy ningún clausulazo mejora tu once ni sale barato.
               </p>
-            </section>
-          )}
+            )}
+          </section>
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           {timeline.length ? (
@@ -595,6 +625,20 @@ export function ClausulasTab({
             </p>
           )}
         </section>
+
+        {preparar.length ? (
+          <section aria-label="Prepara sus cláusulas" className="flex flex-col gap-3">
+            <SectionHead title="Prepárate" meta="aún con candado" />
+            <p className="-mt-1 px-1 text-[12.5px] leading-snug text-white/45">
+              Todavía no se pueden pagar. Deja la cláusula recomendada puesta al menos un día antes de que se abra.
+            </p>
+            <ul className="home-glass overflow-hidden">
+              {preparar.map((row, index) => (
+                <DefendCard key={row.player_id} row={row} radar={radarById.get(String(row.player_id))} photos={photos} index={index} />
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {rest.length ? (
           <Disclosure title="Resto de tu plantilla" meta={`${rest.length}`}>
