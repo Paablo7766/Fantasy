@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { initials, jornadaEv, playerName, points, projectedLineupPoints, titularShare } from "@/lib/core/format";
+import { useMemo, useState } from "react";
+import { jornadaEv, playerName, points, projectedLineupPoints, titularShare } from "@/lib/core/format";
 import { REGLAMENTO } from "@/lib/core/reglamento";
 import { signedPoints } from "@/lib/inicio/hoy";
-import { bustPhotoFor } from "@/lib/core/bustPhoto";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { CapitanPick, Gap, OptimizePayload, PlanPayload, Player, SquadsPayload } from "@/lib/types";
 import {
@@ -118,113 +117,6 @@ function redLine(plan: PlanPayload | null, optimize: OptimizePayload, differs: b
   return { tone: fail ? "fail" : "warn", items };
 }
 
-/** Colores de camiseta de los clubes cuya foto de pecho no existe en LaLiga (id de club de Fantasy). */
-const KIT: Record<string, [string, string]> = { t176: ["#8fc7f0", "#4f8fc4"] };
-
-/** Hombros dibujados para las fotos de solo cara, con el color del club si se conoce. */
-function Shoulders({ team }: { team: string | null }) {
-  const [top, bottom] = (team && KIT[team]) || ["#4a423c", "#1b1613"];
-  const id = `eq-shoulders-${team || "neutral"}`;
-  return (
-    <svg className="eq-card__shoulders" viewBox="0 0 100 56" preserveAspectRatio="none" aria-hidden="true">
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={top} />
-          <stop offset="1" stopColor={bottom} />
-        </linearGradient>
-      </defs>
-      <path d="M4 56C4 36 20 28 38 25h24c18 3 34 11 34 31Z" fill={`url(#${id})`} />
-      <path d="M40 25c3 6 7 9 10 9s7-3 10-9" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-const TARGET_WIDTH = 0.78;
-const scaleCache = new Map<string, number>();
-
-/**
- * Las fotos de pecho de LaLiga no vienen con el mismo zoom. Se mide el ancho de
- * hombros (mitad inferior) y se escala hasta un ancho común, con límites para
- * no deformar. Si el navegador no deja leer la imagen, se deja sin tocar.
- */
-async function measureScale(url: string): Promise<number> {
-  const cached = scaleCache.get(url);
-  if (cached !== undefined) return cached;
-  let scale = 1;
-  try {
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.src = url;
-    await image.decode();
-    const w = 64;
-    const h = 70;
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (ctx) {
-      ctx.drawImage(image, 0, 0, w, h);
-      const data = ctx.getImageData(0, 0, w, h).data;
-      let minX = w;
-      let maxX = -1;
-      for (let y = Math.floor(h * 0.55); y < h; y += 1) {
-        for (let x = 0; x < w; x += 1) {
-          if (data[(y * w + x) * 4 + 3] > 40) {
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-          }
-        }
-      }
-      if (maxX >= minX) scale = Math.min(1.15, Math.max(0.88, TARGET_WIDTH / ((maxX - minX + 1) / w)));
-    }
-  } catch {
-    scale = 1;
-  }
-  scaleCache.set(url, scale);
-  return scale;
-}
-
-/** Busto del jugador: pecho con camiseta del club; si no hay, cara sobre hombros; si no, iniciales. */
-function Bust({ name, src, fallback }: { name: string; src?: string | null; fallback?: string | null }) {
-  const [failed, setFailed] = useState<string[]>([]);
-  const [scales, setScales] = useState<Record<string, number>>({});
-  const current = [src, fallback].find((url): url is string => Boolean(url) && !failed.includes(url as string));
-  const isBust = Boolean(current) && current === src;
-
-  useEffect(() => {
-    if (!isBust || !current) return;
-    let alive = true;
-    measureScale(current).then((value) => {
-      if (alive) setScales((map) => ({ ...map, [current]: value }));
-    });
-    return () => {
-      alive = false;
-    };
-  }, [isBust, current]);
-
-  if (!current) return <span className="eq-card__initials">{initials(name)}</span>;
-  const img = (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={current}
-      alt=""
-      className={isBust ? "eq-card__img" : "eq-card__img eq-card__img--face"}
-      style={isBust && scales[current] ? { transform: `scale(${scales[current]})` } : undefined}
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      onError={() => setFailed((list) => [...list, current])}
-    />
-  );
-  if (isBust) return img;
-  const team = current.match(/\/(t\d+)\//)?.[1] ?? null;
-  return (
-    <>
-      <Shoulders team={team} />
-      {img}
-    </>
-  );
-}
-
 function Pitch({
   slots,
   selected,
@@ -294,11 +186,7 @@ function Pitch({
           >
             <span className="eq-card row-in" style={{ animationDelay: `${index * 30}ms` }}>
               <span className="eq-card__photo">
-                <Bust
-                  name={name}
-                  src={bustPhotoFor(slot.player_id)}
-                  fallback={slot.image_url || photoFor(photos, slot.player_id, name)}
-                />
+                <Face name={name} src={slot.image_url || photoFor(photos, slot.player_id, name)} size={0} ring={ringColor(share)} />
                 {badge ? (
                   <span className="eq-badge" style={{ background: badge === "C" ? "#fff" : TONE.copper, color: "#120C09" }}>
                     {badge}

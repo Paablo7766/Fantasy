@@ -2117,7 +2117,7 @@ body {
 .eq-token {
   position: absolute;
   display: flex;
-  width: 21cqw;
+  width: 17cqw;
   flex-direction: column;
   align-items: center;
   transform: translate(-50%, -50%);
@@ -2141,88 +2141,46 @@ body {
   align-items: center;
 }
 
-/* Jugador sin caja: mismo encuadre para todos (pecho con camiseta), con fundido abajo. */
+/* Jugador en el campo: medallón redondo con anillo del color de su probabilidad de jugar. */
 .eq-card__photo {
   position: relative;
   width: 100%;
-  aspect-ratio: 256 / 278;
-  transition: background 200ms ease-out;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  background: linear-gradient(160deg, #2b2119 0%, #15100c 100%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 22px -6px color-mix(in srgb, var(--ring, #fff) 55%, transparent),
+    0 12px 22px -10px rgba(0, 0, 0, 0.9);
+  transition: box-shadow 200ms ease-out;
 }
 
 .eq-token[aria-pressed="true"] .eq-card__photo {
-  background: radial-gradient(ellipse at 50% 60%, rgba(255, 255, 255, 0.14), transparent 70%);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.9),
+    0 0 26px -4px color-mix(in srgb, var(--ring, #fff) 70%, transparent),
+    0 14px 26px -10px rgba(0, 0, 0, 0.9);
 }
 
 .eq-card__photo--gap {
   display: grid;
   place-items: center;
   border: 1.5px dashed rgba(252, 115, 77, 0.75);
-  border-radius: 9999px;
   background: rgba(252, 115, 77, 0.06);
-  aspect-ratio: 1;
-  width: 70%;
-  margin: 8% auto;
+  box-shadow: none;
 }
 
-.eq-card__img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: 50% 100%;
-  transform-origin: 50% 100%;
-  transition: transform 160ms ease-out;
-  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.5));
-  -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent 98%);
-  mask-image: linear-gradient(180deg, #000 70%, transparent 98%);
-}
-
-/* Solo cara: cabeza algo más pequeña, apoyada sobre los hombros neutros. */
-.eq-card__img--face {
-  inset: auto;
-  left: 50%;
-  bottom: 20%;
-  width: 66%;
-  height: auto;
-  aspect-ratio: 1;
-  transform: translateX(-50%);
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-
-.eq-card__shoulders {
-  position: absolute;
-  inset: auto 0 0 0;
-  width: 100%;
-  height: 46%;
-  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.5));
-  -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent 98%);
-  mask-image: linear-gradient(180deg, #000 60%, transparent 98%);
-}
-
-.eq-card__initials {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: clamp(14px, 5cqw, 20px);
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-/* Probabilidad de jugar: píldora centrada en el borde inferior, siempre en el mismo sitio. */
+/* Probabilidad de jugar: píldora centrada sobre el borde inferior del medallón. */
 .eq-card__pct {
   position: absolute;
   left: 50%;
   bottom: 0;
-  transform: translate(-50%, 50%);
+  transform: translate(-50%, 45%);
   padding: 3px 8px;
   border-radius: 9999px;
-  border: 1px solid color-mix(in srgb, var(--ring, #fff) 45%, transparent);
-  background: rgba(14, 10, 8, 0.88);
-  backdrop-filter: blur(6px);
-  font-size: clamp(10.5px, 3.2cqw, 13px);
+  border: 1px solid color-mix(in srgb, var(--ring, #fff) 50%, transparent);
+  background: rgba(14, 10, 8, 0.92);
+  font-size: clamp(10px, 3cqw, 12px);
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -2230,12 +2188,12 @@ body {
 }
 
 .eq-card__name {
-  margin-top: 11px;
+  margin-top: 14px;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: clamp(11px, 3.4cqw, 13px);
+  font-size: clamp(11px, 3.3cqw, 13px);
   font-weight: 600;
   line-height: 1.2;
   color: #fff;
@@ -2243,23 +2201,24 @@ body {
 }
 
 .eq-card__xp {
-  margin-top: 1px;
-  font-size: clamp(10px, 3cqw, 12px);
+  margin-top: 2px;
+  font-size: clamp(10px, 2.9cqw, 12px);
   font-weight: 500;
   line-height: 1.2;
-  color: #ffc08a;
+  color: rgba(255, 192, 138, 0.9);
   font-variant-numeric: tabular-nums;
 }
 
 .eq-badge {
   position: absolute;
-  top: 6%;
-  left: 6%;
+  top: -2px;
+  right: -2px;
   display: grid;
   width: 18px;
   height: 18px;
   place-items: center;
   border-radius: 9999px;
+  border: 2px solid #120c09;
   font-size: 9.5px;
   font-weight: 700;
   line-height: 1;
