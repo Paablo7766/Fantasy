@@ -81,10 +81,12 @@ def auto_track_from_board(board: dict[str, Any]) -> dict[str, Any]:
         track._ensure_schema(conn)
         jornada = track.infer_jornada_id(trends, squads)
         if _needs_snapshot(conn, jornada, day):
+            # Sin forzar la jornada: cada jugador apunta a la suya (un miércoles
+            # de jornada partida, unos ya jugaron y otros no).
             snap = track.run_snapshot(
                 conn,
                 league=league_id,
-                jornada_id=jornada,
+                jornada_id=None,
                 fresh=False,
                 squads=squads,
                 trends=trends,

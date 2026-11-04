@@ -43,7 +43,7 @@ export type DataHealthReport = {
 const GROUP_ORDER = ["LALIGA", "Motor propio", "Analítica Fantasy", "Fútbol Fantasy", "Forma y calendario", "Otros"];
 
 /** Alineado con ``_OPTIONAL_TRENDS_SOURCES`` en toolbox/scrapers.py */
-const OPTIONAL_TRENDS_SOURCES = new Set(["fbref", "sofascore", "transfermarkt", "laliga_odds"]);
+const OPTIONAL_TRENDS_SOURCES = new Set(["fbref", "sofascore", "transfermarkt", "laliga_odds", "laliga_scorer_odds"]);
 
 function optionalSourcesOnlyFailed(sources: SourceRow[]): boolean {
   const failed = sources.filter((s) => !s.ok);
@@ -91,6 +91,16 @@ const SOURCE_META: Record<string, { label: string; group: string; impacts: strin
     label: "Jornada Perfecta",
     group: "Forma y calendario",
     impacts: ["Multiplicador jp en proyección"],
+  },
+  laliga_odds: {
+    label: "Cuotas de partido (Pinnacle)",
+    group: "Forma y calendario",
+    impacts: ["λ de goles y portería a cero", "own_expected_points"],
+  },
+  laliga_scorer_odds: {
+    label: "Cuotas de goleador (bet365)",
+    group: "Forma y calendario",
+    impacts: ["Probabilidad de gol de mercado (solo medición, no entra en el xP)"],
   },
   transfermarkt: {
     label: "Transfermarkt",

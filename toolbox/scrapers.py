@@ -37,6 +37,7 @@ from toolbox.matching import (
 from toolbox.net import ExternalClient, ExternalHttpError, FantasyHttpError, inherited, transfermarkt_api_base
 from toolbox.analyzer import official_price_delta, starter_fallback
 from toolbox.normalize import SCHEMA_VERSION, attach_image_urls
+from toolbox.odds_archive import SCORER_BOOKMAKER, kickoff_iso, scorer_prices
 
 logger = logging.getLogger("fantasy.scrapers")
 
@@ -57,7 +58,7 @@ SOFASCORE_DEFAULT_URL = (
     f"https://api.sofascore.com/api/v1/unique-tournament/8/season/{SOFASCORE_DEFAULT_SEASON}/top-players/overall"
 )
 # Solo estas fuentes marcan ``partial`` en trends; el núcleo (FF, AF, Understat, own) sigue siendo decisorio.
-_OPTIONAL_TRENDS_SOURCES = frozenset({"fbref", "sofascore", "transfermarkt", "laliga_odds"})
+_OPTIONAL_TRENDS_SOURCES = frozenset({"fbref", "sofascore", "transfermarkt", "laliga_odds", "laliga_scorer_odds"})
 
 RANK_LIMIT = 15
 FORM_NOTE = (
@@ -141,6 +142,9 @@ ODDS_LOOKAHEAD_DAYS = 9
 ODDSPAPI_MAX_FIXTURES = 12
 PREFERRED_BOOKMAKER = "pinnacle"
 LALIGA_ODDS_SIM_CACHE_KEY = "laliga_odds_sim:v1"
+# Cuotas simuladas = el Poisson propio puesto como si fuera mercado. Sirven para
+# no romper el calendario, pero la fuente tiene que decir que no hay mercado.
+ODDS_SIMULATED_ERROR = "Sin cuotas reales: se usan simuladas con el modelo propio"
 # 1X2, ambos marcan y más/menos 2,5 goles a tiempo completo. El id de mercado
 # es el del primer resultado: 101/102/103 = local/empate/visitante.
 _MARKET_1X2 = "101"
@@ -288,8 +292,12 @@ def oddspapi_fixtures_url(now: datetime) -> str:
 
 
 def oddspapi_odds_url(fixture_id: str) -> str:
-    """Cuotas de un partido, solo de la casa de referencia."""
-    return _oddspapi_url("/odds", fixtureId=fixture_id, bookmakers=PREFERRED_BOOKMAKER)
+    """Cuotas de un partido: Pinnacle (partido) y bet365 (goleadores) en la misma consulta.
+
+    Pinnacle no ofrece «marca en cualquier momento» en LaLiga; bet365 sí. Pedir
+    las dos casas cuesta lo mismo que una (una consulta por partido, ~0,5 MB).
+    """
+    return _oddspapi_url("/odds", fixtureId=fixture_id, bookmakers=f"{PREFERRED_BOOKMAKER},{SCORER_BOOKMAKER}")
 
 
 def _kickoff(fixture: dict[str, Any]) -> datetime | None:
@@ -402,7 +410,12 @@ def parse_oddspapi_payload(payload: Any, *, now: datetime | None = None) -> dict
             odds_btts=(btts_yes, btts_no) if btts_yes is not None and btts_no is not None else None,
             source="oddspapi",
         )
-        index[key] = bundle.as_dict()
+        row = bundle.as_dict()
+        row["kickoff"] = kickoff_iso(fixture)
+        scorers = scorer_prices(fixture)
+        if scorers:
+            row["anytime_scorers"] = scorers
+        index[key] = row
     return index
 
 
@@ -617,6 +630,10 @@ def _fetch_sportsgameodds(
     try:
         payload, cached = client.get_json(sportsgameodds_events_url(now), ttl=ttl, fresh=fresh)
     except ExternalHttpError as exc:
+        # El plan gratuito de SportsGameOdds no incluye LaLiga: responde 400
+        # «unavailable at your current subscription tier». No es un fallo pasajero.
+        if "subscription tier" in str(exc).lower() or "400" in str(exc):
+            return {}, False, "sportsgameodds: LaLiga no está en tu plan (400)"
         return {}, False, str(exc)
     index = parse_sportsgameodds_payload(payload, now=now)
     return index, cached, None if index else "sportsgameodds_sin_eventos"
@@ -664,9 +681,9 @@ def load_laliga_match_odds(
         cached_sim = client._cache.get_json(LALIGA_ODDS_SIM_CACHE_KEY)
         if isinstance(cached_sim, dict) and cached_sim.get("matches"):
             return cached_sim["matches"], {
-                "ok": True,
+                "ok": False,
                 "count": len(cached_sim["matches"]),
-                "error": None if not api_error else api_error,
+                "error": f"{ODDS_SIMULATED_ERROR} ({api_error})",
                 "from_cache": True,
                 "source": "simulated",
             }
@@ -684,9 +701,9 @@ def load_laliga_match_odds(
             ttl,
         )
     return index, {
-        "ok": bool(index),
+        "ok": False,
         "count": len(index),
-        "error": None if index else api_error,
+        "error": f"{ODDS_SIMULATED_ERROR} ({api_error})" if index else api_error,
         "from_cache": False,
         "source": "simulated",
     }
@@ -1780,6 +1797,14 @@ def build_trends(
                 day=_snapshot_day(market),
             )
             sources.update(own_summary.get("sources") or {})
+            # Goleadores de mercado: solo se miden junto al modelo, no entran en el xP.
+            try:
+                from toolbox.odds_archive import apply_market_scorer_odds, archive_match_odds
+
+                sources["laliga_scorer_odds"] = apply_market_scorer_odds(players, match_odds)
+                archive_match_odds(match_odds)
+            except Exception as exc:  # noqa: BLE001 — la medición nunca tumba trends
+                sources["laliga_scorer_odds"] = {"ok": False, "count": 0, "error": str(exc), "from_cache": False}
             try:
                 from toolbox.signal_log import record_signal_log
 

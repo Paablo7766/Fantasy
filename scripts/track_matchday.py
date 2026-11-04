@@ -57,6 +57,24 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "create index if not exists matchday_snapshots_stored_idx on matchday_snapshots (stored_at)"
     )
+    # Histórico por día: la tabla principal guarda la última previsión antes
+    # del saque; esta conserva cada día (la del martes y la del viernes).
+    conn.execute(
+        """
+        create table if not exists matchday_snapshot_log (
+            jornada_id text not null,
+            player_id text not null,
+            snapshot_day text not null,
+            expected_points real,
+            ceiling_points real,
+            in_once_optimo integer not null default 0,
+            league_id text,
+            kickoff text,
+            stored_at real not null,
+            primary key (jornada_id, player_id, snapshot_day)
+        )
+        """
+    )
     have = {str(row[1]) for row in conn.execute("pragma table_info(matchday_snapshots)").fetchall()}
     for column in ("kickoff", "position", "team_id"):
         if column not in have:
@@ -101,18 +119,34 @@ def infer_jornada_id(
     *,
     fallback: str | None = None,
 ) -> str:
-    """Jornada vigente: moda de la primera celda de calendario; si no hay, el día Madrid."""
+    """Jornada vigente: moda de la última jornada puntuada + 1; si no hay, el calendario; si no, el día Madrid.
+
+    La celda de calendario de AnalíticaFantasy trae ``matchday`` relativo (1 =
+    la próxima), no el número de jornada: fiarse de ella guardaba todas las
+    jornadas como «1» y cada día pisaba al anterior.
+    """
     counts: Counter[int] = Counter()
     sources: list[dict[str, Any]] = []
     if isinstance(trends, dict):
         players = trends.get("players")
         if isinstance(players, list):
             sources.extend(row for row in players if isinstance(row, dict))
+    if isinstance(squads, dict):
+        for team in squads.get("squads") or []:
+            if isinstance(team, dict) and isinstance(team.get("players"), list):
+                sources.extend(row for row in team["players"] if isinstance(row, dict))
     squad = own_squad(squads) if isinstance(squads, dict) else None
     if squad is not None:
         players = squad.get("players")
         if isinstance(players, list):
             sources.extend(row for row in players if isinstance(row, dict))
+    rounds: Counter[str] = Counter()
+    for player in sources:
+        upcoming = next_round_for(player)
+        if upcoming is not None:
+            rounds[upcoming] += 1
+    if rounds:
+        return rounds.most_common(1)[0][0]
     for player in sources:
         for key in _CALENDAR_KEYS:
             calendar = player.get(key)
@@ -259,6 +293,29 @@ def snapshot_rows_from_documents(
     if isinstance(market, dict):
         owners.extend((row.get("seller_team_id"), row) for row in market.get("listings") or [] if isinstance(row, dict))
 
+    # Jornada por club, no por jugador: quien no jugó la última no tiene fila
+    # de esa jornada y apuntaría a ella. Si un compañero la jugó, el club ya
+    # la disputó. Así una jornada partida (miércoles) sigue bien: los clubes
+    # que aún no han jugado se quedan en la actual.
+    def _club(player: dict[str, Any]) -> str | None:
+        trend = trends_index.get(player.get("player_id")) or {}
+        club = trend.get("club") or player.get("club") or player.get("team_name")
+        return club if isinstance(club, str) and club else None
+
+    club_round: dict[str, int] = {}
+    for _team, player in owners:
+        if not isinstance(player, dict):
+            continue
+        club, upcoming = _club(player), _as_int(next_round_for(player))
+        if club and upcoming is not None:
+            club_round[club] = max(club_round.get(club, 0), upcoming)
+
+    def _round_for(player: dict[str, Any]) -> str:
+        club = _club(player)
+        if club and club in club_round:
+            return str(club_round[club])
+        return next_round_for(player) or fallback
+
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
     for team_id, player in owners:
@@ -283,7 +340,7 @@ def snapshot_rows_from_documents(
         position = player.get("position") or trend.get("position")
         rows.append(
             {
-                "jornada_id": str(jornada_id) if jornada_id else (next_round_for(player) or fallback),
+                "jornada_id": str(jornada_id) if jornada_id else _round_for(player),
                 "player_id": player_id,
                 "name": name if isinstance(name, str) else None,
                 "expected_points": expected,
@@ -364,8 +421,45 @@ def persist_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any]], *, no
             for row in rows
         ],
     )
+    written = conn.total_changes - before
+    # Una fila por día y sin pisar lo de días anteriores. Tampoco se escribe
+    # una previsión de un partido ya empezado: no sería previa.
+    conn.executemany(
+        """
+        insert into matchday_snapshot_log (
+            jornada_id, player_id, snapshot_day, expected_points, ceiling_points,
+            in_once_optimo, league_id, kickoff, stored_at
+        )
+        select ?, ?, ?, ?, ?, ?, ?, ?, ?
+        where ? is null or ? > ?
+        on conflict(jornada_id, player_id, snapshot_day) do update set
+            expected_points = excluded.expected_points,
+            ceiling_points = excluded.ceiling_points,
+            in_once_optimo = excluded.in_once_optimo,
+            kickoff = excluded.kickoff,
+            stored_at = excluded.stored_at
+        """,
+        [
+            (
+                row["jornada_id"],
+                row["player_id"],
+                row.get("snapshot_day"),
+                row.get("expected_points"),
+                row.get("ceiling_points"),
+                int(row.get("in_once_optimo") or 0),
+                row.get("league_id"),
+                row.get("kickoff"),
+                stamp,
+                row.get("kickoff"),
+                row.get("kickoff"),
+                moment,
+            )
+            for row in rows
+            if row.get("snapshot_day")
+        ],
+    )
     conn.commit()
-    return conn.total_changes - before
+    return written
 
 
 def latest_jornada_id(conn: sqlite3.Connection) -> str | None:

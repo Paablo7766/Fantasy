@@ -242,6 +242,42 @@ class JornadaRealTest(unittest.TestCase):
         mapping = track.week_points_by_round({"week_points": [1.0], "week_points_by_round": {"11": 7.0}})
         self.assertEqual(mapping, {"11": 7.0})
 
+    def test_infers_round_from_points_not_from_relative_calendar(self) -> None:
+        # AnalíticaFantasy pone matchday=1 a la próxima jornada: no es la J1.
+        players = _full_squad()
+        for player in players:
+            player["own_calendar"] = [{"matchday": 1}]
+            player["week_points_by_round"] = {"10": 3.0, "11": 5.0}
+        squads, trends = _docs(players)
+        self.assertEqual(track.infer_jornada_id(trends, squads), "12")
+
+    def test_daily_log_keeps_every_day_and_skips_started_matches(self) -> None:
+        from datetime import datetime, timezone
+
+        row = {
+            "jornada_id": "12",
+            "player_id": "p",
+            "expected_points": 6.0,
+            "kickoff": "2026-11-08T17:30:00+00:00",
+            "snapshot_day": "2026-11-03",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = sqlite3.connect(Path(tmp) / "db.sqlite")
+            try:
+                track._ensure_schema(conn)
+                tuesday = datetime(2026, 11, 3, 10, tzinfo=timezone.utc)
+                friday = datetime(2026, 11, 6, 10, tzinfo=timezone.utc)
+                after = datetime(2026, 11, 9, 10, tzinfo=timezone.utc)
+                track.persist_snapshot(conn, [row], now=tuesday)
+                track.persist_snapshot(conn, [{**row, "expected_points": 4.0, "snapshot_day": "2026-11-06"}], now=friday)
+                track.persist_snapshot(conn, [{**row, "expected_points": 9.0, "snapshot_day": "2026-11-09"}], now=after)
+                log = conn.execute(
+                    "select snapshot_day, expected_points from matchday_snapshot_log order by snapshot_day"
+                ).fetchall()
+            finally:
+                conn.close()
+        self.assertEqual(log, [("2026-11-03", 6.0), ("2026-11-06", 4.0)])
+
 
 if __name__ == "__main__":
     unittest.main()
