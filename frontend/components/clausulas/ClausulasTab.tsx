@@ -268,6 +268,65 @@ function AttackCard({ row, photos, index }: { row: ClausulazoSugerido; photos: P
   );
 }
 
+/** Jugador propio sin peligro hoy: desplegable para prepararse antes de que se abra su cláusula. */
+function RestRow({
+  player,
+  name,
+  status,
+  statusColor,
+  radar,
+  photos,
+}: {
+  player: RivalPlayer;
+  name: string;
+  status: string;
+  statusColor: string;
+  radar: RadarAntiRobo | undefined;
+  photos: PhotoIndex;
+}) {
+  const [open, setOpen] = useState(false);
+  const loses = player.tu_once_pierde_sin_el ?? null;
+  const pct = radar?.prevision_7d_pct;
+  const days = radar?.dias_para_abrir;
+  return (
+    <li>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="flex w-full items-center gap-2.5 py-2.5 text-left">
+        <Face name={name} src={player.image_url || photoFor(photos, player.player_id, name)} size={34} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[14px] text-white">{name}</span>
+          <span className="block truncate text-[12px]" style={{ color: statusColor }}>
+            {status}
+          </span>
+        </span>
+        <span className="shrink-0 text-[14px] font-medium tabular-nums text-white">{money(player.buyout_clause)}</span>
+        <Chevron open={open} />
+      </button>
+      {open ? (
+        <div className="row-in pb-3">
+          <div className="grid grid-cols-3 gap-3">
+            <Fact label="Valor" value={money(player.market_value)} hint={typeof pct === "number" ? `${signedPct(pct)} en 7 días` : player.prevision_7d_pct || undefined} />
+            <Fact label="Próxima jornada" value={typeof player.own_expected_points === "number" ? `${points(player.own_expected_points)} pts` : "—"} tone="#FFC08A" />
+            <Fact
+              label="Tu once sin él"
+              value={loses === null ? "—" : loses < 0.05 ? "Igual" : `−${points(loses)} pts`}
+              tone={loses !== null && loses >= 0.05 ? TONE.red : undefined}
+            />
+          </div>
+          <p className="mt-3 text-[12.5px] tabular-nums text-white/50">
+            {[
+              radar ? `${radar.rivales_con_caja} ${radar.rivales_con_caja === 1 ? "rival podría pagarla" : "rivales podrían pagarla"}` : null,
+              typeof days === "number" && days > 0 ? `abre en ${days} ${days === 1 ? "día" : "días"}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+          {radar?.consejo ? <p className="mt-2 text-[13px] leading-relaxed text-white/60">{cleanText(radar.consejo)}</p> : null}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 /** Cuándo se abren los candados de los rivales, día a día. */
 function Openings({ timeline, photos }: { timeline: DateBucket[]; photos: PhotoIndex }) {
   const peak = timeline.find((bucket) => bucket.is_peak)?.local_date ?? timeline[0]?.local_date;
@@ -473,21 +532,36 @@ export function ClausulasTab({
       <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] min-[1100px]:items-start">
         <div className="flex min-w-0 flex-col gap-4">
           {hero}
-          <section aria-label="Clausulazos" className="flex flex-col gap-3">
-            <SectionHead title="A quién clausular" meta={clausulazos.length ? `${clausulazos.length}` : undefined} />
-            {clausulazos.length ? (
-              <ul className="home-glass overflow-hidden">
-                {clausulazos.map((row, index) => (
-                  <AttackCard key={row.player_id} row={row} photos={photos} index={index} />
-                ))}
-              </ul>
-            ) : (
+          {clausulazos.length ? (
+            [
+              { key: "abiertas", title: "Abiertas ahora", rows: clausulazos.filter((row) => row.abierta_ahora), dot: TONE.green },
+              { key: "cerradas", title: "Con candado", rows: clausulazos.filter((row) => !row.abierta_ahora), dot: "rgba(255,255,255,0.4)" },
+            ].map((group) => (
+              <section key={group.key} aria-label={group.title} className="flex flex-col gap-3">
+                <SectionHead title={group.title} meta={`${group.rows.length}`} />
+                {group.rows.length ? (
+                  <ul className="home-glass overflow-hidden">
+                    {group.rows.map((row, index) => (
+                      <AttackCard key={row.player_id} row={row} photos={photos} index={index} />
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="home-glass flex items-center gap-2.5 px-4 py-4 text-[14px] text-white/60">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: group.dot }} aria-hidden="true" />
+                    {group.key === "abiertas" ? "Ahora mismo no hay ninguna abierta." : "Todas las recomendadas están abiertas."}
+                  </p>
+                )}
+              </section>
+            ))
+          ) : (
+            <section aria-label="Clausulazos" className="flex flex-col gap-3">
+              <SectionHead title="A quién clausular" />
               <p className="home-glass flex items-center gap-2.5 px-4 py-4 text-[14px] text-white/60">
                 <span className="h-2 w-2 shrink-0 rounded-full bg-white/30" aria-hidden="true" />
                 Hoy ningún clausulazo mejora tu once ni sale barato.
               </p>
-            )}
-          </section>
+            </section>
+          )}
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           {timeline.length ? (
@@ -537,16 +611,15 @@ export function ClausulasTab({
                       ? tag.label
                       : "Sin candado";
                 return (
-                  <li key={String(player.player_id)} className="flex items-center gap-2.5 py-2.5">
-                    <Face name={name} src={player.image_url || photoFor(photos, player.player_id, name)} size={34} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] text-white">{name}</span>
-                      <span className="block truncate text-[12px]" style={{ color: radarById.has(String(player.player_id)) && !lock?.is_locked ? tag.color : "rgba(255,255,255,0.45)" }}>
-                        {status}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-[14px] font-medium tabular-nums text-white">{money(player.buyout_clause)}</span>
-                  </li>
+                  <RestRow
+                    key={String(player.player_id)}
+                    player={player}
+                    name={name}
+                    status={status}
+                    statusColor={radarById.has(String(player.player_id)) && !lock?.is_locked ? tag.color : "rgba(255,255,255,0.45)"}
+                    radar={radarById.get(String(player.player_id))}
+                    photos={photos}
+                  />
                 );
               })}
             </ul>
