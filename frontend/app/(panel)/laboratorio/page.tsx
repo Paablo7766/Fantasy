@@ -12,12 +12,14 @@ import { ExpertNotePanel } from "@/components/laboratorio/ExpertNotePanel";
 import { SignalDiscrepanciesPanel } from "@/components/laboratorio/SignalDiscrepanciesPanel";
 import { Skeleton } from "@/components/ui/kit";
 import { RadarTecnico } from "@/components/laboratorio/RadarTecnico";
+import { ClauseBoardPanel } from "@/components/liga/ClauseBoardPanel";
+import { RivalIntelPanel } from "@/components/liga/RivalIntelPanel";
 import { LabSection } from "@/components/mercado/LabSection";
 import { OportunidadesTab } from "@/components/mercado/OportunidadesTab";
 import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
-type Tab = "radar" | "calibracion" | "senales" | "datos";
+type Tab = "radar" | "rivales" | "calibracion" | "senales" | "datos";
 
 /**
  * Zona de auditoría: cómo se construye cada número. Nada de aquí decide una
@@ -29,6 +31,7 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
     label: "Radar técnico",
     hint: "Fichables fuera del mercado por valor y momentum, pesos de la nota, tóxicos descartados y precio de referencia por posición.",
   },
+  { id: "rivales", label: "Rivales", hint: "Cómo se reconstruye la caja de cada rival y el tablero con todas las cláusulas de la liga." },
   { id: "calibracion", label: "Calibración", hint: "Cuánto acierta el modelo, y el post-mortem del lunes: puntos dejados en el banquillo e impacto de haber operado." },
   { id: "senales", label: "Señales", hint: "Fuentes externas, discrepancias entre ellas y la nota del experto." },
   { id: "datos", label: "Datos y API", hint: "Frescura de cada bloque y consumo de peticiones." },
@@ -90,6 +93,11 @@ function LaboratorioContent() {
             <OportunidadesTab photos={photos} />
             <LabSection photos={photos} />
             <RadarTecnico photos={photos} />
+          </div>
+        ) : tab === "rivales" ? (
+          <div className="flex min-w-0 flex-col gap-6">
+            <RivalIntelPanel />
+            <ClauseBoardPanel />
           </div>
         ) : tab === "calibracion" ? (
           <div className="flex min-w-0 flex-col gap-6">

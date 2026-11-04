@@ -42,7 +42,7 @@ const SECTIONS: readonly NavItem[] = [
     href: "/liga",
     label: "Liga",
     title: "Liga",
-    hint: "Clasificación, rivales y cláusulas ajenas",
+    hint: "Clasificación y rivales",
   },
 ] as const;
 
@@ -287,7 +287,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // En Inicio no hay barra superior: la recarga vive en la barra lateral
   // (escritorio) y en un botón flotante sobre el dock (móvil).
   const dockIndex = SECTIONS.findIndex((item) => isActive(pathname, item.href));
-  const home = pathname === "/" || ["/equipo", "/mercado", "/clausulas"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
+  const home = pathname === "/" || ["/equipo", "/mercado", "/clausulas", "/liga"].some((path) => pathname === path || pathname.startsWith(`${path}/`));
   const freshness = (
     <Freshness
       ageSeconds={photoAgeSeconds}
