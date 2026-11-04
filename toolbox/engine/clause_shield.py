@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from toolbox.analyzer import FORMATIONS
 from toolbox.engine.lineup_math import solve_best_xi
 
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -36,8 +37,13 @@ TOLERANCIA_SUSTITUTO_XP = 0.3
 DIAS_REPOSICION = (0, 1, 2)
 #: Sin saque conocido, un candado a 3 días o más se da por activo.
 VENTANA_SIN_SAQUE_DIAS = 3.0
-#: 4-3-3: titulares por puesto para medir el hueco de un rival (no para sus suplentes).
-TITULARES = {"POR": 1, "DEF": 4, "MC": 3, "DEL": 3}
+#: Mínimo y máximo alineable por puesto entre todas las formaciones legales
+#: (mínimos 1 POR, 3 DEF, 3 MC, 1 DEL; 11 en total).
+PUESTOS = ("POR", "DEF", "MC", "DEL")
+MINIMO = {p: min(f[p] for f in FORMATIONS.values()) for p in PUESTOS}
+MAXIMO = {p: max(f[p] for f in FORMATIONS.values()) for p in PUESTOS}
+#: Jugadores de campo que se alinean en cualquier formación.
+CAMPO_ALINEABLE = 10
 
 TEXTO_CANDADO = "🔒 CANDADO ACTIVO (No gastar caja hasta la próxima semana)"
 TEXTO_FUERA = "🟢 FUERA DE ALCANCE REAL (Ningún rival tiene saldo + incentivo para pagarla)"
@@ -89,39 +95,62 @@ def _pct(value: Any) -> float | None:
     return None
 
 
-def _sanos_por_puesto(plantilla: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    puestos: dict[str, list[dict[str, Any]]] = {puesto: [] for puesto in TITULARES}
-    for fila in plantilla:
-        if not isinstance(fila, dict) or fila.get("sano") is False:
-            continue
-        puesto = fila.get("position")
-        if puesto in puestos:
-            puestos[puesto].append(fila)
-    for filas in puestos.values():
-        filas.sort(key=lambda fila: -(_num(fila.get("jornada")) or 0.0))
-    return puestos
+def _sanos(plantilla: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sanos con puesto válido y xP numérico (sin xP cuenta 0), de más a menos xP."""
+    filas = [
+        {**fila, "jornada": _num(fila.get("jornada")) or 0.0}
+        for fila in plantilla
+        if isinstance(fila, dict)
+        and fila.get("sano") is not False
+        and fila.get("position") in PUESTOS
+        and isinstance(fila.get("player_id"), str)
+    ]
+    filas.sort(key=lambda fila: (-fila["jornada"], fila["player_id"]))
+    return filas
+
+
+def _mejor_once(sanos: list[dict[str, Any]]) -> dict[str, Any]:
+    """Mejor once legal por xP puro, con la formación que más puntos da."""
+    return solve_best_xi(sanos, lambda_var=0.0)
+
+
+def _fuera_de_alineacion(sanos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sin once legal: los que sobran del máximo alineable o de los 10 mejores de campo.
+
+    Se queda el mejor portero y, entre los de campo, los mejores por xP sin pasar
+    del máximo de cada puesto hasta completar 10.
+    """
+    quedan: set[str] = set()
+    cuenta = {puesto: 0 for puesto in PUESTOS}
+    campo = 0
+    for fila in sanos:
+        puesto = fila["position"]
+        if puesto == "POR":
+            if cuenta["POR"] < MAXIMO["POR"]:
+                cuenta["POR"] += 1
+                quedan.add(fila["player_id"])
+        elif campo < CAMPO_ALINEABLE and cuenta[puesto] < MAXIMO[puesto]:
+            cuenta[puesto] += 1
+            campo += 1
+            quedan.add(fila["player_id"])
+    return [fila for fila in sanos if fila["player_id"] not in quedan]
 
 
 def prescindibles_valor(plantilla: list[dict[str, Any]]) -> float:
-    """Valor de los sanos que quedan fuera de su mejor once legal por xP.
+    """Valor de los sanos que un rival puede vender sin tocar su mejor once.
 
-    El once sale de ``solve_best_xi`` sin penalizar varianza, con la formación
-    válida que más puntos da. Sin once legal no se asume nada vendible.
+    Con once legal, los que quedan fuera de ``solve_best_xi``. Sin él (por
+    ejemplo 0 porteros y 6 defensas), los que exceden el máximo alineable de su
+    puesto o quedan fuera de sus 10 mejores jugadores de campo.
     """
-    sanos = [
-        {**fila, "jornada": _num(fila.get("jornada")) or 0.0}
-        for fila in plantilla
-        if isinstance(fila, dict) and fila.get("sano") is not False and isinstance(fila.get("player_id"), str)
-    ]
-    once = solve_best_xi(sanos, lambda_var=0.0)
-    if not once.get("ok"):
-        return 0.0
-    titulares = set(once["player_ids"])
-    return sum(
-        _num(fila.get("valor")) or 0.0
-        for fila in sanos
-        if fila["player_id"] not in titulares and fila.get("position") in TITULARES
-    )
+    sanos = _sanos(plantilla)
+    once = _mejor_once(sanos)
+    if once.get("ok"):
+        titulares = set(once["player_ids"])
+        fuera = [fila for fila in sanos if fila["player_id"] not in titulares]
+    else:
+        fuera = _fuera_de_alineacion(sanos)
+    return sum(_num(fila.get("valor")) or 0.0 for fila in fuera)
 
 
 def liquidez_rival(rival: dict[str, Any], horas_al_saque: float | None) -> dict[str, int]:
@@ -145,18 +174,28 @@ def liquidez_rival(rival: dict[str, Any], horas_al_saque: float | None) -> dict[
 
 
 def necesidad_rival(rival: dict[str, Any], puesto: str, xp_jugador: float) -> tuple[str, float]:
-    """(nivel, ``delta_xp``): lo que mejora mi jugador al peor titular del rival.
+    """(nivel, ``delta_xp``): lo que mejora mi jugador a su mejor once.
 
-    ``hueco`` si el rival tiene menos sanos que plazas en ese puesto (el delta
-    es todo el xP), ``justo`` si tiene los justos sin banquillo y ``cubierto``
-    si le sobra alguien.
+    ``hueco`` si tiene menos sanos en ese puesto que el mínimo legal (1 POR,
+    3 DEF, 3 MC, 1 DEL): el delta es todo el xP. Si no, el delta es lo que sube
+    su mejor once legal al añadirle al jugador, con cualquier formación, así que
+    un 3-5-2 con 3 DEF y 5 MC sanos no tiene hueco en defensa. ``justo`` si usa
+    todos sus sanos del puesto (sin banquillo) y ``cubierto`` si le sobra alguien.
     """
-    sanos = _sanos_por_puesto(rival.get("plantilla") or []).get(puesto, [])
-    titulares = TITULARES.get(puesto, 0)
-    if titulares == 0 or len(sanos) < titulares:
+    if puesto not in PUESTOS:
+        return "cubierto", 0.0
+    sanos = _sanos(rival.get("plantilla") or [])
+    en_puesto = sum(1 for fila in sanos if fila["position"] == puesto)
+    if en_puesto < MINIMO[puesto]:
         return "hueco", max(0.0, xp_jugador)
-    peor = _num(sanos[titulares - 1].get("jornada")) or 0.0
-    return ("justo" if len(sanos) == titulares else "cubierto"), max(0.0, xp_jugador - peor)
+    sin = _mejor_once(sanos)
+    if not sin.get("ok"):
+        # Su problema está en otro puesto: este jugador no le arregla el once.
+        return ("justo" if en_puesto == MINIMO[puesto] else "cubierto"), 0.0
+    con = _mejor_once([*sanos, {"player_id": "__candidato__", "position": puesto, "jornada": xp_jugador}])
+    usados = FORMATIONS[sin["formacion"]][puesto]
+    nivel = "justo" if en_puesto <= usados else "cubierto"
+    return nivel, max(0.0, float(con["puntos"]) - float(sin["puntos"]))
 
 
 def disposicion_a_pagar(valor: float, subida_7d: float, nivel: str, delta_xp: float) -> int:

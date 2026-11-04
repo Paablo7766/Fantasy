@@ -312,9 +312,9 @@ class IntegracionTests(unittest.TestCase):
         self.assertEqual(joya["veredicto_codigo"], "CLAUSULAR_YA")
         self.assertEqual(informe["resumen"]["clausulazos_listos"], 1)
         radar = {fila["player_id"]: fila for fila in informe["radar_anti_robo"]}
-        # Lunes y con la joya de Luis comprable por 5M: lo cobrado repone el hueco, no compensa blindar.
-        self.assertEqual(radar["DEL-0"]["estado"], "ASUMIR")
-        self.assertEqual(radar["DEL-0"]["amenaza_max"], 12_000_000)
+        # Luis solo tiene a Joya: no forma once (sin portero), así que un delantero no le arregla nada.
+        # Paga como mucho el valor y la cláusula de 8M, igual al valor, queda fuera de alcance.
+        self.assertEqual(radar["DEL-0"]["estado"], "FUERA_DE_ALCANCE")
         self.assertEqual(radar["DEL-0"]["rival_amenaza"], "Luis")
         self.assertEqual(radar["DEL-1"]["estado"], "FUERA_DE_ALCANCE")
         self.assertEqual(radar["DEL-1"]["badge"], "verde")

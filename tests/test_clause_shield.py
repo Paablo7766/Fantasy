@@ -86,16 +86,48 @@ class LiquidezRealTests(unittest.TestCase):
         plantilla.append({"player_id": "lesion", "position": "DEF", "sano": False, "jornada": 5.0, "valor": 9_000_000})
         self.assertEqual(prescindibles_valor(plantilla), 2_000_000)
 
-    def test_sin_once_legal_no_se_asume_nada_vendible(self) -> None:
-        self.assertEqual(prescindibles_valor(_plantilla(n_del=0, banquillo=3)[:6]), 0.0)
+    def test_sin_once_legal_sobran_los_que_exceden_el_maximo_alineable(self) -> None:
+        # 0 porteros y 8 DEF: no hay once. Máximo alineable en DEF = 5; los 3 de menos xP sobran.
+        filas = [{"player_id": f"d{i}", "position": "DEF", "jornada": 8.0 - i, "valor": 1_000_000 + i} for i in range(8)]
+        filas += [{"player_id": f"m{i}", "position": "MC", "jornada": 3.0, "valor": 2_000_000} for i in range(3)]
+        self.assertEqual(prescindibles_valor(filas), (1_000_000 + 5) + (1_000_000 + 6) + (1_000_000 + 7))
+
+    def test_sin_once_legal_sobran_los_de_fuera_de_los_10_mejores_de_campo(self) -> None:
+        # 5 DEF + 5 MC + 2 DEL = 12 de campo y 0 porteros: se quedan los 10 mejores, sobran los 2 peores.
+        filas = [{"player_id": f"d{i}", "position": "DEF", "jornada": 5.0, "valor": 1_000_000} for i in range(5)]
+        filas += [{"player_id": f"m{i}", "position": "MC", "jornada": 5.0, "valor": 1_000_000} for i in range(5)]
+        filas += [{"player_id": "f0", "position": "DEL", "jornada": 1.0, "valor": 7_000_000}]
+        filas += [{"player_id": "f1", "position": "DEL", "jornada": 0.5, "valor": 8_000_000}]
+        self.assertEqual(prescindibles_valor(filas), 15_000_000)
 
 
 class WillingnessTests(unittest.TestCase):
     def test_hueco_justo_y_cubierto(self) -> None:
-        self.assertEqual(necesidad_rival(_rival(0, n_del=2), "DEL", 6.0), ("hueco", 6.0))
+        # Sin delanteros sanos: por debajo del mínimo legal (1 DEL) es hueco.
+        self.assertEqual(necesidad_rival(_rival(0, n_del=0), "DEL", 6.0), ("hueco", 6.0))
+        # Un 4-3-3 con 3 DEL justos: mi 6,0 sustituye a un 4,0 y suma 2 puntos.
         self.assertEqual(necesidad_rival(_rival(0, n_del=3), "DEL", 6.0), ("justo", 2.0))
-        rival = {"plantilla": _plantilla(n_del=4)}
-        self.assertEqual(necesidad_rival(rival, "DEL", 6.0)[0], "cubierto")
+        # Con 4 DEL la formación usa 3: le sobra uno.
+        self.assertEqual(necesidad_rival({"plantilla": _plantilla(n_del=4)}, "DEL", 6.0)[0], "cubierto")
+
+    def test_un_3_5_2_con_3_defensas_no_tiene_hueco_en_defensa(self) -> None:
+        filas = [{"position": "POR", "jornada": 4.0}]
+        filas += [{"position": "DEF", "jornada": 4.0} for _ in range(3)]
+        filas += [{"position": "MC", "jornada": 5.0} for _ in range(5)]
+        filas += [{"position": "DEL", "jornada": 4.0} for _ in range(2)]
+        plantilla = [{**f, "sano": True, "valor": 5_000_000, "player_id": f"q{i}"} for i, f in enumerate(filas)]
+        nivel, delta = necesidad_rival({"plantilla": plantilla}, "DEF", 6.0)
+        self.assertEqual(nivel, "justo")
+        self.assertGreater(delta, 0)
+
+    def test_sin_portero_un_defensa_no_le_arregla_el_once(self) -> None:
+        filas = [{"position": "DEF", "jornada": 4.0} for _ in range(6)]
+        filas += [{"position": "MC", "jornada": 4.0} for _ in range(3)]
+        filas += [{"position": "DEL", "jornada": 4.0} for _ in range(2)]
+        plantilla = [{**f, "sano": True, "valor": 5_000_000, "player_id": f"q{i}"} for i, f in enumerate(filas)]
+        rival = {"plantilla": plantilla}
+        self.assertEqual(necesidad_rival(rival, "POR", 3.0), ("hueco", 3.0))
+        self.assertEqual(necesidad_rival(rival, "DEF", 6.0)[1], 0.0)
 
     def test_no_mejora_no_suma_urgencia(self) -> None:
         self.assertEqual(necesidad_rival(_rival(0), "DEL", 3.0), ("justo", 0.0))
