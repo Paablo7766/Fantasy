@@ -307,6 +307,7 @@ export function TodayPlan({
   const radar = fichajes?.en_radar || [];
   const alternativas = fichajes?.alternativas_liquidez || [];
   const presupuesto = fichajes?.presupuesto ?? null;
+  const comparativa = fichajes?.comparativa ?? null;
   const raw = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
   const done = useMemo(() => parseDone(raw), [raw]);
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -414,11 +415,39 @@ export function TodayPlan({
 
       {today.length ? <ol className="ini-divide">{today.map((step, i) => renderRow(step, i, true))}</ol> : null}
 
-      {later.length || radar.length || alternativas.length ? (
+      {later.length || radar.length || alternativas.length || comparativa ? (
         <div className="pb-1">
           <Disclosure title="Después" count={later.length}>
             <ol className="ini-divide border-t border-[var(--ini-line)]">{later.map((step, i) => renderRow(step, i, false))}</ol>
           </Disclosure>
+          {comparativa?.completo && comparativa?.prudente ? (
+            <Disclosure title="Comparar con el plan prudente" count={1}>
+              <div className="grid gap-3 border-t border-[var(--ini-line)] px-4 py-3 sm:grid-cols-2 sm:px-5">
+                {([
+                  ["Plan completo", comparativa.completo],
+                  ["Prudente · solo caja y ventas de hoy", comparativa.prudente],
+                ] as const).map(([titulo, r]) => (
+                  <div key={titulo} className="min-w-0">
+                    <p className="text-[12px] font-medium text-white/60">{titulo}</p>
+                    <p className="mt-1 text-[13px] tabular-nums text-white/80">
+                      {typeof r.mejora_puntos_jornada === "number" ? `${signedPoints(r.mejora_puntos_jornada)} pts` : "—"} · {r.compras?.length ?? 0} compras · {r.ventas?.length ?? 0} ventas
+                    </p>
+                    <p className="text-[12px] tabular-nums text-white/40">
+                      Gasto {eurShort(r.presupuesto?.gasto_pujas ?? 0)} · sobran {eurShort(r.saldo_al_final ?? 0)}
+                    </p>
+                    <ul className="mt-1.5 text-[12px] text-white/55">
+                      {(r.compras || []).map((c, i) => (
+                        <li key={`c${i}`} className="truncate">+ {c.nombre} · {eurShort(c.euros ?? 0)}{typeof c.mejora_neta === "number" ? ` · ${signedPoints(c.mejora_neta)} pts` : ""}</li>
+                      ))}
+                      {(r.ventas || []).map((v, i) => (
+                        <li key={`v${i}`} className="truncate text-white/40">− {v.nombre} · {eurShort(v.euros ?? 0)}{v.momento === "condicional" ? " · si ganas" : ""}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </Disclosure>
+          ) : null}
           <Disclosure title="Alternativas si consigues liquidez" count={alternativas.length}>
             <ul className="ini-divide border-t border-[var(--ini-line)]">
               {alternativas.map((row, i) => {

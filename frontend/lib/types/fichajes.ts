@@ -88,6 +88,15 @@ export type PlanLiquidacion = {
   deficit_eur?: number | null;
 };
 
+export type PlanResumen = {
+  mejora_puntos_jornada?: number | null;
+  mejora_horizonte?: number | null;
+  saldo_al_final?: number | null;
+  presupuesto?: PlanPresupuesto | null;
+  compras?: Array<{ player_id?: string | null; nombre?: string | null; etiqueta?: string | null; euros?: number | null; mejora_neta?: number | null }>;
+  ventas?: Array<{ player_id?: string | null; nombre?: string | null; euros?: number | null; momento?: string | null }>;
+};
+
 export type PlanFichajes = {
   ok?: boolean;
   mejora_puntos_jornada?: number | null;
@@ -107,6 +116,8 @@ export type PlanFichajes = {
   presupuesto?: PlanPresupuesto | null;
   /** Must-buy que no caben en la caja de hoy, por mejora por millón. */
   alternativas_liquidez?: PlanFichajeAccion[];
+  /** Plan completo frente al prudente (sin ventas que dependan de ganar pujas). */
+  comparativa?: { completo?: PlanResumen; prudente?: PlanResumen } | null;
   trading?: TradingDesk;
   liquidacion?: PlanLiquidacion;
   /** Escudo y francotirador: cláusulas en riesgo y chollos de rivales en rojo. */

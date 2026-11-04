@@ -606,6 +606,7 @@ def _plan_once(
     preparar_escaparate: bool = True,
     objetivos_previos: list[str] | set[str] | None = None,
     trading_out: list[dict[str, Any]] | None = None,
+    permitir_condicionales: bool = True,
 ) -> dict[str, Any]:
     """Maximiza ``xP - peaje × drenaje neto``. No envía órdenes.
 
@@ -664,6 +665,7 @@ def _plan_once(
             baseline_puntos=baseline_puntos,
             preparar_escaparate=False,
             objetivos_previos=previos,
+            permitir_condicionales=permitir_condicionales,
         )
         ventas_viernes = {
             accion["player_id"]
@@ -899,6 +901,9 @@ def _plan_once(
             variable = pulp.LpVariable(f"{prefix}_a{s_index}_{b_index}", cat=pulp.LpBinary)
             asigna[(vendido, pujado)] = variable
             problem += variable <= puja[pujado]
+            if not permitir_condicionales:
+                # Modo prudente: solo caja y ventas de hoy, nada que dependa de ganar.
+                problem += variable == 0
         problem += pulp.lpSum(asigna[(vendido, pujado)] for pujado in puja) <= vende[vendido]
     caja_puja = {pujado: pulp.LpVariable(f"{prefix}_c{index}", lowBound=0) for index, pujado in enumerate(puja)}
     for pujado, variable in puja.items():

@@ -61,6 +61,8 @@ _POSITION = {
 _CLAUSE_EDGE = 1.25
 _CLAUSE_MIN_XP = 3.5
 _MAX_PUJAS = 20
+# Oferta más baja que puede hacer LaLiga sobre el valor de mercado (-5 %).
+VENTA_SIN_OFERTA_PCT = 0.95
 _MAX_CLAUSULAS = 12
 _TITULAR_RATIO = 0.60
 # Campos con los que una fila propia puede traer la oferta del sistema.
@@ -1194,7 +1196,21 @@ def _plan(
             continue
         if row.get("position") not in POSITIONS and not (isinstance(row.get("valor"), int) and row["valor"] > 0):
             continue
-        venta = row.get("sale_price") if row.get("on_market") and isinstance(row.get("sale_price"), int) else row.get("valor")
+        # Lo que de verdad entra al vender: la mejor oferta con importe que ya
+        # tienes. Sin ella, LaLiga puede ofrecer hasta un 5 % por debajo del
+        # valor, así que el plan cuenta con el 95 % y no con el 100 %.
+        importes = [
+            oferta["importe"]
+            for oferta in _ofertas_propias(row, own_id, {})
+            if isinstance(oferta.get("importe"), int) and oferta["importe"] > 0
+        ]
+        valor_venta = row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None
+        if importes:
+            venta = max(importes)
+        elif valor_venta and valor_venta > 0:
+            venta = int(valor_venta * VENTA_SIN_OFERTA_PCT)
+        else:
+            venta = None
         owned_rows.append(
             {
                 "player_id": row["player_id"],
@@ -1323,21 +1339,31 @@ def _plan(
     clausulas.sort(key=lambda item: float(item["eficiencia"]), reverse=True)
     clausulas = clausulas[:_MAX_CLAUSULAS]
     trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
+    entrada = {
+        "cash": saldo,
+        "owned": owned_rows,
+        "mercado": mercado,
+        "clausulas": clausulas,
+        "ratio": ratio,
+        # Días hasta el inicio de jornada: primer silbato del día con más partidos.
+        "dias_para_jornada": _days_to_kickoff(trends, now),
+        "baseline_puntos": baseline,
+        "objetivos_previos": board.get("plan_objetivos_previos") or None,
+    }
     try:
-        plan = build_plan_fichajes(
-            cash=saldo,
-            owned=owned_rows,
-            mercado=mercado,
-            clausulas=clausulas,
-            ratio=ratio,
-            # Días hasta el inicio de jornada: primer silbato del día con más partidos.
-            dias_para_jornada=_days_to_kickoff(trends, now),
-            baseline_puntos=baseline,
-            objetivos_previos=board.get("plan_objetivos_previos") or None,
-        )
+        plan = build_plan_fichajes(**entrada)
     except Exception:
         logger.exception("plan de fichajes")
         return _empty_plan(saldo, ratio)
+    try:
+        # El mismo plan sin ventas condicionales: solo caja y ventas de hoy.
+        prudente = build_plan_fichajes(**entrada, permitir_condicionales=False)
+        plan["comparativa"] = {
+            "completo": _resumen_plan(plan),
+            "prudente": _resumen_plan(prudente),
+        }
+    except Exception:
+        logger.exception("plan prudente")
     try:
         # La cobertura mira el primer silbato real, no el día con más partidos.
         plan["liquidacion"] = _liquidacion(
@@ -1346,6 +1372,27 @@ def _plan(
     except Exception:
         logger.exception("plan de liquidación")
     return plan
+
+
+def _resumen_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    """Lo justo para comparar dos planes: compras, ventas, gasto y puntos."""
+    acciones = plan.get("acciones") or []
+    compras = [a for a in acciones if a.get("tipo") in {"PUJA", "CLAUSULAZO"}]
+    ventas = [a for a in acciones if a.get("tipo") in {"VENDE", "VENDER HOY"}]
+    return {
+        "mejora_puntos_jornada": plan.get("mejora_puntos_jornada"),
+        "mejora_horizonte": plan.get("mejora_horizonte"),
+        "saldo_al_final": plan.get("saldo_al_final"),
+        "presupuesto": plan.get("presupuesto"),
+        "compras": [
+            {k: a.get(k) for k in ("player_id", "nombre", "etiqueta", "euros", "mejora_neta", "momento")}
+            for a in compras
+        ],
+        "ventas": [
+            {k: a.get(k) for k in ("player_id", "nombre", "euros", "momento")}
+            for a in ventas
+        ],
+    }
 
 
 def _liquidacion(
