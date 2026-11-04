@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d2a2a"/><stop offset="1" stop-color="#061414"/></linearGradient>
+<radialGradient id="halo" cx=".5" cy=".52" r=".5"><stop offset=".4" stop-color="#2EE6A8" stop-opacity=".6"/><stop offset=".75" stop-color="#2EE6A8" stop-opacity=".12"/><stop offset="1" stop-color="#2EE6A8" stop-opacity="0"/></radialGradient>
+<linearGradient id="body" x1=".1" y1=".1" x2=".9" y2="1" ><stop offset="0" stop-color="#19C9A0"/><stop offset="0.4" stop-color="#9BF5D6"/><stop offset="0.65" stop-color="#F4FFF8"/><stop offset="1" stop-color="#C8F76A"/></linearGradient>
+<radialGradient id="sheen" cx=".4" cy=".65" r=".45"><stop offset="0" stop-color="#fff" stop-opacity=".6"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+<filter id="inner" x="-20%" y="-20%" width="140%" height="140%">
+<feGaussianBlur in="SourceAlpha" stdDeviation="22"/><feOffset dx="-14" dy="-18" result="o"/>
+<feComposite in="SourceAlpha" in2="o" operator="out" result="e"/><feFlood flood-color="#0d2a2a" flood-opacity=".5"/><feComposite in2="e" operator="in" result="sh"/>
+<feGaussianBlur in="SourceAlpha" stdDeviation="10" result="b2"/><feOffset in="b2" dx="10" dy="12" result="o2"/>
+<feComposite in="SourceAlpha" in2="o2" operator="out" result="e2"/><feFlood flood-color="#fff" flood-opacity=".75"/><feComposite in2="e2" operator="in" result="li"/>
+<feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="sh"/><feMergeNode in="li"/></feMerge></filter>
+<filter id="deb" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur in="SourceAlpha" stdDeviation="5"/><feOffset dx="4" dy="7" result="o"/>
+<feComposite in="SourceAlpha" in2="o" operator="out" result="e"/><feFlood flood-color="#000" flood-opacity=".7"/><feComposite in2="e" operator="in" result="s"/>
+<feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="s"/></feMerge></filter>
+<filter id="soft"><feGaussianBlur stdDeviation="40"/></filter>
+<clipPath id="clip"><path d="M300,770 L300,480 L215,455 L248,355 L338,330 C360,255 430,225 512,225 C594,225 664,255 686,330 L776,355 L809,455 L724,480 L724,770 Q653,700 583,770 Q512,700 441,770 Q370,700 300,770 Z" stroke="#000" stroke-width="50" stroke-linejoin="round"/></clipPath>
+</defs>
+<rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+<circle cx="512" cy="530" r="440" fill="url(#halo)"/>
+<path d="M300,770 L300,480 L215,455 L248,355 L338,330 C360,255 430,225 512,225 C594,225 664,255 686,330 L776,355 L809,455 L724,480 L724,770 Q653,700 583,770 Q512,700 441,770 Q370,700 300,770 Z" fill="url(#body)" stroke="url(#body)" stroke-width="50" stroke-linejoin="round" filter="url(#inner)"/>
+<g clip-path="url(#clip)"><rect width="1024" height="1024" fill="url(#sheen)"/><ellipse cx="640" cy="330" rx="150" ry="90" fill="#fff" opacity=".3" filter="url(#soft)"/></g>
+<text x="512" y="680" text-anchor="middle" font-family="Arial Black,Arial" font-weight="900" font-size="190" fill="#0d2a2a" opacity=".16">10</text>
+<g filter="url(#deb)" fill="#0a1f1c"><ellipse cx="455" cy="410" rx="32" ry="50"/><circle cx="464" cy="390" r="8" fill="#fff" opacity=".85"/><ellipse cx="569" cy="410" rx="32" ry="50"/><circle cx="578" cy="390" r="8" fill="#fff" opacity=".85"/></g>
+</svg>
