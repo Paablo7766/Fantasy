@@ -218,15 +218,17 @@ body {
   place-items: center;
   border-radius: 0.8rem;
   background:
-    linear-gradient(160deg, #67c6f5 0%, #0297de 58%, #026896 100%);
-  color: #02070a;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+    radial-gradient(circle at 50% 55%, rgba(252, 115, 77, 0.35), transparent 70%),
+    linear-gradient(180deg, #0c1d29 0%, #02070a 100%);
   box-shadow:
-    0 10px 24px -14px rgba(2, 151, 222, 0.9),
-    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+    0 10px 24px -14px rgba(252, 115, 77, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.brand-mark img {
+  display: block;
+  height: 1.75rem;
+  width: 1.75rem;
 }
 
 .side-link {

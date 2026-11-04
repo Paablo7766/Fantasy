@@ -19,6 +19,8 @@ export const metadata: Metadata = {
   title: "LALIGA Fantasy · Hoy",
   description: "Panel de acción: reloj, supervivencia del XI y las acciones del día.",
   robots: { index: false, follow: false },
+  applicationName: "LALIGA Fantasy",
+  appleWebApp: { capable: true, title: "Fantasy", statusBarStyle: "black-translucent" },
 };
 
 export const viewport: Viewport = {

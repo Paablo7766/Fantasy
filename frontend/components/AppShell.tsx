@@ -307,7 +307,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <aside className="app-sidebar">
         <div className="flex items-center gap-3 px-2 pb-5">
-          <span className="brand-mark">LF</span>
+          <span className="brand-mark" aria-hidden="true">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-mark.svg" alt="" width={28} height={28} />
+          </span>
           <div className="min-w-0">
             <p className="text-[0.95rem] font-semibold leading-none tracking-[-0.03em] text-white">LALIGA Fantasy</p>
             <p className="mt-1 text-[11px] text-[color:var(--sidebar-muted)]">5 pantallas · decisión clara</p>
