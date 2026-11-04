@@ -148,9 +148,12 @@ class WarYCapitanTests(unittest.TestCase):
         xi[9]["p_titular"] = 0.5
         xi[9]["techo"] = 18.0
         xi[9]["nombre"] = "Techo"
-        caps = capitanes(xi)
+        caps = capitanes(xi, activo=True)
         self.assertEqual(caps["capitan_seguro"]["player_id"], "DEL-2")
         self.assertEqual(caps["capitan_remontada"]["player_id"], "DEL-1")
+        apagado = capitanes(xi)
+        self.assertIsNone(apagado["capitan_seguro"])
+        self.assertIsNone(apagado["capitan_remontada"])
 
     def test_nota_y_veredicto(self) -> None:
         self.assertEqual(nota_y_veredicto(0.2, [{"momento": "luego"}]), (1, "Opcional"))
@@ -863,7 +866,8 @@ class CapaIntegradaTests(unittest.TestCase):
         self.assertGreater(report["war"]["DEL-0"], 1.5)
         self.assertIn("forzado", report["forzadas"])
         self.assertTrue(report["ventas_forzadas"][0]["venta_forzada_rival"])
-        self.assertEqual(report["capitan_seguro"]["player_id"], "DEL-0")
+        self.assertIsNone(report["capitan_seguro"])
+        self.assertIsNone(report["capitan_remontada"])
         self.assertTrue(str(report["previsiones"]["DEL-0"]["prevision_7d_pct"]).endswith("%"))
 
     def test_sin_kickoff_el_reloj_cae_en_el_viernes_a_las_21(self) -> None:

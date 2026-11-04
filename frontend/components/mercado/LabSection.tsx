@@ -54,9 +54,9 @@ const ASSET: Record<string, { label: string; color: string }> = {
 const PLAYABLE = new Set(["POR", "DEF", "MC", "DEL"]);
 
 /**
- * El catálogo de la competición trae también entrenadores: llegan sin
- * ``position`` y con 5,0 de mediana, así que se cuelan en el top de libres.
- * Un entrenador no se ficha ni puntúa: aquí no entra.
+ * El catálogo de la competición trae también entrenadores. Esta liga no tiene
+ * ficha de entrenador: no se ficha ni puntúa, así que aquí no entra. El motor
+ * ya los tira en la normalización; este filtro cubre una foto antigua.
  */
 function onlyPlayers(rows: CatalogProfilePlayer[] | null | undefined): CatalogProfilePlayer[] {
   return (Array.isArray(rows) ? rows : []).filter((row) => PLAYABLE.has(String(row.position || "").toUpperCase()));

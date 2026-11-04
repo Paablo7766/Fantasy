@@ -26,6 +26,8 @@ from __future__ import annotations
 import statistics
 from typing import Any, Iterable, Mapping, Sequence
 
+from toolbox.engine.reglamento import PUESTOS_JUGABLES
+
 # Umbrales de la clasificación cuantitativa. Son deliberadamente explícitos y
 # no configurables por entorno: un cambio aquí altera qué jugadores se compran,
 # así que debe verse en el diff, no en un `.env`.
@@ -258,7 +260,13 @@ class MarketQuantAnalyzer:
         squads: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None = None,
         price_history: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
     ) -> None:
-        self.players = [player for player in players if isinstance(player, Mapping)]
+        # Sin puesto jugable no entra: así llegan los entrenadores del catálogo,
+        # y en esta liga no se fichan ni puntúan. Meterlos inflaría los libres.
+        self.players = [
+            player
+            for player in players
+            if isinstance(player, Mapping) and _text(player.get("position")) in PUESTOS_JUGABLES
+        ]
         self.owners = owned_player_ids(squads)
         # Sin plantillas (o con un documento vacío) no hay forma de saber quién
         # está libre: marcar a los 588 como libres sería un falso positivo que

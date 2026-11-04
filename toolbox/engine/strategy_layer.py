@@ -1541,7 +1541,7 @@ def _consejos(
             consejos[player_id] = {
                 "acepta": True,
                 "explicacion": (
-                    f"El banquillo cubre el hueco: el once baja {perdida:.1f} puntos, "
+                    f"Otro de la plantilla entra en el once: baja {perdida:.1f} puntos, "
                     "por debajo de 1,5. La oferta se puede aceptar."
                 ),
             }

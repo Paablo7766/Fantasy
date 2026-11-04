@@ -652,7 +652,7 @@ def _motivo_clausulazo(
     elif codigo == "PROGRAMAR":
         texto += f" Se desbloquea {cuando}: tenlo listo."
     elif codigo == "SIN_CAJA":
-        texto += f" Te faltan {_m(falta)} de caja: tendrías que vender a alguien del banquillo."
+        texto += f" Te faltan {_m(falta)} de caja: tendrías que vender a alguien que no está en el once."
     else:
         texto += " No mejora el once, pero compras por debajo de su valor."
     if competencia:

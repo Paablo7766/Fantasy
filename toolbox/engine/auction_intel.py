@@ -1,4 +1,4 @@
-"""Pujas, rivales obligados a vender y los dos capitanes del once."""
+"""Pujas, rivales obligados a vender y, si la liga lo tiene, los dos capitanes."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import zlib
 from typing import Any
 
 from toolbox.engine.market_predictor import PASO_PRECIO
+from toolbox.engine.reglamento import CAPITAN_ACTIVO
 
 # La Pizarra puja un 4,7 % por encima del valor.
 # El techo ya no es un +25 % fijo: prima de oportunidad, previsión a 7 días
@@ -269,8 +270,18 @@ def puja_anti_pizarra(
     return salida
 
 
-def capitanes(xi: list[dict[str, Any]]) -> dict[str, dict[str, Any] | None]:
-    """Capitán seguro (jornada, titularidad alta) y capitán de techo."""
+def capitanes(
+    xi: list[dict[str, Any]],
+    *,
+    activo: bool | None = None,
+) -> dict[str, dict[str, Any] | None]:
+    """Capitán seguro (jornada, titularidad alta) y capitán de techo.
+
+    Con el capitán apagado no hay nadie que doblar: las dos fichas salen vacías
+    y el once se valora por los puntos de cada titular, sin x2.
+    """
+    if not (CAPITAN_ACTIVO if activo is None else activo):
+        return {"capitan_seguro": None, "capitan_remontada": None}
     filas = [row for row in xi if isinstance(row, dict)]
 
     def ficha(row: dict[str, Any], criterio: str) -> dict[str, Any]:

@@ -12,6 +12,8 @@ from datetime import datetime, timezone, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from toolbox.engine.reglamento import ficha_jugable
+
 SCHEMA_VERSION = 1
 MADRID_NAME = "Europe/Madrid"
 
@@ -809,6 +811,9 @@ def normalize_catalog_player(row: dict[str, Any], *, now: datetime | None = None
     team_id = _as_str(_coalesce(_first(master, "teamId"), _first(row, "teamId")))
     club = club_for_team(team_id)
     position_id, position = _position(_first(master, "positionId", "position", "role"))
+    # Entrenador (positionId 5) o ficha sin puesto: no se alinea y no puntúa.
+    if not ficha_jugable(position_id, position):
+        return None
 
     return {
         "player_id": _as_str(_first(master, "id", "playerId")),

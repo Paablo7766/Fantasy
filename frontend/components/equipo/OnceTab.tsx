@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { initials, jornadaEv, playerName, points, projectedLineupPoints, titularShare } from "@/lib/core/format";
+import { REGLAMENTO } from "@/lib/core/reglamento";
 import { signedPoints } from "@/lib/inicio/hoy";
 import { bustPhotoFor } from "@/lib/core/bustPhoto";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
@@ -403,8 +404,8 @@ export function OnceTab({
   const band = redLine(plan, optimize, Boolean(model.saved.length && !model.same));
   const active = slots.find((slot) => slot.key === selected) || null;
 
-  const safe = plan?.capitan_seguro || optimize.capitan_seguro || null;
-  const boldRaw = plan?.capitan_remontada || optimize.capitan_remontada || null;
+  const safe = REGLAMENTO.capitan ? plan?.capitan_seguro || optimize.capitan_seguro || null : null;
+  const boldRaw = REGLAMENTO.capitan ? plan?.capitan_remontada || optimize.capitan_remontada || null : null;
   const bold = boldRaw?.nombre && boldRaw.nombre !== safe?.nombre ? boldRaw : null;
   const fills = (optimize.market_fills || []).filter((gap) => (gap.options || []).length);
   const excluded = optimize.excluded || [];
@@ -510,8 +511,13 @@ export function OnceTab({
         ) : null}
 
         {model.bench.length ? (
-          <section aria-label="Banquillo" className="flex flex-col gap-3">
-            <SectionHead title="Banquillo" meta={`${model.bench.length}`} />
+          <section aria-label={REGLAMENTO.banquillo ? "Banquillo" : "Fuera del once"} className="flex flex-col gap-3">
+            <SectionHead title={REGLAMENTO.banquillo ? "Banquillo" : "Fuera del once"} meta={`${model.bench.length}`} />
+            {REGLAMENTO.banquillo ? null : (
+              <p className="-mt-1 text-[12.5px] leading-relaxed text-white/45">
+                No puntúan. Si un titular no juega, nadie entra por él. El número es lo que sumarían dentro del once.
+              </p>
+            )}
             <ul className="eq-scroll -mx-1 px-1 pb-1">
               {model.bench.map((player, index) => {
                 const name = playerName(player);

@@ -502,6 +502,8 @@ class FantasyXPEngine:
         if probabilidad <= 0.01:
             xp_pizarra = 0.0
         else:
+            # Minutos de un revulsivo en su partido real. No es el banquillo de
+            # la liga: solo cuenta si este jugador va en tus 11.
             factor_banquillo = 0.05 if slot == "PT" else 0.55
             prob_revulsivo = (1.0 - probabilidad) * factor_banquillo
             media_sup = (

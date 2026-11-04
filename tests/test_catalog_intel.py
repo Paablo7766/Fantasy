@@ -83,6 +83,12 @@ class NormalizeCatalogTests(unittest.TestCase):
         self.assertIsNone(normalize_catalog_player(_row(playerStatus="out_of_league")))
         self.assertIsNotNone(normalize_catalog_player(_row(playerStatus="injured")))
 
+    def test_coach_is_not_a_player(self) -> None:
+        self.assertIsNone(normalize_catalog_player(_row(id="500", positionId="5", nickname="Flick")))
+        self.assertIsNone(normalize_catalog_player(_row(id="501", positionId=None, nickname="Sin puesto")))
+        players = normalize_catalog([_row(), _row(id="500", positionId="5", nickname="Flick")])
+        self.assertEqual([player["player_id"] for player in players], ["68"])
+
     def test_market_value_is_an_integer(self) -> None:
         player = normalize_catalog_player(_row())
         self.assertIsInstance(player["market_value"], int)
@@ -202,6 +208,13 @@ class OwnershipTests(unittest.TestCase):
 class MarketQuantAnalyzerTests(unittest.TestCase):
     def _squads(self, *player_ids: str) -> dict:
         return {"squads": [{"team_id": "9", "players": [{"player_id": pid} for pid in player_ids]}]}
+
+    def test_a_coach_does_not_count_as_a_free_agent(self) -> None:
+        coach = _player("ent", [5, 5, 6, 6], name="Flick")
+        coach["position"] = None
+        analyzer = MarketQuantAnalyzer([_player("1", [6, 6, 6]), coach], squads=self._squads("9"))
+        self.assertEqual([row["player_id"] for row in analyzer.free_agents()], ["1"])
+        self.assertEqual(analyzer.report()["counts"]["catalog"], 1)
 
     def test_free_agents_are_catalog_minus_squads(self) -> None:
         players = [_player("1", [6, 6, 6]), _player("2", [6, 6, 6])]

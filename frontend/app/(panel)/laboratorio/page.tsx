@@ -32,7 +32,7 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
     hint: "Fichables fuera del mercado por valor y momentum, pesos de la nota, tóxicos descartados y precio de referencia por posición.",
   },
   { id: "rivales", label: "Rivales", hint: "Cómo se reconstruye la caja de cada rival y el tablero con todas las cláusulas de la liga." },
-  { id: "calibracion", label: "Calibración", hint: "Cuánto acierta el modelo, y el post-mortem del lunes: puntos dejados en el banquillo e impacto de haber operado." },
+  { id: "calibracion", label: "Calibración", hint: "Cuánto acierta el modelo, y el post-mortem del lunes: puntos que habrías sumado alineando a otro de la plantilla, e impacto de haber operado." },
   { id: "senales", label: "Señales", hint: "Fuentes externas, discrepancias entre ellas y la nota del experto." },
   { id: "datos", label: "Datos y API", hint: "Frescura de cada bloque y consumo de peticiones." },
 ];

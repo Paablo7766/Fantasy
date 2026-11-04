@@ -236,8 +236,8 @@ def _motivo(
     if razon == "oferta_baja_sin_tiempo":
         return f"{oferta_txt}Es una oferta baja y ya no hay margen para esperar. No necesitas vender: rechaza y quédatelo."
     return (
-        f"{oferta_txt}Sin {nombre} tu once pierde -{_pts_txt(perdida)} pts y el banquillo no lo cubre. "
-        "Rechaza la oferta y quédatelo."
+        f"{oferta_txt}Sin {nombre} tu once pierde -{_pts_txt(perdida)} pts y nadie de la plantilla "
+        "lo sustituye en el once. Rechaza la oferta y quédatelo."
     )
 
 

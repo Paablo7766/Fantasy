@@ -1,8 +1,10 @@
 """Once de máxima puntuación y WAR de cada titular.
 
 El WAR es la bajada de puntos del once si ese jugador sale hoy y el mejor
-suplente disponible ocupa su sitio, respetando una formación válida. Si sin
-él no se puede juntar un once, la jornada queda a cero y se pierde todo.
+de la plantilla ocupa su sitio en el once, respetando una formación válida.
+Esta liga no tiene banquillo: si un titular no juega, ese hueco hace 0 y
+nadie entra por él. Quien no está en los 11 no suma. Si sin el jugador no se
+puede juntar un once, la jornada queda a cero y se pierde todo.
 
 Dentro de una formación el once óptimo son los mejores de cada puesto: no
 hay más restricciones que el cupo. No hace falta un solver para eso.
@@ -142,8 +144,10 @@ def war_del_once(
 ) -> dict[str, float]:
     """Puntos que pierde el once publicado si se vende cada titular.
 
-    La bajada se mide contra ese once, no contra otro reparto. Si al quitarlo
-    el mejor once legal no baja, la pérdida es cero.
+    La bajada se mide contra ese once, no contra otro reparto. El relevo es
+    alguien a quien alineas en su lugar antes del cierre, no un suplente que
+    entre solo si el titular no juega. Si al quitarlo el mejor once legal no
+    baja, la pérdida es cero.
     """
     titulares = [row for row in xi if isinstance(row, dict) and isinstance(row.get("player_id"), str)]
     suplentes = [row for row in banquillo if isinstance(row, dict) and isinstance(row.get("player_id"), str)]

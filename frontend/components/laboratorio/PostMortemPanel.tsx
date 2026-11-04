@@ -47,7 +47,7 @@ function FugaBlock({ fuga, jornada, fuente }: { fuga: PostMortemFuga; jornada?: 
       </div>
       {dejados.length ? (
         <p className="mt-3 text-sm text-muted-strong">
-          En el banquillo:{" "}
+          Fuera del once:{" "}
           {dejados
             .map((row) => `${row.nombre || row.player_id} (${points(row.puntos)})`)
             .join(", ")}

@@ -58,7 +58,7 @@ export function DangerRow({ row, photos, index }: { row: ClausulaEnPeligro; phot
     tone: row.rivales_que_pueden_pagar ? "var(--ini-red)" : undefined,
   });
   if (row.rival_mas_rico) facts.push({ label: "Rival más rico", value: money(row.rival_mas_rico.caja) });
-  facts.push({ label: "Tu once pierde", value: bench ? "Nada · suplente" : `−${points(row.tu_once_pierde_sin_el)} pts`, tone: bench ? undefined : "var(--ini-red)" });
+  facts.push({ label: "Tu once pierde", value: bench ? "Nada · fuera del once" : `−${points(row.tu_once_pierde_sin_el)} pts`, tone: bench ? undefined : "var(--ini-red)" });
 
   return (
     <AdvisorRow
