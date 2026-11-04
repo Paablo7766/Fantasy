@@ -45,7 +45,12 @@ function EquipoContent() {
     <div className="eq-stack reveal min-w-0">
       <div className="flex flex-col gap-3 px-1">
         <h1 className="text-[1.6rem] font-semibold leading-tight tracking-tight text-white">Mi equipo</h1>
-        <div className="desk-switch" role="tablist" aria-label="Secciones de tu equipo">
+        <div className="desk-switch eq-tabs" role="tablist" aria-label="Secciones de tu equipo">
+          <span
+            className="eq-tabs__ind"
+            style={{ transform: `translateX(${TABS.findIndex((item) => item.id === tab) * 100}%)` }}
+            aria-hidden="true"
+          />
           {TABS.map((item) => (
             <button
               key={item.id}
@@ -54,7 +59,7 @@ function EquipoContent() {
               role="tab"
               aria-selected={tab === item.id}
               aria-controls={`eq-panel-${item.id}`}
-              className={tab === item.id ? "desk-switch__btn desk-switch__btn--on" : "desk-switch__btn"}
+              className="desk-switch__btn eq-tabs__btn"
               onClick={() => select(item.id)}
             >
               {item.label}

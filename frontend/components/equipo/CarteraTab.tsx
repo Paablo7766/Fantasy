@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { playerName, points, stamp, titularShare } from "@/lib/core/format";
+import { playerName, points, titularShare } from "@/lib/core/format";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
-import type { ActivityEvent, AuditoriaVenta, PlanPayload, RivalPlayer, SquadsPayload, VeredictoVenta } from "@/lib/types";
+import type { ActivityProfile, AuditoriaVenta, PlanPayload, RivalPlayer, SquadsPayload, VeredictoVenta } from "@/lib/types";
 import {
   Chevron,
   Empty,
@@ -308,81 +308,62 @@ function OffersCard({ sales, photos }: { sales: AuditoriaVenta[]; photos: PhotoI
   );
 }
 
-/* ── Historial ──────────────────────────────────────────────────────────── */
+/* ── Balance ────────────────────────────────────────────────────────────── */
 
-const EVENT_TEXT: Record<string, (name: string) => string> = {
-  buy: (name) => `Fichaste a ${name}`,
-  clause: (name) => `Cláusula de ${name}`,
-  sell: (name) => `Vendiste a ${name}`,
-  premium: () => "Premio de jornada",
-  initial: () => "Presupuesto inicial",
-};
-
-function eventText(event: ActivityEvent): string {
-  const kind = String(event.kind || "");
-  const name = event.player_name || "un jugador";
-  const make = EVENT_TEXT[kind];
-  return make ? make(name) : [event.label || kind, event.player_name].filter(Boolean).join(" · ");
-}
-
-function HistoryCard({ events, ready }: { events: ActivityEvent[]; ready: boolean }) {
-  const [all, setAll] = useState(false);
-  const shown = all ? events : events.slice(0, 5);
+/**
+ * Lo que has generado como mánager: plusvalía de los que tienes, lo ganado al
+ * vender y los premios de jornada. Sustituye a la lista de movimientos.
+ */
+function BalanceCard({
+  profile,
+  unrealized,
+  rate,
+}: {
+  profile: ActivityProfile;
+  unrealized: number | null | undefined;
+  rate: number | null;
+}) {
+  const realized = typeof profile.realized_gain_eur === "number" ? profile.realized_gain_eur : null;
+  const premiums = typeof profile.premiums_eur === "number" && profile.premiums_eur > 0 ? profile.premiums_eur : null;
+  const latent = typeof unrealized === "number" ? unrealized : null;
+  const parts = [
+    { label: "Plantilla actual", value: latent, hint: "lo que vale más que lo que pagaste" },
+    { label: "Ventas", value: realized, hint: profile.priced_sales ? `en ${profile.priced_sales} ${profile.priced_sales === 1 ? "venta" : "ventas"}` : "sin ventas con precio de compra" },
+    { label: "Premios de jornada", value: premiums, hint: rate ? `${money(rate)} por punto` : undefined },
+  ].filter((part) => part.value !== null) as { label: string; value: number; hint?: string }[];
+  if (!parts.length) return null;
+  const total = parts.reduce((sum, part) => sum + part.value, 0);
+  const scale = Math.max(...parts.map((part) => Math.abs(part.value)), 1);
   return (
-    <section className="home-glass overflow-hidden" aria-label="Historial de fichajes y ventas">
-      <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-4">
-        <div className="min-w-0">
-          <h3 className="text-[15px] font-semibold text-white">Historial</h3>
-          <p className="mt-0.5 text-[12.5px] text-white/45">Fichajes, ventas y premios que mueven tu caja</p>
-        </div>
-      </div>
-      {!ready ? <p className="px-4 pb-2 text-[12.5px] text-[#F59E0B]">Historial sin sincronizar: pulsa Actualizar.</p> : null}
-      {events.length ? (
-        <>
-          <ul className="px-4">
-            {shown.map((event, index) => {
-              const signed = typeof event.signed_eur === "number" ? event.signed_eur : null;
-              const incoming = signed !== null ? signed > 0 : ["sell", "premium", "initial"].includes(String(event.kind));
-              const color = incoming ? TONE.green : TONE.red;
-              return (
-                <li
-                  key={`${event.at}-${event.kind}-${index}`}
-                  className="flex items-center gap-3 border-b border-white/[0.05] py-2.5 last:border-b-0"
-                >
-                  <span
-                    className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[13px] font-semibold"
-                    style={{ color, background: `${color}1a` }}
-                    aria-hidden="true"
-                  >
-                    {incoming ? "↓" : "↑"}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14px] text-white">{eventText(event)}</span>
-                    <span className="block text-[12px] text-white/40">{stamp(event.at) || "Sin fecha"}</span>
-                  </span>
-                  <span className="shrink-0 text-[14px] font-medium tabular-nums" style={{ color }}>
-                    {signed !== null ? signedMoney(signed) : money(event.amount_eur)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-          {events.length > 5 ? (
-            <button
-              type="button"
-              onClick={() => setAll((value) => !value)}
-              className="flex min-h-[2.75rem] w-full items-center justify-center gap-1.5 border-t border-white/[0.06] text-[13px] font-medium text-white/60 transition-colors duration-200 ease-out hover:text-white"
-            >
-              {all ? "Ver menos" : `Ver los ${events.length}`}
-              <Chevron open={all} />
-            </button>
-          ) : (
-            <div className="h-2" />
-          )}
-        </>
-      ) : (
-        <p className="px-4 pb-4 text-[13px] text-white/50">Aún no hay movimientos sincronizados.</p>
-      )}
+    <section className="home-glass p-4" aria-label="Lo que has generado esta temporada">
+      <p className="text-[12.5px] text-white/45">Has generado esta temporada</p>
+      <p className="mt-1 text-[1.9rem] font-semibold leading-none tracking-[-0.03em] tabular-nums" style={{ color: toneOf(total) }}>
+        {signedMoney(total)}
+      </p>
+      <ul className="mt-4 flex flex-col gap-3">
+        {parts.map((part) => {
+          const color = part.value >= 0 ? TONE.green : TONE.red;
+          return (
+            <li key={part.label}>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block truncate text-[13.5px] text-white">{part.label}</span>
+                  {part.hint ? <span className="block truncate text-[11.5px] text-white/40">{part.hint}</span> : null}
+                </span>
+                <span className="shrink-0 text-[14px] font-semibold tabular-nums" style={{ color }}>
+                  {signedMoney(part.value)}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+                <span
+                  className="block h-full rounded-full transition-[width] duration-700 ease-out"
+                  style={{ width: `${(Math.abs(part.value) / scale) * 100}%`, background: color }}
+                />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }
@@ -656,7 +637,6 @@ export function CarteraTab({
   const amortized = priced ? pricedRows.filter((player) => (player.recovered_pct ?? 0) >= 1).length : null;
 
   const sales = (plan?.auditoria_ventas || []).slice().sort((a, b) => a.prioridad - b.prioridad);
-  const events = squads.portfolio?.recent_events?.length ? squads.portfolio.recent_events : own.activity_profile?.recent_events || [];
 
   return (
     <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] min-[1100px]:items-start">
@@ -698,7 +678,7 @@ export function CarteraTab({
 
         <OffersCard sales={sales} photos={photos} />
 
-        <HistoryCard events={events} ready={squads.portfolio_meta?.history_ready !== false} />
+        {own.activity_profile ? <BalanceCard profile={own.activity_profile} unrealized={summary?.gain_eur} rate={rate} /> : null}
       </div>
 
       <section aria-label="Jugadores de tu plantilla" className="flex min-w-0 flex-col gap-3">
