@@ -67,6 +67,12 @@ export type RivalPlayer = {
   roi?: number | null;
   acquired_at?: string | null;
   acquisition_kind?: "mercado" | "clausula" | string | null;
+  /** Puntos de la temporada (todas las jornadas conocidas). */
+  points_total?: number | null;
+  /** Puntos desde que es tuyo; con compra conocida se estima por fecha de jornada. */
+  points_owned?: number | null;
+  rounds_owned?: number | null;
+  points_owned_estimated?: boolean | null;
 };
 
 /**

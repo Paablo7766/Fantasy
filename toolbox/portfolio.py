@@ -7,6 +7,8 @@ Sin evento conocido no se inventa un precio de adquisición.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+import time
 from typing import Any
 
 _KIND_SPANISH = {
@@ -143,6 +145,7 @@ def build_portfolio(
     players: list[dict[str, Any]],
     ledger: dict[str, Any] | None,
     names: dict[str, str] | None = None,
+    rounds_by_player: dict[str, dict[int, float]] | None = None,
 ) -> dict[str, Any]:
     events = ledger.get("events") if isinstance(ledger, dict) and isinstance(ledger.get("events"), list) else []
     holdings = holdings_from_events(events)
@@ -153,6 +156,7 @@ def build_portfolio(
         player_id = _team_key(player.get("player_id"))
         holding = holdings.get(player_id) if player_id else None
         enriched.append(_gain_row(player, holding))
+    attach_points(enriched, catalog_rounds() if rounds_by_player is None else rounds_by_player)
     enriched.sort(
         key=lambda row: (
             row.get("gain_eur") is None,
@@ -374,3 +378,131 @@ def squad_value_history(
         if covered and coverage >= min_coverage:
             out.append({"day": day, "value_eur": total, "coverage": round(coverage, 3)})
     return out
+
+
+# ---------------------------------------------------------------------------
+# Amortización: puntos desde que el jugador es tuyo y lo que valen en caja.
+# ---------------------------------------------------------------------------
+
+#: Una jornada por semana: la API no fecha las jornadas, solo las numera.
+_ROUND_DAYS = 7
+
+
+def _parse_at(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def round_points(*sources: Any) -> dict[int, float]:
+    """Une varios mapas jornada → puntos. El primero que trae la jornada manda."""
+    merged: dict[int, float] = {}
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for key, value in source.items():
+            try:
+                week = int(key)
+            except (TypeError, ValueError):
+                continue
+            if week in merged or isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            merged[week] = float(value)
+    return merged
+
+
+def current_round(maps: list[dict[int, float]]) -> int | None:
+    weeks = [week for mapping in maps for week in mapping]
+    return max(weeks) if weeks else None
+
+
+def round_start(round_number: int, latest_round: int, now: datetime) -> datetime:
+    """Inicio aproximado de una jornada: viernes de su fin de semana.
+
+    La última jornada con puntos es la de este fin de semana si hoy es de
+    viernes a domingo, o la del anterior si no. Las demás se cuentan hacia
+    atrás de semana en semana.
+    """
+    local = now.astimezone(timezone.utc)
+    back = (local.weekday() - 4) % 7  # días desde el último viernes
+    friday = (local - timedelta(days=back)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return friday - timedelta(days=_ROUND_DAYS * (latest_round - round_number))
+
+
+def points_while_owned(
+    rounds: dict[int, float],
+    acquired_at: str | None,
+    latest_round: int | None,
+    now: datetime,
+) -> dict[str, Any]:
+    """Puntos de la temporada y los sumados desde la compra (estimados por fecha)."""
+    total = round(sum(rounds.values()), 1) if rounds else None
+    acquired = _parse_at(acquired_at)
+    if not rounds or latest_round is None:
+        return {"points_total": total, "points_owned": None, "rounds_owned": None, "points_owned_estimated": False}
+    if acquired is None:
+        # Sin compra conocida es de la plantilla inicial: todos sus puntos son tuyos.
+        owned = list(rounds.items())
+        estimated = False
+    else:
+        owned = [(week, pts) for week, pts in rounds.items() if round_start(week, latest_round, now) >= acquired]
+        estimated = True
+    rounds_owned = len(owned) if acquired is None else sum(
+        1 for week in range(1, latest_round + 1) if round_start(week, latest_round, now) >= acquired
+    )
+    return {
+        "points_total": total,
+        "points_owned": round(sum(pts for _, pts in owned), 1),
+        "rounds_owned": rounds_owned,
+        "points_owned_estimated": estimated,
+    }
+
+
+_CATALOG_TTL_S = 120.0
+_catalog_memo: dict[str, Any] = {"at": 0.0, "rounds": {}}
+
+
+def catalog_rounds() -> dict[str, dict[int, float]]:
+    """Jornada → puntos de toda la temporada por jugador, del catálogo en disco.
+
+    Nunca sale a red. Se memoriza un par de minutos: la cartera se monta para
+    cada plantilla de la liga y el catálogo no cambia entre una y otra.
+    """
+    now = time.monotonic()
+    if now - float(_catalog_memo["at"]) < _CATALOG_TTL_S:
+        return _catalog_memo["rounds"]
+    rounds: dict[str, dict[int, float]] = {}
+    try:
+        from toolbox.normalize import normalize_catalog
+        from toolbox.quant_valuation import cached_catalog
+
+        for row in normalize_catalog(cached_catalog()):
+            player_id = _team_key(row.get("player_id"))
+            if player_id:
+                rounds[player_id] = round_points(row.get("week_points_by_round"))
+    except Exception:  # noqa: BLE001 — sin catálogo no hay puntos, la cartera sigue
+        rounds = {}
+    _catalog_memo.update(at=now, rounds=rounds)
+    return rounds
+
+
+def attach_points(
+    players: list[dict[str, Any]],
+    rounds_by_player: dict[str, dict[int, float]],
+    now: datetime | None = None,
+) -> None:
+    """Añade a cada jugador sus puntos de temporada y los sumados desde la compra."""
+    moment = now or datetime.now(timezone.utc)
+    latest = current_round(list(rounds_by_player.values()))
+    for player in players:
+        if not isinstance(player, dict):
+            continue
+        player_id = _team_key(player.get("player_id"))
+        rounds = rounds_by_player.get(player_id or "", {})
+        player.update(points_while_owned(rounds, player.get("acquired_at"), latest, moment))
+
