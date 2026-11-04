@@ -2141,26 +2141,27 @@ body {
   align-items: center;
 }
 
-/* Jugador sin caja: busto con camiseta sobre el campo, como un recorte. */
+/* Jugador sin caja: mismo encuadre para todos (pecho con camiseta), con fundido abajo. */
 .eq-card__photo {
   position: relative;
-  display: grid;
   width: 100%;
-  aspect-ratio: 1;
-  place-items: center;
-  border-radius: 9999px;
+  aspect-ratio: 256 / 278;
   transition: background 200ms ease-out;
 }
 
 .eq-token[aria-pressed="true"] .eq-card__photo {
-  background: radial-gradient(circle at 50% 55%, rgba(255, 255, 255, 0.16), transparent 68%);
+  background: radial-gradient(ellipse at 50% 60%, rgba(255, 255, 255, 0.14), transparent 70%);
 }
 
 .eq-card__photo--gap {
+  display: grid;
+  place-items: center;
   border: 1.5px dashed rgba(252, 115, 77, 0.75);
+  border-radius: 9999px;
   background: rgba(252, 115, 77, 0.06);
+  aspect-ratio: 1;
   width: 70%;
-  margin-block: 15%;
+  margin: 8% auto;
 }
 
 .eq-card__img {
@@ -2170,30 +2171,54 @@ body {
   height: 100%;
   object-fit: contain;
   object-position: 50% 100%;
-  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.55));
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.5));
+  -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent 98%);
+  mask-image: linear-gradient(180deg, #000 70%, transparent 98%);
 }
 
-/* Foto de pecho con camiseta: algo más grande para que se vea la camiseta. */
-.eq-card__img--bust {
-  transform: scale(1.12);
-  transform-origin: 50% 100%;
+/* Solo cara: cabeza algo más pequeña, apoyada sobre los hombros neutros. */
+.eq-card__img--face {
+  inset: auto;
+  left: 50%;
+  bottom: 20%;
+  width: 66%;
+  height: auto;
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.eq-card__shoulders {
+  position: absolute;
+  inset: auto 0 0 0;
+  width: 100%;
+  height: 46%;
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.5));
+  -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent 98%);
+  mask-image: linear-gradient(180deg, #000 60%, transparent 98%);
 }
 
 .eq-card__initials {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
   font-size: clamp(14px, 5cqw, 20px);
   font-weight: 600;
   color: rgba(255, 255, 255, 0.55);
 }
 
-/* Probabilidad de jugar: píldora sobre el hombro, en el color del semáforo. */
+/* Probabilidad de jugar: píldora centrada en el borde inferior, siempre en el mismo sitio. */
 .eq-card__pct {
   position: absolute;
-  right: 0;
-  bottom: 4%;
-  padding: 3px 7px;
+  left: 50%;
+  bottom: 0;
+  transform: translate(-50%, 50%);
+  padding: 3px 8px;
   border-radius: 9999px;
-  border: 1px solid color-mix(in srgb, var(--ring, #fff) 40%, transparent);
-  background: rgba(14, 10, 8, 0.85);
+  border: 1px solid color-mix(in srgb, var(--ring, #fff) 45%, transparent);
+  background: rgba(14, 10, 8, 0.88);
   backdrop-filter: blur(6px);
   font-size: clamp(10.5px, 3.2cqw, 13px);
   font-weight: 700;
@@ -2203,7 +2228,7 @@ body {
 }
 
 .eq-card__name {
-  margin-top: 2px;
+  margin-top: 11px;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;

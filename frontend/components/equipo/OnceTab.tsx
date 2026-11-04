@@ -118,25 +118,47 @@ function redLine(plan: PlanPayload | null, optimize: OptimizePayload, differs: b
   return { tone: fail ? "fail" : "warn", items };
 }
 
-/** Busto del jugador: foto recortada del pecho para arriba; iniciales si no hay foto. */
+/** Hombros neutros para las fotos de solo cara: así todos los jugadores comparten el mismo encuadre. */
+function Shoulders() {
+  return (
+    <svg className="eq-card__shoulders" viewBox="0 0 100 56" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="eq-shoulders" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#4a423c" />
+          <stop offset="1" stopColor="#1b1613" />
+        </linearGradient>
+      </defs>
+      <path d="M4 56C4 36 20 28 38 25h24c18 3 34 11 34 31Z" fill="url(#eq-shoulders)" />
+      <path d="M40 25c3 6 7 9 10 9s7-3 10-9" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Busto del jugador: pecho con camiseta del club; si no hay, cara sobre hombros neutros; si no, iniciales. */
 function Bust({ name, src, fallback }: { name: string; src?: string | null; fallback?: string | null }) {
   const [failed, setFailed] = useState<string[]>([]);
-  // Primero la foto de pecho con camiseta; si falta o no carga, la de cara.
   const current = [src, fallback].find((url): url is string => Boolean(url) && !failed.includes(url as string));
-  if (current) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={current}
-        alt=""
-        className={current === src ? "eq-card__img eq-card__img--bust" : "eq-card__img"}
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        onError={() => setFailed((list) => [...list, current])}
-      />
-    );
-  }
-  return <span className="eq-card__initials">{initials(name)}</span>;
+  if (!current) return <span className="eq-card__initials">{initials(name)}</span>;
+  const isBust = current === src;
+  const img = (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={current}
+      alt=""
+      className={isBust ? "eq-card__img" : "eq-card__img eq-card__img--face"}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed((list) => [...list, current])}
+    />
+  );
+  return isBust ? (
+    img
+  ) : (
+    <>
+      <Shoulders />
+      {img}
+    </>
+  );
 }
 
 function Pitch({
