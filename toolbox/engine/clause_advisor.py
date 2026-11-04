@@ -36,6 +36,12 @@ MULTIPLO_COSTE_MAX = 1.0
 PIERDE_PRESCINDIBLE = 1.0
 #: Con sustituto comprable hoy solo se pierde el hueco de una jornada, no los puntos enteros.
 FRACCION_HUECO_REPONIBLE = 0.25
+#: Presupuesto máximo para reponer a un jugador barato: nadie gasta 24 M en sustituir a quien vale 1,5 M.
+MULTIPLO_PRESUPUESTO_CLAUSULA = 2.5
+MULTIPLO_PRESUPUESTO_VALOR = 4.0
+#: La jornada arranca el viernes a las 21:00 (Madrid) cuando no hay hora de saque en los datos.
+INICIO_JORNADA_DIA = 4
+INICIO_JORNADA_HORA = 21
 #: Margen sobre la caja del rival para que no le llegue por poco.
 MARGEN_MIN_EUR = 250_000
 MARGEN_PCT = 0.02
@@ -60,6 +66,7 @@ TITULOS_PROTEGER = {
     "SIN_CAJA": "NO TE LLEGA LA CAJA",
     "VENDER_ANTES": "VENDE ANTES",
     "ASUMIR": "PUEDES ASUMIRLO",
+    "SOBREPROTEGIDO": "YA ESTÁ BLINDADA",
 }
 TITULOS_CLAUSULAZO = {
     "CLAUSULAR_YA": "CLAUSULA YA",
@@ -120,6 +127,16 @@ def _estado_lock(lock: Any, ahora: datetime) -> tuple[bool | None, datetime | No
     return None, None
 
 
+def inicio_jornada_estimado(ahora: datetime) -> datetime:
+    """Próximo viernes a las 21:00 de Madrid (en UTC): suposición cuando los datos no traen el saque."""
+    local = ahora.astimezone(_MADRID)
+    dias = (INICIO_JORNADA_DIA - local.weekday()) % 7
+    candidato = (local + timedelta(days=dias)).replace(hour=INICIO_JORNADA_HORA, minute=0, second=0, microsecond=0)
+    if candidato <= local:
+        candidato += timedelta(days=7)
+    return candidato.astimezone(timezone.utc)
+
+
 def _cuando(momento: datetime | None, ahora: datetime) -> str:
     """«hoy 14:20», «mañana 10:15» o «jueves 10:15» en hora de Madrid."""
     if momento is None:
@@ -155,7 +172,11 @@ def _niveles(
         objetivo = ordenadas[sin_cubrir] + _margen(ordenadas[sin_cubrir])
         if tope is not None:
             objetivo = min(objetivo, tope)
+        recortado = tope is not None and objetivo >= tope
         if objetivo <= clausula:
+            continue
+        # Varios escalones pueden colapsar en el mismo tope: se ofrece una sola vez.
+        if any(nivel["clausula_objetivo"] == int(objetivo) for nivel in niveles):
             continue
         coste = coste_subida(clausula, objetivo)
         if coste_max is not None and coste > coste_max:
@@ -163,6 +184,9 @@ def _niveles(
         niveles.append(
             {
                 "clausula_objetivo": int(objetivo),
+                "recortado_por_tope": bool(recortado),
+                # Rivales a los que la cláusula REAL ya no les llega (no los que «deberían» quedar fuera).
+                "rivales_fuera": sum(1 for caja in ordenadas if caja < objetivo),
                 "subida_eur": int(objetivo - clausula),
                 "coste_eur": int(coste),
                 "caja_tras": None if saldo is None else int(saldo - coste),
@@ -183,6 +207,7 @@ def _proteger(
     ahora: datetime,
     cierre: datetime | None,
     alternativas: list[dict[str, Any]] | None = None,
+    inicio_jornada: datetime | None = None,
 ) -> tuple[list[dict[str, Any]], int, int]:
     filas: list[dict[str, Any]] = []
     bloqueadas = 0
@@ -207,7 +232,10 @@ def _proteger(
         if clausula is None or clausula <= 0 or jugador.get("blindado") is True or not isinstance(jugador.get("player_id"), str):
             continue
         bloqueada, desbloqueo = _estado_lock(jugador.get("bloqueo"), ahora)
-        if bloqueada is True and (cierre is None or desbloqueo is None or desbloqueo >= cierre):
+        # Un candado que vence antes de que empiece la jornada deja al jugador expuesto esta jornada.
+        limites = [momento for momento in (cierre, inicio_jornada) if momento is not None]
+        limite = max(limites) if limites else None
+        if bloqueada is True and (limite is None or desbloqueo is None or desbloqueo >= limite):
             bloqueadas += 1
             continue
         justo = _int(jugador.get("valor_justo"))
@@ -247,34 +275,41 @@ def _proteger(
         # menos lo que cobras por la cláusula, más el hueco de una jornada. Sin ellas, el modelo antiguo.
         reposicion: int | None = None
         hay_sustituto: bool | None = None
+        falta_xp = 0.0
         if alternativas is not None and valor:
-            reposicion, hay_sustituto = coste_reposicion(jugador, alternativas, valor)
+            reposicion, hay_sustituto, falta_xp = buscar_sustituto(jugador, alternativas, valor, clausula)
         if reposicion is not None:
             factor = FRACCION_HUECO_REPONIBLE if hay_sustituto else 1.0
-            exposicion = max(0, reposicion - clausula) + pierde * ratio * factor
+            # Hueco: la fracción de jornada sin él más los puntos que el sustituto pagable no cubre.
+            hueco = (pierde * factor + falta_xp) * ratio
+            # Lo que cobras por la cláusula paga el sustituto: solo cuenta lo que no cubre.
+            exposicion = max(0.0, reposicion - clausula + hueco)
         else:
             exposicion = pierde * ratio + regalo
+        neto_cero = reposicion is not None and exposicion <= 0 and bool(capaces) and not prescindible
         elegido: dict[str, Any] | None = None
         mejor_neto = 0.0
-        for nivel in () if prescindible else niveles:
+        for nivel in () if (prescindible or neto_cero) else niveles:
             total = nivel["rivales_cubiertos"] + nivel["rivales_sin_cubrir"]
             cubierto = nivel["rivales_cubiertos"] / total if total else 0.0
             neto = exposicion * cubierto - nivel["coste_eur"]
             if nivel["viable"] and neto > mejor_neto:
                 mejor_neto = neto
                 elegido = nivel
-        perfecta = niveles[0] if niveles else None
+        perfecta = None if neto_cero else (niveles[0] if niveles else None)
         if elegido is not None and restante is not None:
             restante -= int(elegido["coste_eur"])
 
-        if not capaces:
+        if not capaces or neto_cero:
             riesgo = "BAJO"
         elif en_xi or pierde >= 1.0:
             riesgo = "ALTO"
         else:
             riesgo = "MEDIO"
 
-        if prescindible and capaces and regalo > 0:
+        if neto_cero:
+            codigo = "SOBREPROTEGIDO"
+        elif prescindible and capaces and regalo > 0:
             codigo = "VENDER_ANTES"
         elif elegido is not None and elegido["rivales_sin_cubrir"] == 0:
             codigo = "PROTEGER_YA"
@@ -311,7 +346,11 @@ def _proteger(
             capaces=capaces,
             saldo=caja_antes,
             en_xi=en_xi,
+            reposicion=reposicion,
         )
+        expuesta_desde = desbloqueo if bloqueada is True and desbloqueo is not None else None
+        if expuesta_desde is not None:
+            motivo += f" Su candado vence {_cuando(expuesta_desde, ahora)}, antes de que empiece la jornada: queda expuesto entonces."
         filas.append(
             {
                 "player_id": jugador["player_id"],
@@ -340,6 +379,9 @@ def _proteger(
                 "exposicion_eur": int(round(exposicion)),
                 "coste_reposicion": reposicion,
                 "hay_sustituto": hay_sustituto,
+                "falta_xp_sustituto": round(falta_xp, 2) if reposicion is not None else None,
+                "expuesta_desde": expuesta_desde.isoformat() if expuesta_desde is not None else None,
+                "expuesta_cuando": _cuando(expuesta_desde, ahora) if expuesta_desde is not None else None,
                 "prescindible": prescindible,
                 "veredicto_codigo": codigo,
                 "veredicto_titulo": TITULOS_PROTEGER[codigo],
@@ -364,12 +406,29 @@ def _motivo_proteger(
     capaces: list[tuple[int, dict[str, Any]]],
     saldo: int | None,
     en_xi: bool,
+    reposicion: int | None = None,
 ) -> str:
     if not capaces:
         return f"Nadie tiene caja para pagar su cláusula hoy, pero {_m(clausula)} es muy poco para lo que vale. Vigílala."
     rico = max(capaces, key=lambda item: item[0])
     cabeza = f"{rico[1].get('manager') or 'Un rival'} tiene {_m(rico[0])} y puede pagar sus {_m(clausula)}."
     impacto = f"Sin él tu once pierde -{_pts_txt(pierde)} pts." if pierde >= 0.05 else "Tu once no se resiente."
+    if codigo == "SOBREPROTEGIDO":
+        return (
+            f"{cabeza} {impacto} Si te lo pagan cobras {_m(clausula)} y reponerlo cuesta {_m(reposicion or 0)}: "
+            "la cláusula ya cubre el sustituto, no hace falta subirla."
+        )
+    if codigo in {"PROTEGER_YA", "PROTEGER_PARCIAL"} and elegido is not None and elegido.get("recortado_por_tope"):
+        fuera = int(elegido.get("rivales_fuera") or 0)
+        resto = (
+            "Ningún rival se queda sin caja a esa cifra: reduce el riesgo, no lo elimina."
+            if fuera == 0
+            else f"Deja fuera a {fuera} de {len(capaces)} rivales con caja; los demás aún podrían pagarla."
+        )
+        return (
+            f"{cabeza} {impacto} Súbela a {_m(elegido['clausula_objetivo'])}, el tope creíble (2,5× su valor) "
+            f"para disuadir el robo: te cuesta {_m(elegido['coste_eur'])}. {resto}"
+        )
     if codigo == "PROTEGER_YA" and elegido is not None:
         return (
             f"{cabeza} {impacto} Súbela a {_m(elegido['clausula_objetivo'])}: te cuesta {_m(elegido['coste_eur'])} "
@@ -617,6 +676,7 @@ def evaluar_clausulas(
     cierre: datetime | None,
     dias_al_cierre: float | None = None,
     alternativas: list[dict[str, Any]] | None = None,
+    inicio_jornada: datetime | None = None,
 ) -> dict[str, Any]:
     """``proteger`` (tus jugadores en peligro) y ``clausulazos`` (a quién pagar y cuándo).
 
@@ -628,7 +688,14 @@ def evaluar_clausulas(
     activa el bono de daño al rival en jueves y viernes.
     """
     proteger, bloqueadas, seguros = _proteger(
-        propios, rivales, saldo=saldo, ratio=ratio, ahora=ahora, cierre=cierre, alternativas=alternativas
+        propios,
+        rivales,
+        saldo=saldo,
+        ratio=ratio,
+        ahora=ahora,
+        cierre=cierre,
+        alternativas=alternativas,
+        inicio_jornada=inicio_jornada,
     )
     elegibles = [
         {"player_id": fila["player_id"], "position": fila["position"], "jornada": fila.get("jornada") or 0.0}
@@ -672,6 +739,7 @@ def evaluar_clausulas(
         "clausulazos": len(clausulazos),
         "ventana_cierra": _cuando(cierre, ahora) if cierre is not None else None,
         "ventana_abierta": cierre is None or ahora < cierre,
+        "inicio_jornada": _cuando(inicio_jornada, ahora) if inicio_jornada is not None else None,
     }
     return {"resumen": resumen, "proteger": proteger, "clausulazos": clausulazos}
 
@@ -754,23 +822,28 @@ def _euros_jugador(jugador: dict[str, Any], *keys: str) -> int | None:
     return None
 
 
-def coste_reposicion(
+def buscar_sustituto(
     jugador: dict[str, Any],
     alternativas: list[dict[str, Any]],
     valor: int,
-) -> tuple[int, bool]:
-    """Lo que cuesta tener otra vez los puntos de ``jugador`` si te lo roban.
+    clausula: int | None = None,
+) -> tuple[int, bool, float]:
+    """Sustituto comprable de ``jugador``: ``(coste, hay_sustituto, falta_xp)``.
 
-    Es el precio del sustituto más barato de su posición que rinda al menos
-    ``xp - 0,3``. Si no existe, ``1,6 × valor``. Devuelve ``(coste, hay_sustituto)``.
-    En una liga cerrada el valor de un jugador escaso no es su valor de mercado
-    sino lo que cuesta reponerlo.
+    Prefiere el más barato que rinda al menos ``xp - 0,3``. Con ``clausula`` el presupuesto
+    se acota a ``max(2,5 × cláusula, 4 × valor)``: si el único igual de bueno cuesta más, se
+    toma el que más puntos da dentro del presupuesto y ``falta_xp`` son los puntos que no cubre.
+    Sin ninguno comprable, ``1,6 × valor`` y ``hay_sustituto`` falso.
     """
+    sin = (int(round(valor * _RECARGO_SIN_SUSTITUTO)), False, 0.0)
     xp = _num(jugador.get("jornada"))
     posicion = jugador.get("position") or jugador.get("posicion")
     if xp is None or posicion is None:
-        return int(round(valor * _RECARGO_SIN_SUSTITUTO)), False
-    precios = []
+        return sin
+    presupuesto = None
+    if clausula:
+        presupuesto = max(clausula * MULTIPLO_PRESUPUESTO_CLAUSULA, valor * MULTIPLO_PRESUPUESTO_VALOR)
+    candidatos: list[tuple[int, float]] = []
     for alternativa in alternativas:
         if alternativa.get("position") != posicion or alternativa.get("player_id") == jugador.get("player_id"):
             continue
@@ -778,11 +851,28 @@ def coste_reposicion(
         rinde = _num(alternativa.get("xp"))
         if coste is None or coste <= 0 or rinde is None:
             continue
-        if rinde >= xp - _TOLERANCIA_SUSTITUTO_XP:
-            precios.append(coste)
-    if not precios:
-        return int(round(valor * _RECARGO_SIN_SUSTITUTO)), False
-    return min(precios), True
+        candidatos.append((coste, rinde))
+    iguales = [coste for coste, rinde in candidatos if rinde >= xp - _TOLERANCIA_SUSTITUTO_XP]
+    if iguales and (presupuesto is None or min(iguales) <= presupuesto):
+        return min(iguales), True, 0.0
+    if presupuesto is None:
+        return sin
+    pagables = [(coste, rinde) for coste, rinde in candidatos if coste <= presupuesto]
+    if not pagables:
+        return sin
+    coste, rinde = max(pagables, key=lambda item: (item[1], -item[0]))
+    return coste, True, max(0.0, xp - rinde)
+
+
+def coste_reposicion(
+    jugador: dict[str, Any],
+    alternativas: list[dict[str, Any]],
+    valor: int,
+    clausula: int | None = None,
+) -> tuple[int, bool]:
+    """Lo que cuesta tener otra vez los puntos de ``jugador`` si te lo roban: ``(coste, hay_sustituto)``."""
+    coste, hay, _ = buscar_sustituto(jugador, alternativas, valor, clausula)
+    return coste, hay
 
 
 def auditar_clausulas_plantilla(
@@ -835,7 +925,7 @@ def auditar_clausulas_plantilla(
         reposicion: int | None = None
         perdida = 0
         if alternativas is not None:
-            reposicion, hay_sustituto = coste_reposicion(jugador, alternativas, valor)
+            reposicion, hay_sustituto = coste_reposicion(jugador, alternativas, valor, clausula)
             perdida = max(0, reposicion - clausula)
         if perdida > _PERDIDA_ESCASEZ_MIN and rivales_con_caja >= 1:
             estado = "ESCASEZ"

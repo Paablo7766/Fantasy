@@ -38,6 +38,7 @@ const PROTEGER: Record<VeredictoProteger, { label: string; color: string }> = {
   SIN_CAJA: { label: "No te llega la caja", color: TONE.red },
   VENDER_ANTES: { label: "Mejor venderlo", color: TONE.blue },
   ASUMIR: { label: "Asume el riesgo", color: TONE.gray },
+  SOBREPROTEGIDO: { label: "Ya blindada", color: TONE.green },
 };
 
 const RADAR = {

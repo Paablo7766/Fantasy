@@ -5,7 +5,14 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, coste_reposicion, coste_subida, evaluar_clausulas
+from toolbox.engine.clause_advisor import (
+    auditar_clausulas_plantilla,
+    buscar_sustituto,
+    coste_reposicion,
+    coste_subida,
+    evaluar_clausulas,
+    inicio_jornada_estimado,
+)
 from toolbox.engine.strategy_layer import build_strategy
 
 AHORA = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
@@ -156,8 +163,31 @@ class ProtegerReposicionTests(unittest.TestCase):
         fila = _fila(resultado, "proteger", "MC-0")
         self.assertEqual(fila["coste_reposicion"], 5_000_000)
         self.assertTrue(fila["hay_sustituto"])
-        self.assertEqual(fila["exposicion_eur"], 2_000_000)
-        self.assertEqual(fila["veredicto_codigo"], "ASUMIR")
+        # Cobras 8,4 M, el sustituto cuesta 5 M y el hueco de la jornada 2 M: sobran 1,4 M, exposición neta 0.
+        self.assertEqual(fila["exposicion_eur"], 0)
+        self.assertEqual(fila["veredicto_codigo"], "SOBREPROTEGIDO")
+        self.assertEqual(fila["riesgo"], "BAJO")
+        self.assertIsNone(fila["subida_recomendada"])
+        self.assertIsNone(fila["clausula_perfecta"])
+        self.assertEqual(resultado["resumen"]["en_peligro"], 0)
+        self.assertEqual(resultado["resumen"]["coste_proteger_eur"], 0)
+
+    def test_si_lo_que_cobras_no_cubre_el_sustituto_queda_exposicion_neta(self) -> None:
+        alternativas = [{"player_id": "libre", "position": "MC", "coste": 10_000_000, "xp": 4.0}]
+        resultado = evaluar_clausulas(
+            propios=self._plantilla(),
+            ajenos=[],
+            rivales=[_rival("Pablo", 50_000_000)],
+            saldo=30_000_000,
+            ratio=RATIO,
+            ahora=AHORA,
+            cierre=CIERRE,
+            alternativas=alternativas,
+        )
+        fila = _fila(resultado, "proteger", "MC-0")
+        # 10 M de sustituto - 8,4 M de cláusula + 2 M de hueco.
+        self.assertEqual(fila["exposicion_eur"], 3_600_000)
+        self.assertNotEqual(fila["veredicto_codigo"], "SOBREPROTEGIDO")
 
     def test_sin_sustituto_el_dano_es_la_escasez_y_compensa_proteger(self) -> None:
         resultado = evaluar_clausulas(
@@ -174,6 +204,108 @@ class ProtegerReposicionTests(unittest.TestCase):
         self.assertFalse(fila["hay_sustituto"])
         self.assertEqual(fila["coste_reposicion"], 12_800_000)
         self.assertEqual(fila["veredicto_codigo"], "PROTEGER_YA")
+        # El objetivo queda recortado al tope creíble (2,5 x 8 M = 20 M); el rival tiene 50 M y aún puede pagarlo.
+        objetivo = fila["subida_recomendada"]
+        self.assertEqual(objetivo["clausula_objetivo"], 20_000_000)
+        self.assertTrue(objetivo["recortado_por_tope"])
+        self.assertEqual(objetivo["rivales_fuera"], 0)
+        self.assertIn("tope creíble (2,5× su valor)", fila["motivo_detallado"])
+        self.assertIn("Ningún rival se queda sin caja", fila["motivo_detallado"])
+        self.assertNotIn("deja fuera a todos", fila["motivo_detallado"])
+        # Los escalones que colapsan en el mismo tope se ofrecen una sola vez.
+        objetivos = [nivel["clausula_objetivo"] for nivel in fila["niveles"]]
+        self.assertEqual(len(objetivos), len(set(objetivos)))
+
+    def test_niveles_distintos_si_el_tope_no_los_colapsa(self) -> None:
+        plantilla = _con(_once(), "DEL-0", clausula=8_000_000, tu_once_pierde_sin_el=3.0)
+        resultado = _evaluar(plantilla, [_rival("Luis", 12_000_000), _rival("Ana", 9_000_000), _rival("Pepe", 2_000_000)])
+        fila = _fila(resultado, "proteger", "DEL-0")
+        self.assertEqual(fila["subida_recomendada"]["rivales_fuera"], 2)
+        self.assertFalse(fila["subida_recomendada"]["recortado_por_tope"])
+
+
+class SustitutoPagableTests(unittest.TestCase):
+    JUGADOR = {"player_id": "red", "position": "MC", "jornada": 5.8}
+
+    def test_no_se_repone_a_un_chollo_con_un_sustituto_fuera_de_presupuesto(self) -> None:
+        # Valor 1,5 M, cláusula 3,1 M: presupuesto = max(7,75 M; 6 M).
+        alternativas = [
+            {"player_id": "caro", "position": "MC", "coste": 24_000_000, "xp": 5.8},
+            {"player_id": "medio", "position": "MC", "coste": 7_000_000, "xp": 4.5},
+            {"player_id": "barato", "position": "MC", "coste": 2_000_000, "xp": 3.0},
+        ]
+        coste, hay, falta = buscar_sustituto(self.JUGADOR, alternativas, 1_500_000, 3_100_000)
+        self.assertEqual((coste, hay), (7_000_000, True))
+        self.assertAlmostEqual(falta, 1.3)
+        # Sin cláusula (uso antiguo) se mantiene el sustituto igual de bueno.
+        self.assertEqual(buscar_sustituto(self.JUGADOR, alternativas, 1_500_000)[:2], (24_000_000, True))
+
+    def test_la_exposicion_incluye_los_puntos_que_el_sustituto_no_cubre(self) -> None:
+        plantilla = _con(_once(), "MC-0", valor=1_500_000, clausula=3_100_000, jornada=5.8, tu_once_pierde_sin_el=5.8)
+        alternativas = [
+            {"player_id": "caro", "position": "MC", "coste": 24_000_000, "xp": 5.8},
+            {"player_id": "medio", "position": "MC", "coste": 7_000_000, "xp": 4.5},
+        ]
+        resultado = evaluar_clausulas(
+            propios=plantilla,
+            ajenos=[],
+            rivales=[_rival("Pablo", 100_000_000)],
+            saldo=40_000_000,
+            ratio=RATIO,
+            ahora=AHORA,
+            cierre=CIERRE,
+            alternativas=alternativas,
+        )
+        fila = _fila(resultado, "proteger", "MC-0")
+        self.assertEqual(fila["coste_reposicion"], 7_000_000)
+        self.assertAlmostEqual(fila["falta_xp_sustituto"], 1.3)
+        # 7 M - 3,1 M + (5,8 x 0,25 + 1,3) x 2 M
+        self.assertEqual(fila["exposicion_eur"], round(3_900_000 + (5.8 * 0.25 + 1.3) * RATIO))
+        self.assertLess(fila["exposicion_eur"], 24_000_000)
+
+
+class CandadoAntesDeLaJornadaTests(unittest.TestCase):
+    def _plantilla(self, abre: datetime) -> list[dict]:
+        bloqueo = {"is_locked": True, "expires_at": abre.isoformat()}
+        return _con(_once(), "DEL-0", valor=8_000_000, clausula=8_000_000, tu_once_pierde_sin_el=4.0, bloqueo=bloqueo)
+
+    def _evaluar(self, plantilla: list[dict], inicio: datetime | None) -> dict:
+        return evaluar_clausulas(
+            propios=plantilla,
+            ajenos=[],
+            rivales=[_rival("Luis", 30_000_000)],
+            saldo=10_000_000,
+            ratio=RATIO,
+            ahora=AHORA,
+            cierre=None,
+            inicio_jornada=inicio,
+        )
+
+    def test_candado_que_vence_antes_del_saque_entra_con_la_hora_de_exposicion(self) -> None:
+        abre = AHORA + timedelta(days=2)
+        resultado = self._evaluar(self._plantilla(abre), AHORA + timedelta(days=3))
+        fila = _fila(resultado, "proteger", "DEL-0")
+        self.assertEqual(fila["expuesta_desde"], abre.isoformat())
+        self.assertIn("miércoles", fila["expuesta_cuando"])
+        self.assertIn("queda expuesto", fila["motivo_detallado"])
+        # Aunque siga bloqueada, ya se puede subir la cláusula.
+        self.assertIsNotNone(fila["subida_recomendada"])
+        self.assertEqual(resultado["resumen"]["bloqueadas"], 0)
+
+    def test_candado_que_vence_despues_del_saque_sigue_fuera(self) -> None:
+        resultado = self._evaluar(self._plantilla(AHORA + timedelta(days=5)), AHORA + timedelta(days=3))
+        self.assertEqual([fila for fila in resultado["proteger"] if fila["player_id"] == "DEL-0"], [])
+        self.assertEqual(resultado["resumen"]["bloqueadas"], 1)
+
+    def test_sin_hora_de_saque_ni_cierre_no_se_inventa_ventana(self) -> None:
+        resultado = self._evaluar(self._plantilla(AHORA + timedelta(days=2)), None)
+        self.assertEqual(resultado["resumen"]["bloqueadas"], 1)
+
+    def test_inicio_estimado_es_el_proximo_viernes_21h_de_madrid(self) -> None:
+        miercoles = datetime(2026, 11, 4, 18, 39, tzinfo=timezone.utc)
+        self.assertEqual(inicio_jornada_estimado(miercoles), datetime(2026, 11, 6, 20, 0, tzinfo=timezone.utc))
+        viernes_tarde = datetime(2026, 11, 6, 21, 0, tzinfo=timezone.utc)
+        self.assertEqual(inicio_jornada_estimado(viernes_tarde), datetime(2026, 11, 13, 20, 0, tzinfo=timezone.utc))
 
 
 class ProtegerPrescindibleTests(unittest.TestCase):
@@ -356,7 +488,7 @@ class IntegracionTests(unittest.TestCase):
                         "jornada_ev": 4.0,
                         "p_titular": 0.9,
                         "market_value": 8_000_000,
-                        "buyout_clause": 8_000_000 if position == "DEL" and index == 0 else 40_000_000,
+                        "buyout_clause": 3_000_000 if position == "DEL" and index == 0 else 40_000_000,
                         "clause_lock": {"is_locked": False},
                     }
                 )

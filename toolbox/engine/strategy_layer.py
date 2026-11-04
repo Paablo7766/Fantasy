@@ -29,7 +29,7 @@ from toolbox.engine.market_predictor import (
     ratio_mercado_liga,
     valor_justo_jugador,
 )
-from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, evaluar_clausulas
+from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, evaluar_clausulas, inicio_jornada_estimado
 from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
 from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes
@@ -907,6 +907,19 @@ def _cierre_ventana(board: dict[str, Any], now: datetime) -> datetime | None:
     return momento if momento.tzinfo else momento.replace(tzinfo=timezone.utc)
 
 
+def _inicio_jornada(board: dict[str, Any], now: datetime) -> tuple[datetime | None, bool]:
+    """Primer saque de la jornada; sin dato, el próximo viernes 21:00 de Madrid (marcado como estimado)."""
+    trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
+    try:
+        texto = earliest_kickoff(trends, now=now)
+        if isinstance(texto, str):
+            momento = datetime.fromisoformat(texto)
+            return (momento if momento.tzinfo else momento.replace(tzinfo=timezone.utc)), False
+    except Exception:
+        logger.exception("inicio de la jornada")
+    return inicio_jornada_estimado(now), True
+
+
 def _clausulas_vacias() -> dict[str, Any]:
     return {
         "resumen": {
@@ -1058,6 +1071,7 @@ def _asesorar_clausulas(
         ahora=now,
         alternativas=alternativas,
     )
+    inicio, inicio_estimado = _inicio_jornada(board, now)
     try:
         informe = evaluar_clausulas(
             propios=propios,
@@ -1079,7 +1093,9 @@ def _asesorar_clausulas(
             cierre=_cierre_ventana(board, now),
             dias_al_cierre=dias_al_cierre,
             alternativas=alternativas,
+            inicio_jornada=inicio,
         )
+        informe["resumen"]["inicio_jornada_estimado"] = inicio_estimado
     except Exception:
         logger.exception("asesor de cláusulas")
         informe = _clausulas_vacias()

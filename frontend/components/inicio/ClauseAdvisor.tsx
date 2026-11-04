@@ -17,6 +17,7 @@ const PROTEGER: Record<VeredictoProteger, { label: string; color: string }> = {
   SIN_CAJA: { label: "No te llega", color: "var(--ini-red)" },
   VENDER_ANTES: { label: "Vende antes", color: "var(--ini-sky)" },
   ASUMIR: { label: "Asúmelo", color: "rgba(255,255,255,0.55)" },
+  SOBREPROTEGIDO: { label: "Ya blindada", color: "var(--ini-mint)" },
 };
 
 const CLAUSULAZO: Record<VeredictoClausulazo, { label: string; color: string }> = {

@@ -7,10 +7,12 @@ export type NivelClausula = {
   caja_tras: number | null;
   rivales_cubiertos: number;
   rivales_sin_cubrir: number;
+  rivales_fuera?: number;
+  recortado_por_tope?: boolean;
   viable: boolean;
 };
 
-export type VeredictoProteger = "PROTEGER_YA" | "PROTEGER_PARCIAL" | "SIN_CAJA" | "VENDER_ANTES" | "ASUMIR";
+export type VeredictoProteger = "PROTEGER_YA" | "PROTEGER_PARCIAL" | "SIN_CAJA" | "VENDER_ANTES" | "ASUMIR" | "SOBREPROTEGIDO";
 
 export type VeredictoClausulazo = "CLAUSULAR_YA" | "PROGRAMAR" | "SIN_CAJA" | "OPORTUNIDAD" | "GOLPE_RIVAL";
 
@@ -45,6 +47,8 @@ export type ClausulaEnPeligro = {
   subida_recomendada?: NivelClausula | null;
   niveles: NivelClausula[];
   exposicion_eur: number;
+  expuesta_desde?: string | null;
+  expuesta_cuando?: string | null;
   veredicto_codigo: VeredictoProteger;
   veredicto_titulo: string;
   motivos: string[];
