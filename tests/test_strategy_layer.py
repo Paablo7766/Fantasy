@@ -124,11 +124,11 @@ class RatioYPrecioTests(unittest.TestCase):
 
 
 class WarYCapitanTests(unittest.TestCase):
-    def test_sin_suplente_se_pierde_el_once_entero(self) -> None:
+    def test_sin_suplente_se_pierden_sus_puntos_no_el_once_entero(self) -> None:
         xi = _once(5.0)
         perdidas = war_del_once(xi, [])
-        self.assertEqual(perdidas["POR-0"], 55.0)
-        self.assertEqual(perdidas["DEL-2"], 55.0)
+        self.assertEqual(perdidas["POR-0"], 5.0)
+        self.assertEqual(perdidas["DEL-2"], 5.0)
 
     def test_el_suplente_del_puesto_recorta_la_perdida(self) -> None:
         xi = _once(5.0)

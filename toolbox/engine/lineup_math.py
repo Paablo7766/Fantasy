@@ -147,7 +147,8 @@ def war_del_once(
     La bajada se mide contra ese once, no contra otro reparto. El relevo es
     alguien a quien alineas en su lugar antes del cierre, no un suplente que
     entre solo si el titular no juega. Si al quitarlo el mejor once legal no
-    baja, la pérdida es cero.
+    baja, la pérdida es cero. Nunca supera los puntos del propio jugador: sin
+    recambio en su puesto se ficha otro, no se pierde la jornada entera.
     """
     titulares = [row for row in xi if isinstance(row, dict) and isinstance(row.get("player_id"), str)]
     suplentes = [row for row in banquillo if isinstance(row, dict) and isinstance(row.get("player_id"), str)]
@@ -161,8 +162,10 @@ def war_del_once(
         player_id = jugador["player_id"]
         resto = [row for row in titulares + suplentes if row.get("player_id") != player_id]
         nuevo = solve_best_xi(resto)
+        propios = float(jugador.get("jornada") or 0.0)
         if not nuevo["ok"]:
-            perdidas[player_id] = round(actual, 2)
+            # Sin recambio en su puesto el hueco se tapa fichando: se pierden sus puntos, no el once entero.
+            perdidas[player_id] = round(max(0.0, propios), 2)
             continue
-        perdidas[player_id] = round(max(0.0, actual - float(nuevo["puntos"])), 2)
+        perdidas[player_id] = round(min(max(0.0, actual - float(nuevo["puntos"])), max(0.0, propios)), 2)
     return perdidas
