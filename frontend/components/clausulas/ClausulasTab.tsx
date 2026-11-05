@@ -65,6 +65,15 @@ const RULES = [
   "Desde aquí no se envía nada: confirma en la app oficial.",
 ];
 
+/** Sin recomendadas, cuántas cláusulas se enseñan antes de «Ver todas». */
+const FALLBACK_TOP = 8;
+
+/** Lo mejor de una lista: las recomendadas por el asesor o, si no hay, las primeras ya ordenadas. */
+function bestOf(items: ClauseBrowseItem[]): ClauseBrowseItem[] {
+  const recommended = items.filter((item) => item.suggestion);
+  return recommended.length ? recommended : items.slice(0, FALLBACK_TOP);
+}
+
 const OPEN_MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
 /** Cuándo se puede pagar: «Abierta ahora» o «Abre 4 nov · 14:08». */
@@ -580,6 +589,7 @@ export function ClausulasTab({
   );
   const radarById = useMemo(() => new Map(radarRows.map((row) => [String(row.player_id), row])), [radarRows]);
   const [estadoElegido, setEstado] = useState<"abiertas" | "candado" | null>(null);
+  const [verTodas, setVerTodas] = useState(false);
 
   if (loading && !plan) return <Skeleton />;
   if (!advisor && !timeline.length) {
@@ -593,7 +603,10 @@ export function ClausulasTab({
   const cerradas = catalog.candado;
   // Por defecto, las abiertas; si no hay ninguna, directamente las que tienen candado.
   const estado = estadoElegido ?? (abiertas.length || !cerradas.length ? "abiertas" : "candado");
-  const shown = estado === "abiertas" ? abiertas : cerradas;
+  const full = estado === "abiertas" ? abiertas : cerradas;
+  const best = bestOf(full);
+  const shown = verTodas ? full : best;
+  const hidden = full.length - best.length;
   const boardPending = !board || board.league !== league;
   const preparar = advisor?.preparar || [];
   const watched = new Set([...proteger, ...preparar].map((row) => String(row.player_id)));
@@ -685,18 +698,18 @@ export function ClausulasTab({
         <div className="flex min-w-0 flex-col gap-4">
           {hero}
           <section aria-label="Clausulazos" className="flex flex-col gap-3">
-            <SectionHead title="A quién clausular" meta={abiertas.length + cerradas.length ? `${abiertas.length + cerradas.length}` : undefined} />
+            <SectionHead title="A quién clausular" meta={bestOf(abiertas).length + bestOf(cerradas).length ? `${bestOf(abiertas).length + bestOf(cerradas).length}` : undefined} />
             {!clausulazos.length && (abiertas.length || cerradas.length) ? (
               <p className="-mt-1 px-1 text-[12.5px] leading-snug text-white/45">
-                Ninguna mejora tu once lo bastante para recomendarla. Aquí están todas, abiertas o con candado.
+                Ninguna mejora tu once lo bastante para recomendarla. Aquí tienes las mejores por puntos.
               </p>
             ) : null}
             <div className="desk-switch eq-tabs" role="tablist" aria-label="Estado de la cláusula">
               <span className="eq-tabs__ind" style={{ transform: `translateX(${estado === "abiertas" ? 0 : 100}%)` }} aria-hidden="true" />
               {(
                 [
-                  { id: "abiertas", label: "Abiertas", count: abiertas.length },
-                  { id: "candado", label: "Con candado", count: cerradas.length },
+                  { id: "abiertas", label: "Abiertas", count: bestOf(abiertas).length },
+                  { id: "candado", label: "Con candado", count: bestOf(cerradas).length },
                 ] as const
               ).map((item) => (
                 <button
@@ -705,7 +718,10 @@ export function ClausulasTab({
                   role="tab"
                   aria-selected={estado === item.id}
                   className="desk-switch__btn eq-tabs__btn"
-                  onClick={() => setEstado(item.id)}
+                  onClick={() => {
+                    setEstado(item.id);
+                    setVerTodas(false);
+                  }}
                 >
                   {item.label}
                   <span className="ml-1.5 tabular-nums opacity-50">{item.count}</span>
@@ -732,6 +748,15 @@ export function ClausulasTab({
                     : "Ninguna cláusula tiene candado."}
               </p>
             )}
+            {hidden > 0 || (verTodas && full.length > best.length) ? (
+              <button
+                type="button"
+                onClick={() => setVerTodas((value) => !value)}
+                className="self-center rounded-full bg-white/[0.07] px-4 py-2 text-[13px] font-medium text-white/80 transition-colors hover:bg-white/[0.12] hover:text-white"
+              >
+                {verTodas ? "Ver solo las mejores" : `Ver todas (${full.length})`}
+              </button>
+            ) : null}
           </section>
         </div>
         <div className="flex min-w-0 flex-col gap-4">
