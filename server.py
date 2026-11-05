@@ -101,6 +101,7 @@ from toolbox.net import (
 )
 from toolbox.normalize import SCHEMA_VERSION, attach_image_urls, daily_market_is_past
 from toolbox.scrapers import build_trends, prefetch_futbolfantasy, refresh_squad_titularity_in_index
+from toolbox import snapshot_remote
 
 logger = logging.getLogger("fantasy.dashboard")
 
@@ -541,13 +542,33 @@ def _write_disk_snapshot(
         tmp.replace(path)
     except OSError:
         logger.exception("No se pudo guardar la foto del tablero en disco")
+        return
+    if root is None:
+        # Copia fuera del disco: Render lo borra en cada despliegue.
+        snapshot_remote.save(kind, _league_dir_key(league), envelope)
+
+
+def _restore_remote_snapshot(kind: str, league: str | None, path: Path) -> dict[str, Any] | None:
+    """Disco vacío (despliegue nuevo): recupera la última foto copiada en Supabase."""
+    envelope = snapshot_remote.load(kind, _league_dir_key(league))
+    if envelope is None or not _board_has_data(envelope.get("value")):
+        return None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(envelope, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        logger.exception("No se pudo restaurar la foto del tablero en disco")
+    logger.info("Foto %s/%s restaurada desde Supabase.", kind, league)
+    return envelope
 
 
 def _disk_snapshot_envelope(kind: str, league: str | None) -> dict[str, Any] | None:
     """Sobre completo de la foto (``value`` + ``saved_unix``). Sin caducidad."""
     path = _disk_snapshot_path(kind, league)
     if not path.is_file():
-        return None
+        return _restore_remote_snapshot(kind, league, path)
     try:
         envelope = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
