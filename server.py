@@ -3304,7 +3304,35 @@ def api_plan(
     return _plan_document(board)
 
 
+def _board_with_fresh_titularity(board: dict[str, Any]) -> dict[str, Any]:
+    """El once del plan lleva la misma titularidad que ``/api/optimize``.
+
+    Sin red y sin recalcular el solver: solo corrige ``p_titular``/``jornada_ev``
+    con las tendencias de la foto. Antes el plan leía el once tal como se guardó,
+    y su suma de puntos podía quedar muy por debajo de la que muestra la pestaña Once.
+    """
+    optimize = board.get("optimize")
+    trends = board.get("trends")
+    squads = board.get("squads")
+    if not isinstance(optimize, dict) or optimize.get("ok") is False:
+        return board
+    if not isinstance(trends, dict) or _trends_hollow_doc(trends) or not isinstance(squads, dict):
+        return board
+    squad = own_squad(squads)
+    if squad is None:
+        return board
+    try:
+        patched = _patch_optimize_titularity(
+            optimize, squad, trends, fresh=False, posture=posture_from_squads(squads)
+        )
+    except Exception:
+        logger.exception("Titularidad del once para el plan")
+        return board
+    return {**board, "optimize": patched}
+
+
 def _plan_document(board: dict[str, Any]) -> dict[str, Any]:
+    board = _board_with_fresh_titularity(board)
     note = read_expert_note(_note_path())
     trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
     experts = experts_from_pages({"mentions": [], "lineups": [], "sources": {}}, trends, note_text=note)
