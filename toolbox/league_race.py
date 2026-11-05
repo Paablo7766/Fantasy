@@ -74,6 +74,37 @@ def _number(value: Any) -> float | None:
     return float(value)
 
 
+def _xi_row(candidate: Candidate) -> dict[str, Any]:
+    """Fila mínima de un jugador del once, para cruzar onces en la vista."""
+    return {
+        "player_id": candidate.player_id,
+        "name": candidate.nickname or candidate.name,
+        "position": candidate.position,
+        "club": candidate.club,
+        "image_url": candidate.image_url,
+        "expected_points": round(float(candidate.jornada_ev), 2),
+    }
+
+
+def _xi_rows_from_optimize(optimize: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in optimize.get("xi") or []:
+        if not isinstance(item, dict):
+            continue
+        value = _number(item.get("jornada_ev"))
+        rows.append(
+            {
+                "player_id": item.get("player_id"),
+                "name": item.get("nickname") or item.get("name"),
+                "position": item.get("position"),
+                "club": item.get("club"),
+                "image_url": item.get("image_url"),
+                "expected_points": round(value, 2) if value is not None else 0.0,
+            }
+        )
+    return rows
+
+
 def _project_roster(roster: list[Candidate]) -> dict[str, Any]:
     """Once esperado de una plantilla rival, sin ILP.
 
@@ -88,6 +119,7 @@ def _project_roster(roster: list[Candidate]) -> dict[str, Any]:
             "formation": None,
             "players_available": 0,
             "gaps": [],
+            "xi": [],
         }
     best: tuple[float, str, list[Candidate], list[str]] | None = None
     for name, slots in FORMATIONS.items():
@@ -115,6 +147,7 @@ def _project_roster(roster: list[Candidate]) -> dict[str, Any]:
             "formation": None,
             "players_available": len(eligible),
             "gaps": sorted({candidate.position for candidate in eligible}),
+            "xi": [],
         }
     total, formation, placed, gaps = best
     ceilings = [
@@ -128,6 +161,7 @@ def _project_roster(roster: list[Candidate]) -> dict[str, Any]:
         "formation": formation,
         "players_available": len(eligible),
         "gaps": gaps,
+        "xi": [_xi_row(candidate) for candidate in placed],
     }
 
 
@@ -286,6 +320,7 @@ def build_league_race(
                 "expected_points": points,
                 "formation": optimize.get("formation") if isinstance(optimize.get("formation"), str) else None,
                 "source": "optimize",
+                "xi": _xi_rows_from_optimize(optimize) or (my_projection or {}).get("xi") or [],
             }
 
     rivals = [row for row in rows if not row["is_self"]]

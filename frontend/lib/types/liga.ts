@@ -273,7 +273,18 @@ export type LeagueEdge = {
   ahead?: boolean | null;
 };
 
+/** Un titular del once proyectado, con lo justo para cruzar onces. */
+export type LeagueXiPlayer = {
+  player_id?: string | null;
+  name?: string | null;
+  position?: string | null;
+  club?: string | null;
+  image_url?: string | null;
+  expected_points?: number | null;
+};
+
 export type LeagueProjection = {
+  xi?: LeagueXiPlayer[];
   expected_points?: number | null;
   ceiling_points?: number | null;
   formation?: string | null;

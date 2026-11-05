@@ -10,6 +10,7 @@ import { squadHoldings, squadPatrimonio, squadTotals } from "@/lib/liga/squadTot
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { ActivityEvent, LeagueRacePayload, RivalIntelPayload, RivalPlayer, RivalSquad, SquadsPayload, TrendsPayload } from "@/lib/types";
 import { Chevron, Disclosure, Empty, Face, Fact, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
+import { HeadToHeadCard } from "./HeadToHeadCard";
 import { POS_LABEL, POS_ORDER, rivalLabel } from "./dashboard/shared";
 
 type Sort = "rank" | "cash" | "value" | "delta";
@@ -501,6 +502,15 @@ export function LigaView({
               })}
             </div>
           </section>
+        ) : null}
+
+        {race && race.ok !== false ? (
+          <HeadToHeadCard
+            mine={mine}
+            rivals={race.rivals || []}
+            defaultId={String((ownRank === 1 ? below : above)?.team_id ?? "") || null}
+            photos={photos}
+          />
         ) : null}
 
         {thin.length || denial.length ? (
