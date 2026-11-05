@@ -67,5 +67,16 @@ class LeagueRaceXiTest(unittest.TestCase):
             self.assertEqual(mine["xi"][0]["expected_points"], 7.12)
 
 
+
+class FiniteTest(unittest.TestCase):
+    def test_nan_never_reaches_the_json(self) -> None:
+        from toolbox.league_race import _finite
+
+        self.assertEqual(_finite(float("nan")), 0.0)
+        self.assertEqual(_finite(float("inf")), 0.0)
+        self.assertEqual(_finite(3.14159), 3.14)
+        self.assertEqual(_finite(None), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

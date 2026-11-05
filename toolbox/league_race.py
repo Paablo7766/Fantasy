@@ -10,6 +10,7 @@ y ``trends``.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from toolbox.analyzer import (
@@ -74,6 +75,12 @@ def _number(value: Any) -> float | None:
     return float(value)
 
 
+def _finite(value: Any) -> float:
+    """Número JSON seguro: un NaN o infinito tumbaría toda la respuesta."""
+    number = _number(value)
+    return round(number, 2) if number is not None and math.isfinite(number) else 0.0
+
+
 def _xi_row(candidate: Candidate) -> dict[str, Any]:
     """Fila mínima de un jugador del once, para cruzar onces en la vista."""
     return {
@@ -82,7 +89,7 @@ def _xi_row(candidate: Candidate) -> dict[str, Any]:
         "position": candidate.position,
         "club": candidate.club,
         "image_url": candidate.image_url,
-        "expected_points": round(float(candidate.jornada_ev), 2),
+        "expected_points": _finite(candidate.jornada_ev),
     }
 
 
@@ -91,7 +98,7 @@ def _xi_rows_from_optimize(optimize: dict[str, Any]) -> list[dict[str, Any]]:
     for item in optimize.get("xi") or []:
         if not isinstance(item, dict):
             continue
-        value = _number(item.get("jornada_ev"))
+        value = _finite(item.get("jornada_ev"))
         rows.append(
             {
                 "player_id": item.get("player_id"),
@@ -99,7 +106,7 @@ def _xi_rows_from_optimize(optimize: dict[str, Any]) -> list[dict[str, Any]]:
                 "position": item.get("position"),
                 "club": item.get("club"),
                 "image_url": item.get("image_url"),
-                "expected_points": round(value, 2) if value is not None else 0.0,
+                "expected_points": value,
             }
         )
     return rows

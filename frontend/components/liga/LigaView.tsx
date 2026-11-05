@@ -46,8 +46,11 @@ function useJson<T>(path: string, league: string | null): T | null {
       .then((payload) => {
         if (!cancelled) setLoaded({ league, payload });
       })
-      .catch(() => {
-        if (!cancelled) setLoaded({ league, payload: { ok: false } as T });
+      .catch((reason: unknown) => {
+        // Se conserva el motivo (HTTP 500, sin conexión…) para poder enseñarlo.
+        const sent = (reason as { payload?: unknown } | null)?.payload;
+        const message = reason instanceof Error ? reason.message : "Sin respuesta";
+        if (!cancelled) setLoaded({ league, payload: (sent && typeof sent === "object" ? sent : { ok: false, error: { message } }) as T });
       });
     return () => {
       cancelled = true;
@@ -505,6 +508,14 @@ export function LigaView({
               })}
             </div>
           </section>
+        ) : null}
+
+        {race === null ? (
+          <p className="px-1 text-[12px] text-white/35">Calculando la carrera de liga…</p>
+        ) : race.ok === false ? (
+          <p className="px-1 text-[12px] leading-relaxed text-white/35">
+            La carrera de liga no ha respondido: {race.error?.message || race.message || "sin detalle"}. Sin ella no hay proyección ni cara a cara.
+          </p>
         ) : null}
 
         {race && race.ok !== false ? (
