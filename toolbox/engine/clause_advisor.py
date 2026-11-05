@@ -59,6 +59,7 @@ TITULARES_MINIMOS = 11
 MENSAJE_GOLPE_RIVAL = "Golpe al rival: lo dejas sin recambio en su once"
 MAX_NIVELES = 4
 _DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+_MESES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 
 TITULOS_PROTEGER = {
     "PROTEGER_YA": "SUBE LA CLÁUSULA",
@@ -138,7 +139,11 @@ def inicio_jornada_estimado(ahora: datetime) -> datetime:
 
 
 def _cuando(momento: datetime | None, ahora: datetime) -> str:
-    """«hoy 14:20», «mañana 10:15» o «jueves 10:15» en hora de Madrid."""
+    """«hoy 14:20», «mañana 10:15» o «jueves 13 nov 10:15» en hora de Madrid.
+
+    Más allá de mañana siempre lleva el día del mes: un candado puede vencer dentro de
+    dos semanas y «el lunes» a secas haría pensar en el próximo.
+    """
     if momento is None:
         return "sin hora"
     local = momento.astimezone(_MADRID)
@@ -148,7 +153,7 @@ def _cuando(momento: datetime | None, ahora: datetime) -> str:
         return f"hoy {hora}"
     if local.date() == hoy + timedelta(days=1):
         return f"mañana {hora}"
-    return f"{_DIAS[local.weekday()]} {hora}"
+    return f"{_DIAS[local.weekday()]} {local.day} {_MESES[local.month - 1]} {hora}"
 
 
 def _niveles(

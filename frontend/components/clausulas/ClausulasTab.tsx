@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { CompararButton } from "@/components/comparador/ComparadorReal";
 import { endpoint, getJson } from "@/lib/core/api";
 import { buildClausulazosGuide, type DateBucket } from "@/lib/clausulas/clausulazosGuide";
@@ -64,6 +64,21 @@ const RULES = [
   "Caja negativa o menos de 11 al empezar: la jornada vale 0.",
   "Desde aquí no se envía nada: confirma en la app oficial.",
 ];
+
+/** Cuántas cláusulas se enseñan como mínimo en cada pestaña: las recomendadas y, si faltan, las siguientes mejores. */
+const MIN_SHOWN = 6;
+
+const OPEN_MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+/** Cuándo se puede pagar: «Abierta ahora» o «Abre 4 nov · 14:08». */
+function opensLabel(row: ClauseBoardRow): string {
+  if (!row.is_locked) return "Abierta ahora";
+  const lock = row.clause_lock;
+  if (!lock?.local_date) return "Con candado";
+  const [, month, day] = lock.local_date.split("-");
+  const when = `${Number(day)} ${OPEN_MONTHS[Number(month) - 1] || month}${lock.local_time ? ` · ${lock.local_time}` : ""}`;
+  return `Abre ${when}`;
+}
 
 type ClauseBrowseItem = {
   key: string;
@@ -137,6 +152,22 @@ function browseClauses(
     abiertas: items.filter((item) => (item.board ? !item.board.is_locked : item.suggestion?.abierta_ahora)),
     candado: items.filter((item) => (item.board ? item.board.is_locked : item.suggestion ? !item.suggestion.abierta_ahora : false)),
   };
+}
+
+/**
+ * Las recomendadas siempre; si son menos de MIN_SHOWN, se completa con las mejores por puntos,
+ * primero las que se pueden pagar con la caja. Nunca la lista entera de la liga.
+ */
+function topPicks(items: ClauseBrowseItem[], cash: number | null | undefined): ClauseBrowseItem[] {
+  const recommended = items.filter((item) => item.suggestion);
+  if (recommended.length >= MIN_SHOWN) return recommended;
+  const payable = (item: ClauseBrowseItem) =>
+    typeof cash !== "number" || (item.board?.buyout_clause_eur ?? Infinity) <= cash ? 0 : 1;
+  const extra = items
+    .filter((item) => !item.suggestion && item.board)
+    .sort((a, b) => payable(a) - payable(b) || (b.board?.average_points ?? 0) - (a.board?.average_points ?? 0))
+    .slice(0, MIN_SHOWN - recommended.length);
+  return [...recommended, ...extra];
 }
 
 function dayChip(localDate: string): { week: string; day: string } {
@@ -369,6 +400,51 @@ function AttackCard({ row, photos, index }: { row: ClausulazoSugerido; photos: P
   );
 }
 
+/** Cláusula de la liga que el asesor no recomienda, pero que se puede mirar igual. */
+function PlainClauseRow({ row, photos, index }: { row: ClauseBoardRow; photos: PhotoIndex; index: number }) {
+  const [open, setOpen] = useState(false);
+  const name = row.nickname || row.name || "Jugador";
+  const pts = typeof row.average_points === "number" ? row.average_points : null;
+  const openNow = !row.is_locked;
+  return (
+    <li className="row-in" style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="block w-full px-3.5 py-3.5 text-left">
+        <span className="flex items-center gap-3">
+          <Face name={name} src={row.image_url || photoFor(photos, row.player_id, name)} size={44} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] font-medium leading-tight text-white">{name}</span>
+            <span className="mt-0.5 block truncate text-[12.5px] text-white/45">
+              {[row.position, row.manager_name ? `de ${row.manager_name}` : ""].filter(Boolean).join(" · ")}
+            </span>
+          </span>
+          <span className="shrink-0 text-right">
+            <span className="block text-[15px] font-semibold tabular-nums text-white">{money(row.buyout_clause_eur)}</span>
+            {pts !== null ? <span className="block text-[12px] tabular-nums text-white/45">{points(pts)} pts</span> : null}
+          </span>
+          <Chevron open={open} />
+        </span>
+        <span className="mt-3 flex flex-wrap items-center gap-1.5 pl-[3.5rem]">
+          <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11.5px] font-medium" style={{ color: openNow ? TONE.green : "rgba(255,255,255,0.6)" }}>
+            {opensLabel(row)}
+          </span>
+        </span>
+      </button>
+      {open ? (
+        <div className="row-in border-t border-white/[0.05] px-3.5 pb-4 pt-3">
+          <div className="grid grid-cols-3 gap-3">
+            <Fact label="Valor" value={money(row.market_value)} />
+            <Fact label="Media" value={pts !== null ? `${points(pts)} pts` : "—"} tone="#FFC08A" />
+            <Fact label="Múltiplo" value={typeof row.clause_multiple === "number" ? row.clause_multiple.toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—"} />
+          </div>
+          <div className="mt-3 flex justify-end">
+            <CompararButton objetivoId={row.player_id || undefined} posicion={row.position} className="!bg-[#1c1c1e] !px-4 !py-2 !text-white" />
+          </div>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 /** Jugador propio sin peligro hoy: desplegable para prepararse antes de que se abra su cláusula. */
 function RestRow({
   player,
@@ -550,9 +626,9 @@ export function ClausulasTab({
   const resumen = advisor?.resumen;
   const proteger = advisor?.proteger || [];
   const clausulazos = advisor?.clausulazos || [];
-  // Atacar enseña solo lo que recomienda el asesor: nada de listas con todos los rivales.
-  const abiertas = catalog.abiertas.filter((item) => item.suggestion);
-  const cerradas = catalog.candado.filter((item) => item.suggestion);
+  // Atacar enseña lo que recomienda el asesor y, si son pocas, las siguientes mejores hasta MIN_SHOWN.
+  const abiertas = topPicks(catalog.abiertas, plan?.cash_eur);
+  const cerradas = topPicks(catalog.candado, plan?.cash_eur);
   // Por defecto, las abiertas; si no hay ninguna, directamente las que tienen candado.
   const estado = estadoElegido ?? (abiertas.length || !cerradas.length ? "abiertas" : "candado");
   const shown = estado === "abiertas" ? abiertas : cerradas;
@@ -670,18 +746,25 @@ export function ClausulasTab({
             </div>
             {shown.length ? (
               <ul key={estado} className="home-glass overflow-hidden">
-                {shown.map((item, index) =>
-                  item.suggestion ? <AttackCard key={item.key} row={item.suggestion} photos={photos} index={index} /> : null,
-                )}
+                {shown.map((item, index) => (
+                  <Fragment key={item.key}>
+                    {!item.suggestion && (index === 0 || shown[index - 1].suggestion) ? (
+                      <li className="border-t border-white/[0.05] px-3.5 pb-1 pt-3 text-[11.5px] font-medium text-white/40 first:border-t-0">
+                        {index === 0 ? "Sin recomendadas aquí: las mejores por puntos" : "También a tener en cuenta"}
+                      </li>
+                    ) : null}
+                    {item.suggestion ? (
+                      <AttackCard row={item.suggestion} photos={photos} index={index} />
+                    ) : item.board ? (
+                      <PlainClauseRow row={item.board} photos={photos} index={index} />
+                    ) : null}
+                  </Fragment>
+                ))}
               </ul>
             ) : (
               <p className="home-glass flex items-center gap-2.5 px-4 py-4 text-[14px] text-white/60">
                 <span className="h-2 w-2 shrink-0 rounded-full bg-white/30" aria-hidden="true" />
-                {!clausulazos.length
-                  ? "Ninguna cláusula mejora tu once lo bastante para recomendarla."
-                  : estado === "abiertas"
-                    ? "Ninguna de las recomendadas está abierta ahora."
-                    : "Ninguna de las recomendadas tiene candado."}
+                {estado === "abiertas" ? "Ahora mismo ninguna cláusula está abierta." : "Ninguna cláusula tiene candado."}
               </p>
             )}
           </section>
