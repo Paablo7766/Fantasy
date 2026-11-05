@@ -10,6 +10,7 @@ import { DataHealthPanel } from "@/components/laboratorio/DataHealthPanel";
 import { useDashboard } from "@/components/DashboardProvider";
 import { ExpertNotePanel } from "@/components/laboratorio/ExpertNotePanel";
 import { ModelReportPanel } from "@/components/laboratorio/ModelReportPanel";
+import { PreviaPanel } from "@/components/laboratorio/PreviaPanel";
 import { SignalDiscrepanciesPanel } from "@/components/laboratorio/SignalDiscrepanciesPanel";
 import { Skeleton } from "@/components/ui/kit";
 import { RadarTecnico } from "@/components/laboratorio/RadarTecnico";
@@ -20,7 +21,7 @@ import { OportunidadesTab } from "@/components/mercado/OportunidadesTab";
 import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
-type Tab = "modelo" | "radar" | "rivales" | "calibracion" | "senales" | "datos";
+type Tab = "modelo" | "previa" | "radar" | "rivales" | "calibracion" | "senales" | "datos";
 
 /**
  * Zona de auditoría: cómo se construye cada número. Nada de aquí decide una
@@ -31,6 +32,11 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
     id: "modelo",
     label: "Modelo",
     hint: "De dónde sale cada dato, mercado frente a modelo, goleadores, qué se guarda y qué está en pruebas. Con un botón lo copias entero para pegármelo.",
+  },
+  {
+    id: "previa",
+    label: "Previa",
+    hint: "En pruebas: TOP, Apuesta y No recomendable de cada partido de la jornada, con las ediciones guardadas y cómo puntuaron.",
   },
   {
     id: "radar",
@@ -96,6 +102,8 @@ function LaboratorioContent() {
       <div key={tab} id={`lab-panel-${tab}`} role="tabpanel" aria-labelledby={`lab-tab-${tab}`} className="row-in min-w-0">
         {tab === "modelo" ? (
           <ModelReportPanel />
+        ) : tab === "previa" ? (
+          <PreviaPanel />
         ) : tab === "radar" ? (
           <div className="flex min-w-0 flex-col gap-6">
             <OportunidadesTab photos={photos} />

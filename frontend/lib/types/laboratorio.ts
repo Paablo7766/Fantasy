@@ -366,3 +366,69 @@ export type ModelReportPayload = ApiError & PhotoMeta & {
   shadow?: ModelShadowItem[];
   text?: string;
 };
+
+// Previa de la jornada (/api/laboratorio/previa): TOP, Apuesta y No recomendable
+// por partido, ediciones congeladas y evaluación contra los puntos reales.
+export type PreviaPick = {
+  player_id?: string | null;
+  name?: string | null;
+  club?: string | null;
+  position?: string | null;
+  score: number;
+  mean: number;
+  availability: number;
+  availability_source?: string | null;
+  owner?: string | null;
+  mine?: boolean;
+  on_market?: boolean;
+  price?: number | null;
+};
+
+export type PreviaMatch = {
+  match_key: string;
+  home: string;
+  away: string;
+  kickoff?: string | null;
+  lambda_home?: number | null;
+  lambda_away?: number | null;
+  source?: string | null;
+  top: PreviaPick[];
+  apuesta: PreviaPick[];
+  no_recomendable: PreviaPick[];
+  bajas: PreviaPick[];
+  naive_top: PreviaPick[];
+  mine: PreviaPick[];
+  market_buys: PreviaPick[];
+  players_scored: number;
+};
+
+export type PreviaEdition = {
+  jornada: string | null;
+  edition: "martes" | "jueves" | string;
+  generated_at?: string;
+  rule?: string;
+  matches: PreviaMatch[];
+  universe?: number;
+  frozen_eligible?: boolean;
+};
+
+export type PreviaEvalCategory = { n: number; missing: number; mean: number | null };
+
+export type PreviaEvalRow = {
+  jornada: string;
+  edition?: string | null;
+  top: PreviaEvalCategory;
+  apuesta: PreviaEvalCategory;
+  no_recomendable: PreviaEvalCategory;
+  naive_top: PreviaEvalCategory;
+};
+
+export type PreviaPayload = {
+  ok?: boolean;
+  error?: { message?: string };
+  dashboard_at?: string | null;
+  live?: PreviaEdition;
+  frozen_now?: boolean;
+  editions?: PreviaEdition[];
+  evaluation?: PreviaEvalRow[];
+};
