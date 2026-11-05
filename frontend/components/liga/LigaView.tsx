@@ -422,20 +422,41 @@ export function LigaView({
   }, [view, financials]);
   const sorted = useMemo(() => all.rows.slice().sort((a, b) => sortValue(b, sort) - sortValue(a, sort)), [all, sort]);
 
-  if (loading && !squads) return <Skeleton />;
+  const mode = race && race.ok !== false ? race.mode : null;
+  const ownRank = mode?.own_rank ?? all.own?.rank ?? null;
+  const above = mode?.above;
+  const below = mode?.below;
+  const mine = race && race.ok !== false ? race.my_projection : null;
+
+  // El cara a cara solo depende de /api/league-race. Las plantillas llegan
+  // después de trends/optimize/needs (y el solver corre en cada GET de squads),
+  // así que no se esperan: el duelo sale en cuanto responde la carrera.
+  const headToHeadCard =
+    race && race.ok !== false ? (
+      <HeadToHeadCard
+        mine={mine}
+        rivals={race.rivals || []}
+        defaultId={String((ownRank === 1 ? below : above)?.team_id ?? "") || null}
+        photos={photos}
+      />
+    ) : null;
+
+  if (loading && !squads) {
+    return (
+      <div className="flex min-w-0 flex-col gap-4">
+        {headToHeadCard}
+        <Skeleton />
+      </div>
+    );
+  }
   if (!view || view.ok === false || !all.rows.length) {
     return <Empty title="Sin clasificación" detail="Pulsa Actualizar para leer las plantillas de tu liga." />;
   }
 
   const ownId = all.own?.team_id != null ? String(all.own.team_id) : null;
-  const mode = race && race.ok !== false ? race.mode : null;
-  const ownRank = mode?.own_rank ?? all.own?.rank ?? null;
   const ownPoints = mode?.own_points ?? all.own?.points ?? null;
   const leaderGap = typeof mode?.gap_to_leader === "number" ? mode.gap_to_leader : null;
-  const above = mode?.above;
-  const below = mode?.below;
   const posture = mode ? MODE[mode.name] : null;
-  const mine = race && race.ok !== false ? race.my_projection : null;
   const leagueAvg = race && race.ok !== false ? race.league_projection : null;
   const thin = race && race.ok !== false ? (race.rivals || []).filter((row) => (row.thin_positions || []).length).slice(0, 6) : [];
   const denial = race && race.ok !== false ? (race.denial || []).slice(0, 6) : [];
@@ -518,14 +539,7 @@ export function LigaView({
           </p>
         ) : null}
 
-        {race && race.ok !== false ? (
-          <HeadToHeadCard
-            mine={mine}
-            rivals={race.rivals || []}
-            defaultId={String((ownRank === 1 ? below : above)?.team_id ?? "") || null}
-            photos={photos}
-          />
-        ) : null}
+        {headToHeadCard}
 
         <FormCard form={form} above={above} below={below} />
 
