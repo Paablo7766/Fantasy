@@ -137,8 +137,9 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   const rankRatio = rank !== null && field && field > 1 ? (field - rank) / (field - 1) : null;
   const leaderPts = typeof pts === "number" && typeof gap === "number" ? pts - gap : null;
   const urgent = parts ? parts.totalMs < 3 * 3600 * 1000 : false;
-  // Once previsto: primera cifra positiva (el plan puede traer 0 si aún no calculó).
-  const onceTarget = [fichajes?.puntos_once, plan?.lineup?.expected_points, fichajes?.puntos_once_actual, plan?.lineup?.saved_points].find(
+  // Once previsto: el mismo once recomendado que enseña la pestaña Once, para que las dos cifras coincidan.
+  // El once del plan de fichajes (solo lo ejecutable hoy) queda como respaldo.
+  const onceTarget = [plan?.lineup?.expected_points, fichajes?.puntos_once, plan?.lineup?.saved_points, fichajes?.puntos_once_actual].find(
     (v): v is number => typeof v === "number" && v > 0,
   ) ?? null;
   const dateText = mounted ? DATE_FMT.format(nowMs) : "";
