@@ -46,6 +46,7 @@ from toolbox.analyzer import (
     sell_signal,
 )
 from toolbox.auth import AuthError, login_with_browser
+from toolbox.league_form import build_league_form
 from toolbox.bidding import flip_from_documents, load_activity, needs_from_documents
 from toolbox.cache import ResponseCache, cache_root
 from toolbox.bid_war import rival_snapshots
@@ -2889,6 +2890,19 @@ def api_league_race(
     document["fetched_at"] = board.get("dashboard_at")
     document.update(_photo_fields(board))
     return document
+
+
+@app.get("/api/league-form")
+@_read_only
+def api_league_form(
+    league: str | None = Query(default=None),
+) -> Any:
+    """Puntos por jornada y tendencia de cada mánager. Sin red."""
+    board = _board("league-form", league, tier="core")
+    if isinstance(board, JSONResponse):
+        return board
+    squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
+    return build_league_form(squads)
 
 
 @app.get("/api/data-health")

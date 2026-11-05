@@ -8,8 +8,9 @@ import { applyLiquidity, financialIndex, liquidityRead } from "@/lib/liga/liquid
 import { enrichSquadsPayload } from "@/lib/liga/squadEnrich";
 import { squadHoldings, squadPatrimonio, squadTotals } from "@/lib/liga/squadTotals";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
-import type { ActivityEvent, LeagueRacePayload, RivalIntelPayload, RivalPlayer, RivalSquad, SquadsPayload, TrendsPayload } from "@/lib/types";
+import type { ActivityEvent, LeagueFormPayload, LeagueRacePayload, RivalIntelPayload, RivalPlayer, RivalSquad, SquadsPayload, TrendsPayload } from "@/lib/types";
 import { Chevron, Disclosure, Empty, Face, Fact, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
+import { FormCard } from "./FormCard";
 import { HeadToHeadCard } from "./HeadToHeadCard";
 import { POS_LABEL, POS_ORDER, rivalLabel } from "./dashboard/shared";
 
@@ -404,6 +405,7 @@ export function LigaView({
   const league = useSearchParams().get("league");
   const race = useJson<LeagueRacePayload>("/api/league-race", league);
   const rivalIntel = useJson<RivalIntelPayload>("/api/rival-intel", league);
+  const form = useJson<LeagueFormPayload>("/api/league-form", league);
   const [sort, setSort] = useState<Sort>("rank");
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -512,6 +514,8 @@ export function LigaView({
             photos={photos}
           />
         ) : null}
+
+        <FormCard form={form} />
 
         {thin.length || denial.length ? (
           <Disclosure title="Dónde puedes hacer daño" meta={`${thin.length + denial.length}`}>

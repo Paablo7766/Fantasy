@@ -333,3 +333,28 @@ export type LeagueRacePayload = ApiError & PhotoMeta & {
   denial?: LeagueDenialRow[];
   sends?: boolean;
 };
+
+export type LeagueFormRound = { round: number; points: number; rank: number };
+
+export type LeagueFormRow = {
+  team_id?: string | null;
+  manager_name?: string | null;
+  fantasy_team_name?: string | null;
+  is_self?: boolean;
+  rounds: LeagueFormRound[];
+  /** Media de las últimas jornadas. */
+  recent_avg: number;
+  total: number;
+  best: number;
+  /** Última jornada menos la media de las anteriores. `null` con una sola. */
+  trend: number | null;
+  form_rank: number;
+};
+
+export type LeagueFormPayload = ApiError & {
+  ok?: boolean;
+  rounds?: number[];
+  recent_window?: number;
+  rows?: LeagueFormRow[];
+  unmatched?: string[];
+};
