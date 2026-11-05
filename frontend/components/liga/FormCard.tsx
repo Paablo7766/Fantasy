@@ -61,8 +61,18 @@ function paceLines(rows: LeagueFormRow[], above: LeagueEdge | null | undefined, 
  * quién viene fuerte, que el acumulado no dice.
  */
 export function FormCard({ form, above, below }: { form: LeagueFormPayload | null; above?: LeagueEdge | null; below?: LeagueEdge | null }) {
-  const rows = form && form.ok !== false ? form.rows || [] : [];
-  if (rows.length < 2) return null;
+  if (!form) return null;
+  const rows = form.ok !== false ? form.rows || [] : [];
+  if (rows.length < 2) {
+    // Se dice por qué falta en vez de esconderse: ayuda a ver si el servidor
+    // tiene ya esta versión o si los nombres no casan.
+    const unmatched = form.unmatched?.length ? ` No casan con ningún equipo: ${form.unmatched.slice(0, 4).join(", ")}.` : "";
+    return (
+      <p className="px-1 text-[12px] leading-relaxed text-white/35">
+        {form.ok === false ? "Forma reciente: el servidor no responde a esta función (¿versión antigua?)." : `Forma reciente: faltan datos.${unmatched}`}
+      </p>
+    );
+  }
   const window = form?.recent_window ?? 3;
   const top = Math.max(1, ...rows.flatMap((row) => row.rounds.slice(-window).map((item) => item.points)));
   const mine = rows.find((row) => row.is_self);

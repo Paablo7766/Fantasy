@@ -61,7 +61,12 @@ export function HeadToHeadCard({
   const rival = options.find((row) => String(row.team_id) === activeId) || null;
   const duel = useMemo(() => (rival ? headToHead(mine, rival.projection) : null), [mine, rival]);
 
-  if (!options.length || !rival || !duel) return null;
+  if (!rivals.length) return null;
+  if (!options.length || !rival || !duel) {
+    // Sin onces no hay duelo; se dice por qué en vez de esconder la tarjeta.
+    const why = !options.length ? "el servidor aún no envía los onces de los rivales (¿versión antigua?)" : "falta tu once proyectado";
+    return <p className="px-1 text-[12px] leading-relaxed text-white/35">Cara a cara: {why}.</p>;
+  }
 
   const edge = duel.edge ?? 0;
   const close = Math.abs(edge) < 1;
