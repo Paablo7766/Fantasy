@@ -50,6 +50,31 @@ function maxBid(player: MarketDecision): number | null {
   return num(player.financial_max_bid_eur) ?? num(player.puja_maxima) ?? num(player.max_bid) ?? num(player.aggressive_ceiling);
 }
 
+/** Veto que solo es de caja: el jugador vale la pena, pero hoy no te llega. */
+function isCashVeto(player: MarketDecision): boolean {
+  if (!isVetoed(player)) return false;
+  const reasons = Array.isArray(player.reasons) ? player.reasons : [];
+  const blocked = ["ya_en_plantilla", "listing_propio", "lesionado", "sancionado", "mercado_cerrado", "sin_slots"];
+  if (reasons.some((reason) => blocked.includes(reason))) return false;
+  return player.bid_limit === "sin_caja" || player.primary_motive === "sin_caja" || reasons.includes("sin_caja") || (num(player.cash_after_eur) ?? 0) < 0;
+}
+
+/**
+ * Cifras si liberas caja vendiendo a otro jugador. Salen de las fuentes
+ * (ideal/máx.), que no dependen de tu saldo; la puja smart sí se recorta a la
+ * caja, así que no sirve aquí.
+ */
+function ifYouSell(player: MarketDecision): { ideal: number; max: number | null; missing: number | null } | null {
+  if (!isCashVeto(player)) return null;
+  const ideal = num(player.ideal_bid) ?? num(player.own_ideal_bid) ?? num(player.af_ideal_bid) ?? num(player.app_bid_eur);
+  if (ideal === null) return null;
+  const max = num(player.max_bid) ?? num(player.own_max_bid) ?? num(player.af_max_bid) ?? num(player.financial_max_bid_eur);
+  const price = num(player.bid_eur);
+  const after = num(player.cash_after_eur);
+  const cash = price !== null && after !== null ? price + after : null;
+  return { ideal, max: max !== null && max > ideal ? max : null, missing: cash !== null && ideal > cash ? ideal - cash : null };
+}
+
 function titularColor(share: number | null): string | undefined {
   if (share === null) return undefined;
   return share >= 0.8 ? TONE.green : share >= 0.5 ? TONE.amber : TONE.red;
@@ -211,7 +236,8 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
             ? `No es titular seguro: ${Math.round(titular * 100)}% de salir de inicio.`
             : null;
     const overbid = cleanText(player.bid_plan?.overbid?.etiqueta);
-    const bidLabel = ideal === null ? "Valor de mercado" : action === "PUJAR" ? "Puja recomendada" : "Si decides pujar";
+    const sell = ifYouSell(player);
+    const bidLabel = sell ? "Puja ideal si vendes a alguien" : ideal === null ? "Valor de mercado" : action === "PUJAR" ? "Puja recomendada" : "Si decides pujar";
     const howTo =
       ideal === null
         ? null
@@ -265,11 +291,22 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
             <div className="min-w-0 flex-1">
               <p className="text-[12px] text-white/45">{bidLabel}</p>
               <p className="mt-1 text-[2.1rem] font-semibold leading-none tracking-[-0.03em] tabular-nums text-white">
-                {money(ideal ?? value)}
+                {money(ideal ?? sell?.ideal ?? value)}
               </p>
               {ideal !== null && max !== null && max > ideal ? (
                 <p className="mt-1.5 text-[12.5px] tabular-nums text-white/50">
                   Hasta <span className="font-semibold text-[#FFC08A]">{money(max)}</span> como máximo
+                </p>
+              ) : null}
+              {sell ? (
+                <p className="mt-1.5 text-[12.5px] tabular-nums text-white/50">
+                  {sell.max !== null ? (
+                    <>
+                      Hasta <span className="font-semibold text-[#FFC08A]">{money(sell.max)}</span> como máximo
+                    </>
+                  ) : null}
+                  {sell.max !== null && sell.missing !== null ? " · " : null}
+                  {sell.missing !== null ? <>te faltan <span className="font-semibold text-[#FF8A7A]">{money(sell.missing)}</span> de caja</> : null}
                 </p>
               ) : null}
             </div>
