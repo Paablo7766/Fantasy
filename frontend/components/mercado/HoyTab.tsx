@@ -553,7 +553,7 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
 
       <p className="px-1 text-[12px] leading-relaxed text-white/40">{historyLine(summary)}</p>
 
-      <PlayerCard player={selected} photo={selected ? photo(selected) : null} onClose={() => setSelectedId(null)} />
+      <PlayerCard player={selected} photo={selected ? photo(selected) : null} cash={summary.cash_eur ?? trends.cash_eur} onClose={() => setSelectedId(null)} />
     </div>
   );
 }

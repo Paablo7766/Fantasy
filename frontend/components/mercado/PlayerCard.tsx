@@ -64,14 +64,11 @@ function isCashVeto(player: MarketDecision): boolean {
  * (ideal/máx.), que no dependen de tu saldo; la puja smart sí se recorta a la
  * caja, así que no sirve aquí.
  */
-function ifYouSell(player: MarketDecision): { ideal: number; max: number | null; missing: number | null } | null {
+function ifYouSell(player: MarketDecision, cash: number | null): { ideal: number; max: number | null; missing: number | null } | null {
   if (!isCashVeto(player)) return null;
   const ideal = num(player.ideal_bid) ?? num(player.own_ideal_bid) ?? num(player.af_ideal_bid) ?? num(player.app_bid_eur);
   if (ideal === null) return null;
   const max = num(player.max_bid) ?? num(player.own_max_bid) ?? num(player.af_max_bid) ?? num(player.financial_max_bid_eur);
-  const price = num(player.bid_eur);
-  const after = num(player.cash_after_eur);
-  const cash = price !== null && after !== null ? price + after : null;
   return { ideal, max: max !== null && max > ideal ? max : null, missing: cash !== null && ideal > cash ? ideal - cash : null };
 }
 
@@ -183,7 +180,21 @@ function FormBars({ weeks }: { weeks: number[] }) {
 }
 
 /** Ficha de un jugador del mercado: qué hacer, cuánto pujar y cómo va su valor. */
-export function PlayerCard({ player, photo, onClose }: { player: MarketDecision | null; photo?: string | null; onClose: () => void }) {
+/**
+ * `cash` es tu caja de hoy. No se saca de `cash_after_eur`: ese campo es lo que
+ * queda tras todas las pujas del plan hasta esta, no tras pujar solo esta.
+ */
+export function PlayerCard({
+  player,
+  photo,
+  cash: cashProp,
+  onClose,
+}: {
+  player: MarketDecision | null;
+  photo?: string | null;
+  cash?: number | null;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   const [comparing, setComparing] = useState<{ id: string; position?: string | null } | null>(null);
 
@@ -204,7 +215,12 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
     const action = marketAction(player);
     const verdict = ACTION_VERDICT[action];
     const ideal = executableBid(player);
-    const max = isVetoed(player) ? null : maxBid(player);
+    const cash = num(cashProp);
+    // El máximo de las fuentes no mira tu caja: pasar de ella te deja en
+    // negativo y con saldo negativo puntúas 0, así que se recorta a la caja.
+    const rawMax = isVetoed(player) ? null : maxBid(player);
+    const max = rawMax !== null && cash !== null && cash > 0 ? Math.min(rawMax, cash) : rawMax;
+    const maxIsCash = rawMax !== null && max !== null && max < rawMax;
     const value = num(player.market_value) ?? num(player.sale_price);
     const rawWin = winShare(typeof player.smart_bid_success_pct === "number" ? player.smart_bid_success_pct : player.win_probability);
     const win = ideal === null ? null : rawWin;
@@ -236,7 +252,10 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
             ? `No es titular seguro: ${Math.round(titular * 100)}% de salir de inicio.`
             : null;
     const overbid = cleanText(player.bid_plan?.overbid?.etiqueta);
-    const sell = ifYouSell(player);
+    const sell = ifYouSell(player, cash);
+    // «Caja después» con la cifra grande de la ficha, no con `bid_eur`.
+    const shownBid = ideal ?? sell?.ideal ?? null;
+    const cashAfter = cash !== null && shownBid !== null ? cash - shownBid : num(player.cash_after_eur);
     const bidLabel = sell ? "Puja ideal si vendes a alguien" : ideal === null ? "Valor de mercado" : action === "PUJAR" ? "Puja recomendada" : "Si decides pujar";
     const howTo =
       ideal === null
@@ -295,7 +314,7 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
               </p>
               {ideal !== null && max !== null && max > ideal ? (
                 <p className="mt-1.5 text-[12.5px] tabular-nums text-white/50">
-                  Hasta <span className="font-semibold text-[#FFC08A]">{money(max)}</span> como máximo
+                  Hasta <span className="font-semibold text-[#FFC08A]">{money(max)}</span> {maxIsCash ? "como máximo: es toda tu caja" : "como máximo"}
                 </p>
               ) : null}
               {sell ? (
@@ -333,12 +352,12 @@ export function PlayerCard({ player, photo, onClose }: { player: MarketDecision 
               </p>
             </div>
             <div className="min-w-0 text-right">
-              <p className="text-white/40">Caja después</p>
+              <p className="text-white/40">{cash !== null && shownBid !== null ? "Caja si pujas esta" : "Caja después"}</p>
               <p
                 className="mt-0.5 truncate font-semibold tabular-nums"
-                style={{ color: typeof player.cash_after_eur === "number" && player.cash_after_eur < 0 ? TONE.red : "#fff" }}
+                style={{ color: cashAfter !== null && cashAfter < 0 ? TONE.red : "#fff" }}
               >
-                {money(player.cash_after_eur)}
+                {money(cashAfter)}
               </p>
             </div>
           </div>
