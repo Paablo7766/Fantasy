@@ -157,12 +157,27 @@ function Pill({ label, color }: { label: string; color: string }) {
   );
 }
 
+/** La subida que de verdad recomienda el asesor; null si lo sensato es no tocarla. */
+function recommendedLevel(row: ClausulaEnPeligro) {
+  const best = row.subida_recomendada ?? (row.veredicto_codigo === "SIN_CAJA" ? row.clausula_perfecta : null);
+  return best && best.clausula_objetivo > row.clausula_actual ? best : null;
+}
+
+/** Por qué no se recomienda subirla, en pocas palabras. */
+function keepReason(row: ClausulaEnPeligro): string {
+  if (row.veredicto_codigo === "SOBREPROTEGIDO") return "ya cubre el sustituto";
+  if (row.veredicto_codigo === "VENDER_ANTES") return "mejor venderlo";
+  if (!row.rivales_que_pueden_pagar) return "hoy nadie la paga";
+  if (!row.niveles.length) return "ya está en el tope";
+  return "subirla no compensa";
+}
+
 /**
  * La cláusula frente a lo que pueden pagar: la barra es tu cláusula, el tramo
  * claro llega a la recomendada y la marca blanca es la caja del rival más rico.
  */
 function Shield({ row }: { row: ClausulaEnPeligro }) {
-  const perfect = row.clausula_perfecta?.clausula_objetivo ?? row.clausula_actual;
+  const perfect = recommendedLevel(row)?.clausula_objetivo ?? row.clausula_actual;
   const rich = row.rival_mas_rico?.caja ?? null;
   const top = Math.max(perfect, row.clausula_actual, rich ?? 0, 1) * 1.04;
   const now = (row.clausula_actual / top) * 100;
@@ -209,8 +224,7 @@ function DefendCard({
   const [open, setOpen] = useState(false);
   const verdict = PROTEGER[row.veredicto_codigo] ?? PROTEGER.ASUMIR;
   const risk = RIESGO[row.riesgo] ?? RIESGO.BAJO;
-  const best = row.subida_recomendada ?? (row.veredicto_codigo === "SIN_CAJA" ? row.clausula_perfecta : null);
-  const raise = best && best.subida_eur > 0 ? best : null;
+  const raise = recommendedLevel(row);
   return (
     <li className="row-in" style={{ animationDelay: `${index * 35}ms` }}>
       <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="block w-full px-3.5 py-3.5 text-left">
@@ -247,7 +261,11 @@ function DefendCard({
       {open ? (
         <div className="row-in border-t border-white/[0.05] px-3.5 pb-4 pt-3">
           <div className="grid grid-cols-3 gap-3">
-            <Fact label="Recomendada" value={money(row.clausula_perfecta?.clausula_objetivo ?? row.clausula_actual)} tone="#FFC08A" />
+            {raise ? (
+              <Fact label="Recomendada" value={money(raise.clausula_objetivo)} hint={`ahora ${money(row.clausula_actual)}`} tone="#FFC08A" />
+            ) : (
+              <Fact label="Recomendada" value="Mantener" hint={keepReason(row)} />
+            )}
             <Fact label="Valor" value={money(row.valor_mercado)} hint={typeof row.prevision_7d_pct === "number" ? `${signedPct(row.prevision_7d_pct)} en 7 días` : undefined} />
             <Fact
               label="Tu once sin él"
