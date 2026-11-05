@@ -89,3 +89,13 @@ alter table public.match_audits enable row level security;
 alter table public.scraper_cache enable row level security;
 alter table public.cash_ledgers enable row level security;
 alter table public.price_snapshots enable row level security;
+
+-- Copia de la foto del tablero: sobrevive a los despliegues de Render (toolbox/snapshot_remote.py).
+create table if not exists public.dashboard_snapshots (
+    key text primary key,
+    saved_unix double precision not null,
+    payload text not null,
+    updated_at timestamptz not null default now()
+);
+
+alter table public.dashboard_snapshots enable row level security;
