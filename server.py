@@ -544,8 +544,10 @@ def _write_disk_snapshot(
     except OSError:
         logger.exception("No se pudo guardar la foto del tablero en disco")
         return
-    if root is None:
-        # Copia fuera del disco: Render lo borra en cada despliegue.
+    if root is None or root == cache_root():
+        # Copia fuera del disco: Render lo borra en cada despliegue. ``refresh_board``
+        # pasa la raíz ya resuelta, así que basta con que sea la caché real (las
+        # pruebas usan una carpeta temporal distinta y no suben nada).
         snapshot_remote.save(kind, _league_dir_key(league), envelope)
 
 
