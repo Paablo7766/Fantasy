@@ -53,9 +53,17 @@ FBREF_URLS = (
     "https://fbref.com/en/comps/12/playingtime/La-Liga-Stats",
 )
 # LaLiga (unique-tournament 8). Se puede sustituir con SOFASCORE_STATS_URL.
-SOFASCORE_DEFAULT_SEASON = "77559"
+# api.sofascore.com responde 403 también desde casa. El mismo JSON en
+# www.sofascore.com sí responde. 97268 es LaLiga 26/27; 77559 era 25/26.
+SOFASCORE_DEFAULT_SEASON = "97268"
 SOFASCORE_DEFAULT_URL = (
-    f"https://api.sofascore.com/api/v1/unique-tournament/8/season/{SOFASCORE_DEFAULT_SEASON}/top-players/overall"
+    "https://www.sofascore.com/api/v1/unique-tournament/8/season/"
+    f"{SOFASCORE_DEFAULT_SEASON}/top-players/overall"
+)
+# Dirección que pide el Render ya desplegado. Guardamos ahí la misma copia
+# para que, al recibir 403, sirva estos datos sin esperar otro despliegue.
+SOFASCORE_LEGACY_URL = (
+    "https://api.sofascore.com/api/v1/unique-tournament/8/season/77559/top-players/overall"
 )
 # Solo estas fuentes marcan ``partial`` en trends; el núcleo (FF, AF, Understat, own) sigue siendo decisorio.
 _OPTIONAL_TRENDS_SOURCES = frozenset({"fbref", "sofascore", "transfermarkt", "laliga_odds", "laliga_scorer_odds"})
@@ -1386,6 +1394,32 @@ def _fetch_text(client: ExternalClient, url: str, *, ttl: float, fresh: bool) ->
     return body, cached, None
 
 
+def _curl_json(url: str) -> Any | None:
+    """Reintenta el JSON imitando Chrome. httpx recibe 403 de Sofascore y curl_cffi no."""
+    if "sofascore.com" not in url:
+        return None
+    try:
+        from curl_cffi import requests as curl_requests
+    except ImportError:
+        return None
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.sofascore.com/",
+        "Origin": "https://www.sofascore.com",
+    }
+    try:
+        response = curl_requests.get(url, impersonate="chrome", headers=headers, timeout=30)
+    except Exception:
+        return None
+    if getattr(response, "status_code", 599) >= 400:
+        return None
+    try:
+        payload = response.json()
+    except (TypeError, ValueError):
+        return None
+    return payload if isinstance(payload, (dict, list)) else None
+
+
 def _fetch_json(client: ExternalClient, url: str, *, ttl: float, fresh: bool) -> tuple[Any, bool, str | None]:
     try:
         payload, cached = client.get_json(url, ttl=ttl, fresh=fresh)
@@ -1394,6 +1428,8 @@ def _fetch_json(client: ExternalClient, url: str, *, ttl: float, fresh: bool) ->
 
         if exc.code in {"forbidden", "blocked"}:
             payload, _raw = fetch_json_with_browser(url)
+            if payload is None:
+                payload = _curl_json(url)
             if payload is not None:
                 client.store_json(url, payload, ttl=ttl)
                 return payload, False, None
@@ -1445,19 +1481,34 @@ def _load_fbref(client: ExternalClient, *, ttl: float, fresh: bool) -> _SourceFe
     )
 
 
+def _sofascore_season() -> str:
+    explicit = os.getenv("SOFASCORE_SEASON_ID", "").strip()
+    if explicit:
+        return explicit
+    payload = _curl_json("https://www.sofascore.com/api/v1/unique-tournament/8/seasons")
+    seasons = payload.get("seasons") if isinstance(payload, dict) else None
+    if isinstance(seasons, list):
+        for row in seasons:
+            if isinstance(row, dict) and row.get("id") is not None:
+                return str(row["id"])
+    return SOFASCORE_DEFAULT_SEASON
+
+
 def _sofascore_url() -> str:
     explicit = os.getenv("SOFASCORE_STATS_URL", "").strip()
     if explicit:
         return explicit
-    season = os.getenv("SOFASCORE_SEASON_ID", "").strip() or SOFASCORE_DEFAULT_SEASON
     return (
-        f"https://api.sofascore.com/api/v1/unique-tournament/8/season/{season}/top-players/overall"
+        "https://www.sofascore.com/api/v1/unique-tournament/8/season/"
+        f"{_sofascore_season()}/top-players/overall"
     )
 
 
 def _load_sofascore(client: ExternalClient, *, ttl: float, fresh: bool) -> _SourceFetch:
     url = _sofascore_url()
     payload, cached, error = _fetch_json(client, url, ttl=ttl, fresh=fresh)
+    if payload is not None and url != SOFASCORE_LEGACY_URL:
+        client.store_json(SOFASCORE_LEGACY_URL, payload, ttl=ttl)
     if error or payload is None:
         return _SourceFetch(ok=False, error=error or "Sin JSON de Sofascore.")
     rows = parse_sofascore_payload(payload)

@@ -39,7 +39,20 @@ def _fail(message: str) -> int:
     return 1
 
 
+def _stdout_utf8() -> None:
+    """Windows (cp1252) no puede imprimir ✓. Forzamos UTF-8 antes del informe."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
+
+
 def main() -> int:
+    _stdout_utf8()
     if not (os.getenv("SUPABASE_URL", "").strip() and os.getenv("SUPABASE_KEY", "").strip()):
         return _fail(
             "Faltan SUPABASE_URL y SUPABASE_KEY. Cópialos de Render (Environment) a un archivo .env "

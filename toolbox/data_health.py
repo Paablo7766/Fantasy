@@ -132,7 +132,7 @@ SOURCE_CATALOG: tuple[dict[str, Any], ...] = (
     {
         "id": "sofascore",
         "label": "Sofascore",
-        "url": "https://api.sofascore.com/api/v1/unique-tournament/8/season/77559/top-players/overall",
+        "url": "https://www.sofascore.com/api/v1/unique-tournament/8/season/97268/top-players/overall",
         "ttl_key": "stats",
         "field": "nota media / forma",
         "impact": "Enriquecimiento opcional de forma.",
