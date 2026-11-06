@@ -63,12 +63,36 @@ export function writeDashboardBlock<K extends keyof DashboardState>(
 ): void {
   if (typeof window === "undefined") return;
   if (!value || (typeof value === "object" && "ok" in value && value.ok === false)) return;
-  const current = readDashboardCache(league) || {
+  // Los bloques llegan casi a la vez: se juntan y se escribe una sola vez
+  // (leer, parsear y serializar el tablero entero por bloque bloqueaba el hilo).
+  if (pendingLeague !== league) flushPendingBlocks();
+  pendingLeague = league;
+  pendingBlocks[name] = value;
+  if (flushTimer === null) flushTimer = window.setTimeout(flushPendingBlocks, 250);
+}
+
+let pendingLeague: string | null = null;
+let pendingBlocks: Partial<DashboardState> = {};
+let flushTimer: number | null = null;
+
+function flushPendingBlocks(): void {
+  if (flushTimer !== null) {
+    window.clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (Object.keys(pendingBlocks).length === 0) return;
+  const blocks = pendingBlocks;
+  pendingBlocks = {};
+  const current = readDashboardCache(pendingLeague) || {
     optimize: null,
     trends: null,
     squads: null,
     needs: null,
     plan: null,
   };
-  writeDashboardCache(league, { ...current, [name]: value });
+  writeDashboardCache(pendingLeague, { ...current, ...blocks });
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushPendingBlocks);
 }

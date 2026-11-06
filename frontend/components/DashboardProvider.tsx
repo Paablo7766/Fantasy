@@ -84,6 +84,23 @@ function photoFrom(state: DashboardState): PhotoMeta | null {
   return oldest;
 }
 
+/** Instante de captura de un bloque en ms, o null si no lo trae. */
+function photoMs(doc: PhotoMeta | null): number | null {
+  if (!doc || typeof doc !== "object" || typeof doc.last_updated !== "string") return null;
+  const ms = Date.parse(doc.last_updated);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** Captura más antigua entre los bloques de la copia local. */
+function oldestPhotoMs(state: DashboardState): number | null {
+  let oldest: number | null = null;
+  for (const name of BLOCKS) {
+    const ms = photoMs(state[name] as PhotoMeta | null);
+    if (ms !== null && (oldest === null || ms < oldest)) oldest = ms;
+  }
+  return oldest;
+}
+
 /** El once no debe quedarse al 35 % mientras el mercado (lento) sigue en vuelo. */
 function progressFromLoad(pending: Record<BlockName, boolean>) {
   const steps: [boolean, number][] = BLOCKS.map((name) => [!pending[name], 20]);
@@ -262,12 +279,9 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     setPending({ optimize: true, trends: true, squads: true, needs: true, plan: true });
     // Mercado no espera a caja/once: si Jornada u otro bloque se alarga,
     // Tenaglia y el resto del día tienen que pintar igual.
-    const trendsPromise = fetchBlock("trends");
-    await Promise.all([fetchBlock("optimize"), fetchBlock("needs")]);
-    await trendsPromise;
-    // Una sola lectura de plantillas: shape_squads ya mezcla los libros de needs.
-    await fetchBlock("squads");
-    await fetchBlock("plan");
+    // Los cinco bloques son lecturas independientes de la misma foto (el
+    // backend ya mezcla needs dentro de squads): se piden a la vez.
+    await Promise.all(BLOCKS.map((name) => fetchBlock(name)));
     setReadAt(Date.now());
   }, [fetchBlock]);
 
@@ -376,7 +390,14 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       // foto ya guardada. Así un cambio del cálculo (la previsión a 7 días)
       // llega sin pulsar Actualizar y sin salir a LaLiga. El plan no se toca:
       // releerlo cambiaba recomendaciones con la misma foto.
-      void fetchBlock("trends");
+      // Si el servidor ya tiene una foto más nueva (cron, móvil u otra
+      // pestaña), se relee entera: si no, el mercado sería de hoy y el once,
+      // la caja y el plan de la copia local, de otra foto.
+      const localAt = oldestPhotoMs(snap.state);
+      void fetchBlock("trends").then((fresh) => {
+        const serverAt = photoMs(fresh as PhotoMeta | null);
+        if (serverAt !== null && (localAt === null || serverAt > localAt + 1000)) void load();
+      });
       return;
     }
     void load().then(() => {
