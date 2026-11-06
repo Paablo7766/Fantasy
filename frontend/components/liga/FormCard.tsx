@@ -80,9 +80,29 @@ export function FormCard({ form, above, below }: { form: LeagueFormPayload | nul
   const pace = paceLines(rows, above, below, SEASON_ROUNDS - (last ?? SEASON_ROUNDS));
 
   return (
-    <Disclosure title="Forma reciente" meta={mine ? `Tú: ${mine.form_rank}º` : `J${last ?? ""}`} defaultOpen>
-      <p className="text-[12.5px] text-white/45">Media de las últimas {window} jornadas. Quien viene fuerte no siempre va arriba en el acumulado.</p>
-      <ul className="mt-2 divide-y divide-white/[0.05]">
+    <Disclosure title="Quién viene en racha" meta={mine ? `Tú: ${mine.form_rank}º en forma` : `J${last ?? ""}`} defaultOpen>
+      <p className="text-[13px] leading-snug text-white/60">
+        Ordenados por los <span className="font-semibold text-white">puntos que han hecho de media en las últimas {window} jornadas</span>, no por el total de la temporada.
+      </p>
+      {mine ? (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded-2xl bg-white/[0.05] px-3 py-2.5">
+            <p className="text-[1.15rem] font-semibold leading-none tabular-nums" style={{ color: "#FFC08A" }}>{points(mine.recent_avg)} pts</p>
+            <p className="mt-1.5 text-[12px] text-white/50">Tu media por jornada</p>
+          </div>
+          <div className="rounded-2xl bg-white/[0.05] px-3 py-2.5">
+            <p className="text-[1.15rem] font-semibold leading-none tabular-nums text-white">{mine.form_rank}º de {rows.length}</p>
+            <p className="mt-1.5 text-[12px] text-white/50">Tu puesto en forma</p>
+          </div>
+        </div>
+      ) : null}
+      <div className="mt-4 flex items-center gap-3 border-b border-white/[0.06] pb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-white/35">
+        <span className="w-4 shrink-0">#</span>
+        <span className="min-w-0 flex-1">Mánager</span>
+        <span className="shrink-0">Últ. {window}</span>
+        <span className="w-[5.5rem] shrink-0 text-right">Media / jorn.</span>
+      </div>
+      <ul className="divide-y divide-white/[0.05]">
         {rows.map((row) => {
           const up = typeof row.trend === "number" && row.trend > 0.5;
           const down = typeof row.trend === "number" && row.trend < -0.5;
@@ -93,10 +113,16 @@ export function FormCard({ form, above, below }: { form: LeagueFormPayload | nul
                 {row.is_self ? "Tú" : nameOf(row)}
               </span>
               <Bars row={row} top={top} window={window} />
-              <span className="w-[4.5rem] shrink-0 text-right">
-                <span className="block text-[14px] font-semibold tabular-nums text-white">{points(row.recent_avg)}</span>
-                <span className="block text-[11px] tabular-nums" style={{ color: up ? TONE.green : down ? TONE.red : "rgba(255,255,255,0.35)" }}>
-                  {typeof row.trend === "number" ? `${up ? "▲" : down ? "▼" : "="} ${points(Math.abs(row.trend))}` : "—"}
+              <span className="w-[5.5rem] shrink-0 text-right">
+                <span className="block text-[14px] font-semibold tabular-nums text-white">
+                  {points(row.recent_avg)} <span className="text-[11px] font-normal text-white/40">pts</span>
+                </span>
+                <span
+                  className="block text-[11px] tabular-nums"
+                  title="Última jornada comparada con su media anterior"
+                  style={{ color: up ? TONE.green : down ? TONE.red : "rgba(255,255,255,0.35)" }}
+                >
+                  {typeof row.trend === "number" ? (up ? `▲ ${points(row.trend)} al alza` : down ? `▼ ${points(-row.trend)} a la baja` : "= estable") : "—"}
                 </span>
               </span>
             </li>
@@ -112,7 +138,7 @@ export function FormCard({ form, above, below }: { form: LeagueFormPayload | nul
           ))}
         </div>
       ) : null}
-      <p className="mt-2 text-[12px] leading-relaxed text-white/35">La flecha compara la última jornada con la media de las anteriores. Con pocas jornadas jugadas, el ritmo es orientativo.</p>
+      <p className="mt-2 text-[12px] leading-relaxed text-white/35">Las barras son los puntos de cada una de las últimas {window} jornadas (la más clara, la última). «Al alza» o «a la baja» compara la última jornada con su media anterior. Con pocas jornadas jugadas, es orientativo.</p>
     </Disclosure>
   );
 }

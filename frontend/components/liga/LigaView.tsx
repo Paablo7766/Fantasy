@@ -478,10 +478,9 @@ export function LigaView({
 
   const threatCount = clauseThreats(all.own, all.rows).length;
   const alertCount = threatCount + thin.length + denial.length;
-  const hasDuel = race !== null && race.ok !== false;
   const tabs: { id: Tab; label: string; badge?: number }[] = [
     { id: "clasificacion", label: "Clasificación" },
-    ...(hasDuel ? [{ id: "duelo" as Tab, label: "Cara a cara" }] : []),
+    { id: "duelo", label: "Cara a cara" },
     { id: "forma", label: "Forma" },
     { id: "alertas", label: "Alertas", badge: alertCount || undefined },
   ];
@@ -606,7 +605,17 @@ export function LigaView({
             </>
           ) : null}
 
-          {activeTab === "duelo" ? headToHeadCard : null}
+          {activeTab === "duelo" ? (
+            race === null ? (
+              <Skeleton />
+            ) : race.ok === false ? (
+              <Empty title="Cara a cara no disponible" detail={`La carrera de liga no ha respondido: ${race.error?.message || race.message || "sin detalle"}.`} />
+            ) : !(race.rivals || []).length ? (
+              <Empty title="Sin rivales proyectados" detail="Pulsa Actualizar para calcular los onces de tus rivales." />
+            ) : (
+              headToHeadCard
+            )
+          ) : null}
 
           {activeTab === "forma" ? form === null ? <Skeleton /> : <FormCard form={form} above={above} below={below} /> : null}
 
