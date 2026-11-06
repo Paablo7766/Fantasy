@@ -315,6 +315,24 @@ def _media_ultimos_jugados(player: dict[str, Any], partidos: int = 3) -> float |
     return sum(jugados) / len(jugados) if jugados else None
 
 
+def _condicional_tras_mezcla(player: dict[str, Any], condicional: Any) -> Any:
+    """«Si titular» en la misma escala que el xP ya mezclado con AF.
+
+    Se reescala con el mismo cociente que la mezcla y nunca queda por debajo
+    del xP de jornada: condicionado a salir de inicio no puede valer menos.
+    """
+    valor = _as_float(condicional)
+    if valor is None:
+        return condicional
+    propio = _as_float(player.get("own_xp_modelo"))
+    mezcla = _as_float(player.get("own_expected_points"))
+    if mezcla is None:
+        return condicional
+    if propio is not None and propio > 0.1 and player.get("own_xp_fuente") == "af_mezcla":
+        valor = valor * (mezcla / propio)
+    return round(max(valor, mezcla), 3)
+
+
 def _mezclar_xp_af(player: dict[str, Any]) -> None:
     """Pasa el xP de la próxima jornada a ``AF_XP_WEIGHT`` de AF y el resto propio.
 
@@ -1228,7 +1246,7 @@ def apply_own_intel(
             player["own_ceiling_points"] = pts["ceiling_points"]
             _mezclar_xp_af(player)
             if pts.get("xp_condicional") is not None:
-                player["own_points_if_starts"] = pts["xp_condicional"]
+                player["own_points_if_starts"] = _condicional_tras_mezcla(player, pts["xp_condicional"])
             player["own_goal_probability"] = pts["goal_probability"]
             player["own_assist_probability"] = pts["assist_probability"]
             if pts.get("p_start_eff") is not None:

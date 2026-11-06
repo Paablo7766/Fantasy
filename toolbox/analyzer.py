@@ -513,14 +513,16 @@ def candidate_from_player(
     else:
         opta = 0.0
     points = round(opta + (float(bonus) if bonus is not None else 0.0), 4)
-    if points <= 0 and usable:
+    # Un xP propio de 0 es un dato (no juega), no un hueco: solo se recurre a
+    # AF o a la media de temporada cuando ``own_intel`` no dio cifra.
+    if points <= 0 and usable and not uses_v2:
         for key in ("af_expected_points",):
             alt = usable.get(key)
             if isinstance(alt, (int, float)) and not isinstance(alt, bool) and float(alt) > 0:
                 points = round(float(alt), 4)
                 external_ev = True
                 break
-    if points <= 0:
+    if points <= 0 and not uses_v2:
         average = _real(player.get("average_points"))
         if average is not None and average > 0:
             points = round(average, 4)
@@ -544,8 +546,10 @@ def candidate_from_player(
         jornada_ev = round(points * share, 4)
         objective = objective_value(
             p_titular=p_titular,
-            expected_points=opta,
-            relevo=bonus,
+            # Los mismos puntos que se muestran (media o relevo): con ``opta``
+            # (siempre 0 aquí) el solver valoraba a 0 a quien la UI daba xP.
+            expected_points=points,
+            relevo=None,
             weights=weights,
         )
     image_url = player.get("image_url") if isinstance(player.get("image_url"), str) else None
