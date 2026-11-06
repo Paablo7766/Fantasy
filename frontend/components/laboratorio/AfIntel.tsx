@@ -22,8 +22,8 @@ function Panel({
     accent === "coral" ? "border-l-coral/70" : accent === "gold" ? "border-l-gold/70" : "border-l-mint/70";
   return (
     <div className={`min-w-0 border-l-[2px] ${accentBar} pl-3`}>
-      <p className="eyebrow">{title}</p>
-      <h3 className="mt-0.5 text-[0.95rem] font-medium tracking-tight text-ink">{subtitle}</h3>
+      <p className="lab-eyebrow">{title}</p>
+      <h3 className="mt-0.5 text-[0.95rem] font-medium tracking-tight text-white">{subtitle}</h3>
       <ul className="mt-2">
         {rows.length ? (
           rows.slice(0, 6).map((player) => (
@@ -31,7 +31,7 @@ function Panel({
               <PlayerAvatar player={player} size="sm" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium tracking-tight">{playerName(player)}</div>
-                <div className="metric-value truncate text-[11px] text-muted">{renderMeta(player)}</div>
+                <div className="metric-value truncate text-[11px] text-white/50">{renderMeta(player)}</div>
               </div>
             </li>
           ))
@@ -67,9 +67,9 @@ export function AfIntel({
     <article className={glass("p-4 md:p-5")}>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="eyebrow">Analítica Fantasy</p>
-          <h2 className="section-title mt-1">Jornada y mercado AF</h2>
-          <p className="section-support">Señal externa · no sustituye al XI ni al bonus Relevo</p>
+          <p className="lab-eyebrow">Analítica Fantasy</p>
+          <h2 className="lab-title mt-1">Jornada y mercado AF</h2>
+          <p className="lab-support">Señal externa · no sustituye al XI ni al bonus Relevo</p>
         </div>
       </div>
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">

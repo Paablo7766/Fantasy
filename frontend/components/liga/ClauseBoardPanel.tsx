@@ -181,7 +181,7 @@ function ClauseTable({
                     {row.manager_name || "Rival"}
                   </button>
                 </td>
-                <td className={`metric-value text-right ${affordable ? "text-[#0297DE]" : ""}`}>{eur(row.buyout_clause_eur)}</td>
+                <td className={`metric-value text-right ${affordable ? "text-[#FF9A5A]" : ""}`}>{eur(row.buyout_clause_eur)}</td>
                 <td className="text-right font-mono text-[11px] text-white/50">{unlockLabel(row)}</td>
               </tr>
             );

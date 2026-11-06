@@ -37,9 +37,9 @@ function Block({ eyebrow, title, support, children, aside }: { eyebrow: string; 
     <section className={glass("min-w-0 p-4 md:p-5")}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="eyebrow">{eyebrow}</p>
-          <h2 className="section-title mt-1 !text-[1.15rem]">{title}</h2>
-          {support ? <p className="section-support mt-1.5 max-w-3xl">{support}</p> : null}
+          <p className="lab-eyebrow">{eyebrow}</p>
+          <h2 className="lab-title mt-1">{title}</h2>
+          {support ? <p className="lab-support mt-1.5 max-w-3xl">{support}</p> : null}
         </div>
         {aside}
       </div>
@@ -55,13 +55,13 @@ const STATE_BADGE: Record<string, { cls: string; label: string }> = {
 };
 
 function Sources({ rows }: { rows: ModelSourceRow[] }) {
-  if (!rows.length) return <p className="text-sm text-muted">El tablero aún no trae el estado de las fuentes.</p>;
+  if (!rows.length) return <p className="text-sm text-white/50">El tablero aún no trae el estado de las fuentes.</p>;
   return (
     <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
       {rows.map((row) => {
         const badge = STATE_BADGE[row.state] ?? { cls: "badge", label: row.state };
         return (
-          <li key={row.id} className="min-w-0 rounded-xl bg-[color:var(--surface)] px-3.5 py-3">
+          <li key={row.id} className="min-w-0 rounded-2xl bg-white/[0.045] px-3.5 py-3">
             <div className="flex items-center justify-between gap-2">
               <span className="truncate text-sm font-medium text-white">{row.label}</span>
               <span className={badge.cls}>{badge.label}</span>
@@ -80,10 +80,10 @@ function Sources({ rows }: { rows: ModelSourceRow[] }) {
 
 function Matches({ rows }: { rows: ModelMatchRow[] }) {
   if (!rows.length) {
-    return <p className="text-sm text-muted">Sin calendario propio en esta foto (sin xG no hay goles esperados). Actualiza desde Inicio.</p>;
+    return <p className="text-sm text-white/50">Sin calendario propio en esta foto (sin xG no hay goles esperados). Actualiza desde Inicio.</p>;
   }
   return (
-    <div className="overflow-x-auto rounded-xl border border-[color:var(--line)]">
+    <div className="overflow-x-auto rounded-2xl border border-white/[0.07]">
       <table className="table-dense w-full min-w-[720px] text-left text-sm">
         <thead>
           <tr>
@@ -102,7 +102,7 @@ function Matches({ rows }: { rows: ModelMatchRow[] }) {
               <td className="font-medium">
                 {m.home?.club ?? "?"} <span className="text-faint">–</span> {m.away?.club ?? "?"}
               </td>
-              <td className="whitespace-nowrap text-muted">{when(m.kickoff)}</td>
+              <td className="whitespace-nowrap text-white/50">{when(m.kickoff)}</td>
               <td className="text-right font-mono tabular-nums">
                 {m.market ? `${pc(m.market.p_home)} · ${pc(m.market.p_draw)} · ${pc(m.market.p_away)}` : <span className="text-faint">sin cuotas</span>}
               </td>
@@ -112,8 +112,8 @@ function Matches({ rows }: { rows: ModelMatchRow[] }) {
               <td className="text-right font-mono tabular-nums">
                 {dec(m.home?.lambda_for, 1)} – {dec(m.away?.lambda_for, 1)}
               </td>
-              <td className="text-right font-mono tabular-nums text-muted">{m.market ? pc(m.market_weight) : "0%"}</td>
-              <td className="text-right font-mono tabular-nums text-muted">
+              <td className="text-right font-mono tabular-nums text-white/50">{m.market ? pc(m.market_weight) : "0%"}</td>
+              <td className="text-right font-mono tabular-nums text-white/50">
                 {pc(m.home?.p_cs)} / {pc(m.away?.p_cs)}
               </td>
             </tr>
@@ -126,20 +126,20 @@ function Matches({ rows }: { rows: ModelMatchRow[] }) {
 
 function Scorers({ rows, linked, listed }: { rows: ModelScorerRow[]; linked: number; listed: number }) {
   const [onlyMine, setOnlyMine] = useState(false);
-  if (!listed) return <p className="text-sm text-muted">Todavía no hay cuotas de goleador guardadas. Llegan con la próxima actualización.</p>;
+  if (!listed) return <p className="text-sm text-white/50">Todavía no hay cuotas de goleador guardadas. Llegan con la próxima actualización.</p>;
   const shown = (onlyMine ? rows.filter((r) => r.mine) : rows).slice(0, 30);
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted">
+        <p className="text-xs text-white/50">
           {linked} de {listed} goleadores de bet365 enlazados con jugadores de tu liga.
         </p>
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-white/50">
           <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />
           Solo mi plantilla
         </label>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-[color:var(--line)]">
+      <div className="overflow-x-auto rounded-2xl border border-white/[0.07]">
         <table className="table-dense w-full min-w-[560px] text-left text-sm">
           <thead>
             <tr>
@@ -163,7 +163,7 @@ function Scorers({ rows, linked, listed }: { rows: ModelScorerRow[]; linked: num
                   <td className="text-right font-mono tabular-nums">{dec(r.price)}</td>
                   <td className="text-right font-mono tabular-nums">{pc(r.market_p)}</td>
                   <td className="text-right font-mono tabular-nums">{pc(r.own_p)}</td>
-                  <td className={`text-right font-mono tabular-nums ${big ? (r.gap! > 0 ? "text-mint" : "text-coral") : "text-muted"}`}>
+                  <td className={`text-right font-mono tabular-nums ${big ? (r.gap! > 0 ? "text-mint" : "text-coral") : "text-white/50"}`}>
                     {typeof r.gap === "number" ? `${r.gap > 0 ? "+" : ""}${Math.round(r.gap * 100)} pp` : "—"}
                   </td>
                 </tr>
@@ -185,7 +185,7 @@ function History({ data }: { data: NonNullable<ModelReportPayload["history"]> })
         <Stat label="Jornadas con xP" value={String(data.jornadas.length)} hint={`${data.jornadas.filter((j) => j.evaluated > 0).length} ya evaluadas`} />
       </div>
       {data.jornadas.length ? (
-        <div className="overflow-x-auto rounded-xl border border-[color:var(--line)]">
+        <div className="overflow-x-auto rounded-2xl border border-white/[0.07]">
           <table className="table-dense w-full min-w-[480px] text-left text-sm">
             <thead>
               <tr>
@@ -216,10 +216,10 @@ function History({ data }: { data: NonNullable<ModelReportPayload["history"]> })
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-xl bg-[color:var(--surface)] px-4 py-3">
+    <div className="rounded-2xl bg-white/[0.045] px-4 py-3">
       <p className="text-[11px] uppercase tracking-wide text-faint">{label}</p>
       <p className="metric-value mt-1 text-xl">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-xs text-white/50">{hint}</p> : null}
     </div>
   );
 }
@@ -228,15 +228,15 @@ function Shadow({ items }: { items: ModelShadowItem[] }) {
   return (
     <ul className="grid gap-3 md:grid-cols-2">
       {items.map((item) => (
-        <li key={item.id} className="rounded-xl bg-[color:var(--surface)] px-4 py-3.5">
+        <li key={item.id} className="rounded-2xl bg-white/[0.045] px-4 py-3.5">
           <div className="flex items-start justify-between gap-3">
             <p className="text-sm font-medium text-white">{item.label}</p>
             <span className="badge badge--warn shrink-0">{item.state}</span>
           </div>
           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.07]" aria-hidden="true">
-            <div className="h-full rounded-full bg-[color:var(--mint)]" style={{ width: `${Math.max(3, Math.round(item.progress * 100))}%` }} />
+            <div className="h-full rounded-full bg-[#FF7A3D]" style={{ width: `${Math.max(3, Math.round(item.progress * 100))}%` }} />
           </div>
-          <p className="mt-2 text-xs text-muted">{item.progress_text}</p>
+          <p className="mt-2 text-xs text-white/50">{item.progress_text}</p>
           <p className="mt-1.5 text-[11.5px] leading-5 text-faint">{item.rule}</p>
         </li>
       ))}
@@ -287,7 +287,7 @@ function CopyReport({ text }: { text: string | undefined }) {
             autoFocus
             value={text}
             onFocus={(event) => event.currentTarget.select()}
-            className="h-40 w-full rounded-lg border border-[color:var(--line)] bg-black/30 p-2 font-mono text-[11px] text-white/80"
+            className="h-40 w-full rounded-lg border border-white/[0.07] bg-black/30 p-2 font-mono text-[11px] text-white/80"
             data-ui="copy-model-report-text"
           />
         </div>
@@ -336,11 +336,11 @@ export function ModelReportPanel() {
     <div className="flex min-w-0 flex-col gap-5" data-ui="model-report">
       <section className={glass("flex min-w-0 flex-wrap items-center justify-between gap-4 p-4 md:p-5")}>
         <div className="min-w-0">
-          <p className="eyebrow">Estado del modelo · J{payload.jornada ?? "?"}</p>
-          <h2 className="section-title mt-1 !text-[1.15rem]">
+          <p className="lab-eyebrow">Estado del modelo · J{payload.jornada ?? "?"}</p>
+          <h2 className="lab-title mt-1">
             {problems === 0 ? "Todas las fuentes clave responden" : `${problems} fuente${problems === 1 ? "" : "s"} con respaldo o fallo`}
           </h2>
-          <p className="section-support mt-1.5">
+          <p className="lab-support mt-1.5">
             Foto del {when(payload.dashboard_at)}. El botón copia todo este informe en texto para pegármelo en el chat y que tenga el contexto.
           </p>
         </div>

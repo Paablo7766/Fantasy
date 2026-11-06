@@ -10,10 +10,10 @@ import type { PostMortemFuga, PostMortemPayload, PostMortemTrading } from "@/lib
 
 function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-xl bg-[color:var(--surface)] px-4 py-3">
+    <div className="rounded-2xl bg-white/[0.045] px-4 py-3">
       <p className="text-[11px] uppercase tracking-wide text-faint">{label}</p>
       <p className="metric-value mt-1 text-xl">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-xs text-white/50">{hint}</p> : null}
     </div>
   );
 }
@@ -26,7 +26,7 @@ function signed(value: number | null | undefined, format: (value: number) => str
 
 function FugaBlock({ fuga, jornada, fuente }: { fuga: PostMortemFuga; jornada?: string | null; fuente?: string }) {
   if (!fuga.disponible) {
-    return <p className="mt-3 text-sm text-muted-strong">{fuga.detalle || "Sin alineación que auditar."}</p>;
+    return <p className="mt-3 text-sm text-white/70">{fuga.detalle || "Sin alineación que auditar."}</p>;
   }
   const dejados = fuga.dejados_fuera || [];
   const fuenteLabel = fuente === "guardado" ? "once guardado" : fuente === "recomendado" ? "once recomendado" : "once";
@@ -46,7 +46,7 @@ function FugaBlock({ fuga, jornada, fuente }: { fuga: PostMortemFuga; jornada?: 
         />
       </div>
       {dejados.length ? (
-        <p className="mt-3 text-sm text-muted-strong">
+        <p className="mt-3 text-sm text-white/70">
           Fuera del once:{" "}
           {dejados
             .map((row) => `${row.nombre || row.player_id} (${points(row.puntos)})`)
@@ -54,7 +54,7 @@ function FugaBlock({ fuga, jornada, fuente }: { fuga: PostMortemFuga; jornada?: 
           .
         </p>
       ) : (
-        <p className="mt-3 text-sm text-muted-strong">El once alineado era el máximo de la plantilla.</p>
+        <p className="mt-3 text-sm text-white/70">El once alineado era el máximo de la plantilla.</p>
       )}
     </>
   );
@@ -62,14 +62,14 @@ function FugaBlock({ fuga, jornada, fuente }: { fuga: PostMortemFuga; jornada?: 
 
 function TradingBlock({ trading }: { trading: PostMortemTrading }) {
   if (!trading.disponible) {
-    return <p className="mt-3 text-sm text-muted-strong">{trading.detalle || "Sin foto del lunes pasado."}</p>;
+    return <p className="mt-3 text-sm text-white/70">{trading.detalle || "Sin foto del lunes pasado."}</p>;
   }
   const hoy = trading.hoy || {};
   const base = trading.sin_operar || {};
   const dia = trading.snapshot_day || "el lunes pasado";
   return (
     <>
-      <p className="section-support mt-2">
+      <p className="lab-support mt-2">
         Contra la foto del {dia}
         {trading.operaciones ? ` · ${trading.operaciones} operaciones en el libro` : " · sin compras ni ventas en el libro"}
         {trading.valores_congelados ? ` · ${trading.valores_congelados} valores sin cotización de hoy` : ""}.
@@ -152,9 +152,9 @@ export function PostMortemPanel() {
 
   return (
     <section className={glass("p-4 md:p-5")}>
-      <p className="eyebrow">Laboratorio</p>
-      <h2 className="section-title mt-1">Post-mortem de la jornada</h2>
-      <p className="section-support mt-2">{ritual}</p>
+      <p className="lab-eyebrow">Laboratorio</p>
+      <h2 className="lab-title mt-1">Post-mortem de la jornada</h2>
+      <p className="lab-support mt-2">{ritual}</p>
       <div className="mt-5">
         <h3 className="text-[15px] font-medium text-white">Fuga de puntos por alineación</h3>
         <FugaBlock fuga={payload.fuga || {}} jornada={payload.jornada} fuente={payload.once_fuente} />

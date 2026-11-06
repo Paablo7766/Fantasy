@@ -19,10 +19,10 @@ function Metric({
   hint?: string;
 }) {
   return (
-    <div className="rounded-xl bg-[color:var(--surface)] px-4 py-3">
+    <div className="rounded-2xl bg-white/[0.045] px-4 py-3">
       <p className="text-[11px] uppercase tracking-wide text-faint">{label}</p>
       <p className="metric-value mt-1 text-xl">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-xs text-white/50">{hint}</p> : null}
     </div>
   );
 }
@@ -126,19 +126,19 @@ export function CalibrationDashboard() {
   return (
     <div className="flex flex-col gap-6">
       <section className={glass("p-4 md:p-5")}>
-        <p className="eyebrow">Calibración</p>
+        <p className="lab-eyebrow">Calibración</p>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h2 className="section-title">Precisión del motor</h2>
+          <h2 className="lab-title">Precisión del motor</h2>
           <ModelConfidenceBadge confidence={payload.engine_confidence} />
         </div>
-        <p className="section-support mt-2">
+        <p className="lab-support mt-2">
           Cruce de snapshots E[pts] de toda la liga, veredictos PUJAR guardados, señales SELL_AT_CREST, P(ganar) de las
           pujas recomendadas frente a su resultado y cuánto cambia el plan de un día a otro. Los datos vienen del mismo backend que Mercado (campo{" "}
           <code className="text-xs">calibration</code> en trends). El servidor guarda un snapshot de E[pts] al día
           y cruza puntos reales cuando ya están en plantilla; la confianza se recalcula sola (caché ~5 min).
         </p>
         {emptyStore ? (
-          <p className="mt-3 rounded-lg border border-[color:var(--line)] bg-[color:var(--surface)] px-3 py-2 text-sm text-muted-strong">
+          <p className="mt-3 rounded-xl border border-white/[0.07] bg-white/[0.04] px-3 py-2 text-sm text-white/70">
             Sin histórico en la caché del backend. Abre <strong>Mercado</strong> una vez (sync de precios) y reinicia el
             tablero Python si acabas de actualizar:{" "}
             <code className="text-xs">python run_dashboard.py</code>. En la URL usa el id real de liga si puedes (
@@ -151,7 +151,7 @@ export function CalibrationDashboard() {
           </p>
         ) : null}
         {(payload.engine_confidence?.notes || []).length ? (
-          <ul className="mt-3 list-disc pl-5 text-sm text-muted-strong">
+          <ul className="mt-3 list-disc pl-5 text-sm text-white/70">
             {(payload.engine_confidence?.notes || []).map((note) => (
               <li key={note}>{note}</li>
             ))}
@@ -218,8 +218,8 @@ export function CalibrationDashboard() {
       </section>
 
       <section className={glass("p-4 md:p-5")}>
-        <p className="eyebrow">Tendencia por jornada</p>
-        <h3 className="section-title mt-1 text-[1.05rem]">E[pts] vs puntos reales</h3>
+        <p className="lab-eyebrow">Tendencia por jornada</p>
+        <h3 className="lab-title mt-1">E[pts] vs puntos reales</h3>
         {jornadas.length ? (
           <div className="mt-4 overflow-x-auto">
             <table className="table-dense w-full min-w-[520px] text-left text-sm">
@@ -236,8 +236,8 @@ export function CalibrationDashboard() {
                   <tr key={row.jornada_id}>
                     <td>J{row.jornada_id}</td>
                     <td className="metric-value text-right">{typeof row.mae === "number" ? points(row.mae) : "—"}</td>
-                    <td className="text-right text-muted">{row.scored ?? "—"}</td>
-                    <td className="text-right text-muted">
+                    <td className="text-right text-white/50">{row.scored ?? "—"}</td>
+                    <td className="text-right text-white/50">
                       {typeof row.ceiling_break_rate === "number" ? pct(row.ceiling_break_rate) : "—"}
                     </td>
                   </tr>
@@ -246,7 +246,7 @@ export function CalibrationDashboard() {
             </table>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-muted">
+          <p className="mt-3 text-sm text-white/50">
             Aún no hay jornadas evaluadas. Ejecuta{" "}
             <code className="text-xs">python scripts/track_matchday.py --snapshot</code> antes del partido y{" "}
             <code className="text-xs">--evaluate</code> después.
@@ -256,9 +256,9 @@ export function CalibrationDashboard() {
 
       {win?.bins?.length ? (
         <section className={glass("p-4 md:p-5")}>
-          <p className="eyebrow">Subastas</p>
-          <h3 className="section-title mt-1 text-[1.05rem]">Calibración de P(ganar)</h3>
-          <p className="section-support">Frecuencia observada frente a la predicción por deciles (compras reales).</p>
+          <p className="lab-eyebrow">Subastas</p>
+          <h3 className="lab-title mt-1">Calibración de P(ganar)</h3>
+          <p className="lab-support">Frecuencia observada frente a la predicción por deciles (compras reales).</p>
           <table className="table-dense mt-4 w-full min-w-[480px] text-left text-sm">
             <thead>
               <tr>

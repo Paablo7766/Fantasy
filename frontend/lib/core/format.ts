@@ -222,7 +222,7 @@ export function clockLabel(lock: ClauseLock | null | undefined): string {
 }
 
 export function glass(extra = ""): string {
-  return `card ${extra}`;
+  return `home-glass ${extra}`;
 }
 
 export function errorMessage(payload: ApiError | null | undefined): string {

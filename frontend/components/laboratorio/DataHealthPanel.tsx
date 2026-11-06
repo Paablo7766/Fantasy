@@ -33,7 +33,7 @@ function FieldHealthTable({ fields }: { fields: DataHealthField[] }) {
     (left, right) => (order[left.status] ?? 9) - (order[right.status] ?? 9) || left.label.localeCompare(right.label, "es"),
   );
   return (
-    <div className="mt-2 overflow-x-auto rounded-xl border border-[color:var(--line)]">
+    <div className="mt-2 overflow-x-auto rounded-2xl border border-white/[0.07]">
       <table className="table-dense w-full min-w-[720px] text-left text-sm">
         <thead>
           <tr>
@@ -55,9 +55,9 @@ function FieldHealthTable({ fields }: { fields: DataHealthField[] }) {
                 <span className={fieldTone(field.status)}>{field.status.replace(/_/g, " ")}</span>
                 {field.critical ? <span className="mt-1 block text-[10.5px] text-gold">crítico</span> : null}
               </td>
-              <td className="text-muted">{field.ttl_label || "—"}</td>
-              <td className="text-muted">{field.expires_label || "sin lectura"}</td>
-              <td className="max-w-[280px] text-xs leading-5 text-muted">{field.impact}</td>
+              <td className="text-white/50">{field.ttl_label || "—"}</td>
+              <td className="text-white/50">{field.expires_label || "sin lectura"}</td>
+              <td className="max-w-[280px] text-xs leading-5 text-white/50">{field.impact}</td>
             </tr>
           ))}
         </tbody>
@@ -127,9 +127,9 @@ export function DataHealthPanel() {
         <div className="bid-dialog__body max-h-[min(88vh,720px)] overflow-y-auto">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="eyebrow">Salud de datos</p>
-              <h2 className="section-title mt-1">¿Confiar en las tesis ahora?</h2>
-              <p className="section-support mt-1">
+              <p className="lab-eyebrow">Salud de datos</p>
+              <h2 className="lab-title mt-1">¿Confiar en las tesis ahora?</h2>
+              <p className="lab-support mt-1">
                 APIs, scrapers y bloques del tablero. Si algo falla, el motor no inventa: falta dato o baja la confianza.
               </p>
             </div>
@@ -139,14 +139,14 @@ export function DataHealthPanel() {
           </div>
 
           {!report ? (
-            <p className="mt-6 text-sm text-muted">Sin lectura de mercado. Pulsa Actualizar para cargar fuentes.</p>
+            <p className="mt-6 text-sm text-white/50">Sin lectura de mercado. Pulsa Actualizar para cargar fuentes.</p>
           ) : (
             <>
-              <div className="mt-5 rounded-xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4">
+              <div className="mt-5 rounded-2xl border border-white/[0.07] bg-white/[0.04] p-4">
                 <div className="flex flex-wrap items-center gap-3">
                   <span className={tone(report.level)}>{healthLevelLabel(report.level)}</span>
-                  <span className="metric-value text-lg text-ink">{report.headline}</span>
-                  <span className="ml-auto font-mono text-sm text-muted">Confianza {report.score}%</span>
+                  <span className="metric-value text-lg text-white">{report.headline}</span>
+                  <span className="ml-auto font-mono text-sm text-white/50">Confianza {report.score}%</span>
                 </div>
                 {stale ? (
                   <p className="mt-2 text-xs text-gold">
@@ -156,10 +156,10 @@ export function DataHealthPanel() {
                   <p className="mt-2 text-xs text-mint">Foto de {photoAge}. Sin descargas en curso.</p>
                 ) : null}
                 {trends?.partial && !trends?.optional_sources_degraded && report.sources.length > 0 ? (
-                  <p className="mt-2 text-xs text-muted">Flag «lectura parcial» activo en el servidor.</p>
+                  <p className="mt-2 text-xs text-white/50">Flag «lectura parcial» activo en el servidor.</p>
                 ) : null}
                 {trends?.optional_sources_degraded ? (
-                  <p className="mt-2 text-xs text-muted">
+                  <p className="mt-2 text-xs text-white/50">
                     Forma extra opcional incompleta; el núcleo de pujas no depende de FBref/Sofascore.
                   </p>
                 ) : null}
@@ -167,10 +167,10 @@ export function DataHealthPanel() {
 
               {report.compromised.length ? (
                 <section className="mt-5">
-                  <h3 className="text-sm font-semibold text-ink">Qué puede estar comprometido</h3>
-                  <ul className="mt-2 space-y-2 text-sm leading-5 text-muted">
+                  <h3 className="text-sm font-semibold text-white">Qué puede estar comprometido</h3>
+                  <ul className="mt-2 space-y-2 text-sm leading-5 text-white/50">
                     {report.compromised.map((line) => (
-                      <li key={line} className="rounded-lg bg-coral/10 px-3 py-2 text-ink">
+                      <li key={line} className="rounded-lg bg-coral/10 px-3 py-2 text-white">
                         {line}
                       </li>
                     ))}
@@ -182,8 +182,8 @@ export function DataHealthPanel() {
 
               {report.notes.length ? (
                 <section className="mt-4">
-                  <h3 className="text-sm font-semibold text-ink">Notas</h3>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted">
+                  <h3 className="text-sm font-semibold text-white">Notas</h3>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-white/50">
                     {report.notes.map((line) => (
                       <li key={line}>{line}</li>
                     ))}
@@ -192,12 +192,12 @@ export function DataHealthPanel() {
               ) : null}
 
               <section className="mt-5">
-                <h3 className="text-sm font-semibold text-ink">Bloques del tablero</h3>
+                <h3 className="text-sm font-semibold text-white">Bloques del tablero</h3>
                 <ul className="mt-2 grid gap-2 sm:grid-cols-2">
                   {report.blocks.map((block) => (
                     <li
                       key={block.id}
-                      className="rounded-lg border border-[color:var(--line)] bg-[color:var(--surface-strong)] px-3 py-2.5"
+                      className="rounded-xl border border-white/[0.07] bg-white/[0.04] px-3 py-2.5"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-medium">{block.label}</span>
@@ -205,7 +205,7 @@ export function DataHealthPanel() {
                           {block.ok ? "OK" : "Revisar"}
                         </span>
                       </div>
-                      <p className="mt-1 text-xs leading-5 text-muted">{block.detail}</p>
+                      <p className="mt-1 text-xs leading-5 text-white/50">{block.detail}</p>
                     </li>
                   ))}
                 </ul>
@@ -213,29 +213,29 @@ export function DataHealthPanel() {
 
               {report.market ? (
                 <section className="mt-5">
-                  <h3 className="text-sm font-semibold text-ink">Mercado (esta sincronización)</h3>
+                  <h3 className="text-sm font-semibold text-white">Mercado (esta sincronización)</h3>
                   <dl className="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
-                    <div className="rounded-lg bg-[color:var(--surface)] px-3 py-2">
+                    <div className="rounded-xl bg-white/[0.045] px-3 py-2">
                       <dt className="text-[11px] text-faint">Listings</dt>
                       <dd className="metric-value">{report.market.listings}</dd>
                     </div>
-                    <div className="rounded-lg bg-[color:var(--surface)] px-3 py-2">
+                    <div className="rounded-xl bg-white/[0.045] px-3 py-2">
                       <dt className="text-[11px] text-faint">Sin matching AF</dt>
                       <dd className="metric-value">{report.market.missingMatching}</dd>
                     </div>
-                    <div className="rounded-lg bg-[color:var(--surface)] px-3 py-2">
+                    <div className="rounded-xl bg-white/[0.045] px-3 py-2">
                       <dt className="text-[11px] text-faint">Sin techo puja</dt>
                       <dd className="metric-value">{report.market.missingIdeal}</dd>
                     </div>
-                    <div className="rounded-lg bg-[color:var(--surface)] px-3 py-2">
+                    <div className="rounded-xl bg-white/[0.045] px-3 py-2">
                       <dt className="text-[11px] text-faint">Sin puntos</dt>
                       <dd className="metric-value">{report.market.missingPoints}</dd>
                     </div>
-                    <div className="rounded-lg bg-[color:var(--surface)] px-3 py-2">
+                    <div className="rounded-xl bg-white/[0.045] px-3 py-2">
                       <dt className="text-[11px] text-faint">Sin señal precio</dt>
                       <dd className="metric-value">{report.market.missingSignal}</dd>
                     </div>
-                    <div className="rounded-lg bg-[color:var(--surface)] px-3 py-2">
+                    <div className="rounded-xl bg-white/[0.045] px-3 py-2">
                       <dt className="text-[11px] text-faint">«Sin motivo»</dt>
                       <dd className="metric-value">{report.market.sinMotivo}</dd>
                     </div>
@@ -245,17 +245,17 @@ export function DataHealthPanel() {
 
               <section className="mt-5">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-ink">Campos y caducidad</h3>
+                  <h3 className="text-sm font-semibold text-white">Campos y caducidad</h3>
                   {fieldHealthLoading && !fieldHealth ? (
-                    <span className="text-xs text-muted">Leyendo caché…</span>
+                    <span className="text-xs text-white/50">Leyendo caché…</span>
                   ) : fieldHealth?.headline ? (
-                    <span className="text-xs text-muted">{fieldHealth.headline}</span>
+                    <span className="text-xs text-white/50">{fieldHealth.headline}</span>
                   ) : null}
                 </div>
                 {fieldHealth?.fields?.length ? (
                   <FieldHealthTable fields={fieldHealth.fields} />
                 ) : (
-                  <p className="mt-2 text-xs leading-5 text-muted">
+                  <p className="mt-2 text-xs leading-5 text-white/50">
                     {fieldHealth?.ok === false
                       ? "El endpoint de salud por campo no respondió: se muestran solo las fuentes del tablero."
                       : "Sin detalle por campo en esta lectura. El TTL sale de la caché local del servidor."}
@@ -265,7 +265,7 @@ export function DataHealthPanel() {
 
               <section className="mt-5">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-ink">Fuentes ({report.sources.length})</h3>
+                  <h3 className="text-sm font-semibold text-white">Fuentes ({report.sources.length})</h3>
                   {report.sources.length === 0 ? (
                     <span className="text-xs text-gold">Ninguna fuente en esta lectura</span>
                   ) : failCount ? (
@@ -274,7 +274,7 @@ export function DataHealthPanel() {
                     <span className="text-xs text-mint">Todas respondieron OK</span>
                   )}
                 </div>
-                <div className="mt-2 overflow-x-auto rounded-xl border border-[color:var(--line)]">
+                <div className="mt-2 overflow-x-auto rounded-2xl border border-white/[0.07]">
                   <table className="table-dense w-full min-w-[640px] text-left text-sm">
                     <thead>
                       <tr>
@@ -288,7 +288,7 @@ export function DataHealthPanel() {
                     <tbody>
                       {report.sources.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="text-sm leading-5 text-muted">
+                          <td colSpan={5} className="text-sm leading-5 text-white/50">
                             La foto rápida no incluye scrapers. Cuando termine la sincronización completa aparecen AF,
                             Fútbol Fantasy, Understat y el motor propio.
                           </td>
@@ -306,8 +306,8 @@ export function DataHealthPanel() {
                             </span>
                           </td>
                           <td className="text-right font-mono tabular-nums">{src.count ?? "—"}</td>
-                          <td className="text-muted">{src.fromCache ? "Sí" : "No"}</td>
-                          <td className="max-w-[280px] text-xs leading-5 text-muted">
+                          <td className="text-white/50">{src.fromCache ? "Sí" : "No"}</td>
+                          <td className="max-w-[280px] text-xs leading-5 text-white/50">
                             {src.error ? <span className="text-coral">{src.error}</span> : "—"}
                             {!src.ok && src.impacts.length ? (
                               <span className="mt-0.5 block text-faint">Afecta: {src.impacts.slice(0, 2).join("; ")}</span>

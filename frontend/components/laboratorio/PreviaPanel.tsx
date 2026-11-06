@@ -109,11 +109,11 @@ const CATS = [
 function Evaluation({ rows }: { rows: PreviaEvalRow[] }) {
   return (
     <section className={glass("min-w-0 p-4 md:p-5")}>
-      <p className="eyebrow">Evaluación</p>
-      <h2 className="section-title mt-1 !text-[1.15rem]">Puntos reales de cada edición</h2>
-      <p className="section-support mt-1.5">Media de puntos que sacaron las elecciones congeladas. El TOP tiene que ganar a «Solo media» para fiarse.</p>
+      <p className="lab-eyebrow">Evaluación</p>
+      <h2 className="lab-title mt-1">Puntos reales de cada edición</h2>
+      <p className="lab-support mt-1.5">Media de puntos que sacaron las elecciones congeladas. El TOP tiene que ganar a «Solo media» para fiarse.</p>
       {rows.length ? (
-        <div className="mt-4 overflow-x-auto rounded-xl border border-[color:var(--line)]">
+        <div className="mt-4 overflow-x-auto rounded-2xl border border-white/[0.07]">
           <table className="table-dense w-full min-w-[420px] text-left text-sm">
             <thead>
               <tr>
@@ -142,7 +142,7 @@ function Evaluation({ rows }: { rows: PreviaEvalRow[] }) {
           </table>
         </div>
       ) : (
-        <p className="mt-4 text-sm text-muted">Aún no hay ediciones evaluadas. La primera se mide cuando acabe la jornada congelada.</p>
+        <p className="mt-4 text-sm text-white/50">Aún no hay ediciones evaluadas. La primera se mide cuando acabe la jornada congelada.</p>
       )}
     </section>
   );
@@ -189,9 +189,9 @@ export function PreviaPanel() {
   return (
     <div className="flex min-w-0 flex-col gap-5" data-ui="previa">
       <section className={glass("min-w-0 p-4 md:p-5")}>
-        <p className="eyebrow">En pruebas · J{live.jornada ?? "?"} · edición del {live.edition}</p>
-        <h2 className="section-title mt-1 !text-[1.15rem]">Quién puntúa en cada partido</h2>
-        <p className="section-support mt-1.5">
+        <p className="lab-eyebrow">En pruebas · J{live.jornada ?? "?"} · edición del {live.edition}</p>
+        <h2 className="lab-title mt-1">Quién puntúa en cada partido</h2>
+        <p className="lab-support mt-1.5">
           Regla: media de la temporada × si juega × rival. En el backtest J3–J11 el TOP sacó 6,65 pts por jugador frente a 5,81 de quedarse con los de mejor media.
         </p>
         <p className="mt-2 text-[12.5px] text-white/55">
@@ -210,7 +210,7 @@ export function PreviaPanel() {
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-muted">Esta foto no trae partidos ni calendario. Actualiza desde Inicio.</p>
+        <p className="text-sm text-white/50">Esta foto no trae partidos ni calendario. Actualiza desde Inicio.</p>
       )}
 
       <Evaluation rows={payload.evaluation ?? []} />

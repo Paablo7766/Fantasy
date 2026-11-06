@@ -98,7 +98,7 @@ function Stat({
   label,
   value,
   hint,
-  tone = "text-ink",
+  tone = "text-white",
 }: {
   label: string;
   value: string;
@@ -106,7 +106,7 @@ function Stat({
   tone?: string;
 }) {
   return (
-    <div className="rounded-xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] px-3 py-2.5">
+    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-2.5">
       <p className="metric-label">{label}</p>
       <p className={`metric-value mt-1 text-lg ${tone}`}>{value}</p>
       {hint ? <p className="mt-0.5 text-[11px] leading-4 text-faint">{hint}</p> : null}
@@ -140,9 +140,9 @@ function Timeline({ usage }: { usage: ApiUsagePayload }) {
   const points = usage.timeline || [];
   const scale = timelineScale(points);
   return (
-    <div className="mt-2 rounded-xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-3">
+    <div className="mt-2 rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3">
       <div className="flex items-baseline justify-between gap-2">
-        <p className="text-sm font-semibold text-ink">Últimos 12 minutos</p>
+        <p className="text-sm font-semibold text-white">Últimos 12 minutos</p>
         <span className="text-[11px] text-faint">llamadas por minuto</span>
       </div>
       <div className="mt-2 flex h-16 items-end gap-1">
@@ -151,7 +151,7 @@ function Timeline({ usage }: { usage: ApiUsagePayload }) {
           return (
             <div key={point.minutes_ago} className="group relative flex h-full flex-1 items-end">
               <span
-                className={`w-full rounded-t-[3px] ${point.calls > 0 ? "bg-mint/70" : "bg-[color:var(--line)]"}`}
+                className={`w-full rounded-t-[3px] ${point.calls > 0 ? "bg-mint/70" : "bg-white/[0.07]"}`}
                 style={{ height: `${height}%` }}
                 title={`${point.label}: ${point.calls} llamadas`}
               />
@@ -174,12 +174,12 @@ function SourceRow({ row, peak }: { row: ApiSourceUsage; peak: number }) {
     <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5">
       <div className="min-w-0">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-sm font-medium text-ink">{row.label}</span>
-          <span className="font-mono text-xs tabular-nums text-muted">
+          <span className="truncate text-sm font-medium text-white">{row.label}</span>
+          <span className="font-mono text-xs tabular-nums text-white/50">
             {row.calls_10m} / 10 min · {row.calls_1m} / min
           </span>
         </div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[color:var(--line)]">
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
           <div
             className={`h-full rounded-full ${toneBg(state.tone)}`}
             style={{ width: `${width}%`, opacity: state.tone === "good" ? 0.55 : 0.9 }}
@@ -227,18 +227,18 @@ function LiveStrip({ status, refreshing }: { status: RefreshStatusPayload | null
   const note = refreshNetworkNote(status);
   return (
     <section
-      className="mt-4 rounded-xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-3"
+      className="mt-4 rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3"
       aria-live="polite"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold text-ink">
+        <h3 className="text-sm font-semibold text-white">
           {failed ? "La última descarga falló" : running ? "Descarga en curso" : "Última descarga"}
         </h3>
-        <span className="font-mono text-[11px] text-muted">
+        <span className="font-mono text-[11px] text-white/50">
           {typeof status?.elapsed_seconds === "number" ? elapsedLabel(status.elapsed_seconds) : "—"}
         </span>
       </div>
-      <p className="mt-1 text-xs leading-5 text-muted">
+      <p className="mt-1 text-xs leading-5 text-white/50">
         {failed
           ? status?.error?.message || "El backend no terminó la foto. La anterior sigue en pantalla."
           : running
@@ -260,7 +260,7 @@ function LiveStrip({ status, refreshing }: { status: RefreshStatusPayload | null
         {status?.tier ? <span>foto {status.tier === "core" ? "rápida" : "completa"}</span> : null}
       </div>
       {note ? (
-        <p className="mt-2 rounded-lg border border-[color:var(--line)] px-2 py-1.5 text-[11px] leading-4 text-muted">
+        <p className="mt-2 rounded-lg border border-white/[0.07] px-2 py-1.5 text-[11px] leading-4 text-white/50">
           {note}
         </p>
       ) : null}
@@ -269,7 +269,7 @@ function LiveStrip({ status, refreshing }: { status: RefreshStatusPayload | null
           {sources.slice(0, 6).map((row) => (
             <li
               key={row.id}
-              className="rounded-full border border-[color:var(--line)] px-2 py-0.5 font-mono text-[10.5px] text-muted"
+              className="rounded-full border border-white/[0.07] px-2 py-0.5 font-mono text-[10.5px] text-white/50"
             >
               {row.label} {row.calls > 0 ? row.calls : `${row.cache_hits ?? 0} caché`}
             </li>
@@ -362,9 +362,9 @@ export function ApiUsagePanel() {
         <div className="bid-dialog__body max-h-[min(88vh,760px)] overflow-y-auto">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="eyebrow">Ritmo de llamadas</p>
-              <h2 className="section-title mt-1">¿Cuántas peticiones estoy haciendo?</h2>
-              <p className="section-support mt-1">
+              <p className="lab-eyebrow">Ritmo de llamadas</p>
+              <h2 className="lab-title mt-1">¿Cuántas peticiones estoy haciendo?</h2>
+              <p className="lab-support mt-1">
                 Cuenta real de este proceso, por fuente. Los aciertos de caché no gastan petición y van aparte.
               </p>
             </div>
@@ -387,29 +387,29 @@ export function ApiUsagePanel() {
           {failed && !usage ? (
             <p className="mt-6 text-sm text-coral">{failed}</p>
           ) : !usage?.ok ? (
-            <p className="mt-6 text-sm text-muted">Leyendo contadores…</p>
+            <p className="mt-6 text-sm text-white/50">Leyendo contadores…</p>
           ) : (
             <>
               <LiveStrip status={refreshStatus} refreshing={refreshing} />
-              <section className="mt-5 rounded-xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4">
+              <section className="mt-5 rounded-2xl border border-white/[0.07] bg-white/[0.04] p-4">
                 <div className="flex flex-wrap items-baseline gap-3">
                   <span className={verdict.badge}>{verdict.label}</span>
-                  <span className="font-mono text-3xl font-semibold tracking-[-0.04em] text-ink">
+                  <span className="font-mono text-3xl font-semibold tracking-[-0.04em] text-white">
                     {perMinute(rate?.per_minute)}
                   </span>
-                  <span className="text-sm text-muted">
+                  <span className="text-sm text-white/50">
                     ahora mismo · banda {rateBandLabel(rate?.per_minute)}
                   </span>
-                  <span className="ml-auto font-mono text-sm text-muted" title="100 = margen completo; baja con 429, reintentos y ráfagas">
+                  <span className="ml-auto font-mono text-sm text-white/50" title="100 = margen completo; baja con 429, reintentos y ráfagas">
                     Margen {risk?.score ?? "—"}%
                   </span>
                 </div>
                 <RateGauge perMinuteValue={rate?.per_minute ?? 0} />
-                <p className="mt-3 text-sm font-medium leading-6 text-ink">{risk?.headline}</p>
-                <p className="mt-1 text-xs leading-5 text-muted">{risk?.advice}</p>
+                <p className="mt-3 text-sm font-medium leading-6 text-white">{risk?.headline}</p>
+                <p className="mt-1 text-xs leading-5 text-white/50">{risk?.advice}</p>
                 <ul className="mt-2 space-y-1">
                   {riskReasons(risk).map((line) => (
-                    <li key={line} className="text-xs leading-5 text-muted">
+                    <li key={line} className="text-xs leading-5 text-white/50">
                       · {line}
                     </li>
                   ))}
@@ -423,24 +423,24 @@ export function ApiUsagePanel() {
                   label="Simultáneas"
                   value={String(usage.in_flight?.now ?? 0)}
                   hint={`pico 1 min: ${usage.in_flight?.peak_1m ?? 0}`}
-                  tone={(usage.in_flight?.peak_1m ?? 0) >= 6 ? "text-gold" : "text-ink"}
+                  tone={(usage.in_flight?.peak_1m ?? 0) >= 6 ? "text-gold" : "text-white"}
                 />
                 <Stat
                   label="429 en 10 min"
                   value={String(usage.windows?.[1]?.rate_limited ?? 0)}
                   hint={`${usage.windows?.[1]?.retries ?? 0} reintentos`}
-                  tone={(usage.windows?.[1]?.rate_limited ?? 0) > 0 ? "text-coral" : "text-ink"}
+                  tone={(usage.windows?.[1]?.rate_limited ?? 0) > 0 ? "text-coral" : "text-white"}
                 />
               </section>
 
-              <section className="mt-4 rounded-xl border border-[color:var(--line)] bg-[color:var(--surface)] p-3">
+              <section className="mt-4 rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-ink">Estabilidad de la fuente</h3>
+                  <h3 className="text-sm font-semibold text-white">Estabilidad de la fuente</h3>
                   <span className={`text-[11px] font-semibold ${toneText(stabilityTone(usage.stability))}`}>
                     {usage.stability?.level === "warn" ? "Vigilar" : "Correcta"}
                   </span>
                 </div>
-                <p className="mt-1 text-xs leading-5 text-muted">{usage.stability?.headline}</p>
+                <p className="mt-1 text-xs leading-5 text-white/50">{usage.stability?.headline}</p>
                 {statusMixLabel(usage.stability?.status_mix) ? (
                   <p className="mt-1 font-mono text-[11px] text-faint">
                     {statusMixLabel(usage.stability?.status_mix)}
@@ -453,18 +453,18 @@ export function ApiUsagePanel() {
 
               <section className="mt-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-ink">Reparto por fuente</h3>
+                  <h3 className="text-sm font-semibold text-white">Reparto por fuente</h3>
                   <span className="text-[11px] text-faint">
                     {usage.totals?.calls ?? 0} llamadas desde el arranque ({shortDuration(usage.uptime_seconds)})
                   </span>
                 </div>
                 {sources.length === 0 ? (
-                  <p className="mt-2 text-sm leading-6 text-muted">
+                  <p className="mt-2 text-sm leading-6 text-white/50">
                     Aún no ha salido ninguna petición desde este arranque. Pulsa Actualizar y vuelve aquí: el
                     contador se llena con las llamadas reales.
                   </p>
                 ) : (
-                  <ul className="mt-2 divide-y divide-[color:var(--line)] overflow-hidden rounded-xl border border-[color:var(--line)]">
+                  <ul className="mt-2 divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/[0.07]">
                     {sources.map((row) => (
                       <SourceRow key={row.id} row={row} peak={peak} />
                     ))}
@@ -472,9 +472,9 @@ export function ApiUsagePanel() {
                 )}
               </section>
 
-              <section className="mt-4 rounded-xl border border-[color:var(--line)] bg-[color:var(--surface)] p-3">
-                <h3 className="text-sm font-semibold text-ink">Cómo se lee este número</h3>
-                <ul className="mt-1.5 space-y-1 text-[11.5px] leading-5 text-muted">
+              <section className="mt-4 rounded-2xl border border-white/[0.07] bg-white/[0.04] p-3">
+                <h3 className="text-sm font-semibold text-white">Cómo se lee este número</h3>
+                <ul className="mt-1.5 space-y-1 text-[11.5px] leading-5 text-white/50">
                   {(risk?.rules || []).map((line) => (
                     <li key={line}>· {line}</li>
                   ))}

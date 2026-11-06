@@ -48,27 +48,27 @@ export function ExpertNotePanel() {
 
   return (
     <section className={glass("p-4 md:p-5")}>
-      <p className="eyebrow">Expertos</p>
-      <h2 className="section-title mt-1 text-[1.15rem]">Cruce de onces y nota pegada</h2>
-      <p className="section-support">
+      <p className="lab-eyebrow">Expertos</p>
+      <h2 className="lab-title mt-1">Cruce de onces y nota pegada</h2>
+      <p className="lab-support">
         DonQui sale de Analítica Fantasy y Bielsa de Predicted11. Azteca no publica datos: pega aquí el texto. Un nombre
         solo cuenta si casa con un jugador de tu liga, y nunca sustituye al optimizador.
       </p>
 
       {notes.length ? (
-        <ul className="mt-3 flex flex-col gap-1.5 text-sm text-muted-strong">
+        <ul className="mt-3 flex flex-col gap-1.5 text-sm text-white/70">
           {notes.slice(0, 12).map((row) => (
             <li key={`note-${row.player_id}`} className="flex items-center gap-2.5">
               <PlayerAvatar player={row} size="sm" />
               <span className="min-w-0 truncate">{playerName(row)}</span>
-              <span className="ml-auto shrink-0 text-xs text-muted">
+              <span className="ml-auto shrink-0 text-xs text-white/50">
                 {row.agreement === "unanimous" ? "fuentes de acuerdo" : "fuentes divididas"}
               </span>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="mt-3 text-sm text-muted">Sin cruce de onces en esta lectura.</p>
+        <p className="mt-3 text-sm text-white/50">Sin cruce de onces en esta lectura.</p>
       )}
 
       {mentions.length ? (
@@ -97,7 +97,7 @@ export function ExpertNotePanel() {
         <button type="button" onClick={() => void save()} disabled={saving} className="btn btn-secondary">
           {saving ? "Guardando…" : "Guardar nota"}
         </button>
-        {status ? <span className="text-xs text-muted">{status}</span> : null}
+        {status ? <span className="text-xs text-white/50">{status}</span> : null}
       </div>
     </section>
   );

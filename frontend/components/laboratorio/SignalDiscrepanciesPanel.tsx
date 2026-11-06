@@ -33,7 +33,7 @@ function SideCell({
         {signalChip(signal)}
         {typeof delta === "number" ? ` ${accel(delta)}` : ""}
       </p>
-      <p className="text-[11px] text-muted">max {eur(maxBid)}</p>
+      <p className="text-[11px] text-white/50">max {eur(maxBid)}</p>
     </div>
   );
 }
@@ -54,9 +54,9 @@ export function SignalDiscrepanciesPanel({
     <section className={glass("p-4 md:p-5")}>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <p className="eyebrow">Discrepancias</p>
-          <h2 className="section-title mt-1 text-[1.05rem]">AF vs modelo propio en una fila</h2>
-          <p className="section-support">
+          <p className="lab-eyebrow">Discrepancias</p>
+          <h2 className="lab-title mt-1">AF vs modelo propio en una fila</h2>
+          <p className="lab-support">
             Señales que se contradicen: prioriza revisar antes de pujar. {rows.length} conflicto
             {rows.length === 1 ? "" : "s"} en esta lectura.
           </p>
@@ -84,7 +84,7 @@ export function SignalDiscrepanciesPanel({
                       <PlayerAvatar player={player} size="sm" />
                       <div className="min-w-0">
                         <div className="truncate font-medium tracking-tight">{playerName(player)}</div>
-                        <div className="text-[11px] text-muted">
+                        <div className="text-[11px] text-white/50">
                           {player.position || ""}
                           {player.club ? ` · ${player.club}` : ""}
                           {row.inMarket ? " · en mercado" : ""}
@@ -111,7 +111,7 @@ export function SignalDiscrepanciesPanel({
                     />
                   </td>
                   <td>
-                    <p className="text-sm text-muted-strong">{row.headline}</p>
+                    <p className="text-sm text-white/70">{row.headline}</p>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {row.kinds.map((kind) => (
                         <span key={kind} className="badge badge--warn">
@@ -120,10 +120,10 @@ export function SignalDiscrepanciesPanel({
                       ))}
                     </div>
                   </td>
-                  <td className="text-xs text-muted">
+                  <td className="text-xs text-white/50">
                     {decision ? (
                       <>
-                        <span className="font-medium text-ink">{decision}</span>
+                        <span className="font-medium text-white">{decision}</span>
                         {typeof player.p_titular === "number" ? ` · ${pct(player.p_titular)} tit.` : ""}
                       </>
                     ) : (
