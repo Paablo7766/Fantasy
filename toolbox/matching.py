@@ -72,6 +72,7 @@ _CLUB_ALIASES = {
     # Nombres con los que OddsPapi etiqueta a estos clubes.
     "espanyol barcelona": "espanyol",
     "rc deportivo de a coruna": "deportivo",
+    "deportivo a coruna": "deportivo",
     "real betis seville": "betis",
     "real sociedad san sebastian": "real sociedad",
     # «Real Sociedad de Fútbol»: «futbol» es ruido y deja el «de» colgando.
@@ -173,7 +174,14 @@ def normalize_club(text: str | None) -> str:
     cleaned = _PUNCT.sub(" ", cleaned)
     tokens = [token for token in cleaned.split() if token and token not in _CLUB_NOISE]
     folded = " ".join(tokens)
-    return _CLUB_ALIASES.get(folded, folded)
+    alias = _CLUB_ALIASES.get(folded)
+    if alias:
+        return alias
+    # El Deportivo llega con mil variantes («deportivo a coruna», «RC Deportivo
+    # de La Coruña»…): cualquier «deportivo» que mencione Coruña es el mismo club.
+    if "deportivo" in tokens and "coruna" in tokens:
+        return "deportivo"
+    return folded
 
 
 def canonical_position(value: str | None) -> str | None:

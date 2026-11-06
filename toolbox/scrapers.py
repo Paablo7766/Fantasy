@@ -1853,7 +1853,10 @@ def build_trends(
                 from toolbox.odds_archive import apply_market_scorer_odds, archive_match_odds
 
                 sources["laliga_scorer_odds"] = apply_market_scorer_odds(players, match_odds)
-                archive_match_odds(match_odds)
+                if archive_match_odds(match_odds):
+                    from toolbox.history_remote import push as push_history
+
+                    push_history()
             except Exception as exc:  # noqa: BLE001 — la medición nunca tumba trends
                 sources["laliga_scorer_odds"] = {"ok": False, "count": 0, "error": str(exc), "from_cache": False}
             try:

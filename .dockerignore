@@ -18,7 +18,10 @@ venv
 frontend
 node_modules
 tests
-scripts
+scripts/*
+# matchday_auto y el informe del modelo cargan este script en el servidor:
+# sin él Render no sabía la jornada («J?») ni guardaba el xP por jornada.
+!scripts/track_matchday.py
 *.md
 
 # El contexto del agente sí se necesita en la imagen: bidding.py lee

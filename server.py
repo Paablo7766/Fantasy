@@ -349,9 +349,15 @@ def _calibration_report(board: dict[str, Any]) -> dict[str, Any]:
     if cached and now - cached[0] < _CALIBRATION_TTL_SECONDS:
         return cached[1]
     auto_meta: dict[str, Any] | None = None
+    # El histórico de cuotas y xP se guarda en el PC y Render borra su disco:
+    # se trae la copia de Supabase antes de medir nada.
+    from toolbox import history_remote
+
+    history_remote.pull()
     try:
         auto_meta = auto_track_from_board(board)
         if auto_meta.get("evaluated") or (auto_meta.get("snapshot") and not auto_meta.get("skipped")):
+            history_remote.push()
             _calibration_report_cache.pop(key, None)
             _calibration_cache.pop(key, None)
     except Exception as exc:
@@ -3348,8 +3354,10 @@ def api_model_report(league: str | None = Query(default=None)) -> Any:
     board = _board("modelo", league, tier="core")
     if isinstance(board, JSONResponse):
         return board
+    from toolbox import history_remote
     from toolbox.model_report import build_model_report
 
+    history_remote.pull()
     calibration: dict[str, Any] | None = None
     try:
         calibration = _calibration_for_client(_calibration_report(board))

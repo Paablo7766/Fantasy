@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +106,9 @@ def sources_summary(trends: dict[str, Any] | None) -> list[dict[str, Any]]:
 
 
 # --- Partidos: mercado frente a modelo ---------------------------------------
+
+
+JORNADA_SPAN_DAYS = 4
 
 
 def _market_weight(hours: float | None) -> float:
@@ -218,6 +221,14 @@ def upcoming_matches(trends: dict[str, Any] | None, conn: sqlite3.Connection | N
             }
         out.append(entry)
     out.sort(key=lambda item: item["kickoff"] or "9999")
+    # Solo la próxima jornada: un club que ya jugó la suya (p. ej. el viernes)
+    # traía como «próximo» el partido de la jornada siguiente, con el rival en
+    # «?». Una jornada cabe en 4 días (viernes-lunes); lo que cae más lejos del
+    # primer partido pendiente es de la siguiente.
+    first = next((_parse_time(item["kickoff"]) for item in out if item["kickoff"]), None)
+    if first is not None:
+        limit = first + timedelta(days=JORNADA_SPAN_DAYS)
+        out = [item for item in out if not item["kickoff"] or (_parse_time(item["kickoff"]) or first) <= limit]
     return out
 
 

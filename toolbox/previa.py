@@ -277,7 +277,7 @@ def build_previa(board: dict[str, Any], *, conn: sqlite3.Connection | None = Non
         # Apuesta: fuera de los 6 obvios, con opciones reales de jugar y puntuar.
         apuesta = [
             item for item in ranked
-            if item[0].get("player_id") not in obvious_ids and item[3] >= 0.4 and item[1] >= 1.5
+            if item[0].get("player_id") not in obvious_ids | top_ids and item[3] >= 0.4 and item[1] >= 1.5
         ][:PICKS]
         # No recomendable: de los obvios que sí juegan, los peor valorados; las bajas van aparte.
         no = sorted(
@@ -377,10 +377,24 @@ def evaluate(conn: sqlite3.Connection, board: dict[str, Any]) -> list[dict[str, 
         if jornada not in played_rounds:
             continue
         summary: dict[str, Any] = {"jornada": str(jornada), "edition": previa.get("edition")}
-        for cat in ("top", "apuesta", "no_recomendable", "naive_top"):
+        # Solo partidos ya jugados: con un partido de la jornada en el viernes,
+        # el resto contaba 0 puntos y la evaluación salía «0.0» en todo.
+        cats = ("top", "apuesta", "no_recomendable", "naive_top")
+        played = [
+            match for match in previa.get("matches") or []
+            if any(
+                jornada in (actual.get(str(pick.get("player_id"))) or {})
+                for cat in cats for pick in match.get(cat) or []
+            )
+        ]
+        if not played:
+            continue
+        summary["matches_played"] = len(played)
+        summary["matches_total"] = len(previa.get("matches") or [])
+        for cat in cats:
             values: list[float] = []
             missing = 0
-            for match in previa.get("matches") or []:
+            for match in played:
                 for pick in match.get(cat) or []:
                     rounds = actual.get(str(pick.get("player_id")))
                     if rounds is None:
@@ -424,6 +438,10 @@ def previa_report(board: dict[str, Any], *, db_path: Path | None = None, now: da
         evaluation = evaluate(conn, board)
     finally:
         conn.close()
+    if stored:
+        from toolbox.history_remote import push as push_history
+
+        push_history()
     return {"live": live, "frozen_now": stored, "editions": editions, "evaluation": evaluation}
 
 
@@ -432,10 +450,11 @@ def render_text(report: dict[str, Any]) -> str:
     lines = ["## Previa (en pruebas)"]
     live = report.get("live") or {}
     lines.append(f"J{live.get('jornada') or '?'} · edición {live.get('edition')} · {len(live.get('matches') or [])} partidos · regla: {live.get('rule')}")
-    for match in (live.get("matches") or [])[:10]:
+    for match in live.get("matches") or []:
         names = lambda key: ", ".join(p["name"] for p in match.get(key) or []) or "—"  # noqa: E731
         lines.append(f"- {match['home']} - {match['away']}: TOP {names('top')} · Apuesta {names('apuesta')} · No {names('no_recomendable')}")
     for row in report.get("evaluation") or []:
         parts = [f"{cat} {row[cat]['mean']}" for cat in ("top", "apuesta", "no_recomendable", "naive_top") if row.get(cat, {}).get("mean") is not None]
-        lines.append(f"Evaluación J{row['jornada']} ({row['edition']}): " + " · ".join(parts))
+        partial = "" if row.get("matches_played") == row.get("matches_total") else f" · {row.get('matches_played')} de {row.get('matches_total')} partidos jugados"
+        lines.append(f"Evaluación J{row['jornada']} ({row['edition']}){partial}: " + " · ".join(parts))
     return "\n".join(lines)
