@@ -1315,6 +1315,22 @@ def _disk_snapshot_mtime(kind: str, league: str | None) -> float | None:
         return None
 
 
+def _default_photo_for_league(
+    kind: str, league: str | None
+) -> tuple[dict[str, Any] | None, float | None]:
+    """Foto de ``_default`` si pertenece a la liga pedida; si no, nada."""
+    wanted = (league or "").strip()
+    if not wanted or _league_dir_key(wanted) == _league_dir_key(None):
+        return None, None
+    envelope = _disk_snapshot_envelope(kind, None)
+    value = (envelope or {}).get("value")
+    if not isinstance(value, dict) or _snapshot_league_id(value) != wanted:
+        return None, None
+    saved = (envelope or {}).get("saved_unix")
+    ok = isinstance(saved, (int, float)) and not isinstance(saved, bool)
+    return value, float(saved) if ok else None
+
+
 def _read_board(kind: str, league: str | None) -> dict[str, Any] | None:
     """Foto de RAM (si la hay) o de disco. Sin caducidad y sin red."""
     key = f"{kind}:0:{(league or '').strip()}"
@@ -1359,6 +1375,11 @@ def _read_board(kind: str, league: str | None) -> dict[str, Any] | None:
             kind = "core"
             key = f"core:0:{(league or '').strip()}"
             saved = _disk_saved_unix(kind, league)
+    if disk is None:
+        # Sin carpeta propia para ``?league=<id>``: la foto que dejó un refresco
+        # sin parámetro (``_default``) vale si es de esa misma liga. Sin esto, el
+        # móvil pide el id canónico y ve «ninguna foto» con la foto en Supabase.
+        disk, saved = _default_photo_for_league(kind, league)
     if disk is None:
         return None
     board = _remember_photo(disk, saved)

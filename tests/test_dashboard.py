@@ -360,6 +360,25 @@ class DashboardApiTests(unittest.TestCase):
         self.assertLess(fresh["photo_age_seconds"], 60.0)
         self.assertFalse(fresh["stale"])
 
+    def test_league_id_without_own_folder_uses_the_default_photo_of_that_league(self) -> None:
+        """``?league=<id>`` sin carpeta propia sirve la foto ``_default`` si es de esa liga.
+
+        Un refresco sin parámetro (CLI) guarda solo bajo ``_default``; el móvil
+        pide el id canónico y veía «ninguna foto guardada» con la foto presente.
+        """
+        board = fixture()
+        server._write_disk_snapshot("core", None, board)
+        server.clear_ram_snapshot_cache()
+        league_id = board["market"]["league_id"]
+
+        response = self.client.get(f"/api/plan?league={league_id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["league_id"], league_id)
+
+        # Otra liga distinta sigue sin heredar la foto.
+        other = self.client.get("/api/plan?league=otra-liga-sin-foto")
+        self.assertEqual(other.status_code, 503)
+
     def test_a_different_league_never_borrows_another_photo(self) -> None:
         """La corrección compara el ``league_id`` de dentro, no el nombre.
 
