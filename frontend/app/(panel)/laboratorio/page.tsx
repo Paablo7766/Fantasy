@@ -3,19 +3,16 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo } from "react";
 import { prefetchLaboratorio } from "@/lib/laboratorio/prefetch";
-import { AfIntel } from "@/components/laboratorio/AfIntel";
-import { ApiUsagePanel } from "@/components/laboratorio/ApiUsagePanel";
 import { CalibrationDashboard } from "@/components/laboratorio/CalibrationDashboard";
 import { PostMortemPanel } from "@/components/laboratorio/PostMortemPanel";
-import { DataHealthPanel } from "@/components/laboratorio/DataHealthPanel";
 import { useDashboard } from "@/components/DashboardProvider";
-import { ExpertNotePanel } from "@/components/laboratorio/ExpertNotePanel";
 import { ModelReportPanel } from "@/components/laboratorio/ModelReportPanel";
 import { PreviaPanel } from "@/components/laboratorio/PreviaPanel";
-import { SignalDiscrepanciesPanel } from "@/components/laboratorio/SignalDiscrepanciesPanel";
 import { Skeleton } from "@/components/ui/kit";
 import { RadarSimple } from "@/components/laboratorio/RadarSimple";
 import { RivalesSimple } from "@/components/laboratorio/RivalesSimple";
+import { SenalesSimple } from "@/components/laboratorio/SenalesSimple";
+import { DatosSimple } from "@/components/laboratorio/DatosSimple";
 import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
@@ -29,12 +26,12 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
   {
     id: "modelo",
     label: "Modelo",
-    hint: "De dónde sale cada dato, mercado frente a modelo, goleadores, qué se guarda y qué está en pruebas. Con un botón lo copias entero para pegármelo.",
+    hint: "Si los datos llegan bien, qué dicen las casas de apuestas de cada partido y qué mejoras se están probando. Con un botón copias el informe para pegármelo.",
   },
   {
     id: "previa",
     label: "Previa",
-    hint: "En pruebas: TOP, Apuesta y No recomendable de cada partido de la jornada, con las ediciones guardadas y cómo puntuaron.",
+    hint: "En pruebas: quién se espera que puntúe esta jornada, tus jugadores, a quién evitar y si la previa acierta.",
   },
   {
     id: "radar",
@@ -43,8 +40,8 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
   },
   { id: "rivales", label: "Rivales", hint: "Cuánto puede pujar cada rival y qué cláusulas tienes a tiro." },
   { id: "calibracion", label: "Calibración", hint: "Cuánto acierta el modelo con los puntos, las pujas y los avisos de venta, y el repaso de la última jornada." },
-  { id: "senales", label: "Señales", hint: "Fuentes externas, discrepancias entre ellas y la nota del experto." },
-  { id: "datos", label: "Datos y API", hint: "Frescura de cada bloque y consumo de peticiones." },
+  { id: "senales", label: "Señales", hint: "Lo que dicen fuentes externas: precios de mañana, más puntos, chollos, lesiones y los onces de expertos." },
+  { id: "datos", label: "Datos y API", hint: "Si la foto tiene todos los datos, qué fuente ha fallado y cuántas peticiones hace la app." },
 ];
 
 function asTab(value: string | null): Tab {
@@ -130,18 +127,9 @@ function LaboratorioContent() {
             <PostMortemPanel />
           </div>
         ) : tab === "senales" ? (
-          <div className="flex min-w-0 flex-col gap-6">
-            <SignalDiscrepanciesPanel trends={trends} loading={trendsLoading} />
-            <section className="min-w-0">
-              <AfIntel trends={trends} loading={pending.trends && !state.trends} />
-            </section>
-            <ExpertNotePanel />
-          </div>
+          <SenalesSimple trends={trends} loading={trendsLoading} photos={photos} />
         ) : (
-          <div className="flex min-w-0 flex-col gap-6">
-            <DataHealthPanel />
-            <ApiUsagePanel />
-          </div>
+          <DatosSimple />
         )}
       </div>
     </div>

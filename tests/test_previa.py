@@ -109,3 +109,17 @@ def test_stale_photo_is_shown_but_not_frozen(tmp_path) -> None:
     assert report["live"]["matches"] and report["frozen_now"] is False and report["editions"] == []
     fresh = previa_report(_board(), db_path=tmp_path / "db.sqlite", now=TUESDAY)
     assert fresh["frozen_now"] is True and len(fresh["editions"]) == 1
+
+
+def test_a_round_published_with_zeros_is_not_evaluated_yet(tmp_path) -> None:
+    """LALIGA abre la jornada con 0 a todos antes de jugarla: eso no es un resultado."""
+    conn = sqlite3.connect(tmp_path / "db.sqlite")
+    try:
+        assert freeze(conn, build_previa(_board(), now=TUESDAY)) is True
+        pending = _board()
+        for team in pending["squads"]["squads"]:
+            for p in team["players"]:
+                p["week_points_by_round"] = {**p["week_points_by_round"], "12": 0.0}
+        assert evaluate(conn, pending) == []
+    finally:
+        conn.close()

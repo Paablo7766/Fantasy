@@ -47,7 +47,7 @@ type CopyState = "idle" | "loading" | "done" | "error";
  * Copia al portapapeles la bitácora persistente de red en Markdown.
  * El panel mide RAM (mismo proceso); la auditoría necesita el fichero.
  */
-function CopyNetworkReportButton() {
+export function CopyNetworkReportButton() {
   const [state, setState] = useState<CopyState>("idle");
   const timer = useRef<number | null>(null);
 

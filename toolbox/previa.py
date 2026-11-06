@@ -380,10 +380,14 @@ def evaluate(conn: sqlite3.Connection, board: dict[str, Any]) -> list[dict[str, 
         # Solo partidos ya jugados: con un partido de la jornada en el viernes,
         # el resto contaba 0 puntos y la evaluación salía «0.0» en todo.
         cats = ("top", "apuesta", "no_recomendable", "naive_top")
+        # LALIGA publica la jornada en curso con 0 a todos antes de jugarse:
+        # un partido cuenta como jugado si algún elegido ya tiene puntos
+        # distintos de 0 (que todos los elegidos de un partido jugado saquen
+        # exactamente 0 no pasa en la práctica).
         played = [
             match for match in previa.get("matches") or []
             if any(
-                jornada in (actual.get(str(pick.get("player_id"))) or {})
+                (actual.get(str(pick.get("player_id"))) or {}).get(jornada)
                 for cat in cats for pick in match.get(cat) or []
             )
         ]

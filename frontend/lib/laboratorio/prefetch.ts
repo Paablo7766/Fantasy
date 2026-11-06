@@ -17,6 +17,5 @@ export function prefetchLaboratorio(apiLeague: string | null, queryLeague: strin
     endpoint("/api/catalog/free-agents", queryLeague),
     endpoint("/api/rival-intel", queryLeague),
     endpoint("/api/clause-board", queryLeague),
-    endpoint("/api/data-health", queryLeague),
   ]);
 }

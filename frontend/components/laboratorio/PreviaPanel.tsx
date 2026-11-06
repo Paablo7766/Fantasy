@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { ErrorCard, Skeleton } from "@/components/ui/Feedback";
 import { endpoint } from "@/lib/core/api";
-import { glass } from "@/lib/core/format";
+import { HeroStat } from "@/components/ui/kit";
 import type { PreviaEvalRow, PreviaMatch, PreviaPayload, PreviaPick } from "@/lib/types";
 
 const TIME_FMT = new Intl.DateTimeFormat("es-ES", {
@@ -33,14 +33,17 @@ function PickRow({ pick }: { pick: PreviaPick }) {
       <span className="min-w-0">
         <span className="block truncate text-[14px] font-medium text-white">
           {pick.name ?? "Jugador"}
-          {pick.mine ? <span className="badge badge--good ml-2 !py-0 text-[10px]">Tuyo</span> : null}
-          {pick.on_market ? <span className="badge badge--warn ml-2 !py-0 text-[10px]">Mercado</span> : null}
+          {pick.mine ? <span className="ml-2 text-[12px] font-medium text-[#FF9A5A]">Tuyo</span> : null}
+          {pick.on_market ? <span className="ml-2 text-[12px] font-medium text-[#F59E0B]">En mercado</span> : null}
         </span>
-        <span className="block truncate text-[11.5px] text-faint">
-          {[pick.position, pick.club, `media ${dec(pick.mean)}`, `juega ${Math.round(pick.availability * 100)}%`].filter(Boolean).join(" · ")}
+        <span className="block truncate text-[12px] text-white/45">
+          {[pick.position, pick.club, `media ${dec(pick.mean)}`, `juega el ${Math.round(pick.availability * 100)} %`].filter(Boolean).join(" · ")}
         </span>
       </span>
-      <span className="shrink-0 font-mono text-[15px] font-semibold tabular-nums text-white">{dec(pick.score)}</span>
+      <span className="shrink-0 text-right">
+        <span className="block text-[15px] font-semibold tabular-nums text-white">{dec(pick.score)}</span>
+        <span className="block text-[11px] text-white/40">pts previstos</span>
+      </span>
     </li>
   );
 }
@@ -49,9 +52,9 @@ function Group({ title, tone, picks, note }: { title: string; tone: string; pick
   if (!picks.length) return null;
   return (
     <div className="mt-3">
-      <p className={`text-[11px] font-semibold uppercase tracking-wide ${tone}`}>
+      <p className={`text-[12.5px] font-semibold ${tone}`}>
         {title}
-        {note ? <span className="ml-2 font-normal normal-case tracking-normal text-faint">{note}</span> : null}
+        {note ? <span className="ml-2 font-normal text-white/40">{note}</span> : null}
       </p>
       <ul className="divide-y divide-white/[0.05]">
         {picks.map((pick) => (
@@ -66,22 +69,22 @@ function MatchCard({ match }: { match: PreviaMatch }) {
   const [open, setOpen] = useState(false);
   const extra = match.bajas.length + match.mine.length + match.market_buys.length;
   return (
-    <li className={glass("min-w-0 p-4")}>
+    <li className="home-glass min-w-0 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-[15px] font-semibold text-white">
-            {match.home} <span className="text-faint">–</span> {match.away}
+            {match.home} <span className="text-white/35">–</span> {match.away}
           </h3>
-          <p className="mt-0.5 text-[11.5px] text-faint">
-            {[when(match.kickoff), match.lambda_home && match.lambda_away ? `goles ${dec(match.lambda_home)} – ${dec(match.lambda_away)}` : "rival neutro"]
+          <p className="mt-0.5 text-[12px] text-white/45">
+            {[when(match.kickoff), match.lambda_home && match.lambda_away ? `goles esperados ${dec(match.lambda_home)} – ${dec(match.lambda_away)}` : "sin cuotas"]
               .filter(Boolean)
               .join(" · ")}
           </p>
         </div>
       </div>
-      <Group title="TOP" tone="text-mint" picks={match.top} />
-      <Group title="Apuesta" tone="text-gold" picks={match.apuesta} note="experimental" />
-      <Group title="No recomendable" tone="text-coral" picks={match.no_recomendable} />
+      <Group title="Los mejores" tone="text-[#10B981]" picks={match.top} />
+      <Group title="Sorpresa posible" tone="text-[#F59E0B]" picks={match.apuesta} note="en pruebas" />
+      <Group title="Mejor evitar" tone="text-[#FC734D]" picks={match.no_recomendable} />
       {extra > 0 ? (
         <>
           <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="mt-3 text-[12.5px] font-medium text-white/60 hover:text-white">
@@ -100,56 +103,100 @@ function MatchCard({ match }: { match: PreviaMatch }) {
   );
 }
 
-const CATS = [
-  { id: "top", label: "TOP" },
-  { id: "naive_top", label: "Solo media" },
-  { id: "apuesta", label: "Apuesta" },
-  { id: "no_recomendable", label: "No recom." },
-] as const;
-
 function Evaluation({ rows }: { rows: PreviaEvalRow[] }) {
+  if (!rows.length) {
+    return (
+      <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">
+        Aún no hay ninguna jornada medida. La primera se mide cuando acabe la jornada guardada.
+      </p>
+    );
+  }
   return (
-    <section className={glass("min-w-0 p-4 md:p-5")}>
-      <p className="lab-eyebrow">Evaluación</p>
-      <h2 className="lab-title mt-1">Puntos reales de cada edición</h2>
-      <p className="lab-support mt-1.5">Media de puntos que sacaron las elecciones congeladas. El TOP tiene que ganar a «Solo media» para fiarse.</p>
-      {rows.length ? (
-        <div className="mt-4 overflow-x-auto rounded-2xl border border-white/[0.07]">
-          <table className="table-dense w-full min-w-[420px] text-left text-sm">
-            <thead>
-              <tr>
-                <th>Jornada</th>
-                {CATS.map((cat) => (
-                  <th key={cat.id} className="text-right">
-                    {cat.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={`${row.jornada}-${row.edition}`}>
-                  <td className="font-medium">
-                    J{row.jornada} <span className="text-faint">{row.edition}</span>
-                  </td>
-                  {CATS.map((cat) => (
-                    <td key={cat.id} className="text-right font-mono tabular-nums">
-                      {dec(row[cat.id].mean)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="mt-4 text-sm text-white/50">Aún no hay ediciones evaluadas. La primera se mide cuando acabe la jornada congelada.</p>
-      )}
-    </section>
+    <ul className="flex flex-col gap-2.5">
+      {rows.map((row) => {
+        const top = row.top.mean;
+        const naive = row.naive_top.mean;
+        const played = (row.top.n ?? 0) > (row.top.missing ?? 0);
+        const wins = played && typeof top === "number" && typeof naive === "number" ? top > naive : null;
+        return (
+          <li key={`${row.jornada}-${row.edition}`} className="home-glass p-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[14.5px] font-medium text-white">
+                Jornada {row.jornada}
+                {row.edition ? <span className="ml-2 text-[12px] text-white/40">edición del {row.edition}</span> : null}
+              </span>
+              {wins === null ? null : (
+                <span className="text-[12.5px] font-medium" style={{ color: wins ? "#10B981" : "#FC734D" }}>
+                  {wins ? "Acertó más que la media" : "No mejoró a la media"}
+                </span>
+              )}
+            </div>
+            {!played ? (
+              <p className="mt-2 text-[12.5px] text-white/45">Pendiente: se mide cuando se jueguen los partidos.</p>
+            ) : (
+            <div className="mt-3 grid grid-cols-3 gap-2.5">
+              <HeroStat value={dec(top)} label="los mejores" tone="#10B981" />
+              <HeroStat value={dec(naive)} label="solo por media" />
+              <HeroStat value={dec(row.no_recomendable.mean)} label="mejor evitar" tone="#FC734D" />
+            </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+type View = "mejores" | "mios" | "evitar" | "partidos" | "acierta";
+
+const VIEWS: { id: View; label: string; hint: string }[] = [
+  { id: "mejores", label: "Mejores", hint: "Los jugadores con más puntos previstos de toda la jornada." },
+  { id: "mios", label: "Tus jugadores", hint: "Cuántos puntos se esperan de cada uno de los tuyos." },
+  { id: "evitar", label: "Mejor evitar", hint: "Buena media, pero esta jornada lo tienen difícil (rival, minutos o forma)." },
+  { id: "partidos", label: "Por partido", hint: "Los mejores, las sorpresas y los que evitar en cada partido." },
+  { id: "acierta", label: "¿Acierta?", hint: "Puntos reales que sacaron las elecciones guardadas. «Los mejores» tiene que ganar a «solo por media»." },
+];
+
+function gather(matches: PreviaMatch[], key: "top" | "mine" | "no_recomendable"): (PreviaPick & { match: string })[] {
+  const seen = new Set<string>();
+  const out: (PreviaPick & { match: string })[] = [];
+  for (const match of matches) {
+    for (const pick of match[key]) {
+      const id = String(pick.player_id ?? pick.name);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ ...pick, match: `${match.home} – ${match.away}` });
+    }
+  }
+  return out.sort((x, y) => (key === "no_recomendable" ? y.mean - x.mean : y.score - x.score));
+}
+
+function PickList({ picks, empty }: { picks: (PreviaPick & { match: string })[]; empty: string }) {
+  const [shown, setShown] = useState(10);
+  if (!picks.length) return <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">{empty}</p>;
+  return (
+    <div className="flex flex-col gap-2">
+      <ul className="home-glass overflow-hidden">
+        {picks.slice(0, shown).map((pick) => (
+          <li key={String(pick.player_id ?? pick.name)} className="px-4 py-2">
+            <ul>
+              <PickRow pick={pick} />
+            </ul>
+            <p className="-mt-0.5 pb-1 text-[11.5px] text-white/35">{pick.match}</p>
+          </li>
+        ))}
+      </ul>
+      {picks.length > shown ? (
+        <button type="button" className="eq-chip self-center" onClick={() => setShown((n) => n + 10)}>
+          Ver {Math.min(10, picks.length - shown)} más
+        </button>
+      ) : null}
+    </div>
   );
 }
 
 export function PreviaPanel() {
+  const [view, setView] = useState<View>("mejores");
   const search = useSearchParams();
   const { trends, state: dash } = useDashboard();
   const league = trends?.league_id || search.get("league");
@@ -186,35 +233,54 @@ export function PreviaPanel() {
 
   const live = payload.live;
   const frozen = (payload.editions ?? []).find((edition) => edition.edition === live.edition);
+  const current = VIEWS.find((v) => v.id === view)!;
+  const matches = live.matches;
 
   return (
-    <div className="flex min-w-0 flex-col gap-5" data-ui="previa">
-      <section className={glass("min-w-0 p-4 md:p-5")}>
-        <p className="lab-eyebrow">En pruebas · J{live.jornada ?? "?"} · edición del {live.edition}</p>
-        <h2 className="lab-title mt-1">Quién puntúa en cada partido</h2>
-        <p className="lab-support mt-1.5">
-          Regla: media de la temporada × si juega × rival. En el backtest J3–J11 el TOP sacó 6,65 pts por jugador frente a 5,81 de quedarse con los de mejor media.
+    <div className="flex min-w-0 flex-col gap-4" data-ui="previa">
+      <section className="home-glass p-5">
+        <p className="text-[13px] font-medium text-white/60">
+          Jornada {live.jornada ?? "?"} · en pruebas
         </p>
-        <p className="mt-2 text-[12.5px] text-white/55">
+        <p className="mt-1 text-[1.35rem] font-semibold leading-tight tracking-tight text-white">Quién va a puntuar esta jornada</p>
+        <p className="mt-2 text-[13px] leading-snug text-white/55">
+          Se calcula con su media, la probabilidad de que juegue y lo difícil que es el rival.{" "}
           {frozen
-            ? `Edición guardada el ${when(frozen.generated_at)}: ya no cambia, así se puede medir después.`
+            ? `Guardada el ${when(frozen.generated_at)} para poder medir después si acertó.`
             : live.frozen_eligible
-              ? "Se guardará con esta foto."
-              : "La foto es antigua: se muestra en vivo pero no se guarda. Actualiza desde Inicio."}
+              ? "Se guardará con esta foto para medir después si acierta."
+              : "La foto es antigua: actualiza desde Inicio para que se guarde."}
         </p>
       </section>
 
-      {live.matches.length ? (
-        <ul className="grid min-w-0 gap-4 lg:grid-cols-2">
-          {live.matches.map((match) => (
-            <MatchCard key={match.match_key} match={match} />
-          ))}
-        </ul>
-      ) : (
-        <p className="text-sm text-white/50">Esta foto no trae partidos ni calendario. Actualiza desde Inicio.</p>
-      )}
+      <div className="eq-scroll -mx-1 flex gap-1.5 px-1" role="tablist" aria-label="Vistas de la previa">
+        {VIEWS.map((v) => (
+          <button key={v.id} type="button" role="tab" aria-selected={view === v.id} className={view === v.id ? "eq-chip eq-chip--on" : "eq-chip"} onClick={() => setView(v.id)}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+      <p className="-mt-1 px-1 text-[13px] text-white/50">{current.hint}</p>
 
-      <Evaluation rows={payload.evaluation ?? []} />
+      <div key={view} className="row-in min-w-0">
+        {!matches.length && view !== "acierta" ? (
+          <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">Esta foto no trae partidos. Actualiza desde Inicio.</p>
+        ) : view === "mejores" ? (
+          <PickList picks={gather(matches, "top")} empty="Sin jugadores destacados." />
+        ) : view === "mios" ? (
+          <PickList picks={gather(matches, "mine")} empty="Ninguno de tus jugadores juega esta jornada." />
+        ) : view === "evitar" ? (
+          <PickList picks={gather(matches, "no_recomendable")} empty="Nadie a evitar esta jornada." />
+        ) : view === "partidos" ? (
+          <ul className="grid min-w-0 gap-3 lg:grid-cols-2">
+            {matches.map((match) => (
+              <MatchCard key={match.match_key} match={match} />
+            ))}
+          </ul>
+        ) : (
+          <Evaluation rows={payload.evaluation ?? []} />
+        )}
+      </div>
     </div>
   );
 }

@@ -1,12 +1,12 @@
 "use client";
 
 import { cachedJson, peekJson } from "@/lib/core/jsonCache";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { ErrorCard, Skeleton } from "@/components/ui/Feedback";
 import { endpoint } from "@/lib/core/api";
-import { glass } from "@/lib/core/format";
+import { HeroStat, TONE } from "@/components/ui/kit";
 import type { ModelMatchRow, ModelReportPayload, ModelScorerRow, ModelShadowItem, ModelSourceRow } from "@/lib/types";
 
 const TIME_FMT = new Intl.DateTimeFormat("es-ES", {
@@ -33,45 +33,45 @@ function when(iso: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? "—" : TIME_FMT.format(date);
 }
 
-function Block({ eyebrow, title, support, children, aside }: { eyebrow: string; title: string; support?: ReactNode; children: ReactNode; aside?: ReactNode }) {
-  return (
-    <section className={glass("min-w-0 p-4 md:p-5")}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="lab-eyebrow">{eyebrow}</p>
-          <h2 className="lab-title mt-1">{title}</h2>
-          {support ? <p className="lab-support mt-1.5 max-w-3xl">{support}</p> : null}
-        </div>
-        {aside}
-      </div>
-      <div className="mt-4 min-w-0">{children}</div>
-    </section>
-  );
-}
-
-const STATE_BADGE: Record<string, { cls: string; label: string }> = {
-  ok: { cls: "badge badge--good", label: "OK" },
-  respaldo: { cls: "badge badge--warn", label: "Respaldo" },
-  fallo: { cls: "badge badge--bad", label: "Falla" },
+const STATE: Record<string, { color: string; label: string }> = {
+  ok: { color: TONE.green, label: "Funciona" },
+  respaldo: { color: TONE.amber, label: "Usa un respaldo" },
+  fallo: { color: TONE.red, label: "No responde" },
 };
 
+/** «sin_cuotas_de_goleador» → «Sin cuotas de goleador». */
+function humanize(text: string | null | undefined): string {
+  if (!text) return "";
+  const clean = /^[a-z0-9_]+$/.test(text) ? text.replace(/_/g, " ") : text;
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
 function Sources({ rows }: { rows: ModelSourceRow[] }) {
-  if (!rows.length) return <p className="text-sm text-white/50">El tablero aún no trae el estado de las fuentes.</p>;
+  if (!rows.length) return <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">La foto aún no trae el estado de las fuentes.</p>;
+  const order: Record<string, number> = { fallo: 0, respaldo: 1, ok: 2 };
+  const sorted = rows.slice().sort((x, y) => (order[x.state] ?? 3) - (order[y.state] ?? 3));
   return (
-    <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-      {rows.map((row) => {
-        const badge = STATE_BADGE[row.state] ?? { cls: "badge", label: row.state };
+    <ul className="home-glass overflow-hidden">
+      {sorted.map((row, i) => {
+        const st = STATE[row.state] ?? { color: TONE.gray, label: row.state };
+        const detail =
+          row.state === "ok"
+            ? [row.source ? `vía ${row.source}` : null, typeof row.count === "number" ? `${row.count} datos` : null].filter(Boolean).join(" · ")
+            : humanize(row.detail);
         return (
-          <li key={row.id} className="min-w-0 rounded-2xl bg-white/[0.045] px-3.5 py-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-sm font-medium text-white">{row.label}</span>
-              <span className={badge.cls}>{badge.label}</span>
-            </div>
-            <p className="mt-1 truncate text-[11.5px] text-faint" title={row.detail || undefined}>
-              {row.detail ||
-                [row.source ? `vía ${row.source}` : null, typeof row.count === "number" ? `${row.count} registros` : null].filter(Boolean).join(" · ") ||
-                "—"}
-            </p>
+          <li key={row.id} className="row-in flex items-center gap-3 px-4 py-3" style={{ animationDelay: `${i * 20}ms` }}>
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: st.color, boxShadow: `0 0 10px ${st.color}66` }} aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14.5px] font-medium text-white">{row.label}</span>
+              {detail ? (
+                <span className="block truncate text-[12px] text-white/45" title={detail}>
+                  {detail}
+                </span>
+              ) : null}
+            </span>
+            <span className="shrink-0 text-[12.5px] font-medium" style={{ color: st.color }}>
+              {st.label}
+            </span>
           </li>
         );
       })}
@@ -81,167 +81,117 @@ function Sources({ rows }: { rows: ModelSourceRow[] }) {
 
 function Matches({ rows }: { rows: ModelMatchRow[] }) {
   if (!rows.length) {
-    return <p className="text-sm text-white/50">Sin calendario propio en esta foto (sin xG no hay goles esperados). Actualiza desde Inicio.</p>;
+    return <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">Sin partidos en esta foto. Actualiza desde Inicio.</p>;
   }
   return (
-    <div className="overflow-x-auto rounded-2xl border border-white/[0.07]">
-      <table className="table-dense w-full min-w-[720px] text-left text-sm">
-        <thead>
-          <tr>
-            <th>Partido</th>
-            <th>Hora</th>
-            <th className="text-right">Mercado 1 · X · 2</th>
-            <th className="text-right">Goles mercado</th>
-            <th className="text-right">Goles modelo</th>
-            <th className="text-right">Peso mercado</th>
-            <th className="text-right">Port. a cero</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((m) => (
-            <tr key={m.match_key}>
-              <td className="font-medium">
-                {m.home?.club ?? "?"} <span className="text-faint">–</span> {m.away?.club ?? "?"}
-              </td>
-              <td className="whitespace-nowrap text-white/50">{when(m.kickoff)}</td>
-              <td className="text-right font-mono tabular-nums">
-                {m.market ? `${pc(m.market.p_home)} · ${pc(m.market.p_draw)} · ${pc(m.market.p_away)}` : <span className="text-faint">sin cuotas</span>}
-              </td>
-              <td className="text-right font-mono tabular-nums">
-                {m.market ? `${dec(m.market.lambda_home, 1)} – ${dec(m.market.lambda_away, 1)}` : "—"}
-              </td>
-              <td className="text-right font-mono tabular-nums">
-                {dec(m.home?.lambda_for, 1)} – {dec(m.away?.lambda_for, 1)}
-              </td>
-              <td className="text-right font-mono tabular-nums text-white/50">{m.market ? pc(m.market_weight) : "0%"}</td>
-              <td className="text-right font-mono tabular-nums text-white/50">
-                {pc(m.home?.p_cs)} / {pc(m.away?.p_cs)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function Scorers({ rows, linked, listed }: { rows: ModelScorerRow[]; linked: number; listed: number }) {
-  const [onlyMine, setOnlyMine] = useState(false);
-  if (!listed) return <p className="text-sm text-white/50">Todavía no hay cuotas de goleador guardadas. Llegan con la próxima actualización.</p>;
-  const shown = (onlyMine ? rows.filter((r) => r.mine) : rows).slice(0, 30);
-  return (
-    <>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-white/50">
-          {linked} de {listed} goleadores de bet365 enlazados con jugadores de tu liga.
-        </p>
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-white/50">
-          <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />
-          Solo mi plantilla
-        </label>
-      </div>
-      <div className="overflow-x-auto rounded-2xl border border-white/[0.07]">
-        <table className="table-dense w-full min-w-[560px] text-left text-sm">
-          <thead>
-            <tr>
-              <th>Jugador</th>
-              <th className="text-right">Cuota</th>
-              <th className="text-right">P(gol) mercado</th>
-              <th className="text-right">P(gol) modelo</th>
-              <th className="text-right">Diferencia</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((r) => {
-              const big = typeof r.gap === "number" && Math.abs(r.gap) >= 0.1;
-              return (
-                <tr key={`${r.match_key}-${r.player_id}`}>
-                  <td>
-                    <span className="font-medium">{r.name}</span>
-                    {r.mine ? <span className="badge badge--good ml-2 !py-0 text-[10px]">Tuyo</span> : null}
-                    <span className="block text-[11px] text-faint">{r.club ?? ""}</span>
-                  </td>
-                  <td className="text-right font-mono tabular-nums">{dec(r.price)}</td>
-                  <td className="text-right font-mono tabular-nums">{pc(r.market_p)}</td>
-                  <td className="text-right font-mono tabular-nums">{pc(r.own_p)}</td>
-                  <td className={`text-right font-mono tabular-nums ${big ? (r.gap! > 0 ? "text-mint" : "text-coral") : "text-white/50"}`}>
-                    {typeof r.gap === "number" ? `${r.gap > 0 ? "+" : ""}${Math.round(r.gap * 100)} pp` : "—"}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </>
-  );
-}
-
-function History({ data }: { data: NonNullable<ModelReportPayload["history"]> }) {
-  return (
-    <>
-      <div className="mb-3 grid gap-2 sm:grid-cols-3">
-        <Stat label="Partidos con cuotas" value={String(data.odds_matches)} hint={`${data.odds_days} días guardados`} />
-        <Stat label="Filas de goleador" value={String(data.scorer_rows)} hint="bet365, una por jugador y día" />
-        <Stat label="Jornadas con xP" value={String(data.jornadas.length)} hint={`${data.jornadas.filter((j) => j.evaluated > 0).length} ya evaluadas`} />
-      </div>
-      {data.jornadas.length ? (
-        <div className="overflow-x-auto rounded-2xl border border-white/[0.07]">
-          <table className="table-dense w-full min-w-[480px] text-left text-sm">
-            <thead>
-              <tr>
-                <th>Jornada</th>
-                <th className="text-right">Jugadores</th>
-                <th className="text-right">Evaluados</th>
-                <th className="text-right">Error medio</th>
-                <th className="text-right">Días guardados</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.jornadas.map((j) => (
-                <tr key={j.jornada}>
-                  <td className="font-medium">J{j.jornada}</td>
-                  <td className="text-right font-mono tabular-nums">{j.players}</td>
-                  <td className="text-right font-mono tabular-nums">{j.evaluated || <span className="text-faint">pendiente</span>}</td>
-                  <td className="text-right font-mono tabular-nums">{j.mae !== null && j.mae !== undefined ? `${dec(j.mae, 1)} pts` : "—"}</td>
-                  <td className="text-right font-mono tabular-nums">{j.days_logged}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="rounded-2xl bg-white/[0.045] px-4 py-3">
-      <p className="text-[11px] uppercase tracking-wide text-faint">{label}</p>
-      <p className="metric-value mt-1 text-xl">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-white/50">{hint}</p> : null}
-    </div>
-  );
-}
-
-function Shadow({ items }: { items: ModelShadowItem[] }) {
-  return (
-    <ul className="grid gap-3 md:grid-cols-2">
-      {items.map((item) => (
-        <li key={item.id} className="rounded-2xl bg-white/[0.045] px-4 py-3.5">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-sm font-medium text-white">{item.label}</p>
-            <span className="badge badge--warn shrink-0">{item.state}</span>
-          </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.07]" aria-hidden="true">
-            <div className="h-full rounded-full bg-[#FF7A3D]" style={{ width: `${Math.max(3, Math.round(item.progress * 100))}%` }} />
-          </div>
-          <p className="mt-2 text-xs text-white/50">{item.progress_text}</p>
-          <p className="mt-1.5 text-[11.5px] leading-5 text-faint">{item.rule}</p>
-        </li>
-      ))}
+    <ul className="grid gap-2.5 md:grid-cols-2">
+      {rows.map((m, i) => {
+        const home = m.home?.club ?? "?";
+        const away = m.away?.club ?? "?";
+        const probs = m.market ? [m.market.p_home ?? 0, m.market.p_draw ?? 0, m.market.p_away ?? 0] : null;
+        const goals = m.market ? [m.market.lambda_home, m.market.lambda_away] : [m.home?.lambda_for, m.away?.lambda_for];
+        return (
+          <li key={m.match_key} className="home-glass row-in p-4" style={{ animationDelay: `${i * 25}ms` }}>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="min-w-0 truncate text-[14.5px] font-medium text-white">
+                {home} <span className="text-white/35">–</span> {away}
+              </span>
+              <span className="shrink-0 text-[12px] text-white/45">{when(m.kickoff)}</span>
+            </div>
+            {probs ? (
+              <>
+                <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-white/[0.07]" aria-hidden="true">
+                  <span style={{ width: `${probs[0] * 100}%`, background: TONE.copper }} />
+                  <span style={{ width: `${probs[1] * 100}%`, background: "rgba(255,255,255,0.25)" }} />
+                  <span style={{ width: `${probs[2] * 100}%`, background: TONE.blue }} />
+                </div>
+                <div className="mt-1.5 flex justify-between gap-2 text-[12px] tabular-nums text-white/55">
+                  <span style={{ color: TONE.copper }}>Local {pc(probs[0])}</span>
+                  <span>Empate {pc(probs[1])}</span>
+                  <span style={{ color: TONE.blue }}>Visitante {pc(probs[2])}</span>
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 text-[12px] text-white/40">Sin cuotas de apuestas todavía</p>
+            )}
+            <p className="mt-2 text-[12.5px] text-white/50">
+              Goles esperados{" "}
+              <span className="font-semibold tabular-nums text-white">
+                {dec(goals[0], 1)} – {dec(goals[1], 1)}
+              </span>
+              {" · "}portería a cero {pc(m.home?.p_cs)} / {pc(m.away?.p_cs)}
+            </p>
+          </li>
+        );
+      })}
     </ul>
+  );
+}
+
+function Scorers({ rows, listed }: { rows: ModelScorerRow[]; listed: number }) {
+  const [onlyMine, setOnlyMine] = useState(false);
+  if (!listed) return <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">Aún no hay cuotas de goleador guardadas. Llegan con la próxima actualización.</p>;
+  const shown = (onlyMine ? rows.filter((r) => r.mine) : rows).slice(0, 20);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-1.5">
+        <button type="button" className={!onlyMine ? "eq-chip eq-chip--on" : "eq-chip"} onClick={() => setOnlyMine(false)}>
+          Todos
+        </button>
+        <button type="button" className={onlyMine ? "eq-chip eq-chip--on" : "eq-chip"} onClick={() => setOnlyMine(true)}>
+          Mis jugadores
+        </button>
+      </div>
+      <ul className="home-glass overflow-hidden">
+        {shown.map((r) => (
+          <li key={`${r.match_key}-${r.player_id}`} className="flex items-center gap-3 px-4 py-3">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14.5px] font-medium text-white">
+                {r.name}
+                {r.mine ? <span className="ml-2 text-[12px] text-[#FF9A5A]">Tuyo</span> : null}
+              </span>
+              <span className="block truncate text-[12px] text-white/45">{r.club ?? ""}</span>
+            </span>
+            <span className="shrink-0 text-right text-[12.5px] text-white/55">
+              <span className="block">
+                Casas <span className="font-semibold text-white">{pc(r.market_p)}</span>
+              </span>
+              <span className="block">Tu modelo {pc(r.own_p)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Trials({ items, history }: { items: ModelShadowItem[]; history: NonNullable<ModelReportPayload["history"]> }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-3 gap-2.5">
+        <HeroStat value={String(history.jornadas.length)} label="jornadas guardadas" />
+        <HeroStat value={String(history.jornadas.filter((j) => j.evaluated > 0).length)} label="ya comparadas" />
+        <HeroStat value={String(history.odds_matches)} label="partidos con cuotas" />
+      </div>
+      <ul className="flex flex-col gap-2.5">
+        {items.map((item) => (
+          <li key={item.id} className="home-glass p-4">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-[14.5px] font-medium text-white">{item.label}</p>
+              <span className="shrink-0 rounded-full bg-[#F59E0B]/15 px-2.5 py-0.5 text-[11.5px] font-medium text-[#F59E0B]">{item.state}</span>
+            </div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.07]" aria-hidden="true">
+              <div className="h-full rounded-full bg-[#FF7A3D]" style={{ width: `${Math.max(3, Math.round(item.progress * 100))}%` }} />
+            </div>
+            <p className="mt-2 text-[12.5px] text-white/55">{item.progress_text}</p>
+            <details className="mt-1.5">
+              <summary className="cursor-pointer text-[12px] text-white/40">Regla para darlo por bueno</summary>
+              <p className="mt-1 text-[12px] leading-snug text-white/45">{item.rule}</p>
+            </details>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -277,7 +227,7 @@ function CopyReport({ text }: { text: string | undefined }) {
   }, [text]);
   return (
     <div className="flex w-full min-w-0 flex-col items-start gap-2 sm:w-auto sm:items-end">
-      <button type="button" className="btn btn-primary shrink-0" onClick={() => void copy()} disabled={!text} data-ui="copy-model-report">
+      <button type="button" className="shrink-0 rounded-full bg-white px-4 py-2 text-[13.5px] font-semibold text-[#120c09] hover:bg-[#ffe9dc] disabled:opacity-50" onClick={() => void copy()} disabled={!text} data-ui="copy-model-report">
         {state === "ok" ? "Copiado ✓" : "Copiar informe para Claude"}
       </button>
       {state === "manual" ? (
@@ -297,7 +247,17 @@ function CopyReport({ text }: { text: string | undefined }) {
   );
 }
 
+type View = "fuentes" | "partidos" | "goleadores" | "pruebas";
+
+const VIEWS: { id: View; label: string; hint: string }[] = [
+  { id: "fuentes", label: "Fuentes", hint: "Cada dato que usa la app y si hoy ha llegado bien. «Respaldo» = la fuente principal falló y se usa otra." },
+  { id: "partidos", label: "Partidos", hint: "Qué dicen las casas de apuestas de cada partido de la jornada y cuántos goles se esperan." },
+  { id: "goleadores", label: "Goleadores", hint: "Probabilidad de marcar según las casas frente a la de tu modelo. Solo se compara: aún no cambia tu once." },
+  { id: "pruebas", label: "En pruebas", hint: "Mejoras que se están midiendo antes de usarlas, y cuánto falta para darlas por buenas." },
+];
+
 export function ModelReportPanel() {
+  const [view, setView] = useState<View>("fuentes");
   const search = useSearchParams();
   const { trends, state: dash } = useDashboard();
   const league = trends?.league_id || search.get("league");
@@ -331,50 +291,54 @@ export function ModelReportPanel() {
   if (!payload || payload.ok === false) return <ErrorCard title="Informe del modelo" payload={payload || { error: { message: "Sin informe." } }} brief />;
 
   const sources = payload.sources ?? [];
-  const problems = sources.filter((s) => s.state !== "ok").length;
+  const count = (state: string) => sources.filter((src) => src.state === state).length;
+  const bad = count("fallo");
+  const backup = count("respaldo");
+  const headline =
+    bad + backup === 0
+      ? "Todos los datos llegan bien"
+      : bad
+        ? `${bad} fuente${bad === 1 ? " no responde" : "s no responden"}`
+        : `${backup} fuente${backup === 1 ? "" : "s"} con respaldo`;
+  const current = VIEWS.find((v) => v.id === view)!;
 
   return (
-    <div className="flex min-w-0 flex-col gap-5" data-ui="model-report">
-      <section className={glass("flex min-w-0 flex-wrap items-center justify-between gap-4 p-4 md:p-5")}>
+    <div className="flex min-w-0 flex-col gap-4" data-ui="model-report">
+      <section className="home-glass flex min-w-0 flex-wrap items-center justify-between gap-4 p-5">
         <div className="min-w-0">
-          <p className="lab-eyebrow">Estado del modelo · J{payload.jornada ?? "?"}</p>
-          <h2 className="lab-title mt-1">
-            {problems === 0 ? "Todas las fuentes clave responden" : `${problems} fuente${problems === 1 ? "" : "s"} con respaldo o fallo`}
-          </h2>
-          <p className="lab-support mt-1.5">
-            Foto del {when(payload.dashboard_at)}. El botón copia todo este informe en texto para pegármelo en el chat y que tenga el contexto.
+          <p className="text-[13px] font-medium text-white/60">
+            Jornada {payload.jornada ?? "?"} · foto del {when(payload.dashboard_at)}
+          </p>
+          <p className="mt-1 text-[1.35rem] font-semibold leading-tight tracking-tight text-white">{headline}</p>
+          <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px]">
+            <span style={{ color: TONE.green }}>● {count("ok")} funcionan</span>
+            {backup ? <span style={{ color: TONE.amber }}>● {backup} con respaldo</span> : null}
+            {bad ? <span style={{ color: TONE.red }}>● {bad} caídas</span> : null}
           </p>
         </div>
         <CopyReport text={payload.text} />
       </section>
 
-      <Block eyebrow="1 · Fuentes" title="De dónde sale cada dato" support="«Respaldo» significa que la fuente principal cayó y el dato viene de otra, ajustada a la misma escala.">
-        <Sources rows={sources} />
-      </Block>
+      <div className="eq-scroll -mx-1 flex gap-1.5 px-1" role="tablist" aria-label="Vistas del modelo">
+        {VIEWS.map((v) => (
+          <button key={v.id} type="button" role="tab" aria-selected={view === v.id} className={view === v.id ? "eq-chip eq-chip--on" : "eq-chip"} onClick={() => setView(v.id)}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+      <p className="-mt-1 px-1 text-[13px] text-white/50">{current.hint}</p>
 
-      <Block
-        eyebrow="2 · Próxima jornada"
-        title="Mercado frente a modelo"
-        support="Las cuotas de Pinnacle se convierten en probabilidades y goles esperados. Tu xP usa la mezcla: el mercado pesa del 55 % (a una semana) al 82 % (justo antes del partido)."
-      >
-        <Matches rows={payload.matches ?? []} />
-      </Block>
-
-      <Block
-        eyebrow="3 · Goleadores · en pruebas"
-        title="¿Quién marca? bet365 frente a tu modelo"
-        support="Probabilidad de marcar sin el margen de la casa. Solo se mide: no toca tu xP ni el once hasta cumplir la regla de abajo."
-      >
-        <Scorers rows={payload.scorers?.rows ?? []} linked={payload.scorers?.linked ?? 0} listed={payload.scorers?.listed ?? 0} />
-      </Block>
-
-      <Block eyebrow="4 · Histórico" title="Lo que se ha guardado" support="Cada día se congela la previsión de cada jugador y las cuotas. Cuando acaba la jornada se compara con los puntos reales.">
-        <History data={payload.history ?? { jornadas: [], odds_days: 0, odds_matches: 0, scorer_rows: 0 }} />
-      </Block>
-
-      <Block eyebrow="5 · En pruebas" title="Qué falta para fiarse" support="Cada cambio tiene su regla fijada de antemano. Nada de esto decide una compra hasta cumplirla.">
-        <Shadow items={payload.shadow ?? []} />
-      </Block>
+      <div key={view} className="row-in min-w-0">
+        {view === "fuentes" ? (
+          <Sources rows={sources} />
+        ) : view === "partidos" ? (
+          <Matches rows={payload.matches ?? []} />
+        ) : view === "goleadores" ? (
+          <Scorers rows={payload.scorers?.rows ?? []} listed={payload.scorers?.listed ?? 0} />
+        ) : (
+          <Trials items={payload.shadow ?? []} history={payload.history ?? { jornadas: [], odds_days: 0, odds_matches: 0, scorer_rows: 0 }} />
+        )}
+      </div>
     </div>
   );
 }

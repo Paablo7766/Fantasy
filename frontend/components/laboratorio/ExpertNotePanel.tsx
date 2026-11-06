@@ -48,11 +48,10 @@ export function ExpertNotePanel() {
 
   return (
     <section className={glass("p-4 md:p-5")}>
-      <p className="lab-eyebrow">Expertos</p>
-      <h2 className="lab-title mt-1">Cruce de onces y nota pegada</h2>
+      <h2 className="lab-title">Qué onces ponen los expertos</h2>
       <p className="lab-support">
-        DonQui sale de Analítica Fantasy y Bielsa de Predicted11. Azteca no publica datos: pega aquí el texto. Un nombre
-        solo cuenta si casa con un jugador de tu liga, y nunca sustituye al optimizador.
+        Jugadores de tu liga que aparecen en los onces de DonQui (Analítica Fantasy) y Bielsa (Predicted11). Es una
+        segunda opinión: no cambia tu once.
       </p>
 
       {notes.length ? (
@@ -62,13 +61,13 @@ export function ExpertNotePanel() {
               <PlayerAvatar player={row} size="sm" />
               <span className="min-w-0 truncate">{playerName(row)}</span>
               <span className="ml-auto shrink-0 text-xs text-white/50">
-                {row.agreement === "unanimous" ? "fuentes de acuerdo" : "fuentes divididas"}
+                {row.agreement === "unanimous" ? "Todos lo ponen" : "Opiniones divididas"}
               </span>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="mt-3 text-sm text-white/50">Sin cruce de onces en esta lectura.</p>
+        <p className="mt-3 text-sm text-white/50">Los expertos aún no han publicado su once para esta jornada.</p>
       )}
 
       {mentions.length ? (
@@ -84,7 +83,7 @@ export function ExpertNotePanel() {
       ) : null}
 
       <label className="mt-4 block">
-        <span className="metric-label">Nota manual</span>
+        <span className="text-[13px] font-medium text-white/60">¿Tienes el once de otro experto? Pégalo aquí</span>
         <textarea
           value={note}
           onChange={(event) => setNote(event.target.value)}
