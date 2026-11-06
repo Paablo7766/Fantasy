@@ -38,29 +38,29 @@ def _proyeccion(delta_manana: int) -> int:
 
 class InerciaTests(unittest.TestCase):
     def test_subida_que_acelera_arrastra_el_delta_de_hoy(self) -> None:
-        # 0,75 * 200.000 + 0,35 * 120.000 = 192.000 → 190.000 €.
+        # 0,9 * 200.000 + 0,35 * 120.000 = 222.000, pero el tope es el movimiento de hoy: 200.000 €.
         resultado = predecir_precio(PRECIO_JUSTO, 200_000, 80_000, XP_UN_PUNTO)
-        self.assertEqual(resultado["delta_manana"], 190_000)
-        self.assertEqual(resultado["valor_en_7_dias"], _proyeccion(190_000))
+        self.assertEqual(resultado["delta_manana"], 200_000)
+        self.assertEqual(resultado["valor_en_7_dias"], _proyeccion(200_000))
         cambio = (resultado["valor_en_7_dias"] - PRECIO_JUSTO) / PRECIO_JUSTO * 100
         self.assertEqual(resultado["pct_cambio"], round(cambio, 2))
         self.assertGreater(resultado["valor_en_7_dias"], PRECIO_JUSTO)
 
     def test_frenada_pesa_menos_la_aceleracion_negativa(self) -> None:
         """Hoy sigue en positivo, pero ayer subió más: no se deja caer de golpe."""
-        # Con peso 0,15: 75.000 − 9.000 = 66.000 → 70.000.
-        # Con el peso pleno (0,35) serían 54.000 → 50.000.
+        # Con peso 0,15: 90.000 − 9.000 = 81.000 → 80.000.
+        # Con el peso pleno (0,35) serían 69.000 → 70.000.
         frenando = predecir_precio(PRECIO_JUSTO, 100_000, 160_000, XP_UN_PUNTO)
         self.assertLess(PESO_ACELERACION_FRENADA, PESO_ACELERACION)
-        self.assertEqual(frenando["delta_manana"], 70_000)
+        self.assertEqual(frenando["delta_manana"], 80_000)
 
         pleno = (PESO_INERCIA * 100_000) + (PESO_ACELERACION * (100_000 - 160_000))
-        self.assertEqual(int(round(pleno / 10_000)) * 10_000, 50_000)
-        self.assertGreater(frenando["delta_manana"], 50_000)
+        self.assertEqual(int(round(pleno / 10_000)) * 10_000, 70_000)
+        self.assertGreater(frenando["delta_manana"], 70_000)
 
     def test_caida_que_se_acelera_conserva_el_peso_pleno(self) -> None:
         # Hoy −40.000, ayer −10.000. Aceleración −30.000, y hoy no es subida.
-        # 0,75 * (−40.000) + 0,35 * (−30.000) = −40.500 → −40.000.
+        # 0,9 * (−40.000) + 0,35 * (−30.000) = −46.500, con tope en el movimiento de hoy: −40.000.
         resultado = predecir_precio(PRECIO_JUSTO, -40_000, -10_000, XP_UN_PUNTO)
         self.assertEqual(resultado["delta_manana"], -40_000)
         self.assertLess(resultado["valor_en_7_dias"], PRECIO_JUSTO)
@@ -98,16 +98,16 @@ class ValorJustoTests(unittest.TestCase):
 class ProyeccionTests(unittest.TestCase):
     def test_siete_dias_amortiguan_el_impulso(self) -> None:
         resultado = predecir_precio(PRECIO_JUSTO, 200_000, 80_000, XP_UN_PUNTO)
-        delta = 190_000.0
+        delta = 200_000.0
         acumulado = 0.0
         for _dia in range(7):
             acumulado += delta
-            delta *= 0.85
-        # El factor 0,85 deja el día 7 en una fracción del primero, no en cero
+            delta *= 0.95
+        # El factor 0,95 deja el día 7 en una fracción del primero, no en cero
         # ni en una copia del delta de mañana.
-        self.assertLess(delta / 0.85, 190_000)
-        self.assertGreater(acumulado, 190_000)
-        self.assertLess(acumulado, 190_000 * 7)
+        self.assertLess(delta / 0.95, 200_000)
+        self.assertGreater(acumulado, 200_000)
+        self.assertLess(acumulado, 200_000 * 7)
         self.assertEqual(resultado["valor_en_7_dias"], int(round((PRECIO_JUSTO + acumulado) / 10_000)) * 10_000)
 
     def test_las_claves_del_contrato(self) -> None:

@@ -19,8 +19,12 @@ from typing import Any
 # 1 punto esperado de jornada = 16,4 millones de valor de mercado.
 EUROS_POR_PUNTO = 16_400_000
 
+# Calibrado el 2026-11-06 con el histórico real (225 pares a 1 día, 333 a 4):
+# el error medio bajó de 0,36 % a 0,21 % a un día y de 2,3 % a 1,65 % a cuatro
+# con inercia 0,9 y amortiguación 0,95. Los precios de LaLiga persisten más
+# de lo que suponían las constantes iniciales (0,75 y 0,85).
 # delta_mañana = inercia * delta_hoy + peso * aceleración + fuerza de retorno.
-PESO_INERCIA = 0.75
+PESO_INERCIA = 0.9
 PESO_ACELERACION = 0.35
 # Con delta de hoy aún positivo y aceleración negativa la curva ya frena.
 # El peso pleno haría caer el pronóstico de golpe; este lo suaviza.
@@ -31,7 +35,7 @@ FACTOR_RETORNO = 0.02
 # Cada día el delta hereda el 85 % del anterior: el impulso se apaga.
 # Solo aplica cuando el movimiento es un pico. Un ritmo parecido dos días
 # seguidos no es un pico y no se apaga en la ventana de siete días.
-AMORTIGUACION = 0.85
+AMORTIGUACION = 0.95
 HORIZONTE_DIAS = 7
 # Hoy y ayer cuentan como el mismo ritmo si no se separan más de un 35 %.
 TOLERANCIA_RITMO = 0.35
@@ -101,6 +105,10 @@ def predecir_precio(
         peso = PESO_ACELERACION_FRENADA
 
     delta_bruto = (PESO_INERCIA * hoy) + (peso * aceleracion) + fuerza_retorno
+    # La aceleración no puede empujar el día siguiente por encima del
+    # movimiento de hoy: un pico no se extrapola.
+    if hoy * delta_bruto > 0 and abs(delta_bruto) > abs(hoy):
+        delta_bruto = hoy
     delta_manana = _al_paso(delta_bruto)
 
     delta = float(delta_manana)
