@@ -1,10 +1,11 @@
 "use client";
 
+import { cachedJson, peekJson } from "@/lib/core/jsonCache";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { ErrorCard, Skeleton } from "@/components/ui/Feedback";
-import { endpoint, getJson } from "@/lib/core/api";
+import { endpoint } from "@/lib/core/api";
 import { glass } from "@/lib/core/format";
 import type { ModelMatchRow, ModelReportPayload, ModelScorerRow, ModelShadowItem, ModelSourceRow } from "@/lib/types";
 
@@ -300,8 +301,8 @@ export function ModelReportPanel() {
   const search = useSearchParams();
   const { trends, state: dash } = useDashboard();
   const league = trends?.league_id || search.get("league");
-  const [payload, setPayload] = useState<ModelReportPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [payload, setPayload] = useState<ModelReportPayload | null>(() => peekJson<ModelReportPayload>(endpoint("/api/laboratorio/modelo", league)) ?? null);
+  const [loading, setLoading] = useState(() => !peekJson(endpoint("/api/laboratorio/modelo", league)));
   const stamp = dash.trends ? (dash.trends as { dashboard_at?: string }).dashboard_at ?? null : null;
 
   useEffect(() => {
@@ -309,7 +310,7 @@ export function ModelReportPanel() {
     async function run() {
       setLoading(true);
       try {
-        const data = await getJson<ModelReportPayload>(endpoint("/api/laboratorio/modelo", league));
+        const data = await cachedJson<ModelReportPayload>(endpoint("/api/laboratorio/modelo", league));
         if (!cancelled) setPayload(data);
       } catch (reason: unknown) {
         if (cancelled) return;

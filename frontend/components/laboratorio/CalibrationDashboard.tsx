@@ -1,11 +1,12 @@
 "use client";
 
+import { cachedJson, peekJson } from "@/lib/core/jsonCache";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { ErrorCard, Skeleton } from "@/components/ui/Feedback";
 import { ModelConfidenceBadge } from "@/components/laboratorio/ModelConfidenceBadge";
-import { endpoint, getJson } from "@/lib/core/api";
+import { endpoint } from "@/lib/core/api";
 import { glass, pct, points } from "@/lib/core/format";
 import type { CalibrationPayload } from "@/lib/types";
 
@@ -34,6 +35,10 @@ function trendLabel(trend: string | null | undefined): string {
   return "Sin tendencia";
 }
 
+function payloadSeeded(embedded: CalibrationPayload | null | undefined, league: string | null): boolean {
+  return Boolean(embedded || peekJson(endpoint("/api/calibration", league)));
+}
+
 export function CalibrationDashboard() {
   const search = useSearchParams();
   const queryLeague = search.get("league");
@@ -41,8 +46,10 @@ export function CalibrationDashboard() {
   const calibracionHref = query ? `/calibracion?${query}` : "/calibracion";
   const { trends, load, busy, refresh } = useDashboard();
   const leagueForApi = trends?.league_id || queryLeague;
-  const [payload, setPayload] = useState<CalibrationPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [payload, setPayload] = useState<CalibrationPayload | null>(
+    () => trends?.calibration ?? peekJson<CalibrationPayload>(endpoint("/api/calibration", leagueForApi)) ?? null,
+  );
+  const [loading, setLoading] = useState(() => !payloadSeeded(trends?.calibration, leagueForApi));
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   const applyPayload = useCallback((data: CalibrationPayload | null | undefined) => {
@@ -73,7 +80,7 @@ export function CalibrationDashboard() {
         return;
       }
       try {
-        const data = await getJson<CalibrationPayload>(endpoint("/api/calibration", leagueForApi));
+        const data = await cachedJson<CalibrationPayload>(endpoint("/api/calibration", leagueForApi));
         if (!cancelled) {
           applyPayload(data);
           setFetchError(null);

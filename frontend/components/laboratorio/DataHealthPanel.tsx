@@ -1,9 +1,10 @@
 "use client";
 
+import { cachedJson, peekJson } from "@/lib/core/jsonCache";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
-import { endpoint, getJson } from "@/lib/core/api";
+import { endpoint } from "@/lib/core/api";
 import { buildDataHealthReport, healthLevelLabel, type HealthLevel } from "@/lib/laboratorio/dataHealth";
 import type { DataHealthField, DataHealthPayload } from "@/lib/types";
 
@@ -72,7 +73,7 @@ export function DataHealthPanel() {
   const league = search.get("league");
   const report = useMemo(() => buildDataHealthReport(state), [state]);
   const [open, setOpen] = useState(false);
-  const [fieldHealth, setFieldHealth] = useState<DataHealthPayload | null>(null);
+  const [fieldHealth, setFieldHealth] = useState<DataHealthPayload | null>(() => peekJson<DataHealthPayload>(endpoint("/api/data-health", league)) ?? null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -85,7 +86,7 @@ export function DataHealthPanel() {
   useEffect(() => {
     if (!open || fieldHealth) return;
     let cancelled = false;
-    getJson<DataHealthPayload>(endpoint("/api/data-health", league))
+    cachedJson<DataHealthPayload>(endpoint("/api/data-health", league))
       .then((payload) => {
         if (!cancelled) setFieldHealth(payload);
       })

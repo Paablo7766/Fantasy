@@ -1,5 +1,6 @@
 "use client";
 
+import { cachedJson, peekJson } from "@/lib/core/jsonCache";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -18,7 +19,7 @@ import {
   signedMoney,
   toneOf,
 } from "@/components/ui/kit";
-import { endpoint, getJson } from "@/lib/core/api";
+import { endpoint } from "@/lib/core/api";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { playerName, points, roiPct } from "@/lib/core/format";
 import type { QuantPlayer, QuantRadarPayload } from "@/lib/types";
@@ -184,12 +185,15 @@ export function QuantList({ rows, tone, photos }: { rows: QuantPlayer[]; tone: T
 export function OportunidadesTab({ photos }: { photos: PhotoIndex }) {
   const search = useSearchParams();
   const league = search.get("league");
-  const [loaded, setLoaded] = useState<{ league: string | null; payload: QuantRadarPayload } | null>(null);
+  const [loaded, setLoaded] = useState<{ league: string | null; payload: QuantRadarPayload } | null>(() => {
+    const cached = peekJson<QuantRadarPayload>(endpoint("/api/market/quant-radar", league));
+    return cached ? { league, payload: cached } : null;
+  });
   const payload = loaded && loaded.league === league ? loaded.payload : null;
 
   useEffect(() => {
     let cancelled = false;
-    getJson<QuantRadarPayload>(endpoint("/api/market/quant-radar", league))
+    cachedJson<QuantRadarPayload>(endpoint("/api/market/quant-radar", league))
       .then((value) => {
         if (!cancelled) setLoaded({ league, payload: value });
       })

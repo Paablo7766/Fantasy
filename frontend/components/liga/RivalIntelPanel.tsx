@@ -1,8 +1,9 @@
 "use client";
 
+import { cachedJson, peekJson } from "@/lib/core/jsonCache";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { endpoint, getJson } from "@/lib/core/api";
+import { endpoint } from "@/lib/core/api";
 import { eur, eurShort } from "@/lib/core/format";
 import { liquidityRead, temperatureClasses } from "@/lib/liga/liquidity";
 import type { RivalFinancialTeam, RivalIntelPayload } from "@/lib/types";
@@ -246,12 +247,15 @@ function TeamRow({
 export function RivalIntelPanel() {
   const search = useSearchParams();
   const league = search.get("league");
-  const [loaded, setLoaded] = useState<{ league: string | null; payload: RivalIntelPayload } | null>(null);
+  const [loaded, setLoaded] = useState<{ league: string | null; payload: RivalIntelPayload } | null>(() => {
+    const cached = peekJson<RivalIntelPayload>(endpoint("/api/rival-intel", league));
+    return cached ? { league, payload: cached } : null;
+  });
   const [openTeam, setOpenTeam] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getJson<RivalIntelPayload>(endpoint("/api/rival-intel", league))
+    cachedJson<RivalIntelPayload>(endpoint("/api/rival-intel", league))
       .then((payload) => {
         if (!cancelled) setLoaded({ league, payload });
       })

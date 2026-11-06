@@ -1,7 +1,8 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo } from "react";
+import { Suspense, useEffect, useMemo } from "react";
+import { prefetchLaboratorio } from "@/lib/laboratorio/prefetch";
 import { AfIntel } from "@/components/laboratorio/AfIntel";
 import { ApiUsagePanel } from "@/components/laboratorio/ApiUsagePanel";
 import { CalibrationDashboard } from "@/components/laboratorio/CalibrationDashboard";
@@ -67,6 +68,14 @@ function LaboratorioContent() {
   );
   const trendsLoading = pending.trends || (!state.trends && busy);
   const current = TABS.find((item) => item.id === tab)!;
+  const queryLeague = search.get("league");
+  const apiLeague = trends?.league_id || queryLeague;
+
+  // Todas las pestañas a la vez, en segundo plano: al cambiar de pestaña ya
+  // está la respuesta en caché y se pinta sin esperar.
+  useEffect(() => {
+    prefetchLaboratorio(apiLeague, queryLeague);
+  }, [apiLeague, queryLeague]);
 
   const select = (next: Tab) => {
     const params = new URLSearchParams(search.toString());

@@ -1,12 +1,13 @@
 "use client";
 
+import { cachedJson, peekJson } from "@/lib/core/jsonCache";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { ErrorCard, Skeleton } from "@/components/ui/Feedback";
 import { PlayerAvatar } from "@/components/ui/PlayerAvatar";
 import { PlayerQuantCard } from "@/components/liga/PlayerQuantCard";
-import { endpoint, getJson } from "@/lib/core/api";
+import { endpoint } from "@/lib/core/api";
 import { eur, eurShort, glass, multiple, playerName, points } from "@/lib/core/format";
 import type { ClauseBoardPayload, ClauseBoardRow, Player, SquadsPayload } from "@/lib/types";
 
@@ -205,14 +206,17 @@ export function ClauseBoardPanel({ onOpenTeam }: { onOpenTeam?: (teamId: string)
   const search = useSearchParams();
   const league = search.get("league");
   const { squads } = useDashboard();
-  const [loaded, setLoaded] = useState<{ league: string | null; payload: ClauseBoardPayload } | null>(null);
+  const [loaded, setLoaded] = useState<{ league: string | null; payload: ClauseBoardPayload } | null>(() => {
+    const cached = peekJson<ClauseBoardPayload>(endpoint("/api/clause-board", league));
+    return cached ? { league, payload: cached } : null;
+  });
   const [filter, setFilter] = useState<Filter>("todos");
   const [group, setGroup] = useState<Group>("desbloqueo");
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    getJson<ClauseBoardPayload>(endpoint("/api/clause-board", league))
+    cachedJson<ClauseBoardPayload>(endpoint("/api/clause-board", league))
       .then((payload) => {
         if (!cancelled) setLoaded({ league, payload });
       })

@@ -1,10 +1,11 @@
 "use client";
 
+import { cachedJson, peekJson } from "@/lib/core/jsonCache";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { ErrorCard, Skeleton } from "@/components/ui/Feedback";
-import { endpoint, getJson } from "@/lib/core/api";
+import { endpoint } from "@/lib/core/api";
 import { glass } from "@/lib/core/format";
 import type { PreviaEvalRow, PreviaMatch, PreviaPayload, PreviaPick } from "@/lib/types";
 
@@ -152,8 +153,8 @@ export function PreviaPanel() {
   const search = useSearchParams();
   const { trends, state: dash } = useDashboard();
   const league = trends?.league_id || search.get("league");
-  const [payload, setPayload] = useState<PreviaPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [payload, setPayload] = useState<PreviaPayload | null>(() => peekJson<PreviaPayload>(endpoint("/api/laboratorio/previa", league)) ?? null);
+  const [loading, setLoading] = useState(() => !peekJson(endpoint("/api/laboratorio/previa", league)));
   const stamp = dash.trends ? (dash.trends as { dashboard_at?: string }).dashboard_at ?? null : null;
 
   useEffect(() => {
@@ -161,7 +162,7 @@ export function PreviaPanel() {
     async function run() {
       setLoading(true);
       try {
-        const data = await getJson<PreviaPayload>(endpoint("/api/laboratorio/previa", league));
+        const data = await cachedJson<PreviaPayload>(endpoint("/api/laboratorio/previa", league));
         if (!cancelled) setPayload(data);
       } catch (reason: unknown) {
         if (cancelled) return;

@@ -1,10 +1,11 @@
 "use client";
 
+import { cachedJson, peekJson } from "@/lib/core/jsonCache";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Face, Fact, SectionHead, TONE, Verdict, compact, money, signedMoney, toneOf } from "@/components/ui/kit";
 import { useDashboard } from "@/components/DashboardProvider";
-import { endpoint, getJson } from "@/lib/core/api";
+import { endpoint } from "@/lib/core/api";
 import { beyondBudget, bidBudget } from "@/lib/mercado/budget";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { points } from "@/lib/core/format";
@@ -142,19 +143,25 @@ export function LabSection({ photos }: { photos: PhotoIndex }) {
   const { state } = useDashboard();
   const budget = bidBudget(state.plan?.cash_eur, state.squads?.self?.market_value_total);
   const [vista, setVista] = useState<Vista>("libres");
-  const [free, setFree] = useState<{ league: string | null; payload: FreeAgentsPayload } | null>(null);
-  const [arb, setArb] = useState<{ league: string | null; payload: ArbitragePayload } | null>(null);
+  const [free, setFree] = useState<{ league: string | null; payload: FreeAgentsPayload } | null>(() => {
+    const cached = peekJson<FreeAgentsPayload>(endpoint("/api/catalog/free-agents", league));
+    return cached ? { league, payload: cached } : null;
+  });
+  const [arb, setArb] = useState<{ league: string | null; payload: ArbitragePayload } | null>(() => {
+    const cached = peekJson<ArbitragePayload>(endpoint("/api/catalog/arbitrage", league));
+    return cached ? { league, payload: cached } : null;
+  });
 
   useEffect(() => {
     let cancelled = false;
-    getJson<FreeAgentsPayload>(endpoint("/api/catalog/free-agents", league))
+    cachedJson<FreeAgentsPayload>(endpoint("/api/catalog/free-agents", league))
       .then((payload) => {
         if (!cancelled) setFree({ league, payload });
       })
       .catch(() => {
         if (!cancelled) setFree({ league, payload: { ok: false, error: { message: "Sin /api/catalog/free-agents." } } });
       });
-    getJson<ArbitragePayload>(endpoint("/api/catalog/arbitrage", league))
+    cachedJson<ArbitragePayload>(endpoint("/api/catalog/arbitrage", league))
       .then((payload) => {
         if (!cancelled) setArb({ league, payload });
       })

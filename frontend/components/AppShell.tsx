@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
+import { prefetchLaboratorio } from "@/lib/laboratorio/prefetch";
 import { useNow } from "@/lib/core/useClock";
 
 type NavItem = {
@@ -144,6 +145,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     connectAccount,
     refresh,
     markShellReady,
+    trends: dashTrends,
   } = useDashboard();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -160,6 +162,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     markShellReady();
   }, [markShellReady]);
+
+  // Con la foto ya cargada y la pantalla quieta, deja precalentado el
+  // Laboratorio: así al abrirlo cada pestaña sale al instante.
+  const queryLeague = searchParams.get("league");
+  const labLeague = dashTrends?.league_id || queryLeague;
+  const trendsReady = Boolean(dashTrends);
+  useEffect(() => {
+    if (!trendsReady) return;
+    const timer = window.setTimeout(() => prefetchLaboratorio(labLeague, queryLeague), 2500);
+    return () => window.clearTimeout(timer);
+  }, [trendsReady, labLeague, queryLeague]);
 
   // Atajo «R»: actualiza los datos sin buscar el botón (ignorado al escribir).
   const canRefresh = !connecting && !refreshing;

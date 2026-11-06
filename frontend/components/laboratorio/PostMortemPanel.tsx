@@ -1,10 +1,11 @@
 "use client";
 
+import { cachedJson, peekJson } from "@/lib/core/jsonCache";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { ErrorCard, Skeleton } from "@/components/ui/Feedback";
-import { endpoint, getJson } from "@/lib/core/api";
+import { endpoint } from "@/lib/core/api";
 import { eur, glass, points } from "@/lib/core/format";
 import type { PostMortemFuga, PostMortemPayload, PostMortemTrading } from "@/lib/types";
 
@@ -99,8 +100,8 @@ export function PostMortemPanel() {
   const search = useSearchParams();
   const { trends } = useDashboard();
   const leagueForApi = trends?.league_id || search.get("league");
-  const [payload, setPayload] = useState<PostMortemPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [payload, setPayload] = useState<PostMortemPayload | null>(() => peekJson<PostMortemPayload>(endpoint("/api/laboratorio/post-mortem", leagueForApi)) ?? null);
+  const [loading, setLoading] = useState(() => !peekJson(endpoint("/api/laboratorio/post-mortem", leagueForApi)));
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -108,7 +109,7 @@ export function PostMortemPanel() {
     async function run() {
       setLoading(true);
       try {
-        const data = await getJson<PostMortemPayload>(endpoint("/api/laboratorio/post-mortem", leagueForApi));
+        const data = await cachedJson<PostMortemPayload>(endpoint("/api/laboratorio/post-mortem", leagueForApi));
         if (cancelled) return;
         setPayload(data);
         setFetchError(null);
