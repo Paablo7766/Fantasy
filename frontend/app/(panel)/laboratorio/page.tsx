@@ -14,11 +14,8 @@ import { ModelReportPanel } from "@/components/laboratorio/ModelReportPanel";
 import { PreviaPanel } from "@/components/laboratorio/PreviaPanel";
 import { SignalDiscrepanciesPanel } from "@/components/laboratorio/SignalDiscrepanciesPanel";
 import { Skeleton } from "@/components/ui/kit";
-import { RadarTecnico } from "@/components/laboratorio/RadarTecnico";
-import { ClauseBoardPanel } from "@/components/liga/ClauseBoardPanel";
-import { RivalIntelPanel } from "@/components/liga/RivalIntelPanel";
-import { LabSection } from "@/components/mercado/LabSection";
-import { OportunidadesTab } from "@/components/mercado/OportunidadesTab";
+import { RadarSimple } from "@/components/laboratorio/RadarSimple";
+import { RivalesSimple } from "@/components/laboratorio/RivalesSimple";
 import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
@@ -42,10 +39,10 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
   {
     id: "radar",
     label: "Radar técnico",
-    hint: "Fichables fuera del mercado por valor y momentum, pesos de la nota, tóxicos descartados y precio de referencia por posición.",
+    hint: "Jugadores baratos para lo que puntúan, los que suben de precio y los libres que merecen la pena.",
   },
-  { id: "rivales", label: "Rivales", hint: "Cómo se reconstruye la caja de cada rival y el tablero con todas las cláusulas de la liga." },
-  { id: "calibracion", label: "Calibración", hint: "Cuánto acierta el modelo, y el post-mortem del lunes: puntos que habrías sumado alineando a otro de la plantilla, e impacto de haber operado." },
+  { id: "rivales", label: "Rivales", hint: "Cuánto puede pujar cada rival y qué cláusulas tienes a tiro." },
+  { id: "calibracion", label: "Calibración", hint: "Cuánto acierta el modelo con los puntos, las pujas y los avisos de venta, y el repaso de la última jornada." },
   { id: "senales", label: "Señales", hint: "Fuentes externas, discrepancias entre ellas y la nota del experto." },
   { id: "datos", label: "Datos y API", hint: "Frescura de cada bloque y consumo de peticiones." },
 ];
@@ -124,20 +121,13 @@ function LaboratorioContent() {
         ) : tab === "previa" ? (
           <PreviaPanel />
         ) : tab === "radar" ? (
-          <div className="flex min-w-0 flex-col gap-6">
-            <OportunidadesTab photos={photos} />
-            <LabSection photos={photos} />
-            <RadarTecnico photos={photos} />
-          </div>
+          <RadarSimple photos={photos} />
         ) : tab === "rivales" ? (
-          <div className="flex min-w-0 flex-col gap-6">
-            <RivalIntelPanel />
-            <ClauseBoardPanel />
-          </div>
+          <RivalesSimple photos={photos} />
         ) : tab === "calibracion" ? (
-          <div className="flex min-w-0 flex-col gap-6">
-            <PostMortemPanel />
+          <div className="flex min-w-0 flex-col gap-4">
             <CalibrationDashboard />
+            <PostMortemPanel />
           </div>
         ) : tab === "senales" ? (
           <div className="flex min-w-0 flex-col gap-6">

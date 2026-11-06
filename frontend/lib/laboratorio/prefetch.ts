@@ -15,7 +15,6 @@ export function prefetchLaboratorio(apiLeague: string | null, queryLeague: strin
     endpoint("/api/calibration", apiLeague),
     endpoint("/api/market/quant-radar", queryLeague),
     endpoint("/api/catalog/free-agents", queryLeague),
-    endpoint("/api/catalog/arbitrage", queryLeague),
     endpoint("/api/rival-intel", queryLeague),
     endpoint("/api/clause-board", queryLeague),
     endpoint("/api/data-health", queryLeague),

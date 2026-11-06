@@ -300,6 +300,7 @@ class DashboardApiTests(unittest.TestCase):
         self._env = patch.dict(os.environ, {"FANTASY_CACHE_DIR": self._cache_dir})
         self._env.start()
         server.clear_snapshot_cache()
+        server._PHOTO_MEMO.clear()
         board = fixture()
         self.board = board
         self._patch = patch.object(server, "load_snapshot", return_value=board)

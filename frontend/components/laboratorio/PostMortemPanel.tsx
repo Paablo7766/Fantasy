@@ -153,15 +153,15 @@ export function PostMortemPanel() {
 
   return (
     <section className={glass("p-4 md:p-5")}>
-      <p className="lab-eyebrow">Laboratorio</p>
-      <h2 className="lab-title mt-1">Post-mortem de la jornada</h2>
+      <p className="lab-eyebrow">Última jornada</p>
+      <h2 className="lab-title mt-1">Repaso de la jornada</h2>
       <p className="lab-support mt-2">{ritual}</p>
       <div className="mt-5">
-        <h3 className="text-[15px] font-medium text-white">Fuga de puntos por alineación</h3>
+        <h3 className="text-[15px] font-medium text-white">Puntos que dejaste en el banquillo</h3>
         <FugaBlock fuga={payload.fuga || {}} jornada={payload.jornada} fuente={payload.once_fuente} />
       </div>
       <div className="mt-6">
-        <h3 className="text-[15px] font-medium text-white">Impacto del trading</h3>
+        <h3 className="text-[15px] font-medium text-white">Lo que sumaron tus fichajes y ventas</h3>
         <TradingBlock trading={payload.trading || {}} />
       </div>
     </section>

@@ -3180,12 +3180,9 @@ def api_clause_board(
     document = board.get("squads") if isinstance(board.get("squads"), dict) else {}
     needs = board.get("needs") if isinstance(board.get("needs"), dict) else {}
     ledgers = needs.get("ledgers") if isinstance(needs.get("ledgers"), list) else []
-    payload = _photo_memo(
-        "clause-board",
-        league,
-        board,
-        lambda: build_clause_board(document, photo_day=_photo_day(board), ledgers=ledgers),
-    )
+    # Sin memoria: el diff depende del histórico de cláusulas en disco, que
+    # puede cambiar sin que cambie la foto.
+    payload = build_clause_board(document, photo_day=_photo_day(board), ledgers=ledgers)
     payload["league_id"] = _board_league_id(board, league)
     payload["league_name"] = document.get("league_name") or board.get("league_name")
     payload.update(_photo_fields(board))
