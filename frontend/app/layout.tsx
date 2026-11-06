@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import "./inicio.css";
+import "./splash.css";
+import { SplashIntro, SPLASH_HEAD_SCRIPT } from "@/components/marca/SplashIntro";
 
 const sans = Inter({
   subsets: ["latin"],
@@ -33,8 +35,14 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="es" className={`${sans.variable} ${mono.variable} h-full overflow-x-hidden`}>
-      <body className="min-h-full overflow-x-hidden bg-background font-sans text-foreground">{children}</body>
+    <html lang="es" className={`${sans.variable} ${mono.variable} h-full overflow-x-hidden`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: SPLASH_HEAD_SCRIPT }} />
+      </head>
+      <body className="min-h-full overflow-x-hidden bg-background font-sans text-foreground">
+        <SplashIntro />
+        {children}
+      </body>
     </html>
   );
 }
