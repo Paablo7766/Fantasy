@@ -53,7 +53,7 @@ function TeamRow({
             </span>
             <span className="min-w-0">
               <span className="block truncate font-medium tracking-tight">{nameOf(team)}</span>
-              <span className="block truncate text-[11px] text-muted">
+              <span className="block truncate text-[11px] text-white/50">
                 {team.is_self ? "Tú" : `${team.players ?? "?"} jugadores`}
                 {hidden.length ? ` · ${hidden.length} gastos fuera de libro` : ""}
               </span>
@@ -102,10 +102,10 @@ function TeamRow({
       </tr>
       {open ? (
         <tr>
-          <td colSpan={5} className="bg-[color:var(--surface-strong)]">
+          <td colSpan={5} className="bg-white/[0.04]">
             <div className="grid gap-3 px-1 py-2 md:grid-cols-2">
               <div>
-                <p className="eyebrow">Reconstrucción de caja</p>
+                <p className="lab-eyebrow">Reconstrucción de caja</p>
                 <dl className="mt-1.5 space-y-1 text-[11.5px]">
                   {(
                     [
@@ -121,8 +121,8 @@ function TeamRow({
                     .filter(([, value]) => typeof value === "number")
                     .map(([label, value]) => (
                       <div key={label} className="flex items-baseline justify-between gap-3">
-                        <dt className="text-muted">{label}</dt>
-                        <dd className="metric-value text-ink">{eur(value)}</dd>
+                        <dt className="text-white/50">{label}</dt>
+                        <dd className="metric-value text-white">{eur(value)}</dd>
                       </div>
                     ))}
                   {team.breakdown?.ad_days ? (
@@ -132,16 +132,16 @@ function TeamRow({
                   ) : null}
                 </dl>
                 {team.ad_bounds ? (
-                  <div className="mt-2 space-y-1 border-t border-[color:var(--line)] pt-2 text-[11px] leading-4 text-muted">
+                  <div className="mt-2 space-y-1 border-t border-white/[0.07] pt-2 text-[11px] leading-4 text-white/50">
                     <p className="flex items-baseline justify-between gap-3">
                       <span className="text-faint">Caja por día de vídeo</span>
-                      <span className="metric-value text-ink">
+                      <span className="metric-value text-white">
                         {eurShort(team.cash_floor_eur)} – {eurShort(team.calculated_cash)}
                       </span>
                     </p>
                     <p className="flex items-baseline justify-between gap-3">
                       <span className="text-faint">Vídeo diario (banda)</span>
-                      <span className="metric-value text-ink">
+                      <span className="metric-value text-white">
                         {eurShort(team.ad_bounds.min_ad_eur)} – {eurShort(team.ad_bounds.max_ad_eur)}
                       </span>
                     </p>
@@ -170,7 +170,7 @@ function TeamRow({
                   </div>
                 ) : null}
                 {team.reconciliation ? (
-                  <div className="mt-2 space-y-1 text-[11px] leading-4 text-muted">
+                  <div className="mt-2 space-y-1 text-[11px] leading-4 text-white/50">
                     <p>
                       Caja observada {eurShort(team.reconciliation.observed_cash_eur)}
                       {typeof team.reconciliation.gap_eur === "number"
@@ -182,7 +182,7 @@ function TeamRow({
                     {read.temperaturePct !== null ? (
                       <p className="flex flex-wrap items-center gap-1.5">
                         <span className="text-faint">Termómetro</span>
-                        <span className="h-1.5 w-16 overflow-hidden rounded-full bg-[color:var(--line)]">
+                        <span className="h-1.5 w-16 overflow-hidden rounded-full bg-white/[0.07]">
                           <span
                             className={`block h-full rounded-full ${tone.bar}`}
                             style={{ width: `${Math.max(3, Math.min(100, read.temperaturePct))}%` }}
@@ -207,14 +207,14 @@ function TeamRow({
                 ) : null}
               </div>
               <div>
-                <p className="eyebrow">Gastos fuera de los libros</p>
+                <p className="lab-eyebrow">Gastos fuera de los libros</p>
                 {hidden.length ? (
-                  <ul className="mt-1.5 divide-y divide-[color:var(--line)] rounded-xl border border-[color:var(--line)]">
+                  <ul className="mt-1.5 divide-y divide-white/[0.06] rounded-2xl border border-white/[0.07]">
                     {hidden.map((row, index) => (
                       <li key={`${row.player_id}-${index}`} className="flex items-baseline justify-between gap-3 px-2.5 py-1.5">
                         <div className="min-w-0">
                           <p className="truncate text-[12px] font-medium">{row.name || "Jugador"}</p>
-                          <p className="truncate text-[10.5px] text-muted">
+                          <p className="truncate text-[10.5px] text-white/50">
                             {row.position || "—"} · subida de cláusula ·{" "}
                             {BASIS_LABEL[row.basis || ""] || row.basis || "sin base"}
                             {row.source ? ` · ${row.source}` : ""}
@@ -225,7 +225,7 @@ function TeamRow({
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-1.5 text-[11.5px] leading-4 text-muted">
+                  <p className="mt-1.5 text-[11.5px] leading-4 text-white/50">
                     Sin subidas de cláusula detectadas para este equipo. La caja calculada se toma como cota superior.
                   </p>
                 )}
@@ -272,7 +272,7 @@ export function RivalIntelPanel() {
   if (payload === null) {
     return (
       <section className="card p-4 md:p-5">
-        <p className="eyebrow">Caja forense</p>
+        <p className="lab-eyebrow">Caja forense</p>
         <div className="mt-3 h-24 animate-pulse rounded-xl bg-black/5" />
       </section>
     );
@@ -281,9 +281,9 @@ export function RivalIntelPanel() {
   if (payload.ok === false) {
     return (
       <section className="card p-4 md:p-5">
-        <p className="eyebrow">Caja forense</p>
-        <h2 className="section-title mt-1 text-[1.05rem]">Sin auditoría de caja</h2>
-        <p className="section-support">
+        <p className="lab-eyebrow">Caja forense</p>
+        <h2 className="lab-title mt-1">Sin auditoría de caja</h2>
+        <p className="lab-support">
           {payload.error?.message || "El endpoint no devolvió la reconstrucción."} Hace falta la foto con los libros de
           la liga; pulsa Actualizar y vuelve a esta pantalla.
         </p>
@@ -307,8 +307,8 @@ export function RivalIntelPanel() {
     <section className="card p-4 md:p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <p className="eyebrow">Caja forense</p>
-          <h2 className="section-title mt-1 text-[1.05rem]">
+          <p className="lab-eyebrow">Caja forense</p>
+          <h2 className="lab-title mt-1">
             {teams.length} equipos reconstruidos
             {totalHidden ? (
               <>
@@ -317,26 +317,26 @@ export function RivalIntelPanel() {
               </>
             ) : null}
           </h2>
-          <p className="section-support">
+          <p className="lab-support">
             Presupuesto inicial, primas, ventas, compras, cláusulas y publicidad, con la cota superior de lo que puede
             pujar cada rival. El vídeo diario no deja rastro en la API: la caja se publica como banda entre el mínimo
             demostrable y el máximo posible, con tu tasa de vídeo como punto medio.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <div className="min-w-[7rem] rounded-xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] px-3 py-2">
+          <div className="min-w-[7rem] rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-2">
             <p className="metric-label">Días de ventana</p>
             <p className="metric-value mt-0.5 text-[15px]">{payload.days_elapsed ?? "s/d"}</p>
             <p className="text-[10px] text-faint">
               {eurShort(payload.ad_revenue_per_team_eur)} de tope de publicidad
             </p>
           </div>
-          <div className="min-w-[7rem] rounded-xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] px-3 py-2">
+          <div className="min-w-[7rem] rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-2">
             <p className="metric-label">Cota superior</p>
             <p className="metric-value mt-0.5 text-[15px]">{capped}</p>
             <p className="text-[10px] text-faint">equipos con caja techo</p>
           </div>
-          <div className="min-w-[8rem] rounded-xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] px-3 py-2">
+          <div className="min-w-[8rem] rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-2">
             <p className="metric-label">Banda de vídeo</p>
             <p className="metric-value mt-0.5 text-[15px]">
               {typeof payload.config?.own_ad_rate_pct === "number"
@@ -347,12 +347,12 @@ export function RivalIntelPanel() {
               tu tasa · {eurShort(payload.ad_revenue_per_team_eur)} de tope
             </p>
           </div>
-          <div className="min-w-[7rem] rounded-xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] px-3 py-2">
+          <div className="min-w-[7rem] rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-2">
             <p className="metric-label">Calibradas</p>
             <p className="metric-value mt-0.5 text-[15px] text-mint">{calibrated}</p>
             <p className="text-[10px] text-faint">cota apretada por control</p>
           </div>
-          <div className="min-w-[8rem] rounded-xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] px-3 py-2">
+          <div className="min-w-[8rem] rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-2">
             <p className="metric-label">Rival más rico</p>
             <p className="metric-value mt-0.5 truncate text-[15px]">{richest ? nameOf(richest) : "s/d"}</p>
             <p className="text-[10px] text-faint">
@@ -365,14 +365,14 @@ export function RivalIntelPanel() {
       </div>
 
       {(payload.warnings || []).length ? (
-        <ul className="mt-3 rounded-xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] px-3 py-2 text-[11px] leading-4 text-warn">
+        <ul className="mt-3 rounded-2xl border border-white/[0.07] bg-white/[0.04] px-3 py-2 text-[11px] leading-4 text-warn">
           {(payload.warnings || []).map((warning) => (
             <li key={warning}>{warning}</li>
           ))}
         </ul>
       ) : null}
 
-      <div className="mt-3 overflow-x-auto rounded-xl border border-[color:var(--line)]">
+      <div className="mt-3 overflow-x-auto rounded-2xl border border-white/[0.07]">
         <table className="table-dense w-full min-w-[720px] text-left text-sm">
           <thead>
             <tr>

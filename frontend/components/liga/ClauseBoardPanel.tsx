@@ -164,7 +164,7 @@ function ClauseTable({
                         {rule ? <span className={`${rule.tone} !px-1.5 !py-0 text-[10px]`}>{rule.label}</span> : null}
                         <RaiseBadge row={row} />
                       </p>
-                      <p className="text-[11px] text-muted">
+                      <p className="text-[11px] text-white/50">
                         {row.position || ""}
                         {row.club ? ` · ${row.club}` : ""}
                         {typeof row.average_points === "number" ? ` · ${points(row.average_points)} pts` : ""}
@@ -175,14 +175,14 @@ function ClauseTable({
                 <td>
                   <button
                     type="button"
-                    className="text-sm text-muted-strong underline decoration-dotted underline-offset-2"
+                    className="text-sm text-white/70 underline decoration-dotted underline-offset-2"
                     onClick={() => row.team_id && onOpenTeam(String(row.team_id))}
                   >
                     {row.manager_name || "Rival"}
                   </button>
                 </td>
                 <td className={`metric-value text-right ${affordable ? "text-[#0297DE]" : ""}`}>{eur(row.buyout_clause_eur)}</td>
-                <td className="text-right font-mono text-[11px] text-muted">{unlockLabel(row)}</td>
+                <td className="text-right font-mono text-[11px] text-white/50">{unlockLabel(row)}</td>
               </tr>
             );
           })}
@@ -265,11 +265,11 @@ export function ClauseBoardPanel({ onOpenTeam }: { onOpenTeam?: (teamId: string)
     <article className={glass("p-4 md:p-5")}>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="eyebrow">Cláusulas rivales</p>
-          <h2 className="section-title mt-1">
+          <p className="lab-eyebrow">Cláusulas rivales</p>
+          <h2 className="lab-title mt-1">
             {counts ? `${counts.total} jugadores a la vista` : "Todas las cláusulas"}
           </h2>
-          <p className="section-support mt-1">
+          <p className="lab-support mt-1">
             Sin filtro de regla de oro: lo que pide cada rival, cuándo abre y si movió la cláusula desde la foto
             anterior.
           </p>
@@ -289,13 +289,13 @@ export function ClauseBoardPanel({ onOpenTeam }: { onOpenTeam?: (teamId: string)
           </div>
           <div>
             <p className="metric-label">Subidas hoy</p>
-            <p className={`metric-value text-sm ${counts?.raised_today ? "text-coral" : "text-muted"}`}>
+            <p className={`metric-value text-sm ${counts?.raised_today ? "text-coral" : "text-white/50"}`}>
               {counts?.raised_today ?? 0}
             </p>
           </div>
           <div>
             <p className="metric-label">Pagadas</p>
-            <p className={`metric-value text-sm ${counts?.paid_raise ? "text-coral" : "text-muted"}`}>
+            <p className={`metric-value text-sm ${counts?.paid_raise ? "text-coral" : "text-white/50"}`}>
               {counts?.paid_raise ?? 0}
             </p>
           </div>        </div>
@@ -335,7 +335,7 @@ export function ClauseBoardPanel({ onOpenTeam }: { onOpenTeam?: (teamId: string)
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Buscar jugador o rival"
-          className="h-8 w-44 rounded-lg border border-[color:var(--line-strong)] bg-[color:var(--surface-strong)] px-2.5 text-xs text-ink outline-none placeholder:text-faint"
+          className="h-8 w-44 rounded-lg border border-[color:var(--line-strong)] bg-white/[0.04] px-2.5 text-xs text-white outline-none placeholder:text-faint"
         />
       </div>
 
@@ -349,8 +349,8 @@ export function ClauseBoardPanel({ onOpenTeam }: { onOpenTeam?: (teamId: string)
         del incremento (redondeo al alza).
       </p>
 
-      <p className="mt-2 rounded-lg border border-[color:var(--line)] bg-[color:var(--surface-strong)] px-2.5 py-2 text-[11px] leading-4 text-muted">
-        <span className="font-semibold text-ink">Ojo con las subidas.</span> En un jugador <span className="font-medium">fichado</span> la
+      <p className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.04] px-2.5 py-2 text-[11px] leading-4 text-white/50">
+        <span className="font-semibold text-white">Ojo con las subidas.</span> En un jugador <span className="font-medium">fichado</span> la
         cláusula se queda en el mayor de 1 M€, el precio pagado o su valor de mercado: si el valor sube, la cláusula sube{" "}
         <span className="font-medium text-warn">gratis</span> y el rival no paga nada. Solo hay{" "}
         <span className="font-medium text-coral">subida pagada</span> cuando la cláusula supera ese techo. En un jugador de
@@ -358,7 +358,7 @@ export function ClauseBoardPanel({ onOpenTeam }: { onOpenTeam?: (teamId: string)
       </p>
 
       {!rows.length ? (
-        <p className="mt-5 text-sm text-muted">
+        <p className="mt-5 text-sm text-white/50">
           {query || filter !== "todos"
             ? "Ningún jugador cumple este filtro."
             : "La foto no trae cláusulas rivales."}
@@ -368,7 +368,7 @@ export function ClauseBoardPanel({ onOpenTeam }: { onOpenTeam?: (teamId: string)
           {grouped.map(([team, list]) => (
             <section key={team}>
               <p className="mb-1 flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-wider text-faint">
-                <span className="text-ink">{team}</span>
+                <span className="text-white">{team}</span>
                 <span className="font-mono font-normal">{list.length}</span>
                 <span className="font-normal normal-case text-faint">· abre {unlockLabel(list[0])}</span>
               </p>

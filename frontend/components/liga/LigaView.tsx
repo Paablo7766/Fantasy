@@ -9,7 +9,7 @@ import { enrichSquadsPayload } from "@/lib/liga/squadEnrich";
 import { squadHoldings, squadPatrimonio, squadTotals } from "@/lib/liga/squadTotals";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { clauseThreats } from "@/lib/liga/threats";
-import type { ActivityEvent, LeagueFormPayload, LeagueRacePayload, RivalIntelPayload, RivalPlayer, RivalSquad, SquadsPayload, TrendsPayload } from "@/lib/types";
+import type { ActivityEvent, LeagueEdge, LeagueFormPayload, LeagueRacePayload, RivalIntelPayload, RivalPlayer, RivalSquad, SquadsPayload, TrendsPayload } from "@/lib/types";
 import { Chevron, Disclosure, Empty, Face, Fact, HeroStat, Skeleton, TONE, cleanText, compact, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
 import { ThreatRadar } from "./ThreatRadar";
 import { FormCard } from "./FormCard";
@@ -40,25 +40,47 @@ const STYLE: Record<string, { label: string; color: string }> = {
 
 const MEDAL = ["#F5C451", "#C9D1D9", "#D98E5B"];
 
+/**
+ * Última respuesta buena de cada endpoint: al volver a Liga se enseña al
+ * instante y se refresca por detrás, en vez de esperar otra vez al servidor.
+ */
+const jsonCache = new Map<string, unknown>();
+
 function useJson<T>(path: string, league: string | null): T | null {
-  const [loaded, setLoaded] = useState<{ league: string | null; payload: T } | null>(null);
+  const key = endpoint(path, league);
+  const [loaded, setLoaded] = useState<{ key: string; payload: T } | null>(() => (jsonCache.has(key) ? { key, payload: jsonCache.get(key) as T } : null));
   useEffect(() => {
     let cancelled = false;
-    getJson<T>(endpoint(path, league))
-      .then((payload) => {
-        if (!cancelled) setLoaded({ league, payload });
-      })
-      .catch((reason: unknown) => {
-        // Se conserva el motivo (HTTP 500, sin conexión…) para poder enseñarlo.
-        const sent = (reason as { payload?: unknown } | null)?.payload;
-        const message = reason instanceof Error ? reason.message : "Sin respuesta";
-        if (!cancelled) setLoaded({ league, payload: (sent && typeof sent === "object" ? sent : { ok: false, error: { message } }) as T });
-      });
+    const load = async () => {
+      // Un 502/504 suele ser el backend reiniciándose o un arranque en frío:
+      // se reintenta dos veces antes de rendirse.
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const payload = await getJson<T>(key);
+          jsonCache.set(key, payload);
+          if (!cancelled) setLoaded({ key, payload });
+          return;
+        } catch (reason: unknown) {
+          if (attempt < 2 && !cancelled) {
+            await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+            continue;
+          }
+          if (cancelled || jsonCache.has(key)) return; // si hay copia buena, se queda esa
+          // Se conserva el motivo (HTTP 500, sin conexión…) para poder enseñarlo.
+          const sent = (reason as { payload?: unknown } | null)?.payload;
+          const message = reason instanceof Error ? reason.message : "Sin respuesta";
+          setLoaded({ key, payload: (sent && typeof sent === "object" ? sent : { ok: false, error: { message } }) as T });
+          return;
+        }
+      }
+    };
+    void load();
     return () => {
       cancelled = true;
     };
-  }, [path, league]);
-  return loaded && loaded.league === league ? loaded.payload : null;
+  }, [key]);
+  if (loaded && loaded.key === key) return loaded.payload;
+  return jsonCache.has(key) ? (jsonCache.get(key) as T) : null;
 }
 
 function cashOf(squad: RivalSquad): number | null {
@@ -427,8 +449,19 @@ export function LigaView({
 
   const mode = race && race.ok !== false ? race.mode : null;
   const ownRank = mode?.own_rank ?? all.own?.rank ?? null;
-  const above = mode?.above;
-  const below = mode?.below;
+  // Si la carrera no responde, el de arriba y el de abajo salen de la
+  // clasificación, que ya está en las plantillas.
+  const standingEdge = (offset: -1 | 1): LeagueEdge | null => {
+    const own = all.own;
+    if (!own || typeof own.points !== "number") return null;
+    const ranked = all.rows.filter((row) => typeof row.points === "number").sort((a, b) => (b.points as number) - (a.points as number));
+    const index = ranked.findIndex((row) => String(row.team_id) === String(own.team_id));
+    const other = index >= 0 ? ranked[index + offset] : undefined;
+    if (!other || typeof other.points !== "number") return null;
+    return { team_id: String(other.team_id), manager_name: rivalLabel(other), rank: other.rank ?? null, points: other.points, edge_points: own.points - other.points };
+  };
+  const above = mode?.above ?? standingEdge(-1);
+  const below = mode?.below ?? standingEdge(1);
   const mine = race && race.ok !== false ? race.my_projection : null;
 
   // El cara a cara solo depende de /api/league-race. Las plantillas llegan
@@ -479,8 +512,8 @@ export function LigaView({
   const threatCount = clauseThreats(all.own, all.rows).length;
   const alertCount = threatCount + thin.length + denial.length;
   const tabs: { id: Tab; label: string; badge?: number }[] = [
-    { id: "clasificacion", label: "Clasificación" },
-    { id: "duelo", label: "Cara a cara" },
+    { id: "clasificacion", label: "Tabla" },
+    { id: "duelo", label: "Duelo" },
     { id: "forma", label: "Forma" },
     { id: "alertas", label: "Alertas", badge: alertCount || undefined },
   ];
