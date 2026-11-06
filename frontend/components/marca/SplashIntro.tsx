@@ -1,9 +1,9 @@
 /**
- * Intro de marca al abrir la app. Es HTML + CSS puro (se pinta antes de que
- * React hidrate) y solo sale una vez por sesión: el script del <head> marca
- * <html data-splash="off"> si ya se vio, y el CSS lo oculta al instante.
+ * Intro de marca al abrir la app. HTML + CSS puro (se pinta antes de que React
+ * hidrate). Sale en cada carga y se repite al volver a la app tras >5 min en
+ * segundo plano (en móvil la PWA se reanuda sin recargar).
  */
-export const SPLASH_HEAD_SCRIPT = `try{if(sessionStorage.getItem("splash-v1")){document.documentElement.dataset.splash="off"}else{sessionStorage.setItem("splash-v1","1")}}catch(e){}`;
+export const SPLASH_HEAD_SCRIPT = `(function(){var h=0;document.addEventListener("visibilitychange",function(){if(document.hidden){h=Date.now();return}if(h&&Date.now()-h>3e5){var el=document.querySelector(".splash");if(el){var c=el.cloneNode(true);el.replaceWith(c)}}})})();`;
 
 export function SplashIntro() {
   return (

@@ -6,7 +6,6 @@
   pointer-events: none;
   animation: splash-out 0.7s cubic-bezier(0.7, 0, 0.2, 1) 2.15s forwards;
 }
-html[data-splash="off"] .splash { display: none; }
 @media (prefers-reduced-motion: reduce) { .splash { display: none; } }
 
 .splash__glow {
