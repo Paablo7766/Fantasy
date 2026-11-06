@@ -22,7 +22,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 from fastapi import Body, FastAPI, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -2609,6 +2609,37 @@ def _refresh(
         return error_response(command, exc)
 
 
+_PHOTO_MEMO: dict[tuple[Any, ...], dict[str, Any]] = {}
+_PHOTO_MEMO_LOCK = threading.Lock()
+
+
+def _photo_memo(
+    name: Any,
+    league: str | None,
+    board: dict[str, Any],
+    build: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    """Resultado de ``build`` guardado en memoria mientras no cambie la foto.
+
+    Las vistas del Laboratorio solo dependen de la foto guardada, pero se
+    recalculaban (y releían Supabase) en cada visita: 1-4 s en Render. Clave:
+    (vista, liga, ``last_updated``). Devuelve una copia superficial para que el
+    llamador pueda añadir campos sin tocar lo guardado. No guarda errores.
+    """
+    stamp = board.get("last_updated")
+    key = (name, _league(league), stamp)
+    with _PHOTO_MEMO_LOCK:
+        cached = _PHOTO_MEMO.get(key)
+    if cached is None:
+        cached = build()
+        if stamp is not None and isinstance(cached, dict) and cached.get("ok") is not False:
+            with _PHOTO_MEMO_LOCK:
+                if len(_PHOTO_MEMO) >= 64:
+                    _PHOTO_MEMO.clear()
+                _PHOTO_MEMO[key] = cached
+    return dict(cached)
+
+
 def _photo_fields(board: dict[str, Any]) -> dict[str, Any]:
     """Metadatos de la foto para cualquier respuesta del tablero.
 
@@ -2904,12 +2935,19 @@ def api_league_race(
     board = _board("league-race", league, tier="core")
     if isinstance(board, JSONResponse):
         return board
-    board = _enrich_board_optimize(board, _league(league), fresh=False)
-    squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
-    trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
-    optimize = board.get("optimize") if isinstance(board.get("optimize"), dict) else None
-    market = board.get("market") if isinstance(board.get("market"), dict) else None
-    document = build_league_race(squads, trends, optimize, market=market)
+    raw = board
+
+    def build() -> dict[str, Any]:
+        enriched = _enrich_board_optimize(raw, _league(league), fresh=False)
+        squads = enriched.get("squads") if isinstance(enriched.get("squads"), dict) else {}
+        trends = enriched.get("trends") if isinstance(enriched.get("trends"), dict) else None
+        optimize = enriched.get("optimize") if isinstance(enriched.get("optimize"), dict) else None
+        market = enriched.get("market") if isinstance(enriched.get("market"), dict) else None
+        return build_league_race(squads, trends, optimize, market=market)
+
+    # La carrera proyecta el once de cada rival (y a veces el solver): 7-40 s en
+    # Render. Solo cambia con la foto, así que se guarda por foto en memoria.
+    document = _photo_memo("league-race", league, board, build)
     document["fetched_at"] = board.get("dashboard_at")
     document.update(_photo_fields(board))
     return document
@@ -2964,8 +3002,14 @@ def api_quant_radar(
     board = _board("quant-radar", league, tier="full")
     if isinstance(board, JSONResponse):
         return board
-    board = _enrich_board_trends(board, _league(league))
-    document = build_quant_radar(board, limit=limit)
+    # El radar tarda ~1,5 s (dos lecturas de Supabase + cálculo) y solo cambia
+    # cuando cambia la foto: se guarda por (liga, foto, límite) en memoria.
+    document = _photo_memo(
+        ("quant-radar", limit),
+        league,
+        board,
+        lambda: build_quant_radar(_enrich_board_trends(board, _league(league)), limit=limit),
+    )
     document.update(_photo_fields(board))
     return document
 
@@ -3136,7 +3180,12 @@ def api_clause_board(
     document = board.get("squads") if isinstance(board.get("squads"), dict) else {}
     needs = board.get("needs") if isinstance(board.get("needs"), dict) else {}
     ledgers = needs.get("ledgers") if isinstance(needs.get("ledgers"), list) else []
-    payload = build_clause_board(document, photo_day=_photo_day(board), ledgers=ledgers)
+    payload = _photo_memo(
+        "clause-board",
+        league,
+        board,
+        lambda: build_clause_board(document, photo_day=_photo_day(board), ledgers=ledgers),
+    )
     payload["league_id"] = _board_league_id(board, league)
     payload["league_name"] = document.get("league_name") or board.get("league_name")
     payload.update(_photo_fields(board))
@@ -3155,7 +3204,12 @@ def api_rival_intel(
     squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
     needs = board.get("needs") if isinstance(board.get("needs"), dict) else {}
     ledgers = needs.get("ledgers") if isinstance(needs.get("ledgers"), list) else []
-    payload = rival_intel_from_board(squads, ledgers, observed_on=_photo_day(board))
+    payload = _photo_memo(
+        "rival-intel",
+        league,
+        board,
+        lambda: rival_intel_from_board(squads, ledgers, observed_on=_photo_day(board)),
+    )
     payload.update(_photo_fields(board))
     return payload
 
@@ -3170,7 +3224,7 @@ def api_catalog_free_agents(
     if isinstance(board, JSONResponse):
         return board
     try:
-        report = catalog_report(board)
+        report = _photo_memo("catalog", league, board, lambda: catalog_report(board))
     except Exception as exc:
         return error_response("catalog-free-agents", exc)
     payload = {
@@ -3199,7 +3253,7 @@ def api_catalog_arbitrage(
     if isinstance(board, JSONResponse):
         return board
     try:
-        report = catalog_report(board)
+        report = _photo_memo("catalog", league, board, lambda: catalog_report(board))
     except Exception as exc:
         return error_response("catalog-arbitrage", exc)
     payload = {

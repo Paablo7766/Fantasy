@@ -640,7 +640,10 @@ export function LigaView({
 
           {activeTab === "duelo" ? (
             race === null ? (
-              <Skeleton />
+              <>
+                <p className="px-1 text-[13px] text-white/50">Calculando el once de cada rival… la primera vez tras una actualización puede tardar hasta un minuto.</p>
+                <Skeleton />
+              </>
             ) : race.ok === false ? (
               <Empty title="Cara a cara no disponible" detail={`La carrera de liga no ha respondido: ${race.error?.message || race.message || "sin detalle"}.`} />
             ) : !(race.rivals || []).length ? (
