@@ -105,8 +105,6 @@ function VsLeader({ you, leader }: { you: number | null; leader: number | null }
 
 const DATE_FMT = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Madrid" });
 
-const ico = { viewBox: "0 0 16 16", width: 14, height: 14, fill: "none", stroke: "currentColor", strokeWidth: 1.6 } as const;
-
 /**
  * Cabecera de Inicio: hero oscuro con halo naranja (saldo centrado y botón
  * blanco con la cuenta atrás) y cuatro tarjetas «bento» con las cifras clave.
@@ -225,11 +223,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
         <Tile
           label="Posición"
           sub={field ? `de ${field} en la liga` : null}
-          icon={
-            <svg {...ico}>
-              <path d="M5 2.5h6v3a3 3 0 0 1-6 0v-3ZM8 8.5v3M5.5 13.5h5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          }
         >
           <Ring value={rank !== null ? `${rank}º` : dash} ratio={rankRatio} />
         </Tile>
@@ -244,24 +237,11 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
           value={typeof value === "number" ? <Figure text={money(value)} /> : dash}
           label="Valor de plantilla"
           sub={typeof valueDay === "number" && valueDay !== 0 ? `${signedMoney(valueDay)} hoy` : null}
-          icon={
-            <svg {...ico}>
-              <path d="M2.5 12.5 6 8.5l2.5 2.5 5-6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          }
         />
         <Tile
           value={onceTarget !== null ? <Figure text={`${points(onceTarget)} pts`} /> : dash}
           label="Once previsto"
           sub={cashEnd !== null ? `Saldo final ${money(cashEnd)}` : null}
-          icon={
-            <svg {...ico}>
-              <circle cx="8" cy="4" r="1.4" />
-              <circle cx="4" cy="8" r="1.4" />
-              <circle cx="12" cy="8" r="1.4" />
-              <circle cx="8" cy="12" r="1.4" />
-            </svg>
-          }
         />
       </div>
     </div>
