@@ -8,14 +8,16 @@ import { applyLiquidity, financialIndex, liquidityRead } from "@/lib/liga/liquid
 import { enrichSquadsPayload } from "@/lib/liga/squadEnrich";
 import { squadHoldings, squadPatrimonio, squadTotals } from "@/lib/liga/squadTotals";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
+import { clauseThreats } from "@/lib/liga/threats";
 import type { ActivityEvent, LeagueFormPayload, LeagueRacePayload, RivalIntelPayload, RivalPlayer, RivalSquad, SquadsPayload, TrendsPayload } from "@/lib/types";
-import { Chevron, Disclosure, Empty, Face, Fact, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
+import { Chevron, Disclosure, Empty, Face, Fact, HeroStat, Skeleton, TONE, cleanText, compact, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
 import { ThreatRadar } from "./ThreatRadar";
 import { FormCard } from "./FormCard";
 import { HeadToHeadCard } from "./HeadToHeadCard";
 import { POS_LABEL, POS_ORDER, rivalLabel } from "./dashboard/shared";
 
 type Sort = "rank" | "cash" | "value" | "delta";
+type Tab = "clasificacion" | "duelo" | "forma" | "alertas";
 
 const SORTS: { id: Sort; label: string }[] = [
   { id: "rank", label: "Puesto" },
@@ -411,6 +413,7 @@ export function LigaView({
   const rivalIntel = useJson<RivalIntelPayload>("/api/rival-intel", league);
   const form = useJson<LeagueFormPayload>("/api/league-form", league);
   const [sort, setSort] = useState<Sort>("rank");
+  const [tab, setTab] = useState<Tab>("clasificacion");
   const [selected, setSelected] = useState<string | null>(null);
 
   const view = useMemo(() => enrichSquadsPayload(squads, trends), [squads, trends]);
@@ -473,9 +476,21 @@ export function LigaView({
     return null;
   })();
 
+  const threatCount = clauseThreats(all.own, all.rows).length;
+  const alertCount = threatCount + thin.length + denial.length;
+  const hasDuel = race !== null && race.ok !== false;
+  const tabs: { id: Tab; label: string; badge?: number }[] = [
+    { id: "clasificacion", label: "Clasificación" },
+    ...(hasDuel ? [{ id: "duelo" as Tab, label: "Cara a cara" }] : []),
+    { id: "forma", label: "Forma" },
+    { id: "alertas", label: "Alertas", badge: alertCount || undefined },
+  ];
+  const activeTab = tabs.some((item) => item.id === tab) ? tab : "clasificacion";
+  const projTop = Math.max(mine?.expected_points ?? 0, typeof leagueAvg === "number" ? leagueAvg : 0, 1);
+
   return (
-    <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] min-[1100px]:items-start">
-      <div className="flex min-w-0 flex-col gap-4">
+    <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] min-[1100px]:items-start">
+      <aside className="flex min-w-0 flex-col gap-3 min-[1100px]:sticky min-[1100px]:top-4">
         <section className="home-feature" aria-label="Tu posición en la liga">
           <div className="relative flex items-center justify-between gap-3">
             <p className="text-[13px] font-medium text-white/60">Tu posición</p>
@@ -486,7 +501,7 @@ export function LigaView({
             ) : null}
           </div>
           <p className="relative mt-2 flex items-baseline gap-2 tabular-nums">
-            <span className="text-[3rem] font-semibold leading-none tracking-[-0.045em] text-white">{typeof ownRank === "number" ? `${ownRank}º` : "—"}</span>
+            <span className="text-[3.25rem] font-semibold leading-none tracking-[-0.045em] text-white">{typeof ownRank === "number" ? `${ownRank}º` : "—"}</span>
             <span className="text-base font-medium text-white/60">de {all.rows.length}</span>
           </p>
           {gapLine ? <p className="relative mt-2 text-[13.5px] text-white/60">{gapLine}</p> : null}
@@ -503,33 +518,31 @@ export function LigaView({
               tone={TONE.green}
             />
           </div>
-          {posture ? <p className="relative mt-4 text-[12.5px] leading-snug text-white/50">{posture.text}</p> : null}
-        </section>
 
-        {typeof mine?.expected_points === "number" ? (
-          <section className="home-glass p-4" aria-label="Proyección de la jornada">
-            <p className="text-[12.5px] text-white/45">Próxima jornada</p>
-            <div className="mt-3 flex flex-col gap-3">
-              {[
-                { label: "Tu once", value: mine.expected_points, color: "#FFC08A" },
-                { label: "Media de la liga", value: typeof leagueAvg === "number" ? leagueAvg : null, color: "rgba(255,255,255,0.45)" },
-              ].map((row) => {
-                const top = Math.max(mine.expected_points ?? 0, typeof leagueAvg === "number" ? leagueAvg : 0, 1);
-                return (
+          {typeof mine?.expected_points === "number" ? (
+            <div className="relative mt-5 border-t border-white/[0.08] pt-4">
+              <p className="text-[11.5px] font-medium uppercase tracking-[0.08em] text-white/40">Próxima jornada</p>
+              <div className="mt-3 flex flex-col gap-2.5">
+                {[
+                  { label: "Tu once", value: mine.expected_points, color: "#FFC08A" },
+                  { label: "Media de la liga", value: typeof leagueAvg === "number" ? leagueAvg : null, color: "rgba(255,255,255,0.4)" },
+                ].map((row) => (
                   <div key={row.label}>
                     <div className="flex items-baseline justify-between text-[13px]">
-                      <span className="text-white/70">{row.label}</span>
+                      <span className="text-white/65">{row.label}</span>
                       <span className="font-semibold tabular-nums text-white">{row.value !== null ? `${points(row.value)} pts` : "—"}</span>
                     </div>
-                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-                      <span className="block h-full rounded-full transition-[width] duration-700 ease-out" style={{ width: `${row.value !== null ? (row.value / top) * 100 : 0}%`, background: row.color }} />
+                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
+                      <span className="block h-full rounded-full transition-[width] duration-700 ease-out" style={{ width: `${row.value !== null ? (row.value / projTop) * 100 : 0}%`, background: row.color }} />
                     </div>
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
-          </section>
-        ) : null}
+          ) : null}
+
+          {posture ? <p className="relative mt-4 text-[12.5px] leading-snug text-white/45">{posture.text}</p> : null}
+        </section>
 
         {race === null ? (
           <p className="px-1 text-[12px] text-white/35">Calculando la carrera de liga…</p>
@@ -538,84 +551,119 @@ export function LigaView({
             La carrera de liga no ha respondido: {race.error?.message || race.message || "sin detalle"}. Sin ella no hay proyección ni cara a cara.
           </p>
         ) : null}
+      </aside>
 
-        {headToHeadCard}
-
-        <FormCard form={form} above={above} below={below} />
-
-        <ThreatRadar own={all.own} rivals={all.rows} photos={photos} />
-
-        {thin.length || denial.length ? (
-          <Disclosure title="Dónde puedes hacer daño" meta={`${thin.length + denial.length}`}>
-            {thin.length ? (
-              <>
-                <p className="text-[12.5px] text-white/45">Rivales con líneas flojas: si fichas lo que necesitan, les cuesta más.</p>
-                <ul className="mt-2 divide-y divide-white/[0.05]">
-                  {thin.map((row) => (
-                    <li key={String(row.team_id)} className="flex items-center justify-between gap-3 py-2.5">
-                      <span className="min-w-0 truncate text-[14px] text-white">{row.manager_name || row.fantasy_team_name || "Rival"}</span>
-                      <span className="flex shrink-0 gap-1">
-                        {(row.thin_positions || []).map((pos) => (
-                          <Tag key={pos} label={pos} color={TONE.amber} />
-                        ))}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
-            {denial.length ? (
-              <div className={thin.length ? "mt-4 border-t border-white/[0.06] pt-3" : ""}>
-                <p className="text-[12.5px] text-white/45">En venta y justo lo que necesita un rival con caja para pagarlo.</p>
-                <ul className="mt-2 divide-y divide-white/[0.05]">
-                  {denial.map((row) => {
-                    const name = row.nickname || row.name || "Jugador";
-                    return (
-                      <li key={String(row.player_id)} className="flex items-center gap-2.5 py-2.5">
-                        <Face name={name} src={photoFor(photos, row.player_id, name)} size={32} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[14px] text-white">
-                            {name}
-                            {row.position ? <span className="text-white/40"> · {row.position}</span> : null}
-                          </span>
-                          <span className="block truncate text-[12px] text-white/45">Lo quiere {(row.managers || []).join(", ")}</span>
-                        </span>
-                        <span className="shrink-0 text-[14px] font-medium tabular-nums text-white">{money(row.sale_price)}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ) : null}
-          </Disclosure>
-        ) : null}
-      </div>
-
-      <section aria-label="Clasificación" className="flex min-w-0 flex-col gap-3">
-        <SectionHead title="Clasificación" meta={`${all.rows.length} mánagers`} />
-        <div className="eq-scroll -mx-1 px-1" role="toolbar" aria-label="Ordenar la clasificación">
-          {SORTS.map((item) => (
-            <button key={item.id} type="button" aria-pressed={sort === item.id} onClick={() => setSort(item.id)} className={sort === item.id ? "eq-chip eq-chip--on" : "eq-chip"}>
-              {item.label}
+      <section className="flex min-w-0 flex-col gap-3" aria-label="Liga">
+        <div className="desk-switch !max-w-none" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }} role="tablist" aria-label="Secciones de la liga">
+          {tabs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === item.id}
+              className={activeTab === item.id ? "desk-switch__btn desk-switch__btn--on" : "desk-switch__btn"}
+              onClick={() => setTab(item.id)}
+            >
+              <span className="truncate">{item.label}</span>
+              {item.badge ? (
+                <span
+                  className="ml-1.5 grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full px-1 text-[10.5px] font-semibold tabular-nums"
+                  style={activeTab === item.id ? { background: "#120c09", color: "#fff" } : { background: `${TONE.amber}2a`, color: TONE.amber }}
+                >
+                  {item.badge}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
-        <ul className="home-glass overflow-hidden">
-          {sorted.map((squad, index) => (
-            <ManagerRow
-              key={String(squad.team_id)}
-              squad={squad}
-              self={ownId !== null && String(squad.team_id) === ownId}
-              ownPoints={typeof ownPoints === "number" ? ownPoints : null}
-              sort={sort}
-              index={index}
-              onOpen={() => setSelected(String(squad.team_id))}
-            />
-          ))}
-        </ul>
-        <p className="px-1 text-[12px] leading-relaxed text-white/35">
-          La caja de cada rival se reconstruye con sus movimientos. El detalle de cómo se calcula está en Laboratorio → Rivales.
-        </p>
+
+        <div key={activeTab} className="row-in flex min-w-0 flex-col gap-3" role="tabpanel">
+          {activeTab === "clasificacion" ? (
+            <>
+              <div className="eq-scroll -mx-1 px-1" role="toolbar" aria-label="Ordenar la clasificación">
+                {SORTS.map((item) => (
+                  <button key={item.id} type="button" aria-pressed={sort === item.id} onClick={() => setSort(item.id)} className={sort === item.id ? "eq-chip eq-chip--on" : "eq-chip"}>
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <ul className="home-glass divide-y divide-white/[0.05] overflow-hidden">
+                {sorted.map((squad, index) => (
+                  <ManagerRow
+                    key={String(squad.team_id)}
+                    squad={squad}
+                    self={ownId !== null && String(squad.team_id) === ownId}
+                    ownPoints={typeof ownPoints === "number" ? ownPoints : null}
+                    sort={sort}
+                    index={index}
+                    onOpen={() => setSelected(String(squad.team_id))}
+                  />
+                ))}
+              </ul>
+              <p className="px-1 text-[12px] leading-relaxed text-white/35">
+                Toca un mánager para ver su plantilla y sus movimientos. La caja de cada rival se reconstruye con sus movimientos; el detalle está en Laboratorio → Rivales.
+              </p>
+            </>
+          ) : null}
+
+          {activeTab === "duelo" ? headToHeadCard : null}
+
+          {activeTab === "forma" ? form === null ? <Skeleton /> : <FormCard form={form} above={above} below={below} /> : null}
+
+          {activeTab === "alertas" ? (
+            alertCount ? (
+              <>
+                <ThreatRadar own={all.own} rivals={all.rows} photos={photos} />
+                {thin.length || denial.length ? (
+                  <Disclosure title="Dónde puedes hacer daño" meta={`${thin.length + denial.length}`} defaultOpen>
+                    {thin.length ? (
+                      <>
+                        <p className="text-[12.5px] text-white/45">Rivales con líneas flojas: si fichas lo que necesitan, les cuesta más.</p>
+                        <ul className="mt-2 divide-y divide-white/[0.05]">
+                          {thin.map((row) => (
+                            <li key={String(row.team_id)} className="flex items-center justify-between gap-3 py-2.5">
+                              <span className="min-w-0 truncate text-[14px] text-white">{row.manager_name || row.fantasy_team_name || "Rival"}</span>
+                              <span className="flex shrink-0 gap-1">
+                                {(row.thin_positions || []).map((pos) => (
+                                  <Tag key={pos} label={pos} color={TONE.amber} />
+                                ))}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    {denial.length ? (
+                      <div className={thin.length ? "mt-4 border-t border-white/[0.06] pt-3" : ""}>
+                        <p className="text-[12.5px] text-white/45">En venta y justo lo que necesita un rival con caja para pagarlo.</p>
+                        <ul className="mt-2 divide-y divide-white/[0.05]">
+                          {denial.map((row) => {
+                            const name = row.nickname || row.name || "Jugador";
+                            return (
+                              <li key={String(row.player_id)} className="flex items-center gap-2.5 py-2.5">
+                                <Face name={name} src={photoFor(photos, row.player_id, name)} size={32} />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-[14px] text-white">
+                                    {name}
+                                    {row.position ? <span className="text-white/40"> · {row.position}</span> : null}
+                                  </span>
+                                  <span className="block truncate text-[12px] text-white/45">Lo quiere {(row.managers || []).join(", ")}</span>
+                                </span>
+                                <span className="shrink-0 text-[14px] font-medium tabular-nums text-white">{money(row.sale_price)}</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </Disclosure>
+                ) : null}
+              </>
+            ) : (
+              <Empty title="Todo tranquilo" detail="Ningún jugador tuyo está al alcance de un clausulazo y no hay rivales con líneas flojas que aprovechar." />
+            )
+          ) : null}
+        </div>
       </section>
 
       <RivalDialog squad={selectedSquad} self={selected !== null && selected === ownId} photos={photos} onClose={() => setSelected(null)} />

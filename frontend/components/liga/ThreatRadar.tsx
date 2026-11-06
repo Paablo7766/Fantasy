@@ -16,7 +16,7 @@ export function ThreatRadar({ own, rivals, photos }: { own: RivalSquad | null | 
   const shown = threats.slice(0, 5);
 
   return (
-    <Disclosure title="A quién te pueden quitar" meta={`${threats.length}`}>
+    <Disclosure title="A quién te pueden quitar" meta={`${threats.length}`} defaultOpen>
       <p className="text-[12.5px] text-white/45">Tienen la cláusula abierta y algún rival con caja para pagarla. Blíndalos o ponles candado si no quieres perderlos.</p>
       <ul className="mt-2 divide-y divide-white/[0.05]">
         {shown.map(({ player, clause, buyers, loss }) => {

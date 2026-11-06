@@ -80,7 +80,7 @@ export function FormCard({ form, above, below }: { form: LeagueFormPayload | nul
   const pace = paceLines(rows, above, below, SEASON_ROUNDS - (last ?? SEASON_ROUNDS));
 
   return (
-    <Disclosure title="Forma reciente" meta={mine ? `Tú: ${mine.form_rank}º` : `J${last ?? ""}`}>
+    <Disclosure title="Forma reciente" meta={mine ? `Tú: ${mine.form_rank}º` : `J${last ?? ""}`} defaultOpen>
       <p className="text-[12.5px] text-white/45">Media de las últimas {window} jornadas. Quien viene fuerte no siempre va arriba en el acumulado.</p>
       <ul className="mt-2 divide-y divide-white/[0.05]">
         {rows.map((row) => {
