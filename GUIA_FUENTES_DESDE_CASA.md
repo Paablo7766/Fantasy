@@ -1,6 +1,6 @@
 # Recuperar las fuentes que bloquean a Render
 
-Render recibe 403 de analiticafantasy, FBref, Sofascore y Jornada Perfecta.
+Render recibe 403 de analiticafantasy, FBref, Sofascore, Understat y Jornada Perfecta.
 Desde tu casa sí responden, así que las descargas desde el PC y Render usa esa copia.
 
 ## Una sola vez

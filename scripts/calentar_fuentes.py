@@ -1,6 +1,6 @@
 """Descarga desde tu PC las fuentes que bloquean a Render y las deja en Supabase.
 
-Render recibe 403 de analiticafantasy, FBref, Sofascore y Jornada Perfecta
+Render recibe 403 de analiticafantasy, FBref, Sofascore, Understat y Jornada Perfecta
 (Cloudflare bloquea las IPs de centros de datos). Desde una conexión de casa sí
 responden. Este script las descarga aquí y guarda el cuerpo en la caché de
 Supabase (tabla ``scraper_cache``); cuando Render recibe un 403 sirve esa copia.
@@ -70,6 +70,7 @@ def main() -> int:
     from toolbox.analitica_fantasy import load_analitica_fantasy
     from toolbox.net import ExternalClient
     from toolbox.scrapers import ScrapeTTL, warm_optional_form_sources
+    from toolbox.understat import load_understat
 
     ttl = ScrapeTTL.from_env()
     client = ExternalClient()
@@ -84,6 +85,9 @@ def main() -> int:
         for name in ("fbref", "sofascore"):
             status = warm.get(name) or {}
             results.append((name, bool(status.get("ok")), str(status.get("error") or "")))
+        print("Descargando Understat…")
+        _players, _fixtures, _strengths, _rolling, understat = load_understat(client, ttl=ttl.stats, fresh=True)
+        results.append(("understat", bool(understat.get("ok")), str(understat.get("error") or "")))
     finally:
         client.close()
 
