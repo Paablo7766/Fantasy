@@ -104,3 +104,30 @@ def test_report_survives_without_database(tmp_path) -> None:
     report = build_model_report(_board(), db_path=tmp_path / "no-existe.sqlite", now=NOW)
     assert report["scorers"]["rows"] == [] and report["history"]["jornadas"] == []
     assert report["matches"][0]["market"] is None
+
+
+def test_scoreboard_compares_model_with_constant_baseline() -> None:
+    from toolbox.model_report import scoreboard
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "create table matchday_snapshots (jornada_id text, player_id text, name text, expected_points real, "
+        "actual_points real)"
+    )
+    rows = [("1", str(i), "x", 5.0, float(a)) for i, a in enumerate([5, 5, 5, 6, 4] * 8)]
+    conn.executemany("insert into matchday_snapshots values (?,?,?,?,?)", rows)
+    by_id = {r["id"]: r for r in scoreboard(conn, None)}
+    assert by_id["xp_modelo"]["n"] == 40 and by_id["xp_modelo"]["verdict"] in {"mejor", "peor"}
+    assert by_id["mercado_goleador"]["verdict"] == "sin_medir" or "mercado_goleador" not in by_id
+
+
+def test_scoreboard_few_cases_is_not_a_verdict() -> None:
+    from toolbox.model_report import scoreboard
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "create table matchday_snapshots (jornada_id text, player_id text, name text, expected_points real, "
+        "actual_points real)"
+    )
+    conn.execute("insert into matchday_snapshots values ('1','1','x',5,2)")
+    assert {r["id"]: r for r in scoreboard(conn, None)}["xp_modelo"]["verdict"] == "pocos_datos"

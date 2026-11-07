@@ -344,6 +344,17 @@ export type ModelHistoryRow = {
   days_logged: number;
 };
 
+export type ModelScoreRow = {
+  id: string;
+  label: string;
+  measure: string;
+  value: string;
+  baseline?: string | null;
+  n: number;
+  verdict: "mejor" | "peor" | "pocos_datos" | "sin_medir";
+  note?: string | null;
+};
+
 export type ModelShadowItem = {
   id: string;
   label: string;
@@ -363,6 +374,7 @@ export type ModelReportPayload = ApiError & PhotoMeta & {
   matches?: ModelMatchRow[];
   scorers?: { rows: ModelScorerRow[]; linked: number; listed: number };
   history?: { jornadas: ModelHistoryRow[]; odds_days: number; odds_matches: number; scorer_rows: number };
+  scoreboard?: ModelScoreRow[];
   shadow?: ModelShadowItem[];
   text?: string;
 };

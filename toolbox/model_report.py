@@ -330,6 +330,180 @@ def history(conn: sqlite3.Connection | None) -> dict[str, Any]:
     }
 
 
+# --- Marcador por fuente ------------------------------------------------------
+
+# Con menos casos que esto la cifra se enseña, pero no se saca conclusión.
+SCORE_MIN_N = 30
+
+
+def _verdict(n: int, better: bool | None) -> str:
+    """«pocos datos» hasta SCORE_MIN_N; después gana/pierde frente a la referencia."""
+    if n < SCORE_MIN_N or better is None:
+        return "pocos_datos"
+    return "mejor" if better else "peor"
+
+
+def scoreboard(conn: sqlite3.Connection | None, board: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Cuánto acierta cada fuente contra la realidad, con su referencia y cuántos casos hay.
+
+    Cada fila: ``id``, ``label``, ``measure`` (qué se mide), ``value`` y ``baseline``
+    (texto ya formateado), ``n``, ``verdict`` (``mejor`` / ``peor`` / ``pocos_datos`` /
+    ``sin_medir``) y ``note``. Solo lee. Lo que aún no se puede medir sale como
+    ``sin_medir`` con el motivo, para que se vea que se guarda pero no se compara.
+    """
+    rows: list[dict[str, Any]] = []
+    if conn is None:
+        return rows
+    tables = _tables(conn)
+
+    # 1. xP del modelo frente a puntos reales (y frente a no saber nada).
+    if "matchday_snapshots" in tables:
+        n, mae, bias, mean_actual = conn.execute(
+            """select count(*), avg(abs(actual_points - expected_points)),
+                      avg(actual_points - expected_points), avg(actual_points)
+               from matchday_snapshots where actual_points is not null and expected_points is not null"""
+        ).fetchone()
+        n = int(n or 0)
+        base = None
+        if n and mean_actual is not None:
+            base = conn.execute(
+                "select avg(abs(actual_points - ?)) from matchday_snapshots where actual_points is not null and expected_points is not null",
+                (mean_actual,),
+            ).fetchone()[0]
+        rows.append(
+            {
+                "id": "xp_modelo",
+                "label": "Puntos esperados (modelo propio)",
+                "measure": "Error medio en puntos por jugador y jornada. Menos es mejor.",
+                "value": f"{_f(mae)} pts" if n else "—",
+                "baseline": f"{_f(base)} pts si se predijera siempre la media" if base is not None else None,
+                "n": n,
+                "verdict": _verdict(n, (mae < base) if n and base is not None and mae is not None else None),
+                "note": f"Sesgo medio {_f(bias)} pts (positivo = el modelo se queda corto)." if n and bias is not None else None,
+            }
+        )
+
+    # 2. Modelo propio frente a AF, mismo jugador y mismo día de foto.
+    if "matchday_snapshots" in tables and "player_signal_log" in tables:
+        cols = {r[1] for r in conn.execute("pragma table_info(player_signal_log)")}
+        if "af_expected_points" in cols:
+            n, mine, theirs = conn.execute(
+                """select count(*), avg(abs(m.actual_points - m.expected_points)), avg(abs(m.actual_points - s.af_expected_points))
+                   from matchday_snapshots m join player_signal_log s
+                     on s.player_id = m.player_id and s.day = m.snapshot_day and s.league_id = m.league_id
+                   where m.actual_points is not null and m.expected_points is not null and s.af_expected_points is not null"""
+            ).fetchone()
+            n = int(n or 0)
+            rows.append(
+                {
+                    "id": "af_vs_propio",
+                    "label": "AF frente a tu modelo",
+                    "measure": "Mismos jugadores y misma foto: error medio de cada uno. Menos es mejor.",
+                    "value": f"AF {_f(theirs)} pts" if n else "—",
+                    "baseline": f"Tu modelo {_f(mine)} pts" if n else None,
+                    "n": n,
+                    "verdict": _verdict(n, (theirs < mine) if n and mine is not None and theirs is not None else None),
+                    "note": "«Mejor» aquí significa que AF falla menos que tu modelo.",
+                }
+            )
+
+    # 3. Decisiones de mercado ya resueltas.
+    if "market_decision_snapshots" in tables:
+        won, lost, unknown = (
+            int(x or 0)
+            for x in conn.execute(
+                """select sum(outcome = 'won'), sum(outcome = 'lost'),
+                          sum(outcome is null or outcome = 'unknown')
+                   from market_decision_snapshots where decision = 'PUJAR'"""
+            ).fetchone()
+        )
+        resolved = won + lost
+        expected = conn.execute(
+            "select avg(win_probability) from market_decision_snapshots where decision = 'PUJAR' and outcome in ('won','lost')"
+        ).fetchone()[0]
+        rows.append(
+            {
+                "id": "pujar",
+                "label": "Pujas recomendadas (PUJAR)",
+                "measure": "Porcentaje de pujas ganadas frente a la probabilidad que prometía el motor.",
+                "value": f"{won} de {resolved} ganadas" if resolved else "sin resolver",
+                "baseline": f"Prometía {_pct(expected)}" if expected is not None else None,
+                "n": resolved,
+                "verdict": _verdict(resolved, (won / resolved >= expected) if resolved and expected is not None else None),
+                "note": f"{unknown} más sin resultado conocido todavía." if unknown else None,
+            }
+        )
+
+    # 4. Previa: TOP frente a la regla ingenua.
+    if board is not None:
+        try:
+            from toolbox.previa import evaluate
+
+            ev = evaluate(conn, board)
+        except Exception:  # noqa: BLE001 — la previa no tumba el informe
+            ev = []
+        top_n = top_sum = naive_sum = 0.0
+        for row in ev:
+            t, nv = row.get("top") or {}, row.get("naive_top") or {}
+            if t.get("mean") is not None and nv.get("mean") is not None:
+                top_n += t["n"]
+                top_sum += t["mean"] * t["n"]
+                naive_sum += nv["mean"] * nv["n"]
+        if top_n:
+            top_mean, naive_mean = top_sum / top_n, naive_sum / top_n
+            rows.append(
+                {
+                    "id": "previa_top",
+                    "label": "Previa: TOP de cada partido",
+                    "measure": "Puntos medios reales de los elegidos frente a la regla ingenua guardada en la misma edición.",
+                    "value": f"{_f(top_mean)} pts",
+                    "baseline": f"Ingenua {_f(naive_mean)} pts",
+                    "n": int(top_n),
+                    "verdict": _verdict(int(top_n), top_mean > naive_mean),
+                    "note": f"{len(ev)} edición{'' if len(ev) == 1 else 'es'} evaluada{'' if len(ev) == 1 else 's'}.",
+                }
+            )
+        else:
+            rows.append(
+                {
+                    "id": "previa_top", "label": "Previa: TOP de cada partido",
+                    "measure": "Puntos medios reales de los elegidos frente a la regla ingenua.",
+                    "value": "—", "baseline": None, "n": 0, "verdict": "sin_medir",
+                    "note": "Aún no hay una edición congelada de una jornada ya jugada.",
+                }
+            )
+
+    # 5 y 6. Lo que se guarda pero todavía no se puede comparar con resultados.
+    odds_n = scorer_n = 0
+    if "odds_snapshots" in tables:
+        odds_n = conn.execute("select count(distinct match_key) from odds_snapshots").fetchone()[0]
+    if "scorer_odds_snapshots" in tables:
+        scorer_n = conn.execute("select count(*) from scorer_odds_snapshots").fetchone()[0]
+    rows.append(
+        {
+            "id": "mercado_partido",
+            "label": "Cuotas de partido (Pinnacle)",
+            "measure": "Si la mezcla mercado + xG acierta los goles mejor que cada uno por separado.",
+            "value": f"{odds_n} partidos guardados", "baseline": None, "n": int(odds_n or 0),
+            "verdict": "sin_medir",
+            "note": "Se guardan cada día, pero la app aún no guarda el resultado de cada partido para compararlo.",
+        }
+    )
+    rows.append(
+        {
+            "id": "mercado_goleador",
+            "label": "Cuotas de goleador (bet365)",
+            "measure": "Si la probabilidad de gol de las casas acierta más que la de tu modelo.",
+            "value": f"{scorer_n} cuotas guardadas" if scorer_n else "nada guardado",
+            "baseline": None, "n": int(scorer_n or 0), "verdict": "sin_medir",
+            "note": "No hay ninguna cuota de goleador guardada: hay que revisar por qué la fuente no las trae."
+            if not scorer_n
+            else "Se guardan, pero aún no se comparan con los goles reales.",
+        }
+    )
+    return rows
+
+
 def shadow_items(conn: sqlite3.Connection | None, hist: dict[str, Any], *, now: datetime) -> list[dict[str, Any]]:
     played_scorer_matches = 0
     if conn is not None and "scorer_odds_snapshots" in _tables(conn):
@@ -432,6 +606,12 @@ def render_text(report: dict[str, Any], calibration: dict[str, Any] | None = Non
     for row in hist["jornadas"]:
         lines.append(f"J{row['jornada']} | {row['players']} | {row['evaluated']} | {_f(row['mae'])} | {row['days_logged']}")
     lines.append("")
+    lines.append("## Marcador por fuente (frente a la realidad)")
+    for row in report.get("scoreboard") or []:
+        base = f" · {row['baseline']}" if row.get("baseline") else ""
+        note = f" · {row['note']}" if row.get("note") else ""
+        lines.append(f"- {row['label']}: {row['value']}{base} · n={row['n']} · {row['verdict']}{note}")
+    lines.append("")
     lines.append("## En pruebas (no deciden nada todavía)")
     for item in report["shadow"]:
         lines.append(f"- {item['label']} · {item['state']} · {item['progress_text']}. Regla: {item['rule']}")
@@ -480,6 +660,7 @@ def build_model_report(
             "matches": upcoming_matches(trends, conn, now=moment),
             "scorers": scorers(trends, squads, conn, now=moment),
             "history": hist,
+            "scoreboard": scoreboard(conn, board),
             "shadow": shadow_items(conn, hist, now=moment),
         }
     finally:

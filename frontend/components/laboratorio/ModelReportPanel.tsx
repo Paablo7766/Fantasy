@@ -7,7 +7,7 @@ import { useDashboard } from "@/components/DashboardProvider";
 import { ErrorCard, Skeleton } from "@/components/ui/Feedback";
 import { endpoint } from "@/lib/core/api";
 import { HeroStat, TONE } from "@/components/ui/kit";
-import type { ModelMatchRow, ModelReportPayload, ModelScorerRow, ModelShadowItem, ModelSourceRow } from "@/lib/types";
+import type { ModelMatchRow, ModelReportPayload, ModelScoreRow, ModelScorerRow, ModelShadowItem, ModelSourceRow } from "@/lib/types";
 
 const TIME_FMT = new Intl.DateTimeFormat("es-ES", {
   weekday: "short",
@@ -72,6 +72,39 @@ function Sources({ rows }: { rows: ModelSourceRow[] }) {
             <span className="shrink-0 text-[12.5px] font-medium" style={{ color: st.color }}>
               {st.label}
             </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+const VERDICT: Record<ModelScoreRow["verdict"], { color: string; label: string }> = {
+  mejor: { color: TONE.green, label: "Acierta más" },
+  peor: { color: TONE.red, label: "Acierta menos" },
+  pocos_datos: { color: TONE.amber, label: "Pocos datos" },
+  sin_medir: { color: TONE.gray, label: "Sin medir aún" },
+};
+
+function Scoreboard({ rows }: { rows: ModelScoreRow[] }) {
+  if (!rows.length) return <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">Aún no hay nada guardado que comparar.</p>;
+  return (
+    <ul className="flex flex-col gap-2.5">
+      {rows.map((row, i) => {
+        const v = VERDICT[row.verdict] ?? VERDICT.sin_medir;
+        return (
+          <li key={row.id} className="home-glass row-in p-4" style={{ animationDelay: `${i * 25}ms` }}>
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-[14.5px] font-medium text-white">{row.label}</p>
+              <span className="shrink-0 text-[12px] font-medium" style={{ color: v.color }}>
+                {v.label}
+              </span>
+            </div>
+            <p className="mt-2 text-[1.15rem] font-semibold tabular-nums text-white">{row.value}</p>
+            {row.baseline ? <p className="text-[12.5px] text-white/55">{row.baseline}</p> : null}
+            <p className="mt-2 text-[12px] leading-snug text-white/45">{row.measure}</p>
+            {row.note ? <p className="mt-1 text-[12px] leading-snug text-white/45">{row.note}</p> : null}
+            <p className="mt-1.5 text-[11.5px] text-white/35">{row.n} casos</p>
           </li>
         );
       })}
@@ -247,9 +280,10 @@ function CopyReport({ text }: { text: string | undefined }) {
   );
 }
 
-type View = "fuentes" | "partidos" | "goleadores" | "pruebas";
+type View = "marcador" | "fuentes" | "partidos" | "goleadores" | "pruebas";
 
 const VIEWS: { id: View; label: string; hint: string }[] = [
+  { id: "marcador", label: "Marcador", hint: "Cuánto acierta cada fuente frente a lo que pasó de verdad. Con pocos casos la cifra es orientativa." },
   { id: "fuentes", label: "Fuentes", hint: "Cada dato que usa la app y si hoy ha llegado bien. «Respaldo» = la fuente principal falló y se usa otra." },
   { id: "partidos", label: "Partidos", hint: "Qué dicen las casas de apuestas de cada partido de la jornada y cuántos goles se esperan." },
   { id: "goleadores", label: "Goleadores", hint: "Probabilidad de marcar según las casas frente a la de tu modelo. Solo se compara: aún no cambia tu once." },
@@ -257,7 +291,7 @@ const VIEWS: { id: View; label: string; hint: string }[] = [
 ];
 
 export function ModelReportPanel() {
-  const [view, setView] = useState<View>("fuentes");
+  const [view, setView] = useState<View>("marcador");
   const search = useSearchParams();
   const { trends, state: dash } = useDashboard();
   const league = trends?.league_id || search.get("league");
@@ -329,7 +363,9 @@ export function ModelReportPanel() {
       <p className="-mt-1 px-1 text-[13px] text-white/50">{current.hint}</p>
 
       <div key={view} className="row-in min-w-0">
-        {view === "fuentes" ? (
+        {view === "marcador" ? (
+          <Scoreboard rows={payload.scoreboard ?? []} />
+        ) : view === "fuentes" ? (
           <Sources rows={sources} />
         ) : view === "partidos" ? (
           <Matches rows={payload.matches ?? []} />
