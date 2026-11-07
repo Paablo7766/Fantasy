@@ -30,3 +30,12 @@ Auditoría, cuando la jornada ya tiene puntos reales:
 ## Registro
 
 _Sin ciclos todavía._
+
+## AUDITORÍA 2026-11-07 18:30 Europe/Madrid · jornada última
+
+- previsto: 69.75 puntos del XI
+- realizado: 79.0 (último weekPoints de cada titular)
+- error: 9.25
+- causa: la serie oficial no trae número de jornada; se usa el último weekPoints de cada titular
+- corrección: no se cambian los pesos del solver en este ciclo
+- auditoria-xi:69.75:79.0:2206,2384,2418,2680,2703,2713,2933,3023,3082,3090,3260
