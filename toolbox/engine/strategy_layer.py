@@ -34,7 +34,7 @@ from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
 from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes, conserva_esqueleto
 from toolbox.engine.trading_desk import alertas_escudo_francotirador
-from toolbox.jornada_plan import earliest_kickoff
+from toolbox.jornada_plan import earliest_kickoff, matchday_start
 from toolbox.plan_memory import load_objetivos_previos, save_plan
 from toolbox.market_intel import _jornada_kickoff, _parse_kickoff
 from toolbox.normalize import exclusion_from_status, parse_clause_lock
@@ -929,7 +929,7 @@ def _inicio_jornada(board: dict[str, Any], now: datetime) -> tuple[datetime | No
     """Primer saque de la jornada; sin dato, el próximo viernes 21:00 de Madrid (marcado como estimado)."""
     trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
     try:
-        texto = earliest_kickoff(trends, now=now)
+        texto = matchday_start(trends, now=now)
         if isinstance(texto, str):
             momento = datetime.fromisoformat(texto)
             return (momento if momento.tzinfo else momento.replace(tzinfo=timezone.utc)), False

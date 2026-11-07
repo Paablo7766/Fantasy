@@ -15,6 +15,8 @@ from typing import Any
 
 import pulp
 
+from toolbox.engine.paron import dias_de_prevision, es_paron
+
 #: LaLiga permite endeudarse hasta el 20 % del valor del equipo.
 DEUDA_PCT_EQUIPO = 0.20
 #: Parte de ese margen que el trading usa. El resto cubre que la venta no llegue.
@@ -76,7 +78,11 @@ def build_trading_desk(
     if saldo_sobrante is None or dias_para_jornada is None or dias_para_jornada < DIAS_MINIMOS:
         return vacio
     capital = capital_trading(saldo_sobrante, valor_equipo, credito_disponible)
-    dias = min(DIAS_TRADING, float(dias_para_jornada))
+    if es_paron(dias_para_jornada):
+        # Parón: se aguanta hasta un día antes del saque, sin pasar de los 7 días de previsión.
+        dias = dias_de_prevision(dias_para_jornada) or DIAS_TRADING
+    else:
+        dias = min(DIAS_TRADING, float(dias_para_jornada))
     filas: list[dict[str, Any]] = []
     vistos: set[str] = set()
     for item in candidatos:

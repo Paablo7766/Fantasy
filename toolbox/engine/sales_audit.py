@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from toolbox.engine.lineup_math import solve_best_xi
+from toolbox.engine.paron import contexto_paron, dias_de_prevision
 
 LALIGA = "LaLiga"
 
@@ -272,7 +273,8 @@ def evaluar_ventas_y_ofertas(
     )
     negativo = saldo is not None and saldo < 0
     falta_caja = must_buy > 0 and (saldo is None or saldo < must_buy)
-    dias_jueves = max(0.0, dias_al_cierre - 1.0) if dias_al_cierre is not None else None
+    # En un parón el reloj pasa de 7 días, pero la previsión de precio es a 7: no se extrapola.
+    dias_jueves = dias_de_prevision(dias_al_cierre)
 
     filas: list[dict[str, Any]] = []
     for jugador in jugadores:
@@ -416,4 +418,4 @@ def evaluar_ventas_y_ofertas(
         "ventas_recomendadas_hoy": sum(1 for fila in filas if fila["veredicto_codigo"] == "ACEPTAR_YA"),
         "jugadores": len(filas),
     }
-    return {"resumen": resumen, "filas": filas}
+    return {"resumen": resumen, "filas": filas, "paron": contexto_paron(dias_al_cierre)}

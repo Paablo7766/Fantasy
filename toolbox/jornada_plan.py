@@ -98,6 +98,43 @@ def earliest_kickoff(trends: dict[str, Any] | None, *, now: datetime) -> str | N
     return min(pool).astimezone(timezone.utc).isoformat()
 
 
+_MAX_GAP_MISMA_JORNADA = timedelta(hours=36)
+
+
+def matchday_start(trends: dict[str, Any] | None, *, now: datetime) -> str | None:
+    """Primer saque de la jornada en curso, aunque ya haya pasado.
+
+    ``earliest_kickoff`` salta al siguiente partido en cuanto empieza el primero, y
+    la app anunciaba «la jornada empieza en 44 min» con la jornada ya empezada. Aquí
+    se parte del próximo saque y se retrocede por los partidos ya jugados mientras
+    no los separe un hueco de más de 36 h (el parón entre jornadas es mayor).
+    """
+    if not isinstance(trends, dict):
+        return None
+    moments: list[datetime] = []
+    for player in trends.get("players") if isinstance(trends.get("players"), list) else []:
+        if not isinstance(player, dict):
+            continue
+        fixture = player.get("fixture") if isinstance(player.get("fixture"), dict) else {}
+        kick = _parse_iso(fixture.get("kickoff"))
+        if kick is None:
+            calendar = player.get("own_calendar") if isinstance(player.get("own_calendar"), list) else []
+            if calendar and isinstance(calendar[0], dict):
+                kick = _parse_iso(calendar[0].get("kickoff"))
+        if kick is not None:
+            moments.append(kick)
+    upcoming = [moment for moment in moments if moment >= now]
+    if not upcoming:
+        return None
+    start = min(upcoming)
+    for moment in sorted((m for m in moments if m < now), reverse=True):
+        if start - moment <= _MAX_GAP_MISMA_JORNADA:
+            start = moment
+        else:
+            break
+    return start.astimezone(timezone.utc).isoformat()
+
+
 def _player_label(row: dict[str, Any]) -> str:
     name = row.get("nickname") or row.get("name") or row.get("player_id") or "jugador"
     return str(name)
@@ -241,7 +278,7 @@ def build_clock(
     now: datetime,
 ) -> tuple[list[dict[str, Any]], str | None, dict[str, Any] | None]:
     events: list[dict[str, Any]] = []
-    kickoff = earliest_kickoff(trends, now=now)
+    kickoff = matchday_start(trends, now=now)
     close_clock = None
     kick_moment = _parse_iso(kickoff)
     if kick_moment is not None:

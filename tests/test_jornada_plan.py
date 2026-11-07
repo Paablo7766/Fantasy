@@ -622,3 +622,18 @@ class AuditTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MatchdayStartTests(unittest.TestCase):
+    def test_jornada_ya_empezada_no_salta_al_siguiente_partido(self) -> None:
+        from toolbox.jornada_plan import matchday_start
+
+        ahora = datetime(2026, 11, 7, 12, 16, tzinfo=timezone.utc)
+        trends = {
+            "players": [
+                {"fixture": {"kickoff": "2026-11-06T20:00:00+00:00"}},
+                {"fixture": {"kickoff": "2026-11-07T13:00:00+00:00"}},
+                {"fixture": {"kickoff": "2026-10-31T15:00:00+00:00"}},
+            ]
+        }
+        self.assertEqual(matchday_start(trends, now=ahora), "2026-11-06T20:00:00+00:00")
