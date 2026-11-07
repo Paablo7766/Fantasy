@@ -98,6 +98,11 @@ def foto_previa(board: dict[str, Any], *, now: datetime | None = None, conn: sql
         ruta.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(ruta)
     try:
+        track._ensure_schema(conn)
+        from toolbox.marcador import reparar_historico
+
+        # Antes de fotografiar: fuera puntos prematuros y previsiones tomadas tras un saque.
+        reparar_historico(conn)
         league_id = trends.get("league_id") if isinstance(trends.get("league_id"), str) else None
         snap = track.run_snapshot(conn, league=league_id, jornada_id=None, fresh=False, squads=squads, trends=trends, market=market)
     finally:

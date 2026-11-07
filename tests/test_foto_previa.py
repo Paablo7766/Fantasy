@@ -37,8 +37,11 @@ class FotoPreviaTests(unittest.TestCase):
     def test_en_ventana_guarda_una_vez_por_tablero(self) -> None:
         board = tablero(AHORA + timedelta(hours=2))
         track = self._track()
-        with mock.patch("toolbox.matchday_auto._load_track", return_value=track):
+        with mock.patch("toolbox.matchday_auto._load_track", return_value=track), mock.patch(
+            "toolbox.marcador.reparar_historico"
+        ) as reparar:
             primera = fp.foto_previa(board, now=AHORA, conn=mock.Mock())
+            reparar.assert_called_once()
             segunda = fp.foto_previa(board, now=AHORA, conn=mock.Mock())
             # Tablero nuevo (otra actualización): nueva foto, la más reciente.
             nuevo = dict(board, photo_saved_unix=AHORA.timestamp())
