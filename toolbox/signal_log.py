@@ -35,18 +35,49 @@ create table if not exists {TABLE} (
     stored_at real not null,
     af_expected_points real,
     own_xp_modelo real,
+    p_titular_ff real,
+    p_titular_af real,
+    p_titular_final real,
+    p_titular_fuente text,
+    lineup_status text,
     primary key (player_id, day)
 )
 """
 
-_COLUMNAS_NUEVAS = ("af_expected_points", "own_xp_modelo")
+#: Columnas añadidas después de crear la tabla, con su tipo.
+#: La titularidad por fuente se guarda cada día desde nov 2026: saber el once
+#: bajaba el error del xP de 2,75 a 2,32 en el backtest y hasta ahora no había
+#: histórico con el que medir qué fuente acierta más.
+_COLUMNAS_NUEVAS = (
+    ("af_expected_points", "real"),
+    ("own_xp_modelo", "real"),
+    ("p_titular_ff", "real"),
+    ("p_titular_af", "real"),
+    ("p_titular_final", "real"),
+    ("p_titular_fuente", "text"),
+    ("lineup_status", "text"),
+)
 
 
 def _migrar(conn: sqlite3.Connection) -> None:
     existentes = {row[1] for row in conn.execute(f"pragma table_info({TABLE})")}
-    for columna in _COLUMNAS_NUEVAS:
+    for columna, tipo in _COLUMNAS_NUEVAS:
         if columna not in existentes:
-            conn.execute(f"alter table {TABLE} add column {columna} real")
+            conn.execute(f"alter table {TABLE} add column {columna} {tipo}")
+
+
+def _fraccion(value: Any) -> float | None:
+    """Probabilidad 0..1 (las fuentes dan a veces 0..100)."""
+    number = _num(value)
+    if number is None:
+        return None
+    if number > 1.0:
+        number /= 100.0
+    return number if 0.0 <= number <= 1.0 else None
+
+
+def _texto(value: Any) -> str | None:
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _db_path() -> Path:
@@ -78,6 +109,20 @@ def _last_points(player: dict[str, Any]) -> float | None:
     return None
 
 
+def _p_titular_futbolfantasy(player: dict[str, Any]) -> float | None:
+    """Cifra de FútbolFantasy: ``startProbability`` si viaja; si no, ``p_titular`` cuando su fuente es FF.
+
+    FF entra como fuente ``scraper``. Solo el consenso (AF y FF ≤ 20 %) la
+    rebaja al mínimo de las dos, y ahí las dos ya dicen «no juega».
+    """
+    cruda = _fraccion(player.get("startProbability"))
+    if cruda is not None:
+        return cruda
+    if player.get("p_titular_source") == "scraper":
+        return _fraccion(player.get("p_titular"))
+    return None
+
+
 def rows_from_players(players: list[dict[str, Any]], *, league_id: str | None, day: str) -> list[tuple[Any, ...]]:
     now = time.time()
     rows: list[tuple[Any, ...]] = []
@@ -103,6 +148,11 @@ def rows_from_players(players: list[dict[str, Any]], *, league_id: str | None, d
                 now,
                 _num(player.get("af_expected_points")),
                 _num(player.get("own_xp_modelo")),
+                _p_titular_futbolfantasy(player),
+                _fraccion(player.get("af_p_titular")),
+                _fraccion(player.get("p_titular")),
+                _texto(player.get("p_titular_source")),
+                _texto(player.get("lineup_status")) or _texto(player.get("lineupStatus")),
             )
         )
     return rows
@@ -130,7 +180,8 @@ def record_signal_log(
         conn.executemany(
             f"insert or replace into {TABLE} (player_id, day, league_id, price, market_value_change, "
             "last_points, af_predicted_delta, af_price_delta, own_predicted_delta, own_expected_points, "
-            "stored_at, af_expected_points, own_xp_modelo) values (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "stored_at, af_expected_points, own_xp_modelo, p_titular_ff, p_titular_af, p_titular_final, "
+            "p_titular_fuente, lineup_status) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             rows,
         )
         conn.commit()

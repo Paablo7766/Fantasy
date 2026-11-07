@@ -52,6 +52,30 @@ class SignalLogTests(unittest.TestCase):
             conn.close()
         self.assertEqual(row, (8.8, 4.1, 8.2))
 
+    def test_guarda_la_titularidad_de_cada_fuente(self) -> None:
+        players = [
+            {"player_id": "ff", "p_titular": 0.85, "p_titular_source": "scraper", "af_p_titular": 70, "lineup_status": "titular"},
+            {"player_id": "solo_af", "p_titular": 0.4, "p_titular_source": "analiticafantasy_market", "af_p_titular": 0.4},
+            {"player_id": "crudo", "startProbability": 60, "p_titular": 0.1, "p_titular_source": "scraper", "lineupStatus": "duda"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "responses.sqlite"
+            self.assertEqual(record_signal_log(players, league_id="L", day="2026-11-07", path=path), 3)
+            conn = sqlite3.connect(path)
+            rows = conn.execute(
+                f"select player_id, p_titular_ff, p_titular_af, p_titular_final, p_titular_fuente, lineup_status "
+                f"from {TABLE} order by player_id"
+            ).fetchall()
+            conn.close()
+        self.assertEqual(
+            rows,
+            [
+                ("crudo", 0.6, None, 0.1, "scraper", "duda"),
+                ("ff", 0.85, 0.7, 0.85, "scraper", "titular"),
+                ("solo_af", None, 0.4, 0.4, "analiticafantasy_market", None),
+            ],
+        )
+
     def test_no_day_or_no_players_writes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "responses.sqlite"

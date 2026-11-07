@@ -2745,6 +2745,34 @@ app.add_middleware(
 )
 
 
+def _foto_previa_tablero() -> dict[str, Any] | None:
+    try:
+        with no_network():
+            board = snapshot(_league(None), tier="full")
+    except Exception:  # noqa: BLE001 — sin foto guardada no hay nada que fotografiar
+        return None
+    return board if isinstance(board, dict) else None
+
+
+def _foto_previa_refresco() -> None:
+    """La misma descarga que el botón «Actualizar», si no hay otra en curso."""
+    with _plan_refresh_async_lock:
+        if _plan_refresh_busy():
+            return
+        _refresh_status_start("full", _league(None))
+    _run_plan_refresh_job(_league(None))
+
+
+@app.on_event("startup")
+def _arrancar_foto_previa() -> None:
+    """Foto del Marcador antes del primer saque, aunque nadie abra Laboratorio."""
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("FOTO_PREVIA", "1").strip() == "0":
+        return
+    from toolbox.foto_previa import arrancar_vigilante
+
+    arrancar_vigilante(_foto_previa_tablero, _foto_previa_refresco)
+
+
 @app.get("/")
 def dashboard_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})

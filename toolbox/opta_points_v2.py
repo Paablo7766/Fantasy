@@ -14,6 +14,7 @@ import numpy as np
 from scipy.special import gammainc
 from scipy.stats import norm
 
+from toolbox.engine.xp2 import prediccion_xp2, prob_titular_portero
 from toolbox.engine.xp_calculator import predecir_desde_jugador
 
 GOAL_PTS = {"POR": 6.0, "DEF": 6.0, "MC": 5.0, "DEL": 4.0}
@@ -168,6 +169,8 @@ def compute_expected_opta_points_v2(
         else 0.0
     )
     p_start_eff = float(np.clip(p_titular_raw * (1.0 - cup_penalty), 0.0, 1.0))
+    # Portero: el último partido decide (suplente 0,03 / titular 0,95).
+    p_start_eff = float(np.clip(prob_titular_portero(player, p_start_eff), 0.0, 1.0))
 
     minutes_total = float(form.get("minutes") or 0.0)
     starts_count = float(form.get("starts") or 0.0)
@@ -207,6 +210,20 @@ def compute_expected_opta_points_v2(
     xp_pizarra = float(fantasy["xp_pizarra"])
     xp_condicional = float(fantasy["xp_condicional"])
     techo = float(fantasy["techo"])
+    # xP 2.0 (suelo + gol + asistencia + portería) para quien tiene actas
+    # desglosadas. Sin ellas (fichajes del mercado) queda la fórmula de respaldo.
+    xp2 = prediccion_xp2(
+        player,
+        prob_titular=p_start_eff,
+        lambda_favor=lambda_own,
+        lambda_contra=lambda_opp,
+        prob_porteria_cero=p_cs_own,
+    )
+    if xp2 is not None:
+        volatilidad = techo - xp_condicional
+        xp_pizarra = float(xp2["xp"])
+        xp_condicional = float(xp2["xp_condicional"])
+        techo = xp_condicional + max(0.0, volatilidad)
     jp_mult = float(form.get("jp_multiplier") or 1.0)
     if jp_mult != 1.0:
         jp_scale = 1.0 + 0.35 * (jp_mult - 1.0)
@@ -222,7 +239,7 @@ def compute_expected_opta_points_v2(
     p_yc = float(np.clip(p_yc_base * (phi_def**0.3) * tau, 0.02, 0.45))
     next_match_survival = 1.0 - (p_start_eff * p_yc) if on_verge else 1.0
 
-    return {
+    salida = {
         "expected_points": round(max(0.0, xp_pizarra), 3),
         "ceiling_points": round(max(xp_pizarra, techo), 2),
         "xp_condicional": round(xp_condicional, 2),
@@ -236,4 +253,15 @@ def compute_expected_opta_points_v2(
         "next_match_survival": round(next_match_survival, 4),
         "goal_probability": round(float(np.clip(p_goal, 0.0, 1.0)), 4),
         "assist_probability": round(float(np.clip(p_assist, 0.0, 1.0)), 4),
+        "xp_modelo": "2.0" if xp2 is not None else "respaldo",
     }
+    if xp2 is not None:
+        salida["xp_desglose"] = {
+            "suelo": xp2["suelo"],
+            "gol": xp2["gol"],
+            "asistencia": xp2["asistencia"],
+            "porteria": xp2["porteria"],
+        }
+        salida["xp_breakout"] = xp2["breakout"]
+        salida["xp_balon_parado"] = xp2["balon_parado"]
+    return salida

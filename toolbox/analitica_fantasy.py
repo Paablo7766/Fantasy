@@ -7,6 +7,7 @@ sigue sin ese campo.
 
 from __future__ import annotations
 
+import html
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -158,6 +159,7 @@ class AfSetPieceRow:
     club: str | None = None
     role: str | None = None  # penalties | corners | direct | indirect
     shirt: int | None = None
+    position: str | None = None
 
 
 @dataclass
@@ -577,21 +579,70 @@ def parse_form_players(page: str) -> list[AfFormRow]:
     return rows
 
 
-def parse_set_pieces(page: str) -> list[AfSetPieceRow]:
-    role_map = {
-        "Directas": "direct",
-        "Indirectas": "indirect",
-        "Córners": "corners",
-        "Penaltis": "penalties",
-    }
+_SETPIECE_ROLES = {
+    "Directas": "direct",
+    "Indirectas": "indirect",
+    "Córners": "corners",
+    "Penaltis": "penalties",
+}
+# Maquetación actual (nov 2026): cada equipo abre con el enlace a su ficha
+# (``/equipo/<slug>-<id>``) y cada recuadro dice el rol y enlaza al lanzador
+# principal (``/jugadores/...``) con su puesto en el ``title``. La anterior
+# regex cogía el dorsal como nombre: los 80 lanzadores no cruzaban con nadie.
+_SETPIECE_ROLE = re.compile(r">(Directas|Indirectas|Córners|Penaltis)</p>")
+_SETPIECE_TEAM = re.compile(r'href="/equipo/([a-z0-9\-]+?)-\d+"')
+_SETPIECE_PLAYER = re.compile(r'href="/jugadores/[^"]+">([^<]+)</a>(?:<span[^>]*title="([^"]+)")?')
+_SETPIECE_SHIRT = re.compile(r"Principal#(\d+)")
+
+
+def _parse_set_pieces_actual(page: str) -> list[AfSetPieceRow]:
     rows: list[AfSetPieceRow] = []
-    for label, shirt, name in _SETPIECE_BLOCK.findall(page):
-        role = role_map.get(label)
-        if not role or not name.strip():
+    teams = [(m.start(), m.group(1)) for m in _SETPIECE_TEAM.finditer(page)]
+    for match in _SETPIECE_ROLE.finditer(page):
+        role = _SETPIECE_ROLES.get(match.group(1))
+        player = _SETPIECE_PLAYER.search(page, match.end())
+        if not role or player is None:
+            continue
+        # El recuadro siguiente empieza en el próximo rol: el lanzador tiene que estar antes.
+        siguiente = _SETPIECE_ROLE.search(page, match.end())
+        if siguiente is not None and player.start() > siguiente.start():
+            continue
+        club = None
+        for start, slug in teams:
+            if start > match.start():
+                break
+            club = slug.replace("-", " ")
+        tramo = page[match.end() : player.start()]
+        shirt = _SETPIECE_SHIRT.search(tramo)
+        name = html.unescape(player.group(1)).strip()
+        if not name or name.isdigit():
             continue
         rows.append(
             AfSetPieceRow(
-                name=name.strip(),
+                name=name,
+                club=club,
+                role=role,
+                shirt=_as_int(shirt.group(1)) if shirt else None,
+                position=_position(player.group(2)) if player.group(2) else None,
+            )
+        )
+    return rows
+
+
+def parse_set_pieces(page: str) -> list[AfSetPieceRow]:
+    actual = _parse_set_pieces_actual(page)
+    if actual:
+        return actual
+    rows: list[AfSetPieceRow] = []
+    for label, shirt, name in _SETPIECE_BLOCK.findall(page):
+        role = _SETPIECE_ROLES.get(label)
+        name = name.strip()
+        # Un número suelto es el dorsal, no el nombre.
+        if not role or not name or name.isdigit():
+            continue
+        rows.append(
+            AfSetPieceRow(
+                name=name,
                 role=role,
                 shirt=_as_int(shirt) if shirt else None,
             )
@@ -848,6 +899,10 @@ def _consenso_titularidad_baja(player: dict[str, Any]) -> None:
         player["p_titular_consenso"] = "bajo"
 
 
+def _clave_balon_parado(row: AfSetPieceRow) -> str:
+    return f"{normalize_name(row.name)}|{normalize_club(row.club) if row.club else ''}"
+
+
 def apply_analitica_fantasy(
     catalog: list[CanonicalPlayer],
     resolver: EntityResolver,
@@ -866,7 +921,8 @@ def apply_analitica_fantasy(
     # Agrupa roles de balón parado por nombre antes del matching.
     set_by_name: dict[str, list[AfSetPieceRow]] = {}
     for row in bundle.set_pieces:
-        set_by_name.setdefault(normalize_name(row.name), []).append(row)
+        # Nombre + club: dos «Hugo» de equipos distintos no comparten roles.
+        set_by_name.setdefault(_clave_balon_parado(row), []).append(row)
     set_reps = [rows[0] for rows in set_by_name.values() if rows]
     set_map, d8 = _link_rows(catalog, resolver, set_reps, "analiticafantasy_set_pieces")
 
@@ -969,7 +1025,7 @@ def apply_analitica_fantasy(
                 "signals": list(form.signals),
             }
         if set_piece is not None:
-            grouped = set_by_name.get(normalize_name(set_piece.name)) or [set_piece]
+            grouped = set_by_name.get(_clave_balon_parado(set_piece)) or [set_piece]
             player["af_set_pieces"] = [
                 {"role": item.role, "shirt": item.shirt} for item in grouped if item.role
             ]
