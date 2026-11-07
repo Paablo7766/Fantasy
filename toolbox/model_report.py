@@ -343,6 +343,23 @@ def _verdict(n: int, better: bool | None) -> str:
     return "mejor" if better else "peor"
 
 
+def _prior_rounds(board: dict[str, Any] | None) -> dict[str, dict[int, float]]:
+    """``player_id`` → {jornada: puntos} de las jornadas jugadas, tal como las trae el tablero."""
+    if not isinstance(board, dict):
+        return {}
+    try:
+        from toolbox.previa import _rounds, _universe
+
+        out: dict[str, dict[int, float]] = {}
+        for player in _universe(board):
+            rounds = _rounds(player)
+            if rounds:
+                out[str(player["player_id"])] = rounds
+        return out
+    except Exception:  # noqa: BLE001 — sin historial el marcador usa la referencia simple
+        return {}
+
+
 def scoreboard(conn: sqlite3.Connection | None, board: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Cuánto acierta cada fuente contra la realidad, con su referencia y cuántos casos hay.
 
@@ -356,8 +373,44 @@ def scoreboard(conn: sqlite3.Connection | None, board: dict[str, Any] | None = N
         return rows
     tables = _tables(conn)
 
-    # 1. xP del modelo frente a puntos reales (y frente a no saber nada).
-    if "matchday_snapshots" in tables:
+    # 1. xP del modelo frente a puntos reales y frente a la media de temporada.
+    prior_rounds = _prior_rounds(board)
+    if "matchday_snapshots" in tables and prior_rounds:
+        data = conn.execute(
+            """select jornada_id, player_id, expected_points, actual_points from matchday_snapshots
+               where actual_points is not null and expected_points is not null"""
+        ).fetchall()
+        err_model: list[float] = []
+        err_naive: list[float] = []
+        bias_sum = 0.0
+        for jornada, pid, expected, actual in data:
+            try:
+                j = int(jornada)
+            except (TypeError, ValueError):
+                continue
+            before = [v for r, v in (prior_rounds.get(str(pid)) or {}).items() if r < j]
+            if not before:
+                continue
+            err_model.append(abs(actual - expected))
+            err_naive.append(abs(actual - sum(before) / len(before)))
+            bias_sum += actual - expected
+        n = len(err_model)
+        if n:
+            mae, base = sum(err_model) / n, sum(err_naive) / n
+            rows.append(
+                {
+                    "id": "xp_modelo",
+                    "label": "Puntos esperados (modelo propio)",
+                    "measure": "Error medio en puntos por jugador y jornada. Menos es mejor.",
+                    "value": f"{_f(mae)} pts",
+                    "baseline": f"{_f(base)} pts con la media de su temporada hasta entonces",
+                    "n": n,
+                    "verdict": _verdict(n, mae < base),
+                    "note": f"Sesgo medio {_f(bias_sum / n)} pts (positivo = el modelo se queda corto). "
+                    "Solo jugadores con jornadas previas.",
+                }
+            )
+    elif "matchday_snapshots" in tables:
         n, mae, bias, mean_actual = conn.execute(
             """select count(*), avg(abs(actual_points - expected_points)),
                       avg(actual_points - expected_points), avg(actual_points)

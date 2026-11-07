@@ -131,3 +131,19 @@ def test_scoreboard_few_cases_is_not_a_verdict() -> None:
     )
     conn.execute("insert into matchday_snapshots values ('1','1','x',5,2)")
     assert {r["id"]: r for r in scoreboard(conn, None)}["xp_modelo"]["verdict"] == "pocos_datos"
+
+
+def test_scoreboard_baseline_is_player_season_mean_before_the_round() -> None:
+    from toolbox.model_report import scoreboard
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(
+        "create table matchday_snapshots (jornada_id text, player_id text, name text, expected_points real, "
+        "actual_points real)"
+    )
+    # Jugador 1: media previa 6 (J1-J2), jornada 3 real 6, xP 2 → la media acierta, el modelo no.
+    conn.execute("insert into matchday_snapshots values ('3','1','x',2,6)")
+    board = {"squads": {"squads": [{"team_id": "9", "is_self": True, "players": [
+        {"player_id": "1", "club": "Sevilla FC", "week_points_by_round": {"1": 5, "2": 7, "3": 6}}]}]}}
+    row = {r["id"]: r for r in scoreboard(conn, board)}["xp_modelo"]
+    assert row["n"] == 1 and "0.00" in row["baseline"] and "4.00" in row["value"]
