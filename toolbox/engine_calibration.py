@@ -238,6 +238,40 @@ def _resolve_pujar_outcomes(conn: sqlite3.Connection, own_team_id: str | None) -
     conn.commit()
 
 
+def sobrepuja_de_liga(db_path: Path | None = None) -> dict[str, Any] | None:
+    """Lo que pagó de más quien ganó las subastas que perdimos con una puja recomendada.
+
+    Lee ``market_decision_snapshots`` (decisión ``PUJAR``, resultado ``lost``, con
+    el importe que pagó el ganador). Nuestra cifra es la recomendada del día y,
+    si no se guardó, la puja óptima congelada. Sin base de datos o sin pérdidas
+    devuelve ``None``: no hay evidencia, no hay escalón.
+    """
+    from toolbox.engine.auction_intel import estimar_sobrepuja_liga
+
+    ruta = db_path or calibration_db_path()
+    if not Path(ruta).is_file():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{Path(ruta).as_posix()}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        filas = conn.execute(
+            """
+            select suggested_bid, predicted_win, paid_eur
+            from market_decision_snapshots
+            where decision = 'PUJAR' and outcome = 'lost' and paid_eur > 0
+            """
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    pares = [((sugerida if sugerida and sugerida > 0 else congelada), pagado) for sugerida, congelada, pagado in filas]
+    resumen = estimar_sobrepuja_liga(pares)
+    return resumen if resumen["estimada"] is not None else None
+
+
 def matchday_points_trend(conn: sqlite3.Connection) -> dict[str, Any]:
     rows = conn.execute(
         """

@@ -32,6 +32,13 @@ TITULAR_SEGURO = 0.80
 PASO_PIZARRA_EUR = 100_000
 UMBRAL_NOTA_DEMANDA = 8.0
 UMBRAL_PREVISION_DEMANDA = 15.0
+# Puja competitiva de liga: cuánto más que nuestra cifra pagó, de media, quien nos
+# ganó las subastas. Con pocas pérdidas la media bruta se encoge hacia un prior
+# (5 %, como cuatro subastas imaginarias) y nunca pasa del 20 %: con n pequeño un
+# solo rival que pagó de más (+48 %) no puede fijar la regla de la liga.
+SOBREPUJA_PRIOR = 0.05
+SOBREPUJA_PESO_PRIOR = 4.0
+SOBREPUJA_MAX = 0.20
 # Entre 140.000 y 220.000 €, en pasos de 10.000, sin múltiplos de 50.000.
 DIFERENCIALES_EUR = tuple(v for v in range(140_000, 220_001, 10_000) if v % 50_000 != 0)
 
@@ -268,6 +275,75 @@ def puja_anti_pizarra(
     salida["puja_anti_pizarra"] = objetivo
     salida["diferencial_anti_pizarra_eur"] = objetivo - pizarra
     return salida
+
+
+def estimar_sobrepuja_liga(perdidas: list[tuple[Any, Any]]) -> dict[str, Any]:
+    """Sobrepuja que hay que añadir a nuestra cifra, según las subastas que perdimos.
+
+    ``perdidas`` son pares ``(nuestra cifra, lo que pagó el ganador)``. Solo
+    cuentan como evidencia las pérdidas en las que el ganador pagó **más** que
+    nosotros: si pagó lo mismo o menos, la cifra no fue la causa (no se pujó, o
+    hubo empate) y meterlas como un 0 % diluiría la señal sin que lo sea.
+
+    Devuelve ``estimada`` (``None`` sin ninguna pérdida con sobrepuja) ya
+    encogida hacia el prior y con tope, y los números crudos para auditarla.
+    """
+    validas = 0
+    excesos: list[float] = []
+    for nuestra, pagado in perdidas:
+        if isinstance(nuestra, bool) or isinstance(pagado, bool):
+            continue
+        if not isinstance(nuestra, (int, float)) or not isinstance(pagado, (int, float)):
+            continue
+        if nuestra <= 0 or pagado <= 0:
+            continue
+        validas += 1
+        exceso = float(pagado) / float(nuestra) - 1.0
+        if exceso > 0:
+            excesos.append(exceso)
+    estimada: float | None = None
+    media: float | None = None
+    if excesos:
+        media = sum(excesos) / len(excesos)
+        encogida = (sum(excesos) + SOBREPUJA_PRIOR * SOBREPUJA_PESO_PRIOR) / (len(excesos) + SOBREPUJA_PESO_PRIOR)
+        estimada = round(min(SOBREPUJA_MAX, max(0.0, encogida)), 4)
+    return {
+        "perdidas": validas,
+        "con_sobrepuja": len(excesos),
+        "media_exceso": None if media is None else round(media, 4),
+        "estimada": estimada,
+        "tope": SOBREPUJA_MAX,
+    }
+
+
+def puja_competitiva_liga(
+    base: Any,
+    maxima: Any,
+    sobrepuja: Any,
+    *,
+    margen: Any = None,
+) -> int | None:
+    """Escalón por encima de nuestra cifra que cubre lo que suele pagar la liga.
+
+    ``base * (1 + sobrepuja)``, nunca por encima del techo dinámico (``maxima``,
+    el techo de rentabilidad) ni de ``base + margen`` si se conoce el margen de
+    caja. Sin techo, sin evidencia o sin escalón libre por encima de la base no
+    hay puja competitiva.
+    """
+    if any(isinstance(valor, bool) for valor in (base, maxima, sobrepuja)):
+        return None
+    if not isinstance(base, (int, float)) or base <= 0:
+        return None
+    if not isinstance(maxima, (int, float)) or maxima <= 0:
+        return None
+    if not isinstance(sobrepuja, (int, float)) or sobrepuja <= 0:
+        return None
+    objetivo = min(float(base) * (1.0 + float(sobrepuja)), float(maxima))
+    if isinstance(margen, (int, float)) and not isinstance(margen, bool):
+        objetivo = min(objetivo, float(base) + max(0.0, float(margen)))
+    # El epsilon evita que 10 M€ × 1,13 = 11 299 999,999… caiga un escalón entero.
+    objetivo = int(math.floor(objetivo / PASO_PRECIO + 1e-9)) * PASO_PRECIO
+    return objetivo if objetivo > base else None
 
 
 def capitanes(

@@ -20,6 +20,7 @@ from toolbox.engine.auction_intel import (
     calcular_pujas,
     capitanes,
     puja_anti_pizarra,
+    puja_competitiva_liga,
 )
 from toolbox.engine.lineup_math import solve_best_xi, war_del_once
 from toolbox.engine.liquidacion import plan_liquidacion
@@ -836,6 +837,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         saldo = cajas[own_id]
 
     notas = _notas_mercado(records, previsiones, saldo)
+    sobrepuja_liga = _sobrepuja_liga()
 
     pujas: dict[str, dict[str, Any]] = {}
     for row in records.values():
@@ -859,6 +861,19 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
             dificultad=row.get("dificultad") if isinstance(row.get("dificultad"), str) else None,
         )
         _aplicar_anti_pizarra(pujas[player_id], row, notas.get(player_id), previsto_pct, saldo)
+        # Demanda alta en el mercado: el escalón de liga también se enseña fuera del plan.
+        base_mercado = (
+            puja_unica(pujas[player_id], row)
+            if row.get("on_market") is True and row.get("is_self") is not True
+            else None
+        )
+        _aplicar_competitiva(
+            pujas[player_id],
+            base=base_mercado if pujas[player_id].get("alta_demanda") is True else None,
+            maxima=pujas[player_id].get("puja_maxima"),
+            sobrepuja=sobrepuja_liga,
+            margen=(saldo - base_mercado) if isinstance(saldo, int) and isinstance(base_mercado, int) else None,
+        )
 
     forzadas: dict[str, str] = {}
     ventas: list[dict[str, Any]] = []
@@ -909,7 +924,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         previsiones,
         notas,
     )
-    _sellar_pujas_plan(plan, pujas)
+    _sellar_pujas_plan(plan, pujas, sobrepuja_liga)
     consejos = _consejos(records, war, plan, own_id)
     auditoria = _auditar_ventas(records, war, plan, previsiones, saldo, own_id)
     clausulas = _asesorar_clausulas(
@@ -1276,6 +1291,37 @@ def _aplicar_anti_pizarra(
             puja["puja_smart"] = anti
 
 
+def _sobrepuja_liga() -> dict[str, Any] | None:
+    """Sobrepuja media de las subastas perdidas (Marcador). ``None`` sin evidencia o sin base de datos."""
+    try:
+        from toolbox.engine_calibration import sobrepuja_de_liga
+
+        return sobrepuja_de_liga()
+    except Exception:  # noqa: BLE001 — sin historial no hay escalón, pero el plan sigue
+        logger.debug("Sin historial de sobrepuja de liga", exc_info=True)
+        return None
+
+
+def _aplicar_competitiva(
+    destino: dict[str, Any],
+    *,
+    base: Any,
+    maxima: Any,
+    sobrepuja: dict[str, Any] | None,
+    margen: Any = None,
+) -> None:
+    """Escribe ``puja_competitiva_liga`` y el porcentaje que la sostiene, o los deja en ``None``."""
+    estimada = sobrepuja.get("estimada") if isinstance(sobrepuja, dict) else None
+    cifra = puja_competitiva_liga(base, maxima, estimada, margen=margen)
+    destino["puja_competitiva_liga"] = cifra
+    destino["sobrepuja_liga_pct"] = round(float(estimada) * 100.0, 1) if cifra is not None else None
+    destino["sobrepuja_liga_muestra"] = (
+        {"perdidas": sobrepuja.get("perdidas"), "con_sobrepuja": sobrepuja.get("con_sobrepuja")}
+        if cifra is not None and isinstance(sobrepuja, dict)
+        else None
+    )
+
+
 #: Tipos de acción del plan que sacan a un jugador de tu plantilla.
 _TIPOS_VENTA_PLAN = frozenset({"VENDE", "VENDER HOY", "ESCAPARATE"})
 #: Momentos del plan que son de verdad parte del plan (no radar ni alternativas).
@@ -1442,9 +1488,23 @@ def _no_blindar_ventas_del_plan(
         resumen["vende_en_plan"] = sorted(ventas.values())
 
 
-def _sellar_pujas_plan(plan: dict[str, Any], pujas: dict[str, dict[str, Any]]) -> None:
-    """Las acciones PUJA del plan llevan la cifra de La Pizarra y la nuestra."""
-    for accion in plan.get("acciones") or [] if isinstance(plan, dict) else []:
+def _sellar_pujas_plan(
+    plan: dict[str, Any],
+    pujas: dict[str, dict[str, Any]],
+    sobrepuja: dict[str, Any] | None = None,
+) -> None:
+    """Las acciones PUJA del plan llevan la cifra de La Pizarra y la nuestra.
+
+    Un objetivo del plan lleva además la puja competitiva de liga: la cifra por
+    encima de la nuestra que cubre lo que suele pagar quien gana las subastas.
+    Solo cabe dentro del techo dinámico y de lo que sobra en el presupuesto del
+    plan (o del crédito que la propia puja ya usa en el parón).
+    """
+    if not isinstance(plan, dict):
+        return
+    presupuesto = plan.get("presupuesto") if isinstance(plan.get("presupuesto"), dict) else {}
+    holgura = presupuesto.get("holgura")
+    for accion in plan.get("acciones") or []:
         if not isinstance(accion, dict) or accion.get("tipo") != "PUJA":
             continue
         puja = pujas.get(accion.get("player_id")) if isinstance(accion.get("player_id"), str) else None
@@ -1454,6 +1514,22 @@ def _sellar_pujas_plan(plan: dict[str, Any], pujas: dict[str, dict[str, Any]]) -
         accion["puja_anti_pizarra"] = puja.get("puja_anti_pizarra")
         accion["diferencial_anti_pizarra_eur"] = puja.get("diferencial_anti_pizarra_eur") or 0
         accion["alta_demanda"] = puja.get("alta_demanda") is True
+        margen = holgura if isinstance(holgura, int) and not isinstance(holgura, bool) else 0
+        if accion.get("financia_con_credito") is True:
+            tope = presupuesto.get("credito_20pct")
+            usado = presupuesto.get("credito_paron")
+            if isinstance(tope, int) and isinstance(usado, int):
+                margen += max(0, tope - usado)
+        _aplicar_competitiva(
+            accion,
+            base=accion.get("euros"),
+            maxima=puja.get("puja_maxima"),
+            sobrepuja=sobrepuja,
+            margen=margen,
+        )
+        # Mercado ve la misma cifra que el plan.
+        puja["puja_competitiva_liga"] = accion["puja_competitiva_liga"]
+        puja["sobrepuja_liga_pct"] = accion["sobrepuja_liga_pct"]
 
 
 def _plan(
@@ -1834,6 +1910,8 @@ def _stamp_row(row: dict[str, Any], report: dict[str, Any]) -> None:
         row["puja_recomendada"] = puja.get("puja_recomendada")
         row["puja_maxima"] = puja.get("puja_maxima")
         row["puja_smart"] = puja.get("puja_smart")
+        row["puja_competitiva_liga"] = puja.get("puja_competitiva_liga")
+        row["sobrepuja_liga_pct"] = puja.get("sobrepuja_liga_pct")
         maxima = puja.get("puja_maxima")
         if isinstance(maxima, int) and maxima > 0:
             row["financial_max_bid_eur"] = maxima

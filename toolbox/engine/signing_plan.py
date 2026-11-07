@@ -16,6 +16,7 @@ import pulp
 from toolbox.analyzer import FORMATIONS, POSITIONS, XI_SIZE
 from toolbox.engine.auction_intel import nota_y_veredicto, prima_quemada_mercado
 from toolbox.engine.lineup_math import HUECO_OBLIGATORIO, penalizacion_varianza, solve_best_xi
+from toolbox.engine.paron import dias_de_prevision
 from toolbox.engine.trading_desk import DEUDA_PCT_EQUIPO, build_trading_desk
 
 # Un suplente buscado a ciegas rinde como un titular medio de esa posición.
@@ -83,6 +84,15 @@ _MILLON = 1_000_000
 # anuncio dura como mucho 3 días y LaLiga renueva su oferta a diario: listar a
 # 13 días del cierre (parón) solo hace que caduque antes de necesitarla.
 DIAS_ESCAPARATE = 4.5
+# Parón (más de DIAS_ESCAPARATE al cierre): el saldo puede estar en negativo,
+# dentro del 20 % de deuda, hasta el saque sin ninguna sanción. Dejar ese cupo
+# parado es perder la subida del mercado. Solo lo usan las pujas que lo
+# merecen: una subida prevista a 7 días de este porcentaje o más, o una mejora
+# clara del once. Las ventas para cuadrar la caja se deciden a DIAS_DECIDIR_VENTAS
+# del cierre, con el fichaje ya revalorizado.
+CREDITO_PARON_PCT = 12.0
+CREDITO_PARON_MEJORA = 2.0
+DIAS_DECIDIR_VENTAS = 3.0
 _SEQ = 0
 ETIQUETA_COMPRA = {"PUJA": "PUJAR", "CLAUSULAZO": "CLAUSULAR"}
 # Fichajes fuertes que no caben en la caja de hoy y se enseñan como alternativa.
@@ -100,23 +110,27 @@ def _presupuesto(
     gasto_pujas: int,
     gasto_clausulas: int,
     tope_deuda: int | None,
+    credito_paron: int = 0,
 ) -> dict[str, Any]:
     """De dónde sale cada euro del plan. Lo garantiza el solver; aquí se publica y se comprueba.
 
     Cláusula: solo caja positiva más ventas aceptadas hoy (LaLiga no da crédito).
     Puja: además, las ventas que se hacen solo si se gana. El crédito del 20 %
     se publica pero el plan no lo gasta: el saldo tiene que acabar en cero o más
-    antes del saque o la jornada puntúa 0.
+    antes del saque o la jornada puntúa 0. Única excepción, el parón: hasta el
+    saque no hay sanción, así que ``credito_paron`` suma a lo disponible para
+    pujas (nunca para cláusulas) y hay que saldarlo vendiendo antes del cierre.
     """
     ingresos_hoy = sum(int(row["venta_eur"]) for row in ventas_hoy)
     condicionales = sum(int(venta["venta_eur"]) for venta, _puja in pares)
     para_clausulas = max(0, saldo) + ingresos_hoy
-    para_pujas = saldo + ingresos_hoy + condicionales - gasto_clausulas
+    para_pujas = saldo + ingresos_hoy + condicionales - gasto_clausulas + credito_paron
     return {
         "caja": saldo,
         "ventas_hoy": ingresos_hoy,
         "ventas_si_ganas": condicionales,
         "credito_20pct": tope_deuda,
+        "credito_paron": credito_paron,
         "disponible_clausulas": para_clausulas,
         "disponible_pujas": para_pujas,
         "gasto_clausulas": gasto_clausulas,
@@ -210,6 +224,20 @@ def clasificar_impulso(
     if all_in:
         return "ALL-IN"
     return "NORMAL"
+
+
+def merece_credito_paron(*, origen: str, pct: float | None, mejora: float) -> bool:
+    """Puja que puede pagarse con el crédito del parón: sube mucho o mejora el once de verdad.
+
+    Las cláusulas se pagan siempre con caja: LaLiga no da crédito para ellas.
+    Quien mejora el once pero se prevé que baje no entra: esperar a comprarlo
+    cuesta menos que comprarlo ya, y el plan lo reevalúa cada día.
+    """
+    if origen != "bid":
+        return False
+    if pct is not None and pct >= CREDITO_PARON_PCT:
+        return True
+    return mejora >= CREDITO_PARON_MEJORA and (pct is None or pct >= 0)
 
 
 def _meta(dias_crudos: float | None) -> dict[str, Any]:
@@ -334,6 +362,24 @@ def _dias_texto(dias: float) -> str:
         entero = int(round(dias))
         return "1 día" if entero == 1 else f"{entero} días"
     return f"{dias:.1f} días"
+
+
+def _texto_credito_paron(ficha: dict[str, Any], dias: float, credito: int) -> str:
+    """Por qué se puja hoy con deuda y cuándo hay que decidir las ventas."""
+    mejora = float(ficha["mejora"])
+    pct = ficha.get("pct")
+    motivos: list[str] = []
+    if mejora >= CREDITO_PARON_MEJORA:
+        motivos.append(f"mejora el once +{mejora:.1f} xP")
+    if isinstance(pct, (int, float)) and not isinstance(pct, bool) and pct >= CREDITO_PARON_PCT:
+        motivos.append(f"se prevé una subida del {pct:.0f} % a 7 días")
+    decidir = max(0.0, dias - DIAS_DECIDIR_VENTAS)
+    return (
+        f"Parón: {' y '.join(motivos)}. Se puja hoy aunque el saldo quede en negativo "
+        f"(el plan usa {credito / _MILLON:.1f} M€ de crédito, dentro del 20 %): hasta el saque no hay sanción. "
+        f"No vendas hoy. Decide a quién vender dentro de {_dias_texto(decidir)}, "
+        f"con el fichaje ya revalorizado, y deja el saldo en cero o más antes del saque (en {_dias_texto(dias)})."
+    )
 
 
 def _mejora_neta(row: dict[str, Any], elegibles: list[dict[str, Any]], base: float, base_ok: bool) -> float:
@@ -725,6 +771,8 @@ def _plan_once(
     previos = {str(item) for item in objetivos_previos or [] if item}
     ventana = meta["modo_liquidez"] == "VENTANA"
     all_in = meta["modo_liquidez"] == "ALL-IN"
+    # Parón: lejos del cierre el saldo negativo no cuesta nada hasta el saque.
+    paron_credito = ventana and dias is not None and dias > DIAS_ESCAPARATE
     penalizacion = float(meta["penalizacion_liquidez"])
     saldo = cash if isinstance(cash, int) and not isinstance(cash, bool) else None
     plantilla = [row for row in owned if isinstance(row, dict) and isinstance(row.get("player_id"), str)]
@@ -802,6 +850,16 @@ def _plan_once(
         )
         # Chollo de banquillo: no entra en el once. Sin dos días no da tiempo a revenderlo.
         especulativo = impulso == "CHOLLO" and mejora < MEJORA_MINIMA
+        if (
+            paron_credito
+            and origen == "bid"
+            and pct is not None
+            and pct >= CREDITO_PARON_PCT
+            and mejora < UMBRAL_HOLD_XP
+        ):
+            # En el parón una subida alta sin mejora del once es pura especulación:
+            # la reparte el trading desk, que sí sabe cuánto crédito le queda.
+            especulativo = True
         if especulativo:
             # Fuera del solver del once: lo reparte el trading desk.
             if ventana and trading_out is not None:
@@ -825,6 +883,7 @@ def _plan_once(
             "impulso": impulso,
             "origen": origen,
             "prima": prima_quemada_mercado(euros, _valor_mercado(row), pct) if origen == "bid" else 0.0,
+            "credito_paron": paron_credito and merece_credito_paron(origen=origen, pct=pct, mejora=mejora),
         }
         if impulso == "HOLD":
             dias_txt = _dias_texto(dias or 0.0)
@@ -973,7 +1032,18 @@ def _plan_once(
         if row["player_id"] in clausula
     )
     gastos_busca = pulp.lpSum(coste_busca * busca[position] for position in POSITIONS)
-    problem += saldo + ingresos - gastos_puja - gastos_clausula - gastos_busca >= 0
+    # Crédito del parón: solo cubre pujas que lo merecen y nunca pasa del 20 % del
+    # valor del equipo. Sin el valor de toda la plantilla no se conoce el tope y
+    # no se usa. El resto del gasto (cláusulas, pujas normales, busca) sigue
+    # saliendo de caja.
+    valores_propios = {row["player_id"]: _valor_jugador(row) for row in plantilla}
+    tope_deuda_conocido = bool(plantilla) and all(valor > 0 for valor in valores_propios.values())
+    pujas_credito = [pid for pid in puja if ficha_compra[f"bid:{pid}"]["credito_paron"]]
+    credito_usado: Any = 0
+    if paron_credito and tope_deuda_conocido and pujas_credito:
+        credito_usado = pulp.LpVariable(f"{prefix}_credito", lowBound=0)
+        problem += credito_usado <= pulp.lpSum(_euros_de(f"bid:{pid}") * puja[pid] for pid in pujas_credito)
+    problem += saldo + ingresos - gastos_puja - gastos_clausula - gastos_busca + credito_usado >= 0
 
     # Cobertura de cada puja. Las subastas se resuelven a la vez y puedes ganar
     # cualquier combinación: cada puja tiene su parte de la caja de hoy más las
@@ -1013,7 +1083,7 @@ def _plan_once(
 
     ingresos_hoy = pulp.lpSum(venta_de.get(vendido, 0) * _hoy(vendido) for vendido in vende)
     caja_hoy = saldo + ingresos_hoy - gastos_clausula
-    problem += pulp.lpSum(caja_puja.values()) <= caja_hoy - gastos_busca
+    problem += pulp.lpSum(caja_puja.values()) <= caja_hoy - gastos_busca + credito_usado
     # Perder todas las pujas, o ganar solo las que se pagan con varias ventas,
     # no puede dejar menos de 11 jugadores.
     exceso = {pujado: pulp.LpVariable(f"{prefix}_e{index}", lowBound=0) for index, pujado in enumerate(puja)}
@@ -1025,8 +1095,6 @@ def _plan_once(
         ) + pulp.lpSum(list(clausula.values()) or [0])
     # LaLiga no acepta pujas que te endeuden más del 20 % del valor del equipo.
     # Solo se aplica si se conoce el valor de toda la plantilla.
-    valores_propios = {row["player_id"]: _valor_jugador(row) for row in plantilla}
-    tope_deuda_conocido = bool(plantilla) and all(valor > 0 for valor in valores_propios.values())
     if tope_deuda_conocido and puja:
         valor_equipo_hoy = (
             sum(valores_propios.values())
@@ -1041,7 +1109,8 @@ def _plan_once(
     )
 
     def _exento_peaje(clave: str) -> bool:
-        return ficha_compra[clave]["impulso"] in {"MUST-BUY", "CHOLLO"}
+        ficha = ficha_compra[clave]
+        return ficha["impulso"] in {"MUST-BUY", "CHOLLO"} or ficha["credito_paron"]
 
     def _es_prioritario(clave: str) -> bool:
         ficha = ficha_compra[clave]
@@ -1184,9 +1253,13 @@ def _plan_once(
         ]
     )
     def _psi(clave: str) -> float:
-        # El chollo no paga peaje. El resto lo paga en proporción a lo poco que mejora el once.
+        # El chollo no paga peaje, ni la puja que va con el crédito del parón: ese
+        # dinero no sale de la caja, es deuda sin coste hasta el saque. El resto lo
+        # paga en proporción a lo poco que mejora el once.
         ficha = ficha_compra[clave]
-        return 0.0 if ficha["impulso"] == "CHOLLO" else factor_peaje(ficha["mejora"])
+        if ficha["impulso"] == "CHOLLO" or ficha["credito_paron"]:
+            return 0.0
+        return factor_peaje(ficha["mejora"])
 
     gastos_peaje = pulp.lpSum(
         [
@@ -1344,6 +1417,15 @@ def _plan_once(
         - sum(int(ficha_compra[f"clause:{row['player_id']}"]["euros"]) for row in clausulas_sel)
     )
     total_pujas = sum(int(ficha_compra[f"bid:{row['player_id']}"]["euros"]) for row in pujas_sel)
+    # Lo que el plan gasta por encima de la caja y de todas sus ventas: crédito del parón.
+    gasto_total = (
+        total_pujas
+        + sum(int(ficha_compra[f"clause:{row['player_id']}"]["euros"]) for row in clausulas_sel)
+        + sum(coste_busca for variable in busca.values() if _on(variable))
+    )
+    credito_paron_eur = (
+        max(0, gasto_total - saldo - sum(int(row["venta_eur"]) for row in ventas_sel)) if paron_credito else 0
+    )
     ventas_de_puja: dict[str, list[dict[str, Any]]] = {}
     for venta, puja_row in pares:
         ventas_de_puja.setdefault(puja_row["player_id"], []).append(
@@ -1442,6 +1524,8 @@ def _plan_once(
         row = ficha["row"]
         impulso = ficha["impulso"]
         mejora = float(ficha["mejora"])
+        if credito_paron_eur > 0 and ficha["credito_paron"]:
+            return "hoy", _texto_credito_paron(ficha, dias or 0.0, credito_paron_eur)
         if impulso == "CHOLLO":
             return (
                 "hoy",
@@ -1495,6 +1579,8 @@ def _plan_once(
                 prevision_7d_pct=ficha["pct"],
             )
         )
+        if credito_paron_eur > 0 and ficha["credito_paron"]:
+            acciones[-1]["financia_con_credito"] = True
     for row in raids:
         if row["player_id"] not in clausula or not _on(clausula[row["player_id"]]):
             continue
@@ -1579,6 +1665,7 @@ def _plan_once(
         gasto_pujas=total_pujas,
         gasto_clausulas=sum(int(ficha_compra[f"clause:{row['player_id']}"]["euros"]) for row in clausulas_sel),
         tope_deuda=cobertura_pujas["tope_deuda"],
+        credito_paron=credito_paron_eur,
     )
     # Fichajes fuertes que no entran: el plan los enseña aparte, ordenados por
     # mejora por millón, con lo que falta para pagarlos.
@@ -1653,10 +1740,60 @@ def _plan_once(
         "mejora_horizonte": mejora_horizonte,
         "cobertura_pujas": cobertura_pujas,
         "presupuesto": presupuesto,
+        "deuda_paron": _deuda_paron(
+            credito_paron_eur,
+            dias,
+            plantilla,
+            {row["player_id"] for row in ventas_sel},
+            {row["player_id"] for row in plantilla if _on(en_once.get(f"own:{row['player_id']}"))},
+            sum(
+                _revalorizacion_hasta_viernes(ficha_compra[f"bid:{row['player_id']}"]["row"], dias_de_prevision(dias) or 0.0)
+                for row in pujas_sel
+                if ficha_compra[f"bid:{row['player_id']}"]["credito_paron"]
+            ),
+        ),
         "alternativas_liquidez": alternativas,
         "objetivos_previos": sorted(previos),
         "umbral_cambio_xp": umbral,
         **meta,
+    }
+
+
+def _deuda_paron(
+    credito: int,
+    dias: float | None,
+    plantilla: list[dict[str, Any]],
+    vendidos: set[str],
+    en_once: set[str],
+    revalorizacion: float = 0.0,
+) -> dict[str, Any] | None:
+    """Deuda que deja el plan en el parón y con qué se puede saldar sin tocar el once resultante."""
+    if credito <= 0 or dias is None:
+        return None
+    vendible = sum(
+        int(row["venta_eur"])
+        for row in plantilla
+        if row["player_id"] not in vendidos
+        and row["player_id"] not in en_once
+        and isinstance(row.get("venta_eur"), int)
+        and not isinstance(row.get("venta_eur"), bool)
+    )
+    cubierta = vendible >= credito
+    aviso = None
+    if not cubierta:
+        aviso = (
+            f"El banquillo (con los desplazados por los fichajes) cubre {vendible / _MILLON:.1f} M€ de "
+            f"{credito / _MILLON:.1f} M€. El resto tendría que salir de la subida de los fichajes "
+            f"({revalorizacion / _MILLON:.1f} M€ previstos) o de un titular."
+        )
+    return {
+        "eur": int(credito),
+        "saldar_antes_de_dias": round(dias, 2),
+        "decidir_ventas_en_dias": round(max(0.0, dias - DIAS_DECIDIR_VENTAS), 2),
+        "vendible_sin_tocar_el_once": int(vendible),
+        "revalorizacion_prevista": int(revalorizacion),
+        "cubierta_con_banquillo": cubierta,
+        "aviso": aviso,
     }
 
 

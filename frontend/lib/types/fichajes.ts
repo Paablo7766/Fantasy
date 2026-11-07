@@ -18,6 +18,12 @@ export type PlanFichajeAccion = {
   puja_anti_pizarra?: number | null;
   diferencial_anti_pizarra_eur?: number | null;
   alta_demanda?: boolean;
+  /** Escalón sobre nuestra cifra que cubre lo que suele pagar la liga (sin pasar del techo). */
+  puja_competitiva_liga?: number | null;
+  /** Sobrepuja media que sostiene ese escalón, en %. */
+  sobrepuja_liga_pct?: number | null;
+  /** En el parón: la puja se paga con el crédito del 20 %. */
+  financia_con_credito?: boolean;
   /** Botón a pulsar: puja en el mercado o pago de la cláusula a un rival. */
   etiqueta?: "PUJAR" | "CLAUSULAR" | null;
   /** Solo en alternativas_liquidez. */
@@ -31,6 +37,8 @@ export type PlanPresupuesto = {
   ventas_hoy: number;
   ventas_si_ganas: number;
   credito_20pct: number | null;
+  /** Parón: lo que el plan gasta por encima de la caja. Hay que saldarlo antes del saque. */
+  credito_paron?: number;
   disponible_clausulas: number;
   disponible_pujas: number;
   gasto_clausulas: number;
@@ -116,6 +124,16 @@ export type PlanFichajes = {
   modo_liquidez?: "VENTANA" | "ALL-IN" | "SIN_RELOJ" | string | null;
   en_radar?: PlanFichajeAccion[];
   presupuesto?: PlanPresupuesto | null;
+  /** Deuda que deja el plan en el parón y con qué se puede saldar sin tocar el once. */
+  deuda_paron?: {
+    eur: number;
+    saldar_antes_de_dias: number;
+    decidir_ventas_en_dias: number;
+    vendible_sin_tocar_el_once: number;
+    revalorizacion_prevista: number;
+    cubierta_con_banquillo: boolean;
+    aviso: string | null;
+  } | null;
   /** Must-buy que no caben en la caja de hoy, por mejora por millón. */
   alternativas_liquidez?: PlanFichajeAccion[];
   /** Plan completo frente al prudente (sin ventas que dependan de ganar pujas). */

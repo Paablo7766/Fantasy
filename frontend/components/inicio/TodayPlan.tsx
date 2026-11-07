@@ -182,13 +182,22 @@ function stepFacts(step: Step, info: ReturnType<typeof factsFor>, fichajes: Plan
   return rows;
 }
 
+// Puja competitiva de liga: un escalón más si quien nos ganó las subastas pagó por encima de nuestra cifra.
+function withCompetitiva(text: string | null, action: PlanFichajeAccion): string | null {
+  if (typeof action.puja_competitiva_liga !== "number") return text;
+  const pct = typeof action.sobrepuja_liga_pct === "number" ? ` (+${action.sobrepuja_liga_pct.toLocaleString("es-ES", { maximumFractionDigits: 1 })} % de sobrepuja media en tus subastas perdidas)` : "";
+  const extra = `Puja competitiva de liga: ${eurShort(action.puja_competitiva_liga)}${pct}. Dentro del techo de rentabilidad.`;
+  return text ? `${text} ${extra}` : extra;
+}
+
 function stepReason(step: Step): string | null {
   const { action } = step;
   if (step.kind === "puja" && typeof action.puja_anti_pizarra === "number" && typeof action.puja_pizarra === "number") {
     const extra = `Supera en ${eur(action.diferencial_anti_pizarra_eur ?? 0)} a la puja de La Pizarra (${eurShort(action.puja_pizarra)}) para ganar los empates.`;
-    return action.detalle ? `${action.detalle} ${extra}` : extra;
+    const base = action.detalle ? `${action.detalle} ${extra}` : extra;
+    return withCompetitiva(base, action);
   }
-  return action.detalle || null;
+  return withCompetitiva(action.detalle || null, action);
 }
 
 // ── Componentes ──────────────────────────────────────────────────────────────

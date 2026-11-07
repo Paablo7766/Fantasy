@@ -1640,6 +1640,7 @@ class LaligaClient:
                     _RIVAL_TEMPLATE_FETCH.reset(pacing)
             if not isinstance(payload, dict):
                 return empty_squad(seed, own_team_id=own_team_id, message="La plantilla no es un objeto.")
+            plantillas_leidas.append(payload)
             return normalize_squad(
                 payload,
                 seed=seed,
@@ -1648,6 +1649,7 @@ class LaligaClient:
             )
 
         slots: list[dict[str, Any] | None] = [None] * len(seeds)
+        plantillas_leidas: list[dict[str, Any]] = []
         # 3 conexiones como máximo: 8 peticiones simultáneas idénticas es un
         # patrón de bot. Las plantillas rivales además duran 4 h en caché.
         workers = min(3, max(1, len(seeds)))
@@ -1656,6 +1658,12 @@ class LaligaClient:
             for future in as_completed(futures):
                 slots[futures[future]] = future.result()
         squads = [row for row in slots if row is not None]
+        # Las actas (``lastStats``) viajan en el cuerpo crudo y la normalización las
+        # descarta: se guardan aquí, vengan de la red o de la caché, para que el xP 2.0
+        # las tenga también de quien se fichó después de la última descarga a disco.
+        from toolbox.player_history import registrar_actas
+
+        registrar_actas(plantillas_leidas)
         document = build_squads_document(
             league_id=ref["league_id"],
             league_name=ref.get("name"),

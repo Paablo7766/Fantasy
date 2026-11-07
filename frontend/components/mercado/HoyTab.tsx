@@ -217,6 +217,13 @@ function PlanBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
         <HeroStat value={`${plan?.nota ?? 0}/10`} label="Nota del plan" tone="#FFC08A" />
         <HeroStat value={compact(plan?.saldo_al_final)} label="Caja al final" tone={toneOf(plan?.saldo_al_final)} />
       </div>
+      {plan?.deuda_paron ? (
+        <p className="mt-3 text-[12.5px] leading-relaxed text-white/55">
+          Parón: el plan usa {money(plan.deuda_paron.eur)} de crédito sin sanción hasta el saque. Decide las ventas en{" "}
+          {Math.round(plan.deuda_paron.decidir_ventas_en_dias)} días y deja el saldo en cero o más antes del cierre.
+          {plan.deuda_paron.aviso ? ` ${plan.deuda_paron.aviso}` : ""}
+        </p>
+      ) : null}
       {acciones.length ? (
         <ul className="mt-2 divide-y divide-white/[0.05]">
           {acciones.map((accion, index) => (

@@ -7,6 +7,7 @@ una sola lectura de los cuerpos del scraper para ambos.
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +80,38 @@ def _read_json(path: Path) -> Any:
     return json.loads(body) if isinstance(body, str) else body
 
 
+def acumular_payload(players: dict[str, dict[str, Any]], payload: Any) -> None:
+    """Suma a ``players`` los jugadores con ``lastStats`` de un cuerpo de la API."""
+    for master in _walk(payload):
+        pid = str(master.get("id") or "")
+        if not pid:
+            continue
+        team = master.get("team") if isinstance(master.get("team"), dict) else {}
+        entry = players.setdefault(
+            pid,
+            {
+                "name": master.get("nickname") or master.get("name"),
+                "position": POSITION_BY_ID.get(master.get("positionId"), "MC"),
+                "team": team.get("name") if isinstance(team.get("name"), str) else None,
+                "weeks": {},
+                "desglose": {},
+            },
+        )
+        if isinstance(team.get("name"), str):
+            entry["team"] = team["name"]
+        for stat in master["lastStats"]:
+            week = stat.get("weekNumber")
+            points = stat.get("totalPoints")
+            if not isinstance(week, int) or not isinstance(points, (int, float)):
+                continue
+            minutes = (stat.get("stats") or {}).get("mins_played") or [0]
+            mins = float(minutes[0] or 0) if isinstance(minutes, list) else float(minutes or 0)
+            entry["weeks"][week] = (float(points), mins)
+            desglose = desglose_acta(stat.get("stats"))
+            if desglose is not None:
+                entry.setdefault("desglose", {})[week] = desglose
+
+
 def load_history(bodies: Path) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None]:
     """Jugadores con equipo y, si está en caché, el payload de Understat."""
     players: dict[str, dict[str, Any]] = {}
@@ -90,55 +123,158 @@ def load_history(bodies: Path) -> tuple[dict[str, dict[str, Any]], dict[str, Any
             continue
         if understat is None and _looks_like_understat(payload):
             understat = payload
-        for master in _walk(payload):
-            pid = str(master.get("id") or "")
-            if not pid:
-                continue
-            team = master.get("team") if isinstance(master.get("team"), dict) else {}
-            entry = players.setdefault(
-                pid,
-                {
-                    "name": master.get("nickname") or master.get("name"),
-                    "position": POSITION_BY_ID.get(master.get("positionId"), "MC"),
-                    "team": team.get("name") if isinstance(team.get("name"), str) else None,
-                    "weeks": {},
-                    "desglose": {},
-                },
-            )
-            if isinstance(team.get("name"), str):
-                entry["team"] = team["name"]
-            for stat in master["lastStats"]:
-                week = stat.get("weekNumber")
-                points = stat.get("totalPoints")
-                if not isinstance(week, int) or not isinstance(points, (int, float)):
-                    continue
-                minutes = (stat.get("stats") or {}).get("mins_played") or [0]
-                mins = float(minutes[0] or 0) if isinstance(minutes, list) else float(minutes or 0)
-                entry["weeks"][week] = (float(points), mins)
-                desglose = desglose_acta(stat.get("stats"))
-                if desglose is not None:
-                    entry.setdefault("desglose", {})[week] = desglose
+        acumular_payload(players, payload)
     return players, understat
+
+
+# --- Almacén acumulado de actas ---------------------------------------------
+# Las plantillas de la liga se guardan en la caché de respuestas, que con
+# Supabase configurado vive en la nube y no deja ficheros en ``scraper_bodies``.
+# Leer solo esa carpeta dejaba sin actas a todo fichaje posterior a la última
+# vez que hubo ficheros locales (Isco, comprado el 6 de noviembre, caía a la
+# fórmula de respaldo). Este almacén se alimenta al leer cada plantilla, venga
+# de la red, del disco o de la nube, y no pierde a quien después sale de ella.
+ALMACEN_ACTAS = "actas_jugadores.json"
+_LOCK_ALMACEN = threading.Lock()
+
+
+def _ruta_almacen() -> Path:
+    from toolbox.cache import cache_root
+
+    return cache_root() / ALMACEN_ACTAS
+
+
+def _almacen_a_json(players: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    salida: dict[str, Any] = {}
+    for pid, entry in players.items():
+        salida[pid] = {
+            "name": entry.get("name"),
+            "position": entry.get("position"),
+            "team": entry.get("team"),
+            "weeks": {str(w): [float(v[0]), float(v[1])] for w, v in (entry.get("weeks") or {}).items()},
+            "desglose": {str(w): d for w, d in (entry.get("desglose") or {}).items()},
+        }
+    return salida
+
+
+def _almacen_de_json(raw: Any) -> dict[str, dict[str, Any]]:
+    players: dict[str, dict[str, Any]] = {}
+    if not isinstance(raw, dict):
+        return players
+    for pid, entry in raw.items():
+        if not isinstance(entry, dict):
+            continue
+        weeks: dict[int, tuple[float, float]] = {}
+        for w, v in (entry.get("weeks") or {}).items():
+            try:
+                weeks[int(w)] = (float(v[0]), float(v[1]))
+            except (TypeError, ValueError, IndexError):
+                continue
+        desglose: dict[int, Any] = {}
+        for w, d in (entry.get("desglose") or {}).items():
+            try:
+                desglose[int(w)] = d
+            except (TypeError, ValueError):
+                continue
+        players[str(pid)] = {
+            "name": entry.get("name"),
+            "position": entry.get("position") or "MC",
+            "team": entry.get("team"),
+            "weeks": weeks,
+            "desglose": desglose,
+        }
+    return players
+
+
+def leer_almacen_actas() -> dict[str, dict[str, Any]]:
+    try:
+        return _almacen_de_json(json.loads(_ruta_almacen().read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return {}
+
+
+def fusionar_actas(base: dict[str, dict[str, Any]], nuevas: dict[str, dict[str, Any]]) -> int:
+    """Mete en ``base`` las jornadas de ``nuevas`` (la lectura más reciente manda).
+
+    Devuelve cuántos jugadores cambian.
+    """
+    cambiados = 0
+    for pid, entry in nuevas.items():
+        actual = base.get(pid)
+        if actual is None:
+            base[pid] = entry
+            cambiados += 1
+            continue
+        distinto = False
+        for week, valor in (entry.get("weeks") or {}).items():
+            if actual["weeks"].get(week) != valor:
+                actual["weeks"][week] = valor
+                distinto = True
+        for week, desglose in (entry.get("desglose") or {}).items():
+            if actual.setdefault("desglose", {}).get(week) != desglose:
+                actual["desglose"][week] = desglose
+                distinto = True
+        for clave in ("name", "position", "team"):
+            if entry.get(clave) and actual.get(clave) != entry[clave]:
+                actual[clave] = entry[clave]
+        cambiados += 1 if distinto else 0
+    return cambiados
+
+
+def registrar_actas(payloads: Any) -> int:
+    """Guarda las actas de unas plantillas ya leídas. Nunca tumba una lectura.
+
+    ``payloads`` son cuerpos de ``/teams/{id}`` (o cualquiera con
+    ``playerMaster.lastStats``). Devuelve cuántos jugadores han cambiado.
+    """
+    nuevas: dict[str, dict[str, Any]] = {}
+    try:
+        for payload in payloads:
+            acumular_payload(nuevas, payload)
+        if not nuevas:
+            return 0
+        with _LOCK_ALMACEN:
+            existentes = leer_almacen_actas()
+            cambiados = fusionar_actas(existentes, nuevas)
+            if cambiados == 0:
+                return 0
+            ruta = _ruta_almacen()
+            ruta.parent.mkdir(parents=True, exist_ok=True)
+            temporal = ruta.with_suffix(".tmp")
+            temporal.write_text(json.dumps(_almacen_a_json(existentes), ensure_ascii=False), encoding="utf-8")
+            temporal.replace(ruta)
+            return cambiados
+    except Exception:  # noqa: BLE001 — guardar actas es un extra, nunca rompe el refresco
+        return 0
 
 
 _CACHE_ACTAS: dict[str, Any] = {"firma": None, "jugadores": {}}
 
 
 def actas_en_cache() -> dict[str, dict[str, Any]]:
-    """``load_history`` de ``.cache/scraper_bodies``, releído solo si cambia la carpeta."""
+    """Actas de ``.cache/scraper_bodies`` más el almacén acumulado, releídas solo si algo cambia."""
     from toolbox.cache import cache_root
 
     carpeta = cache_root() / "scraper_bodies"
     try:
         ficheros = list(carpeta.iterdir())
-        firma = (str(carpeta), len(ficheros), max((f.stat().st_mtime_ns for f in ficheros), default=0))
+        firma_carpeta = (str(carpeta), len(ficheros), max((f.stat().st_mtime_ns for f in ficheros), default=0))
     except OSError:
-        return {}
+        ficheros = []
+        firma_carpeta = (str(carpeta), 0, 0)
+    try:
+        firma_almacen = _ruta_almacen().stat().st_mtime_ns
+    except OSError:
+        firma_almacen = 0
+    firma = (firma_carpeta, firma_almacen)
     if _CACHE_ACTAS["firma"] != firma:
-        try:
-            jugadores, _ = load_history(carpeta)
-        except Exception:  # noqa: BLE001 — sin actas el motor vuelve a la fórmula de respaldo
-            jugadores = {}
+        jugadores: dict[str, dict[str, Any]] = {}
+        if ficheros:
+            try:
+                jugadores, _ = load_history(carpeta)
+            except Exception:  # noqa: BLE001 — sin actas el motor vuelve a la fórmula de respaldo
+                jugadores = {}
+        fusionar_actas(jugadores, leer_almacen_actas())
         _CACHE_ACTAS["firma"] = firma
         _CACHE_ACTAS["jugadores"] = jugadores
     return _CACHE_ACTAS["jugadores"]

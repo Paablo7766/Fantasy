@@ -384,33 +384,17 @@ def ratio_mezcla_futuros(player: dict[str, Any], propio: float, mezcla: float) -
     return min(RATIO_FUTUROS_MAX, max(RATIO_FUTUROS_MIN, mezcla / propio))
 
 
-_ACTAS_CACHE: dict[str, Any] = {"firma": None, "jugadores": {}}
-
-
 def _actas_en_cache() -> dict[str, dict[str, Any]]:
-    """Puntos y minutos por jornada de ``playerMaster.lastStats`` (cuerpos del scraper).
+    """Puntos y minutos por jornada de ``playerMaster.lastStats``.
 
     Sin esto el motor no ve el historial del jugador: la serie ``week_points``
     no trae minutos y no sirve para separar titular de revulsivo, así que el xP
-    salía del prior del puesto para todos. Se relee solo si cambia la caché.
+    salía del prior del puesto para todos. Une los cuerpos del scraper en disco
+    con el almacén acumulado de actas (``player_history``).
     """
-    from toolbox.cache import cache_root
-    from toolbox.player_history import load_history
+    from toolbox.player_history import actas_en_cache
 
-    carpeta = cache_root() / "scraper_bodies"
-    try:
-        ficheros = list(carpeta.iterdir())
-        firma = (len(ficheros), max((f.stat().st_mtime_ns for f in ficheros), default=0))
-    except OSError:
-        return {}
-    if _ACTAS_CACHE["firma"] != firma:
-        try:
-            jugadores, _ = load_history(carpeta)
-        except Exception:  # noqa: BLE001 — sin actas el motor vuelve al prior, nunca tumba trends
-            jugadores = {}
-        _ACTAS_CACHE["firma"] = firma
-        _ACTAS_CACHE["jugadores"] = jugadores
-    return _ACTAS_CACHE["jugadores"]
+    return actas_en_cache()
 
 
 def _inyectar_actas(players: list[dict[str, Any]]) -> list[dict[str, Any]]:
