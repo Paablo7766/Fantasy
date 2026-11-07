@@ -376,10 +376,17 @@ def persist_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any]], *, no
     jornada, el jugador seguiría apuntando a ella y la previsión del partido
     siguiente se colaría como si fuera la de este.
     """
+    from toolbox.marcador import epoch_kickoff
+
+    stamp = time.time()
+    moment_dt = now or datetime.now(timezone.utc)
+    moment = moment_dt.isoformat()
+    # Ni siquiera la primera vez se guarda una «previsión» de un partido ya
+    # empezado: la J11 se fotografió el lunes con medio fin de semana jugado.
+    corte = moment_dt.timestamp()
+    rows = [row for row in rows if (epoch_kickoff(row.get("kickoff")) or float("inf")) > corte]
     if not rows:
         return 0
-    stamp = time.time()
-    moment = (now or datetime.now(timezone.utc)).isoformat()
     before = conn.total_changes
     conn.executemany(
         """
@@ -473,7 +480,7 @@ def load_snapshot_rows(conn: sqlite3.Connection, jornada_id: str) -> list[dict[s
     rows = conn.execute(
         """
         select jornada_id, player_id, name, expected_points, ceiling_points,
-               in_once_optimo, league_id, snapshot_day, stored_at
+               in_once_optimo, league_id, snapshot_day, stored_at, kickoff
         from matchday_snapshots
         where jornada_id = ?
         order by in_once_optimo desc, name collate nocase
@@ -491,8 +498,9 @@ def load_snapshot_rows(conn: sqlite3.Connection, jornada_id: str) -> list[dict[s
             "league_id": league_id,
             "snapshot_day": snapshot_day,
             "stored_at": stored_at,
+            "kickoff": kickoff,
         }
-        for jornada_id, player_id, name, expected, ceiling, in_xi, league_id, snapshot_day, stored_at in rows
+        for jornada_id, player_id, name, expected, ceiling, in_xi, league_id, snapshot_day, stored_at, kickoff in rows
     ]
 
 
@@ -501,8 +509,22 @@ def evaluate_rows(
     actual_by_player: dict[str, dict[str, float]],
     *,
     jornada_id: str,
+    ahora: float | None = None,
 ) -> dict[str, Any]:
+    """Compara previsión y puntos reales.
+
+    Solo cuenta los puntos ya definitivos (``toolbox.marcador``): la API pone la
+    fila de la jornada con 0 mientras el partido se juega. Los demás quedan
+    pendientes (``actual_points`` None) y se vuelven a mirar en la siguiente pasada.
+    """
+    from toolbox.marcador import epoch_kickoff, puntos_definitivos
+
     samples: list[dict[str, Any]] = []
+    pendientes = 0
+    # Sin saque propio se usa el último saque conocido de la jornada. Si ninguna
+    # fila lo trae (históricos antiguos), no hay forma de saberlo y se puntúa.
+    saques = [row.get("kickoff") for row in snapshot if epoch_kickoff(row.get("kickoff")) is not None]
+    ultimo_saque = max(saques, key=lambda k: epoch_kickoff(k) or 0.0) if saques else None
     abs_errors: list[float] = []
     ceiling_checked = 0
     ceiling_breaks = 0
@@ -513,6 +535,10 @@ def evaluate_rows(
         player_id = str(row["player_id"])
         mapping = actual_by_player.get(player_id) or {}
         actual = mapping.get(str(jornada_id))
+        saque = row.get("kickoff") if epoch_kickoff(row.get("kickoff")) is not None else ultimo_saque
+        if actual is not None and saque is not None and not puntos_definitivos(saque, ahora=ahora):
+            actual = None
+            pendientes += 1
         expected = _as_float(row.get("expected_points"))
         ceiling = _as_float(row.get("ceiling_points"))
         in_xi = bool(row.get("in_once_optimo"))
@@ -548,6 +574,7 @@ def evaluate_rows(
         "jornada_id": jornada_id,
         "players": len(snapshot),
         "scored": len(abs_errors),
+        "pendientes": pendientes,
         "mae": mae,
         "ceiling_checked": ceiling_checked,
         "ceiling_breaks": ceiling_breaks,
@@ -605,6 +632,8 @@ def persist_actuals(conn: sqlite3.Connection, jornada_id: str, samples: list[dic
         [
             (sample.get("actual_points"), stamp, jornada_id, sample["player_id"])
             for sample in samples
+            # Sin dato definitivo no se pisa nada: ni se vacía un resultado bueno.
+            if sample.get("actual_points") is not None
         ],
     )
     conn.commit()

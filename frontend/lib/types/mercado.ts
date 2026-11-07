@@ -109,6 +109,10 @@ export type MarketDecision = Player & {
   financial_max_bid_eur?: number | null;
   /** Puja que supera la caja del rival interesado sin pasar el tope. */
   smart_bid_eur?: number | null;
+  /** Cifra única de puja: la misma en Inicio, Mercado y la ficha. */
+  puja_unica_eur?: number | null;
+  /** Objetivo del plan de fichajes de hoy. */
+  en_plan?: boolean | null;
   smart_bid_success_pct?: number | null;
   smart_bid_analysis?: string | null;
   smart_bid_rivals?: string[];

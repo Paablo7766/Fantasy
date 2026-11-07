@@ -94,6 +94,32 @@ def _accion(fase: str, *, valor: int, oferta: int | None, en_venta: bool, tiene_
 #: Rango de titularidad en el que un titular es dudoso y merece cobertura.
 DUDOSO_MIN = 0.40
 DUDOSO_MAX = 0.80
+#: Jugador #12 de parche: el más barato fuera del once por debajo de este valor
+#: se guarda si la caja aguanta sin venderlo. Sin banquillo automático, un
+#: lesionado del viernes por la tarde se cambia a mano por él antes del cierre.
+PARCHE_VALOR_MAX = 1_500_000
+
+
+def elegir_parche(
+    filas: list[dict[str, Any]],
+    once_ids: set[str],
+    guardados: set[str],
+) -> dict[str, Any] | None:
+    """El #12 más barato y sano (< ``PARCHE_VALOR_MAX``), si no hay ya un suplente guardado."""
+    if guardados:
+        return None
+    candidatos = [
+        row
+        for row in filas
+        if row["player_id"] not in once_ids
+        and row.get("elegible") is not False
+        and row.get("position") in {"POR", "DEF", "MC", "DEL"}
+        and 0 < _valor(row) < PARCHE_VALOR_MAX
+    ]
+    if not candidatos:
+        return None
+    # El más barato; a igual precio, el que más puntos daría si entra.
+    return min(candidatos, key=lambda row: (_valor(row), -float(row.get("jornada") or 0.0), str(row["player_id"])))
 
 
 def cobertura_inaugural(
@@ -198,6 +224,18 @@ def plan_liquidacion(
     cobertura = cobertura_inaugural(filas, once_ids, inicio=inicio)
     guardar = {str(item) for item in conservar or set()} | cobertura["conservar"]
     known = ofertas or {}
+    parche = elegir_parche(filas, once_ids, guardar)
+    if parche is not None:
+        # Solo si la caja queda >= 0 en el peor caso vendiendo a todos los demás.
+        resto_peor = sum(
+            (_int(known.get(row["player_id"])) or int(_valor(row) * OFERTA_LALIGA_MIN))
+            for row in filas
+            if row["player_id"] not in once_ids and row["player_id"] not in guardar and row is not parche
+        )
+        if isinstance(saldo, int) and not isinstance(saldo, bool) and saldo + resto_peor >= 0:
+            guardar = guardar | {parche["player_id"]}
+        else:
+            parche = None
     sobrantes: list[dict[str, Any]] = []
     for row in filas:
         player_id = row["player_id"]
@@ -205,7 +243,12 @@ def plan_liquidacion(
             continue
         valor = _valor(row)
         oferta = _int(known.get(player_id))
-        if player_id in guardar:
+        if parche is not None and player_id == parche["player_id"]:
+            accion, motivo = (
+                ACCION_MANTENER,
+                "Jugador #12 de parche: barato y sano. Si un titular cae el viernes, entra él antes del cierre.",
+            )
+        elif player_id in guardar:
             accion, motivo = ACCION_MANTENER, "Cobertura del once: se guarda hasta ver la alineación oficial."
         else:
             accion, motivo = _accion(
@@ -247,6 +290,7 @@ def plan_liquidacion(
         "once_ids": sorted(once_ids),
         "once_completo": bool(xi.get("ok")),
         "cobertura_inaugural": {**cobertura, "conservar": sorted(cobertura["conservar"])},
+        "parche_id": parche["player_id"] if parche is not None else None,
         "puntos_once_con_cobertura": round(float(xi.get("puntos") or 0.0) + cobertura["valor"], 3),
         "sobrantes": sobrantes,
         "saldo_tras_liquidar": tras,

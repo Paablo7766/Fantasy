@@ -385,8 +385,92 @@ class MezclaXpAfTests(unittest.TestCase):
         self.assertEqual(player["own_xp_modelo"], 4.0)
         self.assertEqual(player["own_xp_fuente"], "af_mezcla")
         self.assertEqual(player["own_ceiling_points"], 6.2)
-        self.assertEqual(player["_own_xp_siguientes"], [6.2, 3.1])
+        # Cociente 6,2/4 = 1,55, acotado a 1,3 para J2-J4.
+        self.assertEqual(player["_own_xp_siguientes"], [5.2, 2.6])
         self.assertNotIn("own_xp_tope_af", player)
+
+    def test_baja_puntual_no_reescala_las_siguientes(self) -> None:
+        from toolbox.own_intel import _mezclar_xp_af
+
+        player = {
+            "own_expected_points": 0.4,
+            "af_expected_points": 5.5,
+            "_own_xp_siguientes": [5.0, 5.2, 4.8],
+        }
+        _mezclar_xp_af(player)
+        self.assertEqual(player["_own_xp_siguientes"], [5.0, 5.2, 4.8])
+
+    def test_las_siguientes_salen_en_la_escala_de_la_mezcla(self) -> None:
+        """J2-J4 publicadas ya llevan el cociente de la mezcla (antes se publicaban sin él)."""
+        from toolbox.matching import normalize_club
+        from toolbox.own_intel import apply_own_intel
+        from toolbox.understat import FixtureInfo
+
+        def jugador(af: float | None) -> dict:
+            base = {
+                "player_id": "927",
+                "position": "DEL",
+                "club": "Athletic Club",
+                "p_titular": 0.9,
+                "historial": [
+                    {"puntos": p, "minutos": 90, "jornada": j}
+                    for j, p in enumerate([6, 11, 3, 3, 6, 20, 7], start=5)
+                ],
+            }
+            if af is not None:
+                base["af_expected_points"] = af
+            return base
+
+        def partido(rival: str, casa: bool, siguientes: tuple = ()) -> FixtureInfo:
+            return FixtureInfo(rival, None, casa, None, 3, None, None, siguientes)
+
+        fixture = partido("Osasuna", False, tuple(partido("Getafe", True) for _ in range(3)))
+        solo = jugador(None)
+        apply_own_intel([solo], histories={}, fixtures_by_club={normalize_club("Athletic Club"): fixture})
+        mezclado = jugador(4.0)
+        apply_own_intel([mezclado], histories={}, fixtures_by_club={normalize_club("Athletic Club"): fixture})
+        ratio = max(0.7, min(1.3, mezclado["own_expected_points"] / mezclado["own_xp_modelo"]))
+        self.assertLess(ratio, 1.0)
+        self.assertEqual(
+            mezclado["own_xp_siguientes"],
+            [round(v * ratio, 3) for v in solo["own_xp_siguientes"]],
+        )
+
+    def test_duda_recupera_su_titularidad_en_las_siguientes(self) -> None:
+        from toolbox.matching import normalize_club
+        from toolbox.own_intel import apply_own_intel
+        from toolbox.understat import FixtureInfo
+
+        def partido(rival: str, casa: bool, siguientes: tuple = ()) -> FixtureInfo:
+            return FixtureInfo(rival, None, casa, None, 3, None, None, siguientes)
+
+        player = {
+            "player_id": "2479",
+            "position": "DEF",
+            "club": "Sevilla FC",
+            "p_titular": 0.0,
+            "lineup_status": "duda",
+            "fitness": "duda",
+            "historial": [
+                {"puntos": p, "minutos": 90, "jornada": j} for j, p in enumerate([4, 12, 6, 10, 13, 8], start=6)
+            ],
+        }
+        fixture = partido("Real Betis", True, tuple(partido("Getafe", False) for _ in range(3)))
+        apply_own_intel([player], histories={}, fixtures_by_club={normalize_club("Sevilla FC"): fixture})
+        self.assertLess(player["own_xp_modelo"], 1.0)
+        self.assertTrue(all(v > 3.0 for v in player["own_xp_siguientes"]))
+
+    def test_lesionado_sigue_sin_contar_en_las_siguientes(self) -> None:
+        from toolbox.own_intel import jugador_tras_duda
+
+        player = {
+            "position": "DEF",
+            "p_titular": 0.0,
+            "fitness": "lesionado",
+            "lineup_status": "baja",
+            "historial": [{"puntos": 6, "minutos": 90, "jornada": j} for j in range(6, 11)],
+        }
+        self.assertIsNone(jugador_tras_duda(player))
 
     def test_tope_si_af_se_dispara_y_el_jugador_rinde_poco(self) -> None:
         from toolbox.own_intel import _mezclar_xp_af

@@ -68,11 +68,21 @@ VALOR_MEDIO_BAJO = 15_000_000
 PENALIZACION_PRIMA_POR_MILLON = 0.45
 # Ventas de titulares sanos en un mismo plan. Lesionados y sancionados no cuentan.
 MAX_VENTAS_TITULARES_SANOS = 2
+# Vender a un titular consolidado (en el once, sano y con p_titular >= 60 %)
+# cuesta esto en el objetivo, en puntos por jornada del horizonte. El plan solo
+# lo vende si, ya descontadas primas y peaje, el once gana al menos esto por
+# cada uno: evita el vaivén de vender hoy a Isco y recomprar mañana.
+UMBRAL_VENTA_TITULAR_XP = 1.5
+P_TITULAR_CONSOLIDADO = 0.60
 # Por debajo de esto el jugador no es titular: hay que reemplazarlo y no entra en el tope.
 UMBRAL_BAJA = 0.20
 # Desempata a favor de sacar a un lesionado cuando al once le da igual.
 BONUS_REEMPLAZO_BAJA = 0.05
 _MILLON = 1_000_000
+# Escaparate solo en la semana del cierre (un lunes normal son ~4 días). Un
+# anuncio dura como mucho 3 días y LaLiga renueva su oferta a diario: listar a
+# 13 días del cierre (parón) solo hace que caduque antes de necesitarla.
+DIAS_ESCAPARATE = 4.5
 _SEQ = 0
 ETIQUETA_COMPRA = {"PUJA": "PUJAR", "CLAUSULAZO": "CLAUSULAR"}
 # Fichajes fuertes que no caben en la caja de hoy y se enseñan como alternativa.
@@ -497,6 +507,23 @@ def _bloquear_ventas_sin_esqueleto(
                     problem += cubre[name] == 0
                 continue
             problem += pulp.lpSum(vende[player_id] for player_id in ids) <= (fijos + len(ids) - need) + need * (1 - cubre[name])
+
+
+def titulares_consolidados(
+    plantilla: list[dict[str, Any]],
+    xi_ids: set[str],
+    excluidos: set[str],
+) -> set[str]:
+    """Titulares del once actual, sanos y con ``p_titular >= P_TITULAR_CONSOLIDADO``."""
+    salida: set[str] = set()
+    for row in plantilla:
+        player_id = row.get("player_id")
+        if player_id not in xi_ids or player_id in excluidos:
+            continue
+        p = _prob_titular(row)
+        if p is not None and p >= P_TITULAR_CONSOLIDADO:
+            salida.add(player_id)
+    return salida
 
 
 def _es_suplente(player_id: str, plantilla: list[dict[str, Any]], xi_ids: set[str]) -> bool:
@@ -975,7 +1002,7 @@ def _plan_once(
                 # Modo prudente: solo caja y ventas de hoy, nada que dependa de ganar.
                 problem += variable == 0
         problem += pulp.lpSum(asigna[(vendido, pujado)] for pujado in puja) <= vende[vendido]
-    caja_puja = {pujado: pulp.LpVariable(f"{prefix}_c{index}", lowBound=0) for index, pujado in enumerate(puja)}
+    caja_puja = {pujado: pulp.LpVariable(f"{prefix}_cp{index}", lowBound=0) for index, pujado in enumerate(puja)}
     for pujado, variable in puja.items():
         problem += _euros_de(f"bid:{pujado}") * variable <= caja_puja[pujado] + pulp.lpSum(
             venta_de.get(vendido, 0) * asigna[(vendido, pujado)] for vendido in vende
@@ -1208,6 +1235,10 @@ def _plan_once(
         ]
     )
     bonus_baja = pulp.lpSum(BONUS_REEMPLAZO_BAJA * vende[player_id] for player_id in bajas | huecos if player_id in vende)
+    consolidados = titulares_consolidados(plantilla, xi_ids, bajas | huecos)
+    freno_venta = pulp.lpSum(
+        UMBRAL_VENTA_TITULAR_XP * vende[player_id] for player_id in consolidados if player_id in vende
+    )
     continuidad = pulp.lpSum(
         [
             *(CONTINUIDAD_XP * variable for pid, variable in puja.items() if pid in previos),
@@ -1221,6 +1252,7 @@ def _plan_once(
         + continuidad
         - peaje
         - castigo_patrimonio
+        - freno_venta
         + preferencia_condicional
         - 0.0001 * pulp.lpSum(list(vende.values()) or [0])
         - 1e-12 * (gastos_puja + gastos_clausula + gastos_busca + ingresos)
@@ -1228,6 +1260,8 @@ def _plan_once(
 
     def _escaparate(vendidos: set[str]) -> list[dict[str, Any]]:
         if not ventana:
+            return []
+        if dias is not None and dias > DIAS_ESCAPARATE:
             return []
         salida: list[dict[str, Any]] = []
         for row in plantilla:

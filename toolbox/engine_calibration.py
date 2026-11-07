@@ -41,6 +41,12 @@ def _ensure_predicted_win_column(conn: sqlite3.Connection) -> None:
         # perder la puja y no haber pujado.
         conn.execute("alter table market_decision_snapshots add column own_bid integer")
         conn.commit()
+    for column, kind in (("paid_eur", "integer"), ("winner_team_id", "text")):
+        if column not in have:
+            # Quién se lo llevó y por cuánto: con eso se mide si la puja recomendada
+            # se quedó corta (lo pagó un rival por encima) o si sobraba.
+            conn.execute(f"alter table market_decision_snapshots add column {column} {kind}")
+            conn.commit()
 
 
 def _ensure_tracking_schema(conn: sqlite3.Connection) -> None:
@@ -168,17 +174,19 @@ def _dia_menos(day: str, days: int) -> str:
 def _resolve_pujar_outcomes(conn: sqlite3.Connection, own_team_id: str | None) -> None:
     if not isinstance(own_team_id, str) or not own_team_id:
         return
+    _ensure_predicted_win_column(conn)
     pending = conn.execute(
         """
         select snapshot_day, player_id, suggested_bid, win_probability
         from market_decision_snapshots
         where decision = 'PUJAR' and snapshot_day < ?
-          and (outcome is null or (outcome = 'unknown' and snapshot_day >= ?))
+          and (outcome is null or outcome = 'unknown' or (outcome in ('hit', 'lost') and paid_eur is null))
         order by snapshot_day
         """,
         # Una «unknown» se vuelve a mirar unos días: el ledger llega con retraso
         # y una puja resuelta antes de que entrase la compra quedaba sin dueño.
-        (madrid_day(), _dia_menos(madrid_day(), REINTENTO_UNKNOWN_DIAS)),
+        # Pasado ese margen se cierra como «sin_compra» y ya no vuelve aquí.
+        (madrid_day(),),
     ).fetchall()
     if not pending:
         return
@@ -194,11 +202,17 @@ def _resolve_pujar_outcomes(conn: sqlite3.Connection, own_team_id: str | None) -
     for team_id, player_id, amount, at in buys:
         by_player.setdefault(str(player_id), []).append((str(team_id), int(amount), at))
 
+    _ensure_predicted_win_column(conn)
     stamp = time.time()
-    updates: list[tuple[str, float, str, str]] = []
+    limite = _dia_menos(madrid_day(), REINTENTO_UNKNOWN_DIAS)
+    updates: list[tuple[str, int | None, str | None, float, str, str]] = []
     for snap_day, player_id, suggested, _p_win in pending:
         events = by_player.get(str(player_id)) or []
-        outcome = "unknown"
+        # Pasados los días de reintento sin compra de nadie, se cierra: nadie lo
+        # compró (no se pujó o se quedó en el mercado). Antes quedaba «unknown» para siempre.
+        outcome = "sin_compra" if snap_day < limite else "unknown"
+        paid: int | None = None
+        winner: str | None = None
         for team_id, amount, at in events:
             if at and isinstance(at, str) and at[:10] < snap_day:
                 continue
@@ -209,13 +223,14 @@ def _resolve_pujar_outcomes(conn: sqlite3.Connection, own_team_id: str | None) -
                 outcome = "hit"
             else:
                 outcome = "lost"
+            paid, winner = amount, team_id
             break
-        updates.append((outcome, stamp, snap_day, str(player_id)))
+        updates.append((outcome, paid, winner, stamp, snap_day, str(player_id)))
 
     conn.executemany(
         """
         update market_decision_snapshots
-        set outcome = ?, outcome_at = ?
+        set outcome = ?, paid_eur = ?, winner_team_id = ?, outcome_at = ?
         where snapshot_day = ? and player_id = ?
         """,
         updates,

@@ -462,17 +462,17 @@ def scoreboard(conn: sqlite3.Connection | None, board: dict[str, Any] | None = N
 
     # 3. Decisiones de mercado ya resueltas.
     if "market_decision_snapshots" in tables:
-        won, lost, unknown = (
+        won, lost, unknown, nadie = (
             int(x or 0)
             for x in conn.execute(
-                """select sum(outcome = 'won'), sum(outcome = 'lost'),
-                          sum(outcome is null or outcome = 'unknown')
+                """select sum(outcome in ('won', 'hit')), sum(outcome = 'lost'),
+                          sum(outcome is null or outcome = 'unknown'), sum(outcome = 'sin_compra')
                    from market_decision_snapshots where decision = 'PUJAR'"""
             ).fetchone()
         )
         resolved = won + lost
         expected = conn.execute(
-            "select avg(win_probability) from market_decision_snapshots where decision = 'PUJAR' and outcome in ('won','lost')"
+            "select avg(win_probability) from market_decision_snapshots where decision = 'PUJAR' and outcome in ('won', 'hit', 'lost')"
         ).fetchone()[0]
         rows.append(
             {
@@ -483,7 +483,15 @@ def scoreboard(conn: sqlite3.Connection | None, board: dict[str, Any] | None = N
                 "baseline": f"Prometía {_pct(expected)}" if expected is not None else None,
                 "n": resolved,
                 "verdict": _verdict(resolved, (won / resolved >= expected) if resolved and expected is not None else None),
-                "note": f"{unknown} más sin resultado conocido todavía." if unknown else None,
+                "note": " ".join(
+                    texto
+                    for texto in (
+                        f"{nadie} sin comprador (no se pujó o se quedó en el mercado)." if nadie else "",
+                        f"{unknown} más sin resultado todavía." if unknown else "",
+                    )
+                    if texto
+                )
+                or None,
             }
         )
 

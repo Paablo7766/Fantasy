@@ -359,9 +359,29 @@ def _mezclar_xp_af(player: dict[str, Any]) -> None:
     if techo is not None and techo < mezcla:
         player["own_ceiling_points"] = round(mezcla, 3)
     futuros = player.get("_own_xp_siguientes")
-    if isinstance(futuros, list) and futuros and propio > 0.1:
-        ratio = mezcla / propio
+    ratio = ratio_mezcla_futuros(player, propio, mezcla)
+    if isinstance(futuros, list) and futuros and ratio != 1.0:
         player["_own_xp_siguientes"] = [round(float(v) * ratio, 3) for v in futuros]
+
+
+# El cociente AF/propio de esta jornada corrige el nivel del jugador en las tres
+# siguientes. Acotado: con un propio muy bajo (duda, banquillo) el cociente
+# dispararía J2-J4 por algo que solo afecta a esta jornada.
+RATIO_FUTUROS_MIN = 0.7
+RATIO_FUTUROS_MAX = 1.3
+PROPIO_MINIMO_RATIO = 1.0
+
+
+def ratio_mezcla_futuros(player: dict[str, Any], propio: float, mezcla: float) -> float:
+    """Factor que lleva J2-J4 a la escala de la mezcla con AF.
+
+    Si esta jornada el jugador está en duda, sancionado, fuera del once o con
+    el propio casi a cero, la diferencia con AF habla de la disponibilidad de
+    hoy, no de su nivel: J2-J4 se quedan como están.
+    """
+    if propio < PROPIO_MINIMO_RATIO or player.get("_own_baja_puntual"):
+        return 1.0
+    return min(RATIO_FUTUROS_MAX, max(RATIO_FUTUROS_MIN, mezcla / propio))
 
 
 _ACTAS_CACHE: dict[str, Any] = {"firma": None, "jugadores": {}}
@@ -902,6 +922,11 @@ def expected_opta_points(
         "expected_minutes": result.get("expected_minutes"),
         "inferred_bonus": result.get("inferred_bonus"),
         "next_match_survival": result.get("next_match_survival"),
+        # xP 2.0: de dónde sale el número (suelo, gol, asistencia, portería).
+        "xp_modelo": result.get("xp_modelo"),
+        "xp_desglose": result.get("xp_desglose"),
+        "xp_breakout": result.get("xp_breakout"),
+        "xp_balon_parado": result.get("xp_balon_parado"),
     }
 
 
@@ -965,6 +990,67 @@ def jugador_tras_sancion(player: dict[str, Any]) -> tuple[dict[str, Any], float 
     if _texto_contiene(player.get("fitness"), "sancion", "sanción", "sanction", "baja", "out"):
         limpio["fitness"] = None
     return limpio, p_titular, partidos
+
+
+def _supervivencia_apercibido(pts: dict[str, Any], player: dict[str, Any]) -> float:
+    """Probabilidad de llegar a J2 sin sanción: ``1 − P(titular)·P(amarilla)`` si está apercibido."""
+    sancion = player.get("sanction") if isinstance(player.get("sanction"), dict) else {}
+    if not sancion.get("on_verge"):
+        return 1.0
+    valor = _as_float(pts.get("next_match_survival"))
+    if valor is None:
+        return 1.0
+    return min(1.0, max(0.0, valor))
+
+
+#: Fuera del once probable sin lesión: en J2-J4 la titularidad vuelve a medio
+#: camino entre la de esta semana y la de su historial (puede ser decisión técnica).
+PESO_HISTORIAL_FUERA_DEL_ONCE = 0.5
+_LINEUP_FUERA = {"suplente", "fuera"}
+
+
+def _lesionado(player: dict[str, Any]) -> bool:
+    status = str(player.get("player_status") or "").lower()
+    return bool(
+        player.get("af_injury")
+        or status in {"injured", "lesionado"}
+        or _texto_contiene(player.get("fitness"), "lesion", "lesión", "injured")
+    )
+
+
+def jugador_tras_duda(player: dict[str, Any]) -> tuple[dict[str, Any], float] | None:
+    """El jugador en J2-J4 cuando esta semana solo es duda o se queda fuera del once.
+
+    Una duda (golpe, molestias) afecta a esta jornada: en las siguientes vuelve
+    su titularidad de siempre, la que sale de su historial. Quien se cae del
+    once probable sin estar lesionado recupera la mitad del camino. Con lesión
+    (sin fecha de vuelta) o sin historial, devuelve None y J2-J4 siguen igual.
+    """
+    from toolbox.analyzer import _source_is_doubtful
+    from toolbox.engine.xp_calculator import FantasyXPEngine, historial_desde_jugador
+
+    if _lesionado(player):
+        return None
+    duda = _source_is_doubtful(player)
+    lineup = str(player.get("lineup_status") or "").strip().lower()
+    raw = _as_float(player.get("p_titular"))
+    if raw is not None and raw > 1.0:
+        raw /= 100.0
+    fuera = lineup in _LINEUP_FUERA and (raw is None or raw < 0.5)
+    if not duda and not fuera:
+        return None
+    normal = FantasyXPEngine.prob_titular_heuristica(historial_desde_jugador(player))
+    if normal is None:
+        return None
+    if duda:
+        p_futuro = max(normal, raw or 0.0)
+    else:
+        p_futuro = PESO_HISTORIAL_FUERA_DEL_ONCE * normal + (1.0 - PESO_HISTORIAL_FUERA_DEL_ONCE) * (raw or 0.0)
+    limpio = dict(player)
+    for key in ("player_status", "fitness", "lineup_status", "p_titular_consenso"):
+        limpio.pop(key, None)
+    limpio["p_titular"] = round(p_futuro, 4)
+    return limpio, round(p_futuro, 4)
 
 
 def snapshot_rows_from_players(
@@ -1135,11 +1221,19 @@ def apply_own_intel(
                 player["own_sancion_partidos"] = sancion[2]
             else:
                 player.pop("own_sancion_partidos", None)
+            # Duda o fuera del once esta semana: J2-J4 con su titularidad normal.
+            recuperado = jugador_tras_duda(player) if sancion is None else None
+            if recuperado is not None or sancion is not None:
+                player["_own_baja_puntual"] = True
             futuros: list[float] = []
             for offset, (later, later_cell) in enumerate(siguientes_by_club.get(club_key, []), start=1):
                 cumplida = sancion is not None and offset >= sancion[2]
-                jugador_j = sancion[0] if cumplida else vista
-                p_j = sancion[1] if cumplida else _as_float(player.get("p_titular"))
+                if cumplida:
+                    jugador_j, p_j = sancion[0], sancion[1]
+                elif recuperado is not None:
+                    jugador_j, p_j = recuperado
+                else:
+                    jugador_j, p_j = vista, _as_float(player.get("p_titular"))
                 later_pts = expected_opta_points(
                     position=player.get("position") if isinstance(player.get("position"), str) else None,
                     p_titular=apply_doubt_titular_discount(p_j, jugador_j, None),
@@ -1156,7 +1250,11 @@ def apply_own_intel(
                 )
                 if later_pts["expected_points"] is None:
                     break
-                futuros.append(round(float(later_pts["expected_points"]), 3))
+                valor = float(later_pts["expected_points"])
+                if offset == 1 and sancion is None:
+                    # Apercibido (4 amarillas): si ve una en esta jornada, se pierde la siguiente.
+                    valor *= _supervivencia_apercibido(pts, player)
+                futuros.append(round(valor, 3))
             player["_own_xp_siguientes"] = futuros
 
     jornada_avg = _mean(list(prelim_points.values()))
@@ -1228,18 +1326,17 @@ def apply_own_intel(
                     "lambda_for": celda.get("lambda_for"),
                     "lambda_against": celda.get("lambda_against"),
                     "p_cs_for": celda.get("p_cs_for"),
+                    "win_prob": celda.get("win_prob"),
+                    # Peso de las cuotas en los goles esperados (None = sin cuotas).
+                    "market_weight": celda.get("market_weight"),
                     "kickoff": celda.get("kickoff"),
                 }
                 for celda in celdas
             ]
             player["own_recommendation_pct"] = cell.get("recommendation_pct")
             calendar_count += 1
-        futuros = player.pop("_own_xp_siguientes", None)
-        if isinstance(futuros, list) and futuros:
-            # xP de J2, J3 y J4 en este orden. La próxima está en own_expected_points.
-            player["own_xp_siguientes"] = futuros
-
-        # Puntos
+        # Puntos. La mezcla con AF va ANTES de publicar J2-J4: reescala
+        # ``_own_xp_siguientes`` para que las cuatro jornadas compartan escala.
         pts = player.pop("_own_pts_cache", None)
         if isinstance(pts, dict) and pts.get("expected_points") is not None:
             player["own_expected_points"] = pts["expected_points"]
@@ -1257,12 +1354,26 @@ def apply_own_intel(
                 player["inferred_bonus"] = pts["inferred_bonus"]
             if pts.get("next_match_survival") is not None:
                 player["next_match_survival"] = pts["next_match_survival"]
+            for origen, destino in (
+                ("xp_modelo", "own_xp_motor"),
+                ("xp_desglose", "own_xp_desglose"),
+                ("xp_breakout", "own_xp_breakout"),
+                ("xp_balon_parado", "own_xp_balon_parado"),
+            ):
+                if pts.get(origen) is not None:
+                    player[destino] = pts[origen]
             value = _as_int(player.get("fantasy_price"))
             if value and value > 0 and pts["expected_points"]:
                 player["own_points_per_million"] = round(
                     float(pts["expected_points"]) / (value / 1_000_000.0), 4
                 )
             points_count += 1
+
+        futuros = player.pop("_own_xp_siguientes", None)
+        player.pop("_own_baja_puntual", None)
+        if isinstance(futuros, list) and futuros:
+            # xP de J2, J3 y J4 en este orden. La próxima está en own_expected_points.
+            player["own_xp_siguientes"] = futuros
 
         # Mercado / puja
         rate = rates.get(pid)

@@ -1376,7 +1376,35 @@ def catalog_from_documents(market: dict[str, Any], squads: dict[str, Any]) -> li
             market_value_change=change if change is not None else current.market_value_change,
             image_url=current.image_url or listing_image,
         )
+    _rellenar_clubes(by_id)
     return sorted(by_id.values(), key=lambda player: player.player_id)
+
+
+def _rellenar_clubes(by_id: dict[str, CanonicalPlayer]) -> None:
+    """Club del catálogo de la competición para quien llega sin él.
+
+    Los listados del mercado no traen club: Ratiu, Pedro Díaz o Abde salían
+    «sin partido» porque sin club no se les puede asignar rival. El catálogo
+    sí lo tiene; se lee de la caché, sin red.
+    """
+    faltan = [player_id for player_id, player in by_id.items() if not player.club]
+    if not faltan:
+        return
+    try:
+        from toolbox.normalize import normalize_catalog
+        from toolbox.quant_valuation import cached_catalog
+
+        clubes = {
+            str(row.get("player_id")): row.get("club")
+            for row in normalize_catalog(cached_catalog())
+            if isinstance(row.get("club"), str) and row.get("club")
+        }
+    except Exception:  # noqa: BLE001 — sin catálogo se quedan como estaban
+        return
+    for player_id in faltan:
+        club = clubes.get(player_id)
+        if club:
+            by_id[player_id] = replace(by_id[player_id], club=club)
 
 
 def _fetch_text(client: ExternalClient, url: str, *, ttl: float, fresh: bool) -> tuple[str | None, bool, str | None]:

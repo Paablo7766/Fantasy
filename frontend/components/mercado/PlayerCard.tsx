@@ -240,7 +240,10 @@ export function PlayerCard({
     const matches = upcoming(player);
     const accent = note === null ? TONE.gray : gradeColor(note);
     const heat = auctionLabel(player);
-    const reason = cleanText(player.frase_mercado || actionReason(player, story.motive) || story.headline);
+    // Si es objetivo del plan de Inicio, manda su frase («viable vendiendo a X»).
+    const reason = cleanText(
+      (player.en_plan ? actionReason(player) : null) || player.frase_mercado || actionReason(player, story.motive) || story.headline,
+    );
     const closing = closesIn(player.listing_expires_at);
     const seller = player.offer_source === "rival" ? `Lo vende ${player.seller_manager || "un rival"}` : "Lo vende LaLiga";
     const risk =

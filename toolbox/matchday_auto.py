@@ -79,6 +79,10 @@ def auto_track_from_board(board: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {"ok": True, "skipped": False, "snapshot": None, "evaluated": []}
     try:
         track._ensure_schema(conn)
+        from toolbox.marcador import reparar_historico
+
+        # Antes de puntuar: vacía puntos prematuros y previsiones tomadas tras el saque.
+        result["reparacion"] = reparar_historico(conn)
         jornada = track.infer_jornada_id(trends, squads)
         if _needs_snapshot(conn, jornada, day):
             # Sin forzar la jornada: cada jugador apunta a la suya (un miércoles

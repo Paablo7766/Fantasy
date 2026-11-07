@@ -65,6 +65,36 @@ def ajuste_prior_por_precio(slot: str, precio: float | None) -> float:
     return max(AJUSTE_PRIOR_MIN, min(AJUSTE_PRIOR_MAX, ajuste))
 
 
+# Estrellas: el backtest J9-J11 dejaba a los de más de 25 M 1,25 pts por debajo
+# de lo que hacían (Grimaldo 6,8 → 16). Con ese precio el mercado ya dice que
+# no es un titular medio: su ajuste por precio sube con más pendiente y hasta
+# +2,8 (1,25 → 0,83 de sesgo; MAE global 3,000 → 2,987). Bajar el peso del
+# prior (K) para ellos empeoraba: no se toca.
+PRECIO_ESTRELLA = 25_000_000
+AJUSTE_PRIOR_MAX_ESTRELLA = 2.8
+AJUSTE_PRIOR_PENDIENTE_ESTRELLA = 3.8
+# Un partido aislado de más de esto (un doblete, el 20 de Berenguer) cuenta como
+# esto en la media de titular: no arrastra cuatro jornadas de previsión
+# (Berenguer J11 7,7 → 6,8; hizo 7). MAE 3,000 → 2,994.
+TOPE_PICO_PUNTOS = 14.0
+
+
+def es_estrella(precio: float | None) -> bool:
+    return precio is not None and math.isfinite(precio) and precio >= PRECIO_ESTRELLA
+
+
+def ajuste_prior_jugador(slot: str, precio: float | None) -> float:
+    """Ajuste por precio; a una estrella se le permite subir hasta ``AJUSTE_PRIOR_MAX_ESTRELLA``."""
+    percentil = percentil_precio(slot, precio)
+    if percentil is None:
+        return 0.0
+    estrella = es_estrella(precio)
+    techo = AJUSTE_PRIOR_MAX_ESTRELLA if estrella else AJUSTE_PRIOR_MAX
+    pendiente = AJUSTE_PRIOR_PENDIENTE_ESTRELLA if estrella else AJUSTE_PRIOR_PENDIENTE
+    ajuste = AJUSTE_PRIOR_BASE + pendiente * percentil
+    return max(AJUSTE_PRIOR_MIN, min(techo, ajuste))
+
+
 LIGA_AVG_XG = 1.25
 # Partidos de titular que vale el prior. Con n=0 manda el puesto; con n grande, el jugador.
 K_PRIOR = 4.0
@@ -198,7 +228,7 @@ def _ewma(partidos: list[PartidoHistorico]) -> float:
     total = sum(weights)
     if total <= 0:
         return 0.0
-    return sum(partido.puntos * weight for partido, weight in zip(ordered, weights)) / total
+    return sum(min(partido.puntos, TOPE_PICO_PUNTOS) * weight for partido, weight in zip(ordered, weights)) / total
 
 
 def _std_titular(partidos: list[PartidoHistorico], posicion: str) -> float:
@@ -462,7 +492,7 @@ class FantasyXPEngine:
         viva = racha_viva(historial)
         k_prior = k_prior_efectivo(historial)
         cola = viva[-RACHA_PARTIDOS:] if len(viva) >= RACHA_PARTIDOS else []
-        racha_media = sum(partido.puntos for partido in cola) / len(cola) if cola else 0.0
+        racha_media = sum(min(partido.puntos, TOPE_PICO_PUNTOS) for partido in cola) / len(cola) if cola else 0.0
         base_titular = ((n_tit * media_titular_real) + (k_prior * prior_pos)) / (n_tit + k_prior)
         if sofascore_rating_medio is not None and sofascore_rating_medio > 6.70:
             bonus_sofa = (sofascore_rating_medio - 6.80) * 2.8
@@ -570,5 +600,5 @@ def predecir_desde_jugador(
         lambda_favor=lambda_favor,
         lambda_contra=lambda_contra,
         prob_clean_sheet=prob_clean_sheet,
-        ajuste_prior=ajuste_prior_por_precio(canonical_slot(str(player.get("position") or "MC")), _precio(player)),
+        ajuste_prior=ajuste_prior_jugador(canonical_slot(str(player.get("position") or "MC")), _precio(player)),
     )

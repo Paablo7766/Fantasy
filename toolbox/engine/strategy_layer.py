@@ -381,11 +381,107 @@ def _days_to_kickoff(trends: dict[str, Any] | None, now: datetime) -> float | No
     de liquidez y deja vender sin oferta. El viernes a las 21:00 es el cierre
     habitual de la jornada cuando la API no trae el calendario.
     """
-    raw = _jornada_kickoff(trends, now)
-    moment = _parse_kickoff(raw) if isinstance(raw, str) else None
+    moment = proximo_cierre(trends, now)
+    if moment is None:
+        raw = _jornada_kickoff(trends, now)
+        moment = _parse_kickoff(raw) if isinstance(raw, str) else None
     if moment is None:
         moment = _proximo_viernes_2100(now)
     return (moment - now).total_seconds() / 86400.0
+
+
+#: La alineación se bloquea en el primer partido de la jornada (viernes), no
+#: partido a partido. Con la jornada empezada, el siguiente cierre es el primer
+#: saque de la próxima: el plan no puede seguir apuntando al domingo.
+BLOQUEO_EN_PRIMER_PARTIDO = True
+_HUECO_ENTRE_JORNADAS = timedelta(hours=36)
+
+
+def _saques(trends: dict[str, Any] | None) -> list[datetime]:
+    """Todos los saques conocidos: el próximo de cada club y los de su calendario."""
+    salida: set[datetime] = set()
+    for player in (trends or {}).get("players") or [] if isinstance(trends, dict) else []:
+        if not isinstance(player, dict):
+            continue
+        fixture = player.get("fixture") if isinstance(player.get("fixture"), dict) else {}
+        for raw in [fixture.get("kickoff"), *[
+            celda.get("kickoff") for celda in player.get("own_calendar") or [] if isinstance(celda, dict)
+        ]]:
+            moment = _parse_kickoff(raw) if isinstance(raw, str) else None
+            if moment is not None:
+                salida.add(moment.astimezone(timezone.utc))
+    return sorted(salida)
+
+
+def _proximo_por_club(trends: dict[str, Any] | None) -> dict[str, datetime]:
+    """Saque del próximo partido de cada club."""
+    salida: dict[str, datetime] = {}
+    for player in (trends or {}).get("players") or [] if isinstance(trends, dict) else []:
+        if not isinstance(player, dict) or not isinstance(player.get("club"), str) or not player.get("club"):
+            continue
+        fixture = player.get("fixture") if isinstance(player.get("fixture"), dict) else {}
+        raw = fixture.get("kickoff")
+        if raw is None:
+            calendario = player.get("own_calendar") if isinstance(player.get("own_calendar"), list) else []
+            raw = calendario[0].get("kickoff") if calendario and isinstance(calendario[0], dict) else None
+        moment = _parse_kickoff(raw) if isinstance(raw, str) else None
+        if moment is not None:
+            club = player["club"]
+            salida[club] = min(salida.get(club, moment), moment)
+    return salida
+
+
+def proximo_cierre(trends: dict[str, Any] | None, now: datetime) -> datetime | None:
+    """Momento en que se bloquea la próxima alineación que todavía se puede tocar.
+
+    Los saques futuros se agrupan en bloques separados por más de 36 h (una
+    jornada cada uno). Si al menos dos clubes tienen su próximo partido después
+    del primer bloque, ya jugaron: la jornada está en curso y, con bloqueo en el
+    primer partido, el cierre es el inicio del bloque siguiente. Si no, es el
+    primer saque. None sin calendario.
+    """
+    futuros = [moment for moment in _saques(trends) if moment >= now]
+    if not futuros:
+        return None
+    fin_bloque = futuros[0]
+    inicio_siguiente: datetime | None = None
+    for moment in futuros[1:]:
+        if moment - fin_bloque > _HUECO_ENTRE_JORNADAS:
+            inicio_siguiente = moment
+            break
+        fin_bloque = moment
+    if not BLOQUEO_EN_PRIMER_PARTIDO:
+        return futuros[0]
+    ya_jugaron = [club for club, saque in _proximo_por_club(trends).items() if saque > fin_bloque]
+    if len(ya_jugaron) >= 2:
+        return inicio_siguiente
+    return futuros[0]
+
+
+def _saltar_jornada_bloqueada(records: dict[str, dict[str, Any]], cierre: datetime | None) -> None:
+    """Con la jornada bloqueada, el partido que le queda a un club ya no cuenta para ti.
+
+    Su «próxima jornada» pasa a ser la siguiente: el xP de J2 sube a J1 y el
+    resto se corre. Así un jugador del Sevilla (ya jugó, su próximo es J13) y
+    uno que juega el domingo (J12 bloqueada) se comparan en la misma jornada.
+    """
+    if cierre is None or not BLOQUEO_EN_PRIMER_PARTIDO:
+        return
+    for row in records.values():
+        saque = _parse_kickoff(row.get("kickoff")) if isinstance(row.get("kickoff"), str) else None
+        siguientes = row.get("xp_siguientes")
+        if saque is None or saque >= cierre or not isinstance(siguientes, list) or not siguientes:
+            continue
+        siguiente = _num(siguientes[0])
+        if siguiente is None:
+            continue
+        row["jornada_bloqueada"] = row.get("jornada")
+        row["jornada"] = siguiente
+        row["xp_siguientes"] = list(siguientes[1:])
+        calendario = row.get("calendario")
+        if isinstance(calendario, list) and len(calendario) > 1:
+            row["calendario"] = calendario[1:]
+        row.pop("kickoff", None)
 
 
 def _cash_map(board: dict[str, Any]) -> dict[str, int]:
@@ -532,6 +628,8 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
                 row["in_xi"] = True
             if key == "excluded" or player_id in excluded_ids or player.get("excluded_reason"):
                 row["excluded"] = True
+    trends_doc = board.get("trends") if isinstance(board.get("trends"), dict) else None
+    _saltar_jornada_bloqueada(records, proximo_cierre(trends_doc, now))
     return records
 
 
@@ -825,6 +923,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         current,
         dias_al_cierre=_num(plan.get("dias_al_cierre")) if isinstance(plan, dict) else None,
     )
+    _no_blindar_ventas_del_plan(clausulas, plan_ventas(plan), records)
     if isinstance(plan, dict):
         plan["alertas_clausulas"] = clausulas.get("alertas_clausulas") or []
         trading = plan.get("trading")
@@ -849,6 +948,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         "capitan_seguro": caps.get("capitan_seguro"),
         "capitan_remontada": caps.get("capitan_remontada"),
         "plan_fichajes": plan,
+        "compras_plan": plan_compras(plan),
         "auditoria_ventas": auditoria["filas"],
         "resumen_ventas": auditoria["resumen"],
         "asesor_clausulas": clausulas,
@@ -1174,6 +1274,172 @@ def _aplicar_anti_pizarra(
         smart = puja.get("puja_smart")
         if not isinstance(smart, int) or smart < anti:
             puja["puja_smart"] = anti
+
+
+#: Tipos de acción del plan que sacan a un jugador de tu plantilla.
+_TIPOS_VENTA_PLAN = frozenset({"VENDE", "VENDER HOY", "ESCAPARATE"})
+#: Momentos del plan que son de verdad parte del plan (no radar ni alternativas).
+_MOMENTOS_PLAN = frozenset({"hoy", "condicional", "luego"})
+#: Vetos de Mercado que solo dicen «hoy no te llega la caja».
+_VETOS_DE_CAJA = frozenset({"negative_cash", "sin_caja", "caja", "presupuesto_dia", "caja_otros_mercados"})
+
+
+def plan_ventas(plan: Any) -> dict[str, str]:
+    """``player_id -> nombre`` de los jugadores que el plan de hoy vende o pone a la venta."""
+    salida: dict[str, str] = {}
+    for accion in (plan or {}).get("acciones") or [] if isinstance(plan, dict) else []:
+        if not isinstance(accion, dict) or accion.get("tipo") not in _TIPOS_VENTA_PLAN:
+            continue
+        if accion.get("momento") not in _MOMENTOS_PLAN:
+            continue
+        player_id = accion.get("player_id")
+        if isinstance(player_id, str):
+            salida[player_id] = str(accion.get("nombre") or player_id)
+    return salida
+
+
+def plan_compras(plan: Any) -> dict[str, dict[str, Any]]:
+    """Pujas del plan: ``player_id -> {euros, ventas (nombres), detalle}``."""
+    if not isinstance(plan, dict):
+        return {}
+    nombres = plan_ventas(plan)
+    cobertura = plan.get("cobertura_pujas") if isinstance(plan.get("cobertura_pujas"), dict) else {}
+    atadas = {
+        item.get("player_id"): [nombres.get(v.get("player_id"), v.get("player_id")) for v in item.get("ventas") or []]
+        for item in cobertura.get("pujas") or []
+        if isinstance(item, dict)
+    }
+    salida: dict[str, dict[str, Any]] = {}
+    for accion in plan.get("acciones") or []:
+        if not isinstance(accion, dict) or accion.get("tipo") != "PUJA" or accion.get("momento") not in _MOMENTOS_PLAN:
+            continue
+        player_id = accion.get("player_id")
+        euros = accion.get("euros")
+        if not isinstance(player_id, str) or not isinstance(euros, int) or isinstance(euros, bool):
+            continue
+        salida[player_id] = {
+            "euros": euros,
+            "ventas": [str(nombre) for nombre in atadas.get(player_id) or []],
+            "ventas_hoy": [
+                str(a.get("nombre") or a.get("player_id"))
+                for a in plan.get("acciones") or []
+                if isinstance(a, dict) and a.get("tipo") == "VENDER HOY"
+            ],
+            "mejora_neta": accion.get("mejora_neta"),
+        }
+    return salida
+
+
+def puja_unica(puja: dict[str, Any] | None, row: dict[str, Any]) -> int | None:
+    """La cifra de puja que enseñan Inicio, Mercado y la ficha: la misma que paga el plan.
+
+    ``max(puja recomendada, precio de salida, puja líder)``, sin pasar del
+    techo (``puja_maxima``). Por encima del techo no hay cifra: no se puja.
+    """
+    if not isinstance(puja, dict):
+        return None
+    recomendada = puja.get("puja_recomendada")
+    if not isinstance(recomendada, int) or isinstance(recomendada, bool):
+        return None
+    ask = row.get("sale_price") if isinstance(row.get("sale_price"), int) and not isinstance(row.get("sale_price"), bool) else 0
+    lead = row.get("leading_bid") if isinstance(row.get("leading_bid"), int) and not isinstance(row.get("leading_bid"), bool) else 0
+    coste = max(recomendada, ask, lead)
+    maxima = puja.get("puja_maxima")
+    if isinstance(maxima, int) and not isinstance(maxima, bool) and coste > maxima:
+        return None
+    return int(coste)
+
+
+def _veto_de_caja(row: dict[str, Any]) -> bool:
+    motivos = {str(m) for m in row.get("reasons") or [] if isinstance(m, str)}
+    for key in ("primary_motive", "bid_limit", "action_reason_code"):
+        if isinstance(row.get(key), str):
+            motivos.add(row[key])
+    if motivos & {"ya_en_plantilla", "listing_propio", "lesionado", "sancionado", "mercado_cerrado", "sin_slots"}:
+        return False
+    return bool(motivos & _VETOS_DE_CAJA)
+
+
+def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
+    """Mercado habla con la voz del plan: misma cifra y, si es objetivo, mismo veredicto."""
+    player_id = _pid(row.get("player_id"))
+    if player_id is None:
+        return
+    compras = report.get("compras_plan") or {}
+    objetivo = compras.get(player_id) if isinstance(compras, dict) else None
+    if isinstance(objetivo, dict):
+        cifra = int(objetivo["euros"])
+        row["puja_unica_eur"] = cifra
+        row["en_plan"] = True
+        ventas = objetivo.get("ventas") or objetivo.get("ventas_hoy") or []
+        texto = "Objetivo del plan de hoy"
+        if ventas:
+            texto += f": viable dentro del plan vendiendo a {', '.join(ventas)}"
+        mejora = objetivo.get("mejora_neta")
+        if isinstance(mejora, (int, float)) and not isinstance(mejora, bool):
+            texto += f" (mejora el once {mejora:+.1f} xP)"
+        if row.get("action") in {None, "PUJAR"} or _veto_de_caja(row):
+            # Mercado decía «no te llega la caja» sin contar las ventas del plan.
+            row["action"] = "PUJAR"
+            row["decision"] = "PUJAR"
+            row["is_vetoed"] = False
+            row["action_reason"] = texto + "."
+            row["smart_bid_eur"] = cifra
+            row["suggested_bid"] = cifra
+        else:
+            # Otro motivo (snipe al cierre, lesión, mercado cerrado): se respeta
+            # el veredicto, pero con la cifra y el contexto del plan.
+            previo = row.get("action_reason") if isinstance(row.get("action_reason"), str) else ""
+            row["action_reason"] = f"{texto}. {previo}".strip()
+            if row.get("is_vetoed") is not True:
+                row["smart_bid_eur"] = cifra
+        return
+    cifra = puja_unica((report.get("pujas") or {}).get(player_id), row)
+    if cifra is None:
+        return
+    row["puja_unica_eur"] = cifra
+    if row.get("is_vetoed") is not True and isinstance(row.get("smart_bid_eur"), int):
+        row["smart_bid_eur"] = cifra
+
+
+def _no_blindar_ventas_del_plan(
+    clausulas: dict[str, Any],
+    ventas: dict[str, str],
+    records: dict[str, dict[str, Any]],
+) -> None:
+    """Quien el plan vende hoy no se blinda: su fila pasa a «Mejor venderlo» y no gasta caja."""
+    if not ventas or not isinstance(clausulas, dict):
+        return
+    texto = "El plan de hoy lo vende: no gastes caja en subirle la cláusula."
+    for fila in clausulas.get("proteger") or []:
+        if isinstance(fila, dict) and fila.get("player_id") in ventas:
+            fila["veredicto_codigo"] = "VENDER_ANTES"
+            fila["veredicto_titulo"] = "VENDE ANTES"
+            fila["subida_recomendada"] = None
+            fila["motivo_detallado"] = texto
+            fila["motivos"] = [texto, *[m for m in fila.get("motivos") or [] if m != texto]]
+            fila["vende_en_plan"] = True
+    clausulas["preparar"] = [
+        fila for fila in clausulas.get("preparar") or [] if not (isinstance(fila, dict) and fila.get("player_id") in ventas)
+    ]
+    clausulas["radar_anti_robo"] = [
+        fila for fila in clausulas.get("radar_anti_robo") or [] if not (isinstance(fila, dict) and fila.get("player_id") in ventas)
+    ]
+    clausulas["alertas_clausulas"] = [
+        fila
+        for fila in clausulas.get("alertas_clausulas") or []
+        if not (isinstance(fila, dict) and fila.get("tipo") == "escudo" and fila.get("player_id") in ventas)
+    ]
+    resumen = clausulas.get("resumen")
+    if isinstance(resumen, dict):
+        resumen["coste_proteger_eur"] = int(
+            sum(
+                (fila.get("subida_recomendada") or {}).get("coste_eur", 0)
+                for fila in clausulas.get("proteger") or []
+                if isinstance(fila, dict) and fila.get("veredicto_codigo") in {"PROTEGER_YA", "PROTEGER_PARCIAL"}
+            )
+        )
+        resumen["vende_en_plan"] = sorted(ventas.values())
 
 
 def _sellar_pujas_plan(plan: dict[str, Any], pujas: dict[str, dict[str, Any]]) -> None:
@@ -1584,6 +1850,8 @@ def _stamp_row(row: dict[str, Any], report: dict[str, Any]) -> None:
     if player_id in report["forzadas"]:
         row["venta_forzada_rival"] = True
         row["venta_forzada_detalle"] = report["forzadas"][player_id]
+    if any(key in row for key in ("action", "decision", "sale_price")):
+        _unificar_fila_mercado(row, report)
 
 
 def _stamp_list(rows: Any, report: dict[str, Any]) -> None:

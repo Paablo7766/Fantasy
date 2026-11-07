@@ -75,6 +75,13 @@ def _dump(conn: sqlite3.Connection) -> dict[str, Any]:
 def _better(remote: dict[str, Any], local: dict[str, Any]) -> bool:
     """¿La fila remota debe sustituir a la local con la misma clave?"""
     if "actual_points" in remote:
+        from toolbox.marcador import evaluacion_prematura
+
+        if remote.get("actual_points") is not None and evaluacion_prematura(
+            remote.get("kickoff"), remote.get("evaluated_at")
+        ):
+            # Puntos apuntados antes de ser definitivos (los 0 del Sevilla-Betis): no entran.
+            return False
         r_eval = remote.get("actual_points") is not None
         l_eval = local.get("actual_points") is not None
         if r_eval != l_eval:
