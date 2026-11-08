@@ -20,6 +20,12 @@ CAPITAN_ACTIVO = False
 ENTRENADOR_ACTIVO = False
 
 PUESTOS_JUGABLES = frozenset({"POR", "DEF", "MC", "DEL"})
+
+#: Oferta automática de LaLiga: aleatoria entre el valor de mercado −10 % y +10 %
+#: (soporte oficial de LaLiga). El peor caso es el 90 %: es lo que se cuenta
+#: cuando una venta tiene que cubrir deuda antes del cierre.
+OFERTA_LALIGA_MIN = 0.90
+OFERTA_LALIGA_MAX = 1.10
 #: ``positionId`` de la ficha de entrenador en LaLiga Fantasy.
 POSITION_ID_ENTRENADOR = 5
 

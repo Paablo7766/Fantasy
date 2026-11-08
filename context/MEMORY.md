@@ -39,3 +39,12 @@ _Sin ciclos todavía._
 - causa: la serie oficial no trae número de jornada; se usa el último weekPoints de cada titular
 - corrección: no se cambian los pesos del solver en este ciclo
 - auditoria-xi:69.75:79.0:2206,2384,2418,2680,2703,2713,2933,3023,3082,3090,3260
+
+## AUDITORÍA 2026-11-08 14:09 Europe/Madrid · jornada última
+
+- previsto: 70.51 puntos del XI
+- realizado: 82.0 (último weekPoints de cada titular)
+- error: 11.49
+- causa: la serie oficial no trae número de jornada; se usa el último weekPoints de cada titular
+- corrección: no se cambian los pesos del solver en este ciclo
+- auditoria-xi:70.51:82.0:2206,2384,2418,2680,2703,2713,2933,3023,3082,3090,3260

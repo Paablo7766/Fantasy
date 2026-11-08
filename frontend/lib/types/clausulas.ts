@@ -12,7 +12,15 @@ export type NivelClausula = {
   viable: boolean;
 };
 
-export type VeredictoProteger = "PROTEGER_YA" | "PROTEGER_PARCIAL" | "SIN_CAJA" | "VENDER_ANTES" | "ASUMIR" | "SOBREPROTEGIDO";
+export type VeredictoProteger =
+  | "PROTEGER_YA"
+  | "PROTEGER_PARCIAL"
+  | "SIN_CAJA"
+  | "VENDER_ANTES"
+  | "ASUMIR"
+  | "SOBREPROTEGIDO"
+  /** Único jugador posible en su puesto: si te lo roban no hay once legal. */
+  | "SIN_RECAMBIO";
 
 export type VeredictoClausulazo = "CLAUSULAR_YA" | "PROGRAMAR" | "SIN_CAJA" | "OPORTUNIDAD" | "GOLPE_RIVAL";
 
@@ -51,10 +59,38 @@ export type ClausulaEnPeligro = {
   exposicion_eur: number;
   expuesta_desde?: string | null;
   expuesta_cuando?: string | null;
+  /** Sin él la plantilla no puede alinear un once legal. */
+  sin_recambio?: boolean;
+  /** Sin recambio, cláusula frágil, un rival puede pagarla y se abre antes del próximo bloqueo. */
+  alerta_prioritaria?: boolean;
+  abre_at?: string | null;
+  /** «15-nov», «abierta» o null. */
+  abre_el?: string | null;
+  recambio_sugerido?: RecambioSugerido | null;
   veredicto_codigo: VeredictoProteger;
   veredicto_titulo: string;
   motivos: string[];
   motivo_detallado: string;
+};
+
+export type RecambioSugerido = {
+  player_id?: string | null;
+  nombre?: string | null;
+  posicion?: string | null;
+  coste?: number | null;
+  xp?: number | null;
+};
+
+export type AlertaPrioritaria = {
+  player_id: string;
+  nombre: string;
+  posicion?: string | null;
+  abre_el?: string | null;
+  abre_at?: string | null;
+  clausula: number;
+  rival_mas_rico?: { manager?: string | null; caja: number } | null;
+  recambio_sugerido?: RecambioSugerido | null;
+  accion: string;
 };
 
 export type ClausulazoSugerido = {
@@ -126,6 +162,8 @@ export type AsesorClausulas = {
     clausulazos: number;
     ventana_cierra?: string | null;
     ventana_abierta: boolean;
+    /** Jugadores sin recambio cuya cláusula se abre antes del próximo bloqueo. */
+    alertas_prioritarias?: AlertaPrioritaria[];
   };
   proteger: ClausulaEnPeligro[];
   preparar?: ClausulaEnPeligro[];

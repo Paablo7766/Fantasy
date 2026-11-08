@@ -40,6 +40,7 @@ const PROTEGER: Record<VeredictoProteger, { label: string; color: string }> = {
   VENDER_ANTES: { label: "Mejor venderlo", color: TONE.blue },
   ASUMIR: { label: "Asume el riesgo", color: TONE.gray },
   SOBREPROTEGIDO: { label: "Ya blindada", color: TONE.green },
+  SIN_RECAMBIO: { label: "Sin recambio", color: TONE.red },
 };
 
 const RADAR = {
@@ -678,6 +679,19 @@ export function ClausulasTab({
           <span className="text-base font-medium text-white/60">{danger ? (danger === 1 ? "jugador en peligro" : "jugadores en peligro") : "todo protegido"}</span>
         </p>
       )}
+      {!attack && resumen?.alertas_prioritarias?.length ? (
+        <ul className="relative mt-3 space-y-2" data-ui="alertas-prioritarias">
+          {resumen.alertas_prioritarias.map((alerta) => (
+            <li key={alerta.player_id} className="rounded-xl border border-[#F87171]/40 bg-[#F87171]/10 px-3 py-2.5 text-[13px] leading-snug text-white/80">
+              <span className="font-semibold text-[#FCA5A5]">
+                Alerta prioritaria · {alerta.nombre}
+                {alerta.abre_el && alerta.abre_el !== "abierta" ? ` · se abre el ${alerta.abre_el}` : " · cláusula abierta"}
+              </span>
+              <span className="mt-1 block">{alerta.accion}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {!attack && resumen && resumen.coste_proteger_eur > 0 ? (
         <p className="relative mt-2 text-[13.5px] tabular-nums text-white/55">
           Protegerlos cuesta <span className="font-semibold text-white">{money(resumen.coste_proteger_eur)}</span>

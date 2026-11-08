@@ -267,6 +267,8 @@ def _vacio(cash: int | None, ratio: float, baseline: float, meta: dict[str, Any]
         "huecos_obligatorios": [],
         "presupuesto": None,
         "alternativas_liquidez": [],
+        # «sin_cambios»: el cálculo terminó y nada mejora el once. Los fallos lo sobrescriben.
+        "estado_calculo": "sin_cambios",
         **meta,
     }
 
@@ -790,7 +792,10 @@ def _plan_once(
     permite_busca = ventana
     coste_busca = int(round(BUSCA_PUNTOS * ratio)) if ratio and ratio > 0 else 0
     if saldo is None:
-        return _vacio(None, ratio, baseline_puntos, meta)
+        vacio = _vacio(None, ratio, baseline_puntos, meta)
+        vacio["estado_calculo"] = "sin_caja"
+        vacio["estado_detalle"] = "No se pudo leer tu saldo: el plan no puede decidir compras ni ventas."
+        return vacio
 
     ventas_viernes: set[str] = set()
     if ventana and preparar_escaparate:
@@ -1374,8 +1379,15 @@ def _plan_once(
         return salida
 
     status = problem.solve(pulp.PULP_CBC_CMD(msg=False, timeLimit=5))
-    if pulp.LpStatus.get(status, "") != "Optimal":
+    estado_solver = pulp.LpStatus.get(status, "")
+    if estado_solver != "Optimal":
         vacio = _vacio(saldo, ratio, baseline_puntos, meta)
+        # No es «nada que hacer»: el solver no dio un plan válido (tiempo agotado o sin solución).
+        vacio["estado_calculo"] = "fallo_solver"
+        vacio["estado_detalle"] = (
+            f"El optimizador no encontró un plan válido (estado: {estado_solver or 'desconocido'}). "
+            "Pulsa Actualizar; si se repite, revisa el registro del servidor."
+        )
         vacio["en_radar"] = radar
         vacio["acciones"] = _escaparate(set())
         vacio["huecos_obligatorios"] = _publicar_huecos(plantilla, huecos)
@@ -1698,6 +1710,8 @@ def _plan_once(
     if not presupuesto["cumple"]:
         # No debería pasar (el solver lo impide), pero un plan impagable no se publica.
         vacio = _vacio(saldo, ratio, baseline_puntos, meta)
+        vacio["estado_calculo"] = "impagable"
+        vacio["estado_detalle"] = "El plan calculado no se podía pagar con tu caja y tu crédito: no se publica."
         vacio["en_radar"] = radar
         vacio["acciones"] = _escaparate(set())
         vacio["presupuesto"] = presupuesto

@@ -55,10 +55,11 @@ def test_fases_por_calendario():
     assert fase_paron(None) is None
 
 
-def test_beneficio_descuenta_sobreprecio_y_margen_del_95():
+def test_beneficio_descuenta_sobreprecio_y_peor_oferta_del_90():
     # 10 M€ que suben un 20 % en 7 días; puja un 5 % por encima del valor.
     neto = beneficio_especulacion(valor=10 * M, puja=int(10.5 * M), pct=20.0, dias_hasta_venta=7.0)
-    assert neto == round(12 * M * 0.95 - 10.5 * M)
+    # LaLiga ofrece entre −10 % y +10 %: se cuenta la peor oferta (90 %).
+    assert neto == round(12 * M * 0.90 - 10.5 * M)
     # Sube lo mismo pero con prima alta: ya no sale a cuenta.
     assert beneficio_especulacion(valor=10 * M, puja=13 * M, pct=20.0, dias_hasta_venta=7.0) < 0
 
@@ -76,7 +77,8 @@ def test_ruta_de_salida_vende_banquillo_antes_que_titulares():
     nombres = {venta["player_id"] for venta in ruta["ventas"]}
     assert nombres <= {"banq_def", "banq_del"} | {"def0", "def1", "def2", "def3", "mc0"}
     assert ruta["xp_perdido"] <= 0.5
-    assert ruta["dia_venta"] == "Miércoles 18"
+    assert ruta["dia_venta"] == "miércoles 18-nov"
+    assert ruta["dia_venta_at"].startswith("2026-11-18T21:00")
 
 
 def test_ruta_sin_deuda_no_vende():
@@ -141,8 +143,8 @@ def _candidato(pid, euros, valor, pct, xp=3.0, **extra):
 
 def test_especula_solo_con_beneficio_neto_claro():
     mercado = [
-        _candidato("bueno", int(5.1 * M), 5 * M, 30.0),  # 6,5*0,95 - 5,1 = +1,07 M€
-        _candidato("flojo", int(5.1 * M), 5 * M, 4.0),  # no cubre el 5 % ni el sobreprecio
+        _candidato("bueno", int(5.1 * M), 5 * M, 30.0),  # 6,5*0,90 - 5,1 = +0,75 M€
+        _candidato("flojo", int(5.1 * M), 5 * M, 4.0),  # no cubre el 10 % ni el sobreprecio
         _candidato("alerta", int(5.1 * M), 5 * M, 30.0, af_alerta_bajada=True),
     ]
     bloque = construir_paron(
@@ -151,7 +153,7 @@ def test_especula_solo_con_beneficio_neto_claro():
     ids = [a["player_id"] for a in bloque["especular"]]
     assert ids == ["bueno"]
     accion = bloque["especular"][0]
-    assert accion["etiqueta_paron"] == "💰 Especular (Vender antes del Jueves 19)"
+    assert accion["etiqueta_paron"] == "💰 Especular (Vender antes del jueves 19-nov)"
     assert accion["ganancia_esperada_eur"] >= 500_000
 
 
@@ -165,7 +167,8 @@ def test_fase_3_apaga_la_especulacion():
 
 def test_fase_2_solo_especula_lo_que_sube_muy_fuerte():
     mercado = [
-        _candidato("fuerte", int(20.4 * M), 20 * M, 30.0),
+        # A 3 días de la venta y con la peor oferta (90 %) hace falta subir mucho: 45 % a 7 días.
+        _candidato("fuerte", int(20.4 * M), 20 * M, 45.0),
         _candidato("medio", int(20.4 * M), 20 * M, 10.0),
     ]
     bloque = construir_paron(
@@ -211,3 +214,14 @@ def test_calendario_conocido_sustituye_al_viernes_por_defecto():
     despues = datetime(2026, 11, 21, 11, 0, tzinfo=timezone.utc)
     assert paron_conocido(despues) is None
     assert 0 < _days_to_kickoff(None, despues) < 7.5 + timedelta(days=0).days
+
+
+def test_ruta_cuenta_el_peor_caso_y_deja_holgura():
+    """Cada venta cuenta al 90 % del menor entre el valor de hoy y el previsto, y la ruta busca 0,5 M€ de colchón."""
+    squad = _plantilla()
+    squad[-1]["pct"] = 20.0  # el suplente que sube no infla el ingreso: cuenta su valor de hoy
+    ruta = ruta_salida(squad=squad, saldo_proyectado=-2 * M, dias=12.0, cierre=CIERRE)
+    for venta in ruta["ventas"]:
+        assert venta["ingreso"] == int(min(venta["valor_hoy"], venta["valor_proyectado"]) * 0.90)
+    assert ruta["ingreso"] >= 2 * M + 500_000
+    assert ruta["con_holgura"] is True

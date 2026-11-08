@@ -59,6 +59,8 @@ export type TimedClockEvent = PlanClockEvent & {
 export type ClockReport = {
   events: TimedClockEvent[];
   next: TimedClockEvent | null;
+  /** Próximo bloqueo del once (inicio de la jornada que aún se puede tocar). Manda en la cuenta atrás. */
+  lock: TimedClockEvent | null;
   upcoming: TimedClockEvent[];
   /** true cuando el último evento conocido ya pasó. */
   exhausted: boolean;
@@ -100,6 +102,7 @@ export function buildClockReport(plan: PlanPayload | null, nowMs: number): Clock
   return {
     events,
     next: upcoming[0] || null,
+    lock: upcoming.find((event) => event.kind === "inicio_jornada") || null,
     upcoming,
     exhausted: events.length > 0 && upcoming.length === 0,
   };

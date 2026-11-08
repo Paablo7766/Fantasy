@@ -127,6 +127,13 @@ export type PlanParon = {
   capital_especulacion: { caja: number; credito: number };
   ruta_salida: {
     dia_venta: string;
+    /** ISO del último día de venta (cierre − 2 días), en hora de Madrid. */
+    dia_venta_at?: string | null;
+    /** Colchón sobre la deuda que la ruta intenta cubrir (peor caso de oferta). */
+    holgura_eur?: number | null;
+    /** Fracción del valor que cuenta cada venta (0,90: peor oferta de LaLiga). */
+    margen_oferta?: number | null;
+    con_holgura?: boolean | null;
     deuda_a_saldar: number;
     saldo_proyectado: number;
     ventas: Array<{
@@ -160,6 +167,9 @@ export type PlanParon = {
 
 export type PlanFichajes = {
   ok?: boolean;
+  /** «ok» y «sin_cambios» son cálculos terminados; el resto es un fallo y no significa «nada que hacer». */
+  estado_calculo?: "ok" | "sin_cambios" | "fallo_solver" | "impagable" | "sin_caja" | "error" | string | null;
+  estado_detalle?: string | null;
   mejora_puntos_jornada?: number | null;
   saldo_al_final?: number | null;
   nota?: number | null;

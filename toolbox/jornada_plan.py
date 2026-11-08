@@ -135,6 +135,25 @@ def matchday_start(trends: dict[str, Any] | None, *, now: datetime) -> str | Non
     return start.astimezone(timezone.utc).isoformat()
 
 
+def next_lock(trends: dict[str, Any] | None, *, now: datetime) -> str | None:
+    """Inicio de la próxima jornada cuya alineación aún se puede tocar.
+
+    Con la jornada en curso (la alineación se bloquea en el primer partido),
+    es el primer saque de la siguiente, no el partido de esta tarde. Sin
+    calendario, el cierre de un parón conocido; después, ``matchday_start``.
+    """
+    from toolbox.engine.paron import paron_conocido
+    from toolbox.engine.strategy_layer import proximo_cierre
+
+    moment = proximo_cierre(trends, now)
+    if moment is None:
+        conocido = paron_conocido(now)
+        moment = conocido[1] if conocido else None
+    if moment is not None:
+        return moment.astimezone(timezone.utc).isoformat()
+    return matchday_start(trends, now=now)
+
+
 def _player_label(row: dict[str, Any]) -> str:
     name = row.get("nickname") or row.get("name") or row.get("player_id") or "jugador"
     return str(name)
@@ -278,12 +297,12 @@ def build_clock(
     now: datetime,
 ) -> tuple[list[dict[str, Any]], str | None, dict[str, Any] | None]:
     events: list[dict[str, Any]] = []
-    kickoff = matchday_start(trends, now=now)
+    kickoff = next_lock(trends, now=now)
     close_clock = None
     kick_moment = _parse_iso(kickoff)
     if kick_moment is not None:
         clock = _clock(kick_moment)
-        events.append({"kind": "inicio_jornada", "label": "Inicio de jornada", **clock})
+        events.append({"kind": "inicio_jornada", "label": "Inicio de jornada · se bloquea tu once", **clock})
         close = kick_moment - timedelta(hours=24)
         close_clock = _clock(close)
         events.append(
@@ -305,7 +324,8 @@ def build_clock(
                 if lock.get("present") is not True:
                     continue
                 moment = _lock_moment(lock)
-                if moment is None:
+                # Un desbloqueo ya pasado no es un aviso: la cláusula lleva días abierta.
+                if moment is None or moment < now:
                     continue
                 events.append(
                     {
@@ -994,6 +1014,8 @@ def build_jornada_plan(
         "fetched_at": current.astimezone(timezone.utc).isoformat(),
         "cash_eur": cash,
         "kickoff": kickoff,
+        # Primer saque de la jornada en curso (o la próxima): la auditoría del XI lo usa para saber si ya se jugó.
+        "matchday_start": matchday_start(trends, now=current),
         "clause_market_close": close_clock,
         "clock": clock,
         "lineup": lineup,
@@ -1414,7 +1436,7 @@ def plan_from_documents(
         now=current,
         league_race=race,
     )
-    audit = build_audit(optimize, squads, now=current, kickoff=document.get("kickoff"))
+    audit = build_audit(optimize, squads, now=current, kickoff=document.get("matchday_start") or document.get("kickoff"))
     if memory_path is not None:
         audit = append_audit(audit, memory_path, now=current)
     document["audit"] = audit

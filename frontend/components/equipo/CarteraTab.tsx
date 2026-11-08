@@ -592,10 +592,13 @@ export function CarteraTab({
   }, [plan]);
   const danger = useMemo(() => {
     const ids = new Set<string>();
-    for (const row of plan?.asesor_clausulas?.proteger || []) if (row.riesgo !== "BAJO") ids.add(String(row.player_id));
-    for (const row of squads?.shield || []) if (row.player_id) ids.add(String(row.player_id));
+    // Mismo criterio que «En peligro»: el asesor de cláusulas, que mira hasta el próximo bloqueo.
+    // (El antiguo `shield` marcaba cualquier cláusula ≤ 1,25× aunque tuviera candado toda la jornada.)
+    for (const row of plan?.asesor_clausulas?.proteger || []) {
+      if (row.riesgo !== "BAJO" || row.alerta_prioritaria) ids.add(String(row.player_id));
+    }
     return ids;
-  }, [plan, squads]);
+  }, [plan]);
 
   const visible = useMemo(() => {
     const rows = players.filter((player) => position === "all" || (player.position || "").toUpperCase() === position);

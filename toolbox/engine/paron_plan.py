@@ -17,8 +17,8 @@ Tres fases, medidas en días hasta el cierre:
   ruta de salida se ejecuta: saldo en cero o más con el mejor once posible.
 
 La ruta de salida se calcula siempre. Vende a valor proyectado (lo que se
-espera que valga el jugador el día de la venta, no el de hoy) y al 95 %, que es
-lo mínimo que LaLiga puede ofrecer.
+espera que valga el jugador el día de la venta, si es menor que el de hoy) y al
+90 %, que es lo mínimo que LaLiga puede ofrecer (regla oficial ±10 %).
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from toolbox.engine.signing_plan import (
     _valor_jugador,
     conserva_esqueleto,
 )
+from toolbox.engine.reglamento import OFERTA_LALIGA_MIN
 from toolbox.engine.trading_desk import DEUDA_PCT_EQUIPO
 
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -53,8 +54,11 @@ DIAS_FASE_1 = 6.0
 DIAS_FASE_3 = 3.5
 #: Se vende dos días antes del saque: LaLiga tarda en ofrecer y el último día no hay margen.
 DIAS_VENTA_ANTES_CIERRE = 2.0
-#: LaLiga puede ofrecer hasta un 5 % por debajo del valor: se cuenta ese suelo.
-MARGEN_OFERTA = 0.95
+#: LaLiga ofrece entre −10 % y +10 % del valor (regla oficial): se cuenta el peor caso.
+MARGEN_OFERTA = OFERTA_LALIGA_MIN
+#: Colchón sobre la deuda en la ruta de salida: absorbe que el precio baje en vez de
+#: subir y el redondeo de las ofertas, para no llegar al saque en negativo.
+HOLGURA_RUTA_EUR = 500_000
 #: Beneficio neto mínimo para especular con crédito.
 BENEFICIO_MIN_ESPECULAR = 500_000
 #: Un banquillo por debajo de esta subida semanal ya no merece esperar.
@@ -69,7 +73,8 @@ ETIQUETA_HOLD = "🟢 Titular + Subida (Hold J13)"
 ETIQUETA_CORTA = "🩸 Corta-hemorragias"
 ETIQUETA_RECOGER = "💵 Recoger beneficios"
 
-_DIAS_SEMANA = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
+_DIAS_SEMANA = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+_MESES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 
 
 def fase_paron(dias: float | None, ciclo_paron: bool = False) -> int | None:
@@ -98,8 +103,9 @@ NOMBRE_FASE = {
 
 
 def _dia_texto(momento: datetime) -> str:
+    """``miércoles 18-nov``: día de la semana, día y mes, en hora de Madrid."""
     local = momento.astimezone(_MADRID)
-    return f"{_DIAS_SEMANA[local.weekday()]} {local.day}"
+    return f"{_DIAS_SEMANA[local.weekday()]} {local.day}-{_MESES[local.month - 1]}"
 
 
 def _horizonte_dias(dias: float) -> float:
@@ -123,7 +129,7 @@ def beneficio_especulacion(
     pct: float,
     dias_hasta_venta: float,
 ) -> int:
-    """Euros netos de comprar hoy a ``puja`` y vender el día de venta al 95 % del valor proyectado."""
+    """Euros netos de comprar hoy a ``puja`` y vender el día de venta con la peor oferta (90 %) del valor proyectado."""
     final = valor * (1.0 + (pct / 100.0) * (dias_hasta_venta / 7.0))
     return int(round(final * MARGEN_OFERTA - puja))
 
@@ -342,6 +348,9 @@ def ruta_salida(
     base_puntos, xi_ids = _puntos(squad)
     resultado: dict[str, Any] = {
         "dia_venta": _dia_texto(dia_venta),
+        "dia_venta_at": dia_venta.astimezone(_MADRID).isoformat(),
+        "holgura_eur": HOLGURA_RUTA_EUR if deuda > 0 else 0,
+        "margen_oferta": MARGEN_OFERTA,
         "deuda_a_saldar": deuda,
         "saldo_proyectado": int(saldo_proyectado),
         "premio_jornada_incluido": int(premio_jornada),
@@ -359,14 +368,20 @@ def ruta_salida(
         return resultado
 
     def ingreso(row: dict[str, Any]) -> int:
-        return int(valor_proyectado(row, dias_hasta_venta) * MARGEN_OFERTA)
+        # Peor caso: la menor entre el valor de hoy y el proyectado, con la oferta más baja de LaLiga.
+        hoy = _valor_jugador(row)
+        proyectado = valor_proyectado(row, dias_hasta_venta)
+        base = min(hoy, proyectado) if hoy > 0 else proyectado
+        return int(base * MARGEN_OFERTA)
+
+    objetivo = deuda + HOLGURA_RUTA_EUR
 
     actual = list(squad)
     vendidos: list[dict[str, Any]] = []
     repuestos: list[dict[str, Any]] = []
     usadas: set[str] = set()
     neto = 0
-    while neto < deuda:
+    while neto < objetivo:
         puntos_actual, _ = _puntos(actual)
         mejor: tuple[tuple[float, float], dict[str, Any], dict[str, Any] | None, float, int] | None = None
         for row in actual:
@@ -426,6 +441,7 @@ def ruta_salida(
     ]
     resultado["ingreso"] = neto
     resultado["cubre"] = neto >= deuda
+    resultado["con_holgura"] = neto >= objetivo
     resultado["falta_eur"] = max(0, deuda - neto)
     resultado["xp_perdido"] = perdido
     resultado["titulares_vendidos"] = sum(1 for item in resultado["ventas"] if item["titular"])
@@ -440,7 +456,8 @@ def ruta_salida(
     if resultado["cubre"]:
         resultado["texto"] = (
             f"Ruta de salida antes del {_dia_texto(cierre)}: el {resultado['dia_venta']} vende {nombres}{cola}. "
-            f"Entran {neto / _MILLON:.1f} M€ netos (95 % del valor proyectado) para cubrir {deuda / _MILLON:.1f} M€ de deuda"
+            f"Entran {neto / _MILLON:.1f} M€ netos en el peor caso (oferta del 90 % sobre el menor entre el valor de hoy y el previsto) "
+            f"para cubrir {deuda / _MILLON:.1f} M€ de deuda"
             + (f"; el once pierde {perdido:.1f} xP." if perdido > 0 else " sin tocar el once.")
             + premio_txt
         )
@@ -602,7 +619,7 @@ def construir_paron(
                 detalle=(
                     f"{etiqueta_spec}. No entra en tu once: se compra con el crédito libre y se vende "
                     f"antes del cierre. Sube un {fila['pct']:.1f} % a 7 días; ganancia limpia esperada "
-                    f"{fila['neto'] / _MILLON:.2f} M€ tras pagar el sobreprecio y vender al 95 %."
+                    f"{fila['neto'] / _MILLON:.2f} M€ tras pagar el sobreprecio y vender con la oferta más baja (90 %)."
                 ),
             )
         )

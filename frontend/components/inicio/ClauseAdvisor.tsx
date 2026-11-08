@@ -18,6 +18,7 @@ const PROTEGER: Record<VeredictoProteger, { label: string; color: string }> = {
   VENDER_ANTES: { label: "Vende antes", color: "var(--ini-sky)" },
   ASUMIR: { label: "Asúmelo", color: "rgba(255,255,255,0.55)" },
   SOBREPROTEGIDO: { label: "Ya blindada", color: "var(--ini-mint)" },
+  SIN_RECAMBIO: { label: "Sin recambio", color: "var(--ini-red)" },
 };
 
 const CLAUSULAZO: Record<VeredictoClausulazo, { label: string; color: string }> = {
@@ -58,13 +59,15 @@ export function DangerRow({ row, photos, index }: { row: ClausulaEnPeligro; phot
     tone: row.rivales_que_pueden_pagar ? "var(--ini-red)" : undefined,
   });
   if (row.rival_mas_rico) facts.push({ label: "Rival más rico", value: money(row.rival_mas_rico.caja) });
+  if (row.abre_el) facts.push({ label: "Cláusula", value: row.abre_el === "abierta" ? "Abierta" : `Se abre el ${row.abre_el}`, tone: row.alerta_prioritaria ? "var(--ini-red)" : undefined });
+  if (row.recambio_sugerido?.coste) facts.push({ label: "Recambio", value: `${row.recambio_sugerido.nombre || "Fichaje"} · ${money(row.recambio_sugerido.coste)}` });
   facts.push({ label: "Tu once pierde", value: bench ? "Nada · fuera del once" : `−${points(row.tu_once_pierde_sin_el)} pts`, tone: bench ? undefined : "var(--ini-red)" });
 
   return (
     <AdvisorRow
       index={index}
       name={row.nombre}
-      sub={`${pos(row.posicion)} · ${risk.label}`}
+      sub={`${pos(row.posicion)} · ${row.alerta_prioritaria ? `Alerta prioritaria${row.abre_el && row.abre_el !== "abierta" ? ` · se abre el ${row.abre_el}` : ""}` : risk.label}`}
       imageUrl={photoFor(photos, row.player_id, row.nombre)}
       ring={risk.color}
       verdict={verdict}

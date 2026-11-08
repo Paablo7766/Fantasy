@@ -37,8 +37,9 @@ from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes, cons
 from toolbox.engine.paron import UMBRAL_PARON_DIAS, paron_conocido
 from toolbox.engine.live_matchday import construir_jornada_en_juego
 from toolbox.engine.paron_plan import construir_paron, fase_paron
+from toolbox.engine.reglamento import OFERTA_LALIGA_MIN
 from toolbox.engine.trading_desk import alertas_escudo_francotirador
-from toolbox.jornada_plan import earliest_kickoff, matchday_start
+from toolbox.jornada_plan import earliest_kickoff
 from toolbox.plan_memory import load_objetivos_previos, save_plan
 from toolbox.market_intel import _jornada_kickoff, _parse_kickoff
 from toolbox.normalize import exclusion_from_status, parse_clause_lock
@@ -65,8 +66,8 @@ _POSITION = {
 _CLAUSE_EDGE = 1.25
 _CLAUSE_MIN_XP = 3.5
 _MAX_PUJAS = 20
-# Oferta más baja que puede hacer LaLiga sobre el valor de mercado (-5 %).
-VENTA_SIN_OFERTA_PCT = 0.95
+# Oferta más baja que puede hacer LaLiga sobre el valor de mercado (−10 %, regla oficial).
+VENTA_SIN_OFERTA_PCT = OFERTA_LALIGA_MIN
 _MAX_CLAUSULAS = 12
 _TITULAR_RATIO = 0.60
 # Campos con los que una fila propia puede traer la oferta del sistema.
@@ -1049,7 +1050,7 @@ def _cierre_ventana(board: dict[str, Any], now: datetime) -> datetime | None:
     except Exception:
         logger.exception("cierre de la ventana de cláusulas")
         return None
-    texto = cierre.get("expires_at") if isinstance(cierre, dict) else None
+    texto = cierre.get("at") if isinstance(cierre, dict) else None
     if not isinstance(texto, str):
         return None
     try:
@@ -1060,10 +1061,16 @@ def _cierre_ventana(board: dict[str, Any], now: datetime) -> datetime | None:
 
 
 def _inicio_jornada(board: dict[str, Any], now: datetime) -> tuple[datetime | None, bool]:
-    """Primer saque de la jornada; sin dato, el próximo viernes 21:00 de Madrid (marcado como estimado)."""
+    """Inicio de la próxima jornada que se puede tocar; sin dato, el próximo viernes 21:00 (estimado).
+
+    Con la jornada en curso es el primer saque de la siguiente: el partido de
+    esta tarde ya no abre ni cierra nada.
+    """
     trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
     try:
-        texto = matchday_start(trends, now=now)
+        from toolbox.jornada_plan import next_lock
+
+        texto = next_lock(trends, now=now)
         if isinstance(texto, str):
             momento = datetime.fromisoformat(texto)
             return (momento if momento.tzinfo else momento.replace(tzinfo=timezone.utc)), False
@@ -1127,7 +1134,8 @@ def _plantillas_rivales(records: dict[str, dict[str, Any]]) -> dict[str, list[di
 
 
 def _alternativas_reposicion(records: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """Jugadores que se pueden comprar hoy: libres de LaLiga a su valor y ajenos a su cláusula."""
+    """Jugadores que se pueden comprar hoy: en el mercado (libres o anunciados por un rival) a su
+    valor, por puja; el resto de ajenos, a su cláusula."""
     salida: list[dict[str, Any]] = []
     for row in records.values():
         if row.get("is_self") is True or row.get("excluded") is True:
@@ -1135,15 +1143,28 @@ def _alternativas_reposicion(records: dict[str, dict[str, Any]]) -> list[dict[st
         player_id = row.get("player_id")
         if not isinstance(player_id, str) or row.get("position") not in POSITIONS:
             continue
-        if row.get("on_market") is True and not row.get("seller_team_id"):
+        if row.get("on_market") is True:
+            # Libre de LaLiga o anunciado por un rival: se compra pujando (admite crédito).
             coste = row.get("valor")
+            via = "puja"
         elif row.get("team_id") and row.get("shielded") is not True:
             coste = row.get("clause")
+            via = "clausula"
         else:
             continue
         if isinstance(coste, bool) or not isinstance(coste, int) or coste <= 0:
             continue
-        salida.append({"player_id": player_id, "position": row["position"], "coste": coste, "xp": row.get("jornada")})
+        salida.append(
+            {
+                "player_id": player_id,
+                "nombre": row.get("nombre"),
+                "position": row["position"],
+                "coste": coste,
+                "xp": row.get("jornada"),
+                # Una puja admite crédito; una cláusula no. El recambio urgente se busca por puja.
+                "via": via,
+            }
+        )
     return salida
 
 
@@ -1240,6 +1261,7 @@ def _asesorar_clausulas(
                     "valor_justo": (previsiones.get(player_id) or {}).get("valor_justo"),
                 }
             )
+    inicio, inicio_estimado = _inicio_jornada(board, now)
     radar = auditar_clausulas_plantilla(
         [
             {
@@ -1262,8 +1284,9 @@ def _asesorar_clausulas(
         ],
         ahora=now,
         alternativas=alternativas,
+        # Se pueden pagar hasta que cierra el mercado de clausulazos (24 h antes del saque).
+        hasta=_cierre_ventana(board, now) or inicio,
     )
-    inicio, inicio_estimado = _inicio_jornada(board, now)
     try:
         informe = evaluar_clausulas(
             propios=propios,
@@ -1769,9 +1792,13 @@ def _plan(
     }
     try:
         plan = build_plan_fichajes(**entrada)
-    except Exception:
+        plan.setdefault("estado_calculo", "ok")
+    except Exception as exc:
         logger.exception("plan de fichajes")
-        return _empty_plan(saldo, ratio)
+        vacio = _empty_plan(saldo, ratio)
+        vacio["estado_calculo"] = "error"
+        vacio["estado_detalle"] = f"El plan de fichajes falló al calcularse ({type(exc).__name__}). Pulsa Actualizar."
+        return vacio
     try:
         # El mismo plan sin ventas condicionales: solo caja y ventas de hoy.
         prudente = build_plan_fichajes(**entrada, permitir_condicionales=False)
@@ -1811,8 +1838,10 @@ def _plan(
         )
         plan["jornada_en_juego"] = en_juego
         if en_juego.get("activa") is True:
-            # El premio entra el lunes: es liquidez para el mercado y para la ruta de salida del parón.
-            premio_jornada = int(en_juego.get("liquidez_entrante_eur") or 0)
+            # El premio entra el lunes. La ruta de salida solo cuenta los puntos ya firmados
+            # (partidos jugados), no los esperados de lo que falta: dinero que aún no es tuyo.
+            propio = en_juego.get("propio") if isinstance(en_juego.get("propio"), dict) else {}
+            premio_jornada = int(propio.get("premio_ya_firme_eur") or 0)
     except Exception:
         logger.exception("jornada en juego")
     try:

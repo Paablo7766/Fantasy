@@ -113,7 +113,9 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   const nowMs = useNow();
   const mounted = nowMs > 0;
   const clock = useMemo(() => buildClockReport(plan, mounted ? nowMs : 0), [plan, mounted, nowMs]);
-  const parts = clock.next && mounted ? countdownParts(clock.next.ms, nowMs) : null;
+  // La cuenta atrás es la del bloqueo del once; un desbloqueo suelto no es «la hora límite».
+  const target = clock.lock ?? clock.next;
+  const parts = target && mounted ? countdownParts(target.ms, nowMs) : null;
 
   const own = squads?.self ?? null;
   const cash = typeof plan?.cash_eur === "number" ? plan.cash_eur : (own?.cash_eur ?? null);
@@ -128,6 +130,22 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
 
   const fichajes = plan?.plan_fichajes;
   const cashEnd = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
+  // Parón: si el plan deja deuda, el día límite de venta es tan importante como el saque.
+  const ruta = fichajes?.paron?.activo ? fichajes.paron.ruta_salida : null;
+  // Misma cifra que el Plan de hoy: el crédito que usan las pujas (la ruta de salida ya descuenta premio y ventas).
+  const credit = fichajes?.presupuesto?.credito_paron;
+  const debt = Math.max(typeof credit === "number" ? credit : 0, typeof cashEnd === "number" && cashEnd < 0 ? -cashEnd : 0);
+  const saleDeadline =
+    debt > 0
+      ? `Deuda planificada −${money(debt)}: vende antes del ${ruta?.dia_venta || "cierre"} para empezar la jornada con saldo ≥ 0.`
+      : null;
+  // Cláusulas sin recambio que se abren antes del bloqueo: perderlas deja la jornada en 0 puntos.
+  const priority = plan?.asesor_clausulas?.resumen?.alertas_prioritarias ?? [];
+  const priorityText = priority.length
+    ? `Alerta: ${priority
+        .map((a) => `${a.nombre} (único ${a.posicion || "en su puesto"}${a.abre_el && a.abre_el !== "abierta" ? `, se abre el ${a.abre_el}` : ", cláusula abierta"})`)
+        .join(" · ")}. Ficha recambio antes.`
+    : null;
 
   const dash = loading ? "…" : "—";
   const negative = typeof cash === "number" && cash < 0;
@@ -197,12 +215,26 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
             </span>
           ) : null}
 
-          {clock.next && timeText ? (
+          {target && timeText ? (
             <p className="ini-cta" data-urgent={urgent ? "true" : undefined} role="timer" data-ui="home-countdown">
               <span className="ini-live" aria-hidden="true" />
-              <span className="max-w-[14rem] truncate">{eventTitle(clock.next)}</span>
+              <span className="max-w-[14rem] truncate">{eventTitle(target)}</span>
               <span className="ini-cta__time">{timeText}</span>
-              {clock.next.localLabel ? <span className="ini-cta__when max-sm:hidden">{clock.next.localLabel}</span> : null}
+              {target.localLabel ? <span className="ini-cta__when max-sm:hidden">{target.localLabel}</span> : null}
+            </p>
+          ) : null}
+
+          {priorityText ? (
+            <p className="ini-alert" style={{ color: "#ffb3a4" }} role="alert" data-ui="home-clause-priority">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
+              {priorityText}
+            </p>
+          ) : null}
+
+          {saleDeadline ? (
+            <p className="ini-alert" style={{ color: "#ffd58a" }} role="note" data-ui="home-sale-deadline">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
+              {saleDeadline}
             </p>
           ) : null}
 

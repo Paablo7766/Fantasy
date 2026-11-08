@@ -19,6 +19,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from toolbox.engine.lineup_math import solve_best_xi
+from toolbox.engine.signing_plan import conserva_esqueleto
 from toolbox.normalize import parse_clause_lock
 
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -61,6 +62,9 @@ MAX_NIVELES = 4
 _DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 _MESES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 
+#: Título del aviso cuando perder al jugador deja la plantilla sin once legal.
+TITULO_SIN_RECAMBIO = "ALERTA: SIN RECAMBIO"
+
 TITULOS_PROTEGER = {
     "PROTEGER_YA": "SUBE LA CLÁUSULA",
     "PROTEGER_PARCIAL": "SUBE UN POCO",
@@ -68,6 +72,7 @@ TITULOS_PROTEGER = {
     "VENDER_ANTES": "VENDE ANTES",
     "ASUMIR": "PUEDES ASUMIRLO",
     "SOBREPROTEGIDO": "YA ESTÁ BLINDADA",
+    "SIN_RECAMBIO": TITULO_SIN_RECAMBIO,
 }
 TITULOS_CLAUSULAZO = {
     "CLAUSULAR_YA": "CLAUSULA YA",
@@ -203,6 +208,44 @@ def _niveles(
     return niveles
 
 
+def _fecha_corta(momento: datetime) -> str:
+    """``15-nov`` en hora de Madrid."""
+    local = momento.astimezone(_MADRID)
+    return f"{local.day}-{_MESES[local.month - 1]}"
+
+
+def deja_sin_once(jugador: dict[str, Any], propios: list[dict[str, Any]]) -> bool:
+    """Sin él (y sin fichar a nadie), la plantilla no puede alinear un once legal."""
+    player_id = jugador.get("player_id")
+    if not isinstance(player_id, str):
+        return False
+    plantilla = [
+        {**fila, "elegible": fila.get("elegible") is not False}
+        for fila in propios
+        if isinstance(fila.get("player_id"), str) and fila.get("position")
+    ]
+    return not conserva_esqueleto(plantilla, {player_id})
+
+
+def _recambio_barato(posicion: Any, alternativas: list[dict[str, Any]] | None, excluir: str) -> dict[str, Any] | None:
+    """El fichaje más barato de esa posición que se puede pujar.
+
+    Es un seguro para tener once legal, no un titular: manda el precio. A igual
+    precio, el que más puntos da.
+    """
+    pool = [
+        fila
+        for fila in alternativas or []
+        if fila.get("position") == posicion
+        and fila.get("player_id") != excluir
+        and fila.get("via", "puja") == "puja"
+        and (_int(fila.get("coste")) or 0) > 0
+    ]
+    if not pool:
+        return None
+    return min(pool, key=lambda fila: (_int(fila.get("coste")) or 0, -(_num(fila.get("xp")) or 0.0)))
+
+
 def _proteger(
     propios: list[dict[str, Any]],
     rivales: list[dict[str, Any]],
@@ -240,8 +283,9 @@ def _proteger(
             continue
         bloqueada, desbloqueo = _estado_lock(jugador.get("bloqueo"), ahora)
         # Un candado que vence antes de que empiece la jornada deja al jugador expuesto esta jornada.
-        limites = [momento for momento in (cierre, inicio_jornada) if momento is not None]
-        limite = max(limites) if limites else None
+        # El mercado de clausulazos cierra 24 h antes del saque: lo que se desbloquea
+        # después ya no se puede pagar antes de esta jornada. Sin ese dato, el saque.
+        limite = cierre if cierre is not None else inicio_jornada
         candado = bloqueada is True and (limite is None or desbloqueo is None or desbloqueo >= limite)
         if candado:
             bloqueadas += 1
@@ -329,7 +373,44 @@ def _proteger(
         else:
             codigo = "ASUMIR"
 
+        # Posición crítica: si te lo roban no puedes alinear once legal (0 puntos la jornada entera).
+        # Cobrar la cláusula no lo arregla si el robo llega tarde: el recambio tiene que estar antes.
+        sin_recambio = deja_sin_once(jugador, propios)
+        abre = desbloqueo if bloqueada is True and desbloqueo is not None else (None if candado else ahora)
+        alerta_prioritaria = bool(sin_recambio and capaces and not candado and fragil)
+        recambio = _recambio_barato(posicion, alternativas, jugador["player_id"]) if alerta_prioritaria else None
+        accion_prioritaria: str | None = None
+        if alerta_prioritaria:
+            codigo = "SIN_RECAMBIO"
+            riesgo = "ALTO"
+            futura = abre is not None and abre > ahora
+            cuando_abre = f"se abre el {_fecha_corta(abre)}" if futura else "ya está abierta"
+            caja_rica, rival_rico = max(capaces, key=lambda item: item[0])
+            multiplo_txt = f"{multiplo:.2f}".replace(".", ",") if multiplo is not None else "?"
+            partes = [
+                f"Es tu único {posicion} posible: si te lo clausulan te quedas sin once legal y la jornada vale 0 puntos.",
+                f"Su cláusula ({_m(clausula)}, {multiplo_txt}× su valor) {cuando_abre} "
+                f"y {rival_rico.get('manager') or 'un rival'} tiene {_m(caja_rica)}.",
+            ]
+            if recambio is not None:
+                fecha = f"antes del {_fecha_corta(abre)}" if futura else "hoy"
+                partes.append(
+                    f"Ficha {fecha} un {posicion} de recambio ({recambio.get('nombre') or 'el más barato'}, "
+                    f"{_m(_int(recambio.get('coste')) or 0)}): asegura el once legal y la puja se puede pagar con crédito, la cláusula no."
+                )
+            else:
+                partes.append("No hay recambio en el mercado ahora: revisa el mercado cada día hasta tener otro.")
+            if elegido is not None:
+                partes.append(f"Si te sobra caja, sube la cláusula: cuesta {_m(int(elegido['coste_eur']))}.")
+            accion_prioritaria = " ".join(partes)
+
         motivos: list[str] = []
+        if alerta_prioritaria:
+            motivos.append(
+                f"sin recambio en su puesto · se abre el {_fecha_corta(abre)}"
+                if abre is not None and abre > ahora
+                else "sin recambio en su puesto · cláusula abierta"
+            )
         if capaces:
             motivos.append(f"{len(capaces)} de {len(rivales)} rivales pueden pagar su cláusula hoy")
         if necesitan:
@@ -342,7 +423,7 @@ def _proteger(
             motivos.append(f"se desbloquea {_cuando(desbloqueo, ahora)}")
 
         nombre = str(jugador.get("nombre") or jugador["player_id"])
-        motivo = _motivo_proteger(
+        motivo = accion_prioritaria or _motivo_proteger(
             codigo,
             nombre=nombre,
             clausula=clausula,
@@ -356,7 +437,7 @@ def _proteger(
             reposicion=reposicion,
         )
         expuesta_desde = desbloqueo if bloqueada is True and desbloqueo is not None else None
-        if expuesta_desde is not None:
+        if expuesta_desde is not None and not accion_prioritaria:
             motivo += f" Su candado vence {_cuando(expuesta_desde, ahora)}, antes de que empiece la jornada: queda expuesto entonces."
         if candado and desbloqueo is not None:
             motivo += f" Tiene candado hasta {_cuando(desbloqueo, ahora)}: déjala puesta al menos un día antes."
@@ -393,6 +474,23 @@ def _proteger(
                 "expuesta_desde": expuesta_desde.isoformat() if expuesta_desde is not None else None,
                 "expuesta_cuando": _cuando(expuesta_desde, ahora) if expuesta_desde is not None else None,
                 "prescindible": prescindible,
+                "sin_recambio": sin_recambio,
+                "alerta_prioritaria": alerta_prioritaria,
+                "abre_at": abre.isoformat() if abre is not None else None,
+                "abre_el": (
+                    _fecha_corta(abre) if abre is not None and abre > ahora else ("abierta" if abre is not None else None)
+                ),
+                "recambio_sugerido": (
+                    {
+                        "player_id": recambio.get("player_id"),
+                        "nombre": recambio.get("nombre"),
+                        "posicion": recambio.get("position"),
+                        "coste": _int(recambio.get("coste")),
+                        "xp": _num(recambio.get("xp")),
+                    }
+                    if recambio is not None
+                    else None
+                ),
                 "veredicto_codigo": codigo,
                 "veredicto_titulo": TITULOS_PROTEGER[codigo],
                 "motivos": motivos,
@@ -400,7 +498,14 @@ def _proteger(
             }
         )
     orden = {"ALTO": 0, "MEDIO": 1, "BAJO": 2}
-    filas.sort(key=lambda fila: (orden[fila["riesgo"]], -fila["rivales_que_pueden_pagar"], -fila["exposicion_eur"]))
+    filas.sort(
+        key=lambda fila: (
+            not fila["alerta_prioritaria"],
+            orden[fila["riesgo"]],
+            -fila["rivales_que_pueden_pagar"],
+            -fila["exposicion_eur"],
+        )
+    )
     preparar.sort(key=lambda fila: (fila["bloqueada_hasta"] or "", -fila["exposicion_eur"]))
     return filas, bloqueadas, seguros, preparar
 
@@ -751,6 +856,21 @@ def evaluar_clausulas(
         "ventana_cierra": _cuando(cierre, ahora) if cierre is not None else None,
         "ventana_abierta": cierre is None or ahora < cierre,
         "inicio_jornada": _cuando(inicio_jornada, ahora) if inicio_jornada is not None else None,
+        "alertas_prioritarias": [
+            {
+                "player_id": fila["player_id"],
+                "nombre": fila["nombre"],
+                "posicion": fila["posicion"],
+                "abre_el": fila["abre_el"],
+                "abre_at": fila["abre_at"],
+                "clausula": fila["clausula_actual"],
+                "rival_mas_rico": fila["rival_mas_rico"],
+                "recambio_sugerido": fila["recambio_sugerido"],
+                "accion": fila["motivo_detallado"],
+            }
+            for fila in proteger
+            if fila.get("alerta_prioritaria")
+        ],
     }
     return {"resumen": resumen, "proteger": proteger, "preparar": preparar, "clausulazos": clausulazos}
 
@@ -796,10 +916,13 @@ def _momento_apertura(value: Any, ahora: datetime) -> datetime | None:
     return None
 
 
-def _ventana_clausula(jugador: dict[str, Any], ahora: datetime) -> tuple[bool, bool, float | None]:
+def _ventana_clausula(
+    jugador: dict[str, Any], ahora: datetime, hasta: datetime | None = None
+) -> tuple[bool, bool, float | None]:
     """(entra en la ventana, ya está abierta, días que faltan).
 
-    Entra si la apertura es pasada o faltan menos de 3 días.
+    Entra si la apertura es pasada, si se abre antes de ``hasta`` (el bloqueo de la
+    próxima jornada: en un parón son dos semanas) o, sin ese dato, si faltan menos de 3 días.
     """
     raw = jugador.get("clausulaAbre")
     if raw is None:
@@ -812,7 +935,7 @@ def _ventana_clausula(jugador: dict[str, Any], ahora: datetime) -> tuple[bool, b
     if momento is None:
         return False, False, None
     dias = (momento - ahora).total_seconds() / 86400.0
-    if dias <= 0 or dias < _VENTANA_APERTURA_DIAS:
+    if dias <= 0 or dias < _VENTANA_APERTURA_DIAS or (hasta is not None and momento < hasta):
         return True, dias <= 0, dias
     return False, False, dias
 
@@ -892,10 +1015,12 @@ def auditar_clausulas_plantilla(
     *,
     ahora: datetime | None = None,
     alternativas: list[dict[str, Any]] | None = None,
+    hasta: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Riesgo real de que un rival pague la cláusula de un jugador nuestro.
 
-    Solo mira cláusulas ya abiertas o que se abren en menos de 3 días. Cruza
+    Mira cláusulas ya abiertas o que se abren antes de ``hasta`` (inicio de la
+    próxima jornada); sin ese dato, en menos de 3 días. Cruza
     el múltiplo de la cláusula con cuántos rivales tienen ``dineroEstimado``
     para pagarla hoy. Con ``alternativas`` (``position``, ``coste``, ``xp``)
     mide también el coste de reposición: si lo que cobras no alcanza para
@@ -912,7 +1037,7 @@ def auditar_clausulas_plantilla(
             continue
         if jugador.get("blindado") is True or jugador.get("is_shielded") is True or jugador.get("shielded") is True:
             continue
-        en_ventana, abierta, dias = _ventana_clausula(jugador, momento)
+        en_ventana, abierta, dias = _ventana_clausula(jugador, momento, hasta)
         if not en_ventana:
             continue
         clausula = _euros_jugador(jugador, "clausula", "clausula_actual", "buyout_clause", "clause")

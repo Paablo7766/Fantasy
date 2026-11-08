@@ -351,8 +351,23 @@ export function TodayPlan({
   const finished = checkable.filter((step) => done.includes(step.key)).length;
   const allDone = checkable.length > 0 && finished === checkable.length;
   const delta = fichajes?.mejora_puntos_jornada;
-  const verdict = allDone ? "Todo listo por hoy" : today.length ? fichajes?.veredicto || "Hazlo hoy" : "Hoy toca esperar";
+  const estado = fichajes?.estado_calculo ?? null;
+  const failed = !!estado && !["ok", "sin_cambios"].includes(estado);
+  const verdict = allDone
+    ? "Todo listo por hoy"
+    : today.length
+      ? fichajes?.veredicto || "Hazlo hoy"
+      : failed
+        ? "El cálculo no terminó"
+        : "Hoy toca esperar";
   const income = today.filter((s) => s.kind === "vende").reduce((t, s) => t + (s.amount || 0), 0);
+  // Crédito que el plan usa por encima de la caja: deuda real hasta la ruta de salida.
+  const saldoFinal = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
+  const credit = Math.max(
+    typeof presupuesto?.credito_paron === "number" ? presupuesto.credito_paron : 0,
+    saldoFinal !== null && saldoFinal < 0 ? -saldoFinal : 0,
+  );
+  const saleDay = fichajes?.paron?.ruta_salida?.dia_venta || null;
   const spend = today.filter((s) => s.kind === "puja" || s.kind === "clausula").reduce((t, s) => t + (s.amount || 0), 0);
 
   const renderRow = (step: Step, index: number, canCheck: boolean) => (
@@ -410,10 +425,18 @@ export function TodayPlan({
               Lo pagas con caja {eurShort(presupuesto.caja)}
               {presupuesto.ventas_hoy > 0 ? ` + ventas de hoy ${eurShort(presupuesto.ventas_hoy)}` : ""}
               {presupuesto.ventas_si_ganas > 0 ? ` + ventas solo si ganas ${eurShort(presupuesto.ventas_si_ganas)}` : ""}
-              {` · sobran ${eurShort(presupuesto.holgura)} · sin usar crédito`}
+              {credit > 0
+                ? ` + crédito ${eurShort(credit)} · deuda planificada −${eurShort(credit)}: vende antes del ${saleDay || "cierre"}`
+                : ` · sobran ${eurShort(presupuesto.holgura)} · sin usar crédito`}
             </span>
           ) : null}
-          {!today.length ? <span>Ningún movimiento mejora tu once con los datos de ahora.</span> : null}
+          {!today.length ? (
+            failed ? (
+              <span style={{ color: "var(--ini-red)" }}>{fichajes?.estado_detalle || "El plan no se pudo calcular. Pulsa Actualizar."}</span>
+            ) : (
+              <span>Ningún movimiento mejora tu once con los datos de ahora.</span>
+            )
+          ) : null}
         </p>
         {checkable.length ? (
           <div className="ini-bar mt-4" data-full={allDone} role="progressbar" aria-valuemin={0} aria-valuemax={checkable.length} aria-valuenow={finished}>
