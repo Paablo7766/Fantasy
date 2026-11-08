@@ -103,6 +103,7 @@ from toolbox.net import (
 from toolbox.normalize import SCHEMA_VERSION, attach_image_urls, daily_market_is_past
 from toolbox.scrapers import build_trends, prefetch_futbolfantasy, refresh_squad_titularity_in_index
 from toolbox import snapshot_remote
+from toolbox import web_push
 
 logger = logging.getLogger("fantasy.dashboard")
 
@@ -216,6 +217,7 @@ def _refresh_status_finish(*, ok: bool, error: Any = None) -> None:
     with _refresh_status_lock:
         if not _refresh_status:
             return
+        was_running = bool(_refresh_status.get("running"))
         _refresh_status["running"] = False
         _refresh_status["result_ok"] = ok
         _refresh_status["error"] = error
@@ -224,6 +226,9 @@ def _refresh_status_finish(*, ok: bool, error: Any = None) -> None:
             _refresh_status["elapsed_seconds"] = round(
                 max(0.0, time.time() - float(_refresh_status["started_unix"])), 1
             )
+    if was_running:
+        # Avisa al móvil aunque la app esté cerrada (Web Push); inerte sin claves.
+        web_push.notify_refresh_done(ok=ok)
 
 
 def _refresh_elapsed(status: dict[str, Any]) -> float:
@@ -3637,6 +3642,7 @@ def _remote_worker(
                 "error": None,
             }
         logger.info("Refresco remoto %s terminado (tier=%s).", job_id, tier)
+        web_push.notify_refresh_done(ok=True)
     except SystemExit:
         with _remote_lock:
             _remote_job = {
@@ -3660,6 +3666,7 @@ def _remote_worker(
                 "error": payload.get("error"),
             }
         logger.exception("El refresco remoto %s falló.", job_id)
+        web_push.notify_refresh_done(ok=False)
 
 
 @app.post("/api/remote/refresh", status_code=202)
@@ -4240,6 +4247,35 @@ def _plan_refresh_passes(league: str | None, *, force_rivals: bool = False) -> A
     document["refresh"] = {"ok": True, "core": True, "full": True, "error": None}
     _refresh_status_finish(ok=True)
     return document
+
+
+@app.get("/api/push/key")
+def api_push_key() -> Any:
+    """Clave pública VAPID para que el navegador pueda suscribirse a los avisos."""
+    return {"ok": True, "enabled": web_push.enabled(), "public_key": web_push.public_key()}
+
+
+@app.post("/api/push/subscribe")
+def api_push_subscribe(payload: dict[str, Any] = Body(default=None)) -> Any:
+    if not web_push.enabled():
+        return _remote_error(503, "push_disabled", "Los avisos no están configurados en el servidor.")
+    if not web_push.save_subscription(payload):
+        return _remote_error(400, "bad_subscription", "Suscripción no válida.")
+    return {"ok": True}
+
+
+@app.post("/api/push/unsubscribe")
+def api_push_unsubscribe(payload: dict[str, Any] = Body(default=None)) -> Any:
+    endpoint = payload.get("endpoint") if isinstance(payload, dict) else None
+    if isinstance(endpoint, str) and endpoint:
+        web_push.remove_subscription(endpoint)
+    return {"ok": True}
+
+
+@app.post("/api/push/test")
+def api_push_test() -> Any:
+    sent = web_push.send_to_all("Avisos activados", "Te avisaré cuando termine cada actualización.", tag="test")
+    return {"ok": True, "sent": sent}
 
 
 @app.get("/api/refresh-status")

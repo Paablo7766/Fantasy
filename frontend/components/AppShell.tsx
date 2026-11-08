@@ -6,6 +6,7 @@ import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { prefetchLaboratorio } from "@/lib/laboratorio/prefetch";
 import { useNow } from "@/lib/core/useClock";
+import { AvisosBell } from "@/components/AvisosBell";
 
 type NavItem = {
   href: string;
@@ -252,6 +253,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div className="app-frame">
         <header className={`app-topbar relative ${home ? "app-topbar--bare" : ""}`}>
+          <AvisosBell />
           <div className="app-topbar__row" data-ui="topbar" hidden={home}>
             <div className="flex min-w-0 items-center gap-3">
               <span className="topbar-mark lg:hidden" aria-hidden="true">
