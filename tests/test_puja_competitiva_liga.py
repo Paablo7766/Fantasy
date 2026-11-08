@@ -149,3 +149,28 @@ class PlanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VentaDeRivalFueraDelPlanTests(unittest.TestCase):
+    def test_la_sobrepuja_ignora_las_subastas_de_rivales(self) -> None:
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+
+        from toolbox.engine_calibration import _ensure_tracking_schema
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "c.sqlite"
+            conn = sqlite3.connect(ruta)
+            _ensure_tracking_schema(conn)
+            filas = [("2026-11-0%d" % i, str(i), "PUJAR", 1_000_000, "lost", 1_500_000, fuente) for i, fuente in
+                     enumerate(["rival", "rival", "rival", "liga"], start=1)]
+            for dia, pid, dec, sug, out, pag, fuente in filas:
+                conn.execute(
+                    "insert into market_decision_snapshots (snapshot_day, player_id, decision, suggested_bid, stored_at, outcome, paid_eur, offer_source) values (?,?,?,?,0,?,?,?)",
+                    (dia, pid, dec, sug, out, pag, fuente),
+                )
+            conn.commit()
+            conn.close()
+            resumen = sobrepuja_de_liga(ruta)
+            self.assertEqual(resumen["perdidas"], 1)

@@ -41,7 +41,7 @@ def _ensure_predicted_win_column(conn: sqlite3.Connection) -> None:
         # perder la puja y no haber pujado.
         conn.execute("alter table market_decision_snapshots add column own_bid integer")
         conn.commit()
-    for column, kind in (("paid_eur", "integer"), ("winner_team_id", "text")):
+    for column, kind in (("paid_eur", "integer"), ("winner_team_id", "text"), ("offer_source", "text")):
         if column not in have:
             # Quién se lo llevó y por cuánto: con eso se mide si la puja recomendada
             # se quedó corta (lo pagó un rival por encima) o si sobraba.
@@ -132,6 +132,7 @@ def persist_market_decisions(
                 None,
                 _predicted_win(row),
                 row.get("own_bid") if isinstance(row.get("own_bid"), int) and not isinstance(row.get("own_bid"), bool) else None,
+                row.get("offer_source") if row.get("offer_source") in {"liga", "rival", "propio"} else None,
             )
             for row in decisions
             if isinstance(row, dict) and isinstance(row.get("player_id"), str) and row.get("player_id")
@@ -143,8 +144,8 @@ def persist_market_decisions(
             insert into market_decision_snapshots (
                 snapshot_day, league_id, player_id, decision, suggested_bid,
                 win_probability, primary_motive, stored_at, outcome, outcome_at,
-                predicted_win, own_bid
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                predicted_win, own_bid, offer_source
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             on conflict(snapshot_day, player_id) do update set
                 decision=excluded.decision,
                 suggested_bid=excluded.suggested_bid,
@@ -152,7 +153,8 @@ def persist_market_decisions(
                 primary_motive=excluded.primary_motive,
                 stored_at=excluded.stored_at,
                 predicted_win=coalesce(excluded.predicted_win, market_decision_snapshots.predicted_win),
-                own_bid=coalesce(excluded.own_bid, market_decision_snapshots.own_bid)
+                own_bid=coalesce(excluded.own_bid, market_decision_snapshots.own_bid),
+                offer_source=coalesce(excluded.offer_source, market_decision_snapshots.offer_source)
             """,
             rows,
         )
@@ -256,11 +258,15 @@ def sobrepuja_de_liga(db_path: Path | None = None) -> dict[str, Any] | None:
     except sqlite3.Error:
         return None
     try:
+        columnas = {str(fila[1]) for fila in conn.execute("pragma table_info(market_decision_snapshots)")}
+        # Las ventas de rivales no se mezclan con las de LaLiga (otro precio de cierre).
+        sin_rivales = "and coalesce(offer_source, 'liga') <> 'rival'" if "offer_source" in columnas else ""
         filas = conn.execute(
-            """
+            f"""
             select suggested_bid, predicted_win, paid_eur
             from market_decision_snapshots
             where decision = 'PUJAR' and outcome = 'lost' and paid_eur > 0
+              {sin_rivales}
             """
         ).fetchall()
     except sqlite3.Error:

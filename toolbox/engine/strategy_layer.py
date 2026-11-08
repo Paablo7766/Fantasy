@@ -1805,6 +1805,10 @@ def _plan(
             continue
         if own_id and row.get("seller_team_id") == own_id:
             continue
+        if row.get("seller_team_id"):
+            # Anunciado por un rival: en esta liga nadie ha ganado uno pujando, y
+            # cuando pasa es por bastante más de la recomendada. No se cuenta con él.
+            continue
         player_id = row.get("player_id")
         if not isinstance(player_id, str) or row.get("position") not in POSITIONS:
             continue

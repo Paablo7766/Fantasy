@@ -247,7 +247,9 @@ export function PlayerCard({
     const closing = closesIn(player.listing_expires_at);
     const seller = player.offer_source === "rival" ? `Lo vende ${player.seller_manager || "un rival"}` : "Lo vende LaLiga";
     const risk =
-      win !== null && win < 0.4
+      player.offer_source === "rival"
+        ? "Venta de un rival: en esta liga casi nunca se gana pujando, y si pasa es por bastante más de la recomendada. No cuenta en el plan."
+        : win !== null && win < 0.4
         ? "Difícil ganar la puja: hay rivales con caja para superarte."
         : trend !== null && trend < -0.5
           ? `Se espera que pierda valor esta semana (${signedPct(trend)}).`
