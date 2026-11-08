@@ -175,6 +175,32 @@ class AfCalendarCell:
     win_prob: float
     draw_prob: float
     loss_prob: float
+    #: Fecha ISO del partido. ``matchday`` es relativo (1 = el siguiente el día que se
+    #: descargó la página): sin la fecha, un calendario viejo pasaba por «próximo».
+    kickoff: str | None = None
+
+
+def calendario_vigente(cells: list[AfCalendarCell], now: Any = None) -> list[AfCalendarCell]:
+    """Casillas de partidos que aún no se han jugado (2 h de margen), por fecha."""
+    from datetime import datetime, timedelta, timezone
+
+    momento = now or datetime.now(timezone.utc)
+    corte = momento - timedelta(hours=2)
+    vigentes: list[tuple[datetime | None, AfCalendarCell]] = []
+    for cell in cells:
+        fecha = None
+        if isinstance(cell.kickoff, str) and cell.kickoff.strip():
+            try:
+                fecha = datetime.fromisoformat(cell.kickoff.strip().replace("Z", "+00:00"))
+            except ValueError:
+                fecha = None
+            if fecha is not None and fecha.tzinfo is None:
+                fecha = fecha.replace(tzinfo=timezone.utc)
+        if fecha is not None and fecha < corte:
+            continue
+        vigentes.append((fecha, cell))
+    vigentes.sort(key=lambda item: (item[0] is None, item[0] or corte, item[1].matchday))
+    return [cell for _fecha, cell in vigentes]
 
 
 @dataclass
@@ -669,7 +695,7 @@ def parse_calendar(page: str) -> list[AfCalendarCell]:
             matchday,
             _round,
             _fixture_id,
-            _date,
+            fecha,
             _opp_id,
             opponent,
             is_home,
@@ -695,6 +721,7 @@ def parse_calendar(page: str) -> list[AfCalendarCell]:
                 win_prob=float(win),
                 draw_prob=float(draw),
                 loss_prob=float(loss),
+                kickoff=fecha or None,
             )
         )
     return cells
@@ -1033,8 +1060,13 @@ def apply_analitica_fantasy(
         club = player.get("club")
         if isinstance(club, str) and club.strip():
             cells = calendar_by_club.get(normalize_club(club) or normalize_name(club)) or []
-            if cells:
-                upcoming = sorted(cells, key=lambda item: item.matchday)[:5]
+            # Solo partidos por jugar: la página de AF puede estar varias jornadas atrás.
+            upcoming = calendario_vigente(cells)[:5] if cells else []
+            if cells and not upcoming:
+                # Calendario de AF sin partidos por jugar (página vieja): mejor nada que la J8.
+                player.pop("af_calendar", None)
+                player.pop("af_recommendation_pct", None)
+            if upcoming:
                 player["af_calendar"] = [
                     {
                         "matchday": cell.matchday,
@@ -1043,12 +1075,12 @@ def apply_analitica_fantasy(
                         "predicted_score": cell.predicted_score,
                         "recommendation_pct": cell.recommendation_pct,
                         "difficulty": cell.difficulty,
+                        "kickoff": cell.kickoff,
                     }
                     for cell in upcoming
                 ]
                 # Soft FDR proxy: 100 - recommendation for the next cell.
-                nxt = upcoming[0]
-                player["af_recommendation_pct"] = nxt.recommendation_pct
+                player["af_recommendation_pct"] = upcoming[0].recommendation_pct
 
     # Radar: deltas de titularidad vs mercado AF (titularity) cuando el once scrapeado difiere.
     for player in players:

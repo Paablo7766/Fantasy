@@ -96,7 +96,8 @@ ENV_LEAGUE_START_DATE = "LEAGUE_START_DATE"
 #: El reglamento de la app muestra 1:2 (0,5). Se usa 0,20 porque el objetivo es
 #: una cota superior de la caja: cobrar la subida más barata posible deja al
 #: rival con más dinero del que probablemente tiene.
-DEFAULT_CLAUSE_INCREASE_MULTIPLIER = 0.20
+# Regla oficial 1:2: subir 2 € de cláusula cuesta 1 €. Antes 0,20 (1:5) infravaloraba el gasto oculto.
+DEFAULT_CLAUSE_INCREASE_MULTIPLIER = 0.50
 
 #: Fallback de la cláusula que el juego asigna a un jugador del reparto inicial.
 DEFAULT_STARTING_CLAUSE_MULTIPLIER = 1.5
@@ -175,7 +176,7 @@ def _env_day(name: str, default: str) -> str:
 
 
 def configured_clause_increase_multiplier() -> float:
-    """``CLAUSE_INCREASE_MULTIPLIER`` del entorno/``.env`` o ``0.20``.
+    """``CLAUSE_INCREASE_MULTIPLIER`` del entorno/``.env`` o ``0.50`` (regla oficial 1:2).
 
     Fuera de ``(0, 1]`` no es una fracción del incremento: manda el fallback,
     porque una errata de configuración no debe romper la cota.
@@ -217,7 +218,7 @@ INITIAL_BUDGET = 100_000_000
 #: Cláusula que el juego asigna por defecto a un jugador del reparto inicial.
 STARTING_CLAUSE_MULTIPLIER = configured_starting_clause_multiplier()
 
-#: Fracción del incremento que cuesta subir una cláusula (``.env``, 0,20 por defecto).
+#: Fracción del incremento que cuesta subir una cláusula (``.env``, 0,50 por defecto: regla 1:2).
 CLAUSE_INCREASE_MULTIPLIER = configured_clause_increase_multiplier()
 
 #: Dinero que inyecta el juego por el vídeo publicitario diario.
@@ -2424,7 +2425,7 @@ class LedgerAuditor:
                 for entry in log.values()
                 if entry["team_id"] == team_id and entry["day"] > anchor_day
             ]
-            return _dedupe_expenses(rows)
+            return _dedupe_expenses(_encadenar_subidas(rows, self.clause_increase_multiplier))
 
         measured: dict[str, list[dict[str, Any]]] = {}
         ghosts: list[dict[str, Any]] = []
@@ -2438,6 +2439,9 @@ class LedgerAuditor:
 
         rows = list(ghosts)
         for player_id, entries in measured.items():
+            # Dos diffs que parten de la misma base (45 M€ → 57,5 y 45 M€ → 75,2) no son dos
+            # subidas: se encadenan y solo cuenta lo que supera el techo ya medido.
+            entries = _encadenar_subidas(entries, self.clause_increase_multiplier)
             total = sum(entry["cost_eur"] for entry in entries)
             estimate = next(
                 (row for row in retro if row["player_id"] == player_id),
@@ -2451,6 +2455,37 @@ class LedgerAuditor:
         covered = {row["player_id"] for row in rows}
         rows.extend(row for row in retro if row["player_id"] not in covered)
         return _dedupe_expenses(rows)
+
+
+def _encadenar_subidas(rows: list[dict[str, Any]], multiplicador: float) -> list[dict[str, Any]]:
+    """Subidas diarias de un mismo jugador sin solapes, con el coste de la regla vigente.
+
+    Por jugador y en orden de día, cada subida solo cuenta desde el mayor de su base
+    y la cláusula más alta ya medida. El coste se recalcula con ``multiplicador``
+    (los asientos viejos se guardaron con 0,20). Las filas sin cláusulas se dejan igual.
+    """
+    salida: list[dict[str, Any]] = []
+    techo: dict[tuple[str, str], int] = {}
+    for row in sorted(rows, key=lambda item: (str(item.get("day") or ""), str(item.get("player_id") or ""))):
+        antes, despues = row.get("clause_before_eur"), row.get("clause_after_eur")
+        if not isinstance(antes, int) or not isinstance(despues, int) or row.get("source") != "diario":
+            salida.append(row)
+            continue
+        clave = (str(row.get("team_id")), str(row.get("player_id")))
+        base = max(antes, techo.get(clave, antes))
+        techo[clave] = max(techo.get(clave, despues), despues)
+        subida = max(0, despues - base)
+        if subida <= 0:
+            continue
+        salida.append(
+            {
+                **row,
+                "increase_eur": subida,
+                "cost_eur": int(round(subida * multiplicador)),
+                **({"solapada_desde_eur": base} if base != antes else {}),
+            }
+        )
+    return salida
 
 
 def _dedupe_expenses(rows: list[dict[str, Any]]) -> tuple[int, list[dict[str, Any]]]:

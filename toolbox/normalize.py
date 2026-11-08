@@ -12,7 +12,7 @@ from datetime import datetime, timezone, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from toolbox.engine.reglamento import ficha_jugable
+from toolbox.engine.reglamento import es_entrenador, ficha_jugable
 
 SCHEMA_VERSION = 1
 MADRID_NAME = "Europe/Madrid"
@@ -593,6 +593,21 @@ def normalize_listing(item: dict[str, Any], *, now: datetime | None = None) -> d
     }
 
 
+_FOTO_ENTRENADOR = re.compile(r"/man\d+/")
+
+
+def _carta_de_entrenador(row: dict[str, Any]) -> bool:
+    """Ficha de entrenador: ``positionId`` 5, o sin puesto y con foto de «man» (Beñat, Funes).
+
+    LaLiga no siempre manda el puesto de los entrenadores; su foto sí cambia
+    (``.../man3097/...`` frente a ``.../p2680/...`` de un jugador).
+    """
+    if es_entrenador(row.get("position_id"), row.get("position")):
+        return True
+    imagen = row.get("image_url")
+    return row.get("position") is None and isinstance(imagen, str) and bool(_FOTO_ENTRENADOR.search(imagen))
+
+
 def build_market_document(
     *,
     league_id: str,
@@ -605,11 +620,16 @@ def build_market_document(
     rows = unwrap_collection(payload, ("elements", "items", "players", "market", "data", "content"))
     if not rows and isinstance(payload, dict) and ("playerMaster" in payload or "salePrice" in payload):
         rows = [payload]
-    listings = [normalize_listing(row, now=now) for row in rows if isinstance(row, dict)]
+    normalizados = [normalize_listing(row, now=now) for row in rows if isinstance(row, dict)]
+    # Cartas de entrenador (positionId 5): no se alinean ni puntúan en esta
+    # liga. Entraban al mercado como jugadores rotos (Hansi Flick sin posición ni xP).
+    listings = [row for row in normalizados if not _carta_de_entrenador(row)]
+    descartadas = len(normalizados) - len(listings)
     return {
         "ok": True,
         "schema_version": SCHEMA_VERSION,
         "command": "market",
+        "descartadas_no_jugables": descartadas,
         "league_id": league_id,
         "league_name": league_name,
         "fetched_at": fetched_at,

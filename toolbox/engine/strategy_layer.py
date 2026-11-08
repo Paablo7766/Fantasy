@@ -26,6 +26,7 @@ from toolbox.engine.lineup_math import solve_best_xi, war_del_once
 from toolbox.engine.liquidacion import plan_liquidacion
 from toolbox.engine.market_predictor import (
     EUROS_POR_PUNTO,
+    curva_valor_justo,
     proyectar_7d,
     ratio_mercado_liga,
     valor_justo_jugador,
@@ -38,7 +39,7 @@ from toolbox.engine.paron import UMBRAL_PARON_DIAS, paron_conocido
 from toolbox.engine.live_matchday import construir_jornada_en_juego
 from toolbox.engine.paron_plan import construir_paron, fase_paron
 from toolbox.engine.reglamento import OFERTA_LALIGA_MIN
-from toolbox.engine.trading_desk import alertas_escudo_francotirador
+from toolbox.engine.trading_desk import DEUDA_PCT_EQUIPO, alertas_escudo_francotirador
 from toolbox.jornada_plan import earliest_kickoff
 from toolbox.plan_memory import load_objetivos_previos, save_plan
 from toolbox.market_intel import _jornada_kickoff, _parse_kickoff
@@ -425,7 +426,8 @@ def _saques(trends: dict[str, Any] | None) -> list[datetime]:
         if not isinstance(player, dict):
             continue
         fixture = player.get("fixture") if isinstance(player.get("fixture"), dict) else {}
-        for raw in [fixture.get("kickoff"), *[
+        en_juego = player.get("own_en_juego") if isinstance(player.get("own_en_juego"), dict) else {}
+        for raw in [en_juego.get("kickoff"), fixture.get("kickoff"), *[
             celda.get("kickoff") for celda in player.get("own_calendar") or [] if isinstance(celda, dict)
         ]]:
             moment = _parse_kickoff(raw) if isinstance(raw, str) else None
@@ -822,6 +824,8 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
     ]
     mercado = ratio_mercado_liga(titulares)
     ratio = float(mercado["ratio_mercado"])
+    # Una sola curva de valor justo para previsión, pujas, ventas y cláusulas.
+    curva = curva_valor_justo(titulares)
 
     previsiones: dict[str, dict[str, Any]] = {}
     for row in records.values():
@@ -840,6 +844,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
                 float(jornada),
                 ratio,
                 en_forma=_en_forma(row),
+                curva=curva,
             )
         except (TypeError, ValueError):
             continue
@@ -856,7 +861,15 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
     if own_id and own_id in cajas:
         saldo = cajas[own_id]
 
-    notas = _notas_mercado(records, previsiones, saldo)
+    valor_equipo = sum(
+        int(row["valor"])
+        for row in records.values()
+        if row.get("is_self") is True and isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool)
+    )
+    # Lo que puedes pujar de verdad: caja + crédito legal (20 % del valor del equipo).
+    # Una puja admite deuda; una cláusula no. Sin saldo conocido, sin poder.
+    poder_pujas = saldo + int(valor_equipo * DEUDA_PCT_EQUIPO) if isinstance(saldo, int) else None
+    notas = _notas_mercado(records, previsiones, poder_pujas, caja=saldo)
     sobrepuja_liga = _sobrepuja_liga()
 
     pujas: dict[str, dict[str, Any]] = {}
@@ -868,13 +881,13 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         justo = previsiones.get(player_id, {}).get("valor_justo")
         if not isinstance(justo, int):
             jornada = row.get("jornada")
-            justo = valor_justo_jugador(float(jornada), ratio) if isinstance(jornada, (int, float)) and not isinstance(jornada, bool) else 0
+            justo = valor_justo_jugador(float(jornada), ratio, curva) if isinstance(jornada, (int, float)) and not isinstance(jornada, bool) else 0
         previsto_pct = previsiones.get(player_id, {}).get("pct") if isinstance(previsiones.get(player_id), dict) else None
         pujas[player_id] = calcular_pujas(
             valor,
             float(row.get("delta_hoy") or 0.0),
             int(justo or 0),
-            tu_saldo=saldo,
+            tu_saldo=poder_pujas,
             rivales=rivales,
             posicion=row.get("position") if isinstance(row.get("position"), str) else None,
             prevision_7d_pct=previsto_pct,
@@ -943,6 +956,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         own_id,
         previsiones,
         notas,
+        curva=curva,
     )
     _sellar_pujas_plan(plan, pujas, sobrepuja_liga)
     consejos = _consejos(records, war, plan, own_id)
@@ -989,6 +1003,9 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         "asesor_clausulas": clausulas,
         "radar_anti_robo": clausulas.get("radar_anti_robo") or [],
         "notas_mercado": notas,
+        "propios": {pid for pid, row in records.items() if row.get("is_self") is True},
+        "caja": saldo,
+        "poder_pujas": poder_pujas,
     }
 
 
@@ -1319,8 +1336,26 @@ def _asesorar_clausulas(
         [fila for fila in propios if fila.get("en_xi") is True],
         rivales,
         ajenos,
+        caja_propia=saldo,
+        ventas_hoy=_ventas_con_oferta_hoy(records),
     )
     return informe
+
+
+def _ventas_con_oferta_hoy(records: dict[str, dict[str, Any]]) -> int:
+    """Lo que entra hoy si aceptas las ofertas de LaLiga que ya tienes (la mejor por jugador)."""
+    total = 0
+    for row in records.values():
+        if row.get("is_self") is not True:
+            continue
+        importes = [
+            oferta.get("importe")
+            for oferta in row.get("ofertas_directas") or []
+            if isinstance(oferta, dict) and isinstance(oferta.get("importe"), int) and not isinstance(oferta.get("importe"), bool)
+        ]
+        if importes:
+            total += max(importes)
+    return total
 
 
 def _resumen_vacio() -> dict[str, Any]:
@@ -1493,10 +1528,37 @@ def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
     player_id = _pid(row.get("player_id"))
     if player_id is None:
         return
+    poder = report.get("poder_pujas")
+    caja = report.get("caja")
+
+    def _sin_veto_de_caja(nuevo: str) -> None:
+        row["reasons"] = [nuevo if m == "negative_cash" else m for m in row.get("reasons") or []]
+        if row.get("primary_motive") == "negative_cash":
+            row["primary_motive"] = nuevo
+
+    if player_id in (report.get("propios") or set()):
+        # Es tuyo (anunciado en tu escaparate): ni puja ni «no te llega la caja».
+        row["smart_bid_eur"] = None
+        row["puja_unica_eur"] = None
+        row["reasons"] = [m for m in row.get("reasons") or [] if m != "negative_cash"]
+        if row.get("primary_motive") == "negative_cash":
+            row["primary_motive"] = "ya_en_plantilla"
+        return
     compras = report.get("compras_plan") or {}
     objetivo = compras.get(player_id) if isinstance(compras, dict) else None
     if isinstance(objetivo, dict):
         cifra = int(objetivo["euros"])
+        if isinstance(caja, int) and cifra > caja:
+            # Objetivo del plan pagado con crédito: no es un veto, es cómo se financia.
+            _sin_veto_de_caja("usa_credito")
+            # El «% de ganar» se calculó solo con tu caja («all-in, tienes menos saldo»):
+            # con el crédito ya no vale. Mejor sin cifra que un 0 % falso.
+            if "saldo" in str(row.get("smart_bid_analysis") or "") or row.get("smart_bid_success_pct") == 0:
+                row["smart_bid_success_pct"] = None
+                row["smart_bid_analysis"] = (
+                    "Se paga con el crédito del 20 %: la probabilidad calculada solo con tu caja no vale. "
+                    "Mira cuántos rivales pueden pujarlo."
+                )
         row["puja_unica_eur"] = cifra
         row["en_plan"] = True
         ventas = objetivo.get("ventas") or objetivo.get("ventas_hoy") or []
@@ -1526,7 +1588,24 @@ def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
     if cifra is None:
         return
     row["puja_unica_eur"] = cifra
-    if row.get("is_vetoed") is not True and isinstance(row.get("smart_bid_eur"), int):
+    if _veto_de_caja(row):
+        # La puja smart era tu caja (246.947 €): una cifra que nunca gana. Va la cifra real.
+        row["smart_bid_eur"] = cifra
+        if isinstance(poder, int) and cifra <= poder:
+            _sin_veto_de_caja("fuera_del_plan")
+            row["action_reason"] = (
+                "Cabe con el crédito del 20 % (la puja admite deuda), pero no entra en el plan de hoy: "
+                "mejora menos el once que los objetivos del plan."
+            )
+            row["cabe_con_credito"] = True
+        else:
+            row["cabe_con_credito"] = False
+    elif row.get("is_vetoed") is True or row.get("decision") == "NO":
+        # Descartado por otro motivo (lesión, sanción…): sin cifra de puja que tiente.
+        row["smart_bid_eur"] = None
+        if isinstance(poder, int) and cifra <= poder:
+            _sin_veto_de_caja("fuera_del_plan")
+    elif isinstance(row.get("smart_bid_eur"), int):
         row["smart_bid_eur"] = cifra
 
 
@@ -1626,6 +1705,8 @@ def _plan(
     own_id: str | None,
     previsiones: dict[str, dict[str, Any]] | None = None,
     notas: dict[str, dict[str, Any]] | None = None,
+    *,
+    curva: dict[str, list[float]] | None = None,
 ) -> dict[str, Any]:
     del rivales
     previsto = previsiones or {}
@@ -1696,7 +1777,7 @@ def _plan(
         puja = calcular_pujas(
             row.get("valor") or row.get("sale_price") or 0,
             float(row.get("delta_hoy") or 0.0),
-            valor_justo_jugador(float(jornada), ratio),
+            valor_justo_jugador(float(jornada), ratio, curva),
             tu_saldo=saldo,
             rivales=[],
             posicion=row.get("position"),
@@ -1754,7 +1835,7 @@ def _plan(
             continue
         if not isinstance(jornada, (int, float)) or isinstance(jornada, bool) or float(jornada) < _CLAUSE_MIN_XP:
             continue
-        justo = valor_justo_jugador(float(jornada), ratio)
+        justo = valor_justo_jugador(float(jornada), ratio, curva)
         if justo <= 0 or clause > justo / _CLAUSE_EDGE:
             continue
         if any(item["player_id"] == player_id for item in mercado):
@@ -1927,7 +2008,14 @@ def _notas_mercado(
     records: dict[str, dict[str, Any]],
     previsiones: dict[str, dict[str, Any]],
     saldo: int | None,
+    *,
+    caja: int | None = None,
 ) -> dict[str, dict[str, Any]]:
+    """Nota y frase de cada jugador del mercado que puedes comprar.
+
+    ``saldo`` es el poder de puja (caja + crédito); ``caja``, el saldo de hoy.
+    Tus propios jugadores anunciados no llevan veredicto de compra.
+    """
     plantilla = [
         {
             "player_id": row.get("player_id"),
@@ -1941,7 +2029,7 @@ def _notas_mercado(
     ]
     notas: dict[str, dict[str, Any]] = {}
     for row in records.values():
-        if row.get("on_market") is not True:
+        if row.get("on_market") is not True or row.get("is_self") is True:
             continue
         player_id = row.get("player_id")
         if not isinstance(player_id, str):
@@ -1961,6 +2049,7 @@ def _notas_mercado(
             },
             plantilla,
             saldo,
+            caja=caja,
         )
     return notas
 
@@ -2032,7 +2121,13 @@ def _stamp_row(row: dict[str, Any], report: dict[str, Any]) -> None:
     consejo = report["consejos"].get(player_id)
     if isinstance(consejo, dict):
         row["consejo_oferta"] = consejo
-    puja = report["pujas"].get(player_id)
+    propio = player_id in (report.get("propios") or set())
+    puja = None if propio else report["pujas"].get(player_id)
+    if propio:
+        # Es tuyo: ni puja ni «DESCARTAR, no te llega la caja».
+        for key in ("puja_recomendada", "puja_maxima", "puja_smart", "puja_competitiva_liga", "sobrepuja_liga_pct",
+                    "nota_mercado", "veredicto_mercado", "etiqueta_mercado", "frase_mercado"):
+            row.pop(key, None)
     if isinstance(puja, dict):
         row["puja_recomendada"] = puja.get("puja_recomendada")
         row["puja_maxima"] = puja.get("puja_maxima")

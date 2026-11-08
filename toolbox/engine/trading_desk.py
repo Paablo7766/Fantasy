@@ -220,18 +220,36 @@ def _lineas(rival: dict[str, Any]) -> tuple[set[str], set[str]]:
     return huecos, flojas
 
 
+def _caja_rival(rival: dict[str, Any]) -> float | None:
+    """Solo la caja: un clausulazo no admite deuda."""
+    for key in ("saldo", "cash_eur", "cash"):
+        number = _num(rival.get(key))
+        if number is not None:
+            return number
+    return None
+
+
+def _clausula_bloqueada(jugador: dict[str, Any]) -> bool:
+    lock = jugador.get("bloqueo") if isinstance(jugador.get("bloqueo"), dict) else jugador.get("clause_lock")
+    return isinstance(lock, dict) and lock.get("is_locked") is True
+
+
 def alertas_escudo_francotirador(
     titulares: list[dict[str, Any]],
     rivales: list[dict[str, Any]],
     jugadores_rivales: list[dict[str, Any]] | None = None,
+    *,
+    caja_propia: int | None = None,
+    ventas_hoy: int = 0,
 ) -> list[dict[str, Any]]:
     """Escudo (te pueden clausular) y francotirador (clausulazo a un rojo seguro).
 
     El escudo mira a los 11 titulares. Si ``clausula / precio < 1,20`` y un
-    rival con saldo (crédito incluido) tiene un hueco o una línea floja en
-    ese puesto, hay alerta roja. El francotirador mira a los rivales en rojo
-    seguro: cláusula por debajo de 1,15 veces el precio y previsión a 7 días
-    en positivo.
+    rival con caja (sin crédito: un clausulazo no admite deuda) tiene un hueco
+    o una línea floja en ese puesto, hay alerta roja. El francotirador mira a
+    los rivales en rojo seguro: cláusula por debajo de 1,15 veces el precio,
+    previsión a 7 días en positivo, cláusula abierta y pagable con tu caja más
+    las ventas con oferta de hoy (``caja_propia + ventas_hoy``).
     """
     alertas: list[dict[str, Any]] = []
     roster = [row for row in rivales if isinstance(row, dict)]
@@ -255,7 +273,7 @@ def alertas_escudo_francotirador(
             continue
         nombre = _nombre_persona(titular, "nombre", "nickname", "name", "player_id")
         for rival in roster:
-            poder = _poder_rival(rival)
+            poder = _caja_rival(rival)
             if poder is None or poder < clausula:
                 continue
             huecos, flojas = _lineas(rival)
@@ -322,6 +340,11 @@ def alertas_escudo_francotirador(
         ratio = clausula / precio
         if ratio >= RATIO_FRANCOTIRADOR:
             continue
+        # Un clausulazo se paga con caja (y lo que entra hoy por ventas): nunca con crédito.
+        if caja_propia is None or clausula > caja_propia + max(0, ventas_hoy):
+            continue
+        if _clausula_bloqueada(jugador):
+            continue
         player_id = jugador.get("player_id") if isinstance(jugador.get("player_id"), str) else ""
         if (owner, player_id) in vistos:
             continue
@@ -333,7 +356,7 @@ def alertas_escudo_francotirador(
                 "tono": "verde",
                 "mensaje": (
                     f"{nombre} ({owner}) sube de precio y tiene la cláusula baja. "
-                    "Clausúlalo antes del viernes para revenderlo"
+                    "Clausúlalo antes de que cierre el mercado de clausulazos para revenderlo"
                 ),
                 "player_id": player_id or None,
                 "nombre": nombre,

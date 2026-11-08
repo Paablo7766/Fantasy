@@ -189,6 +189,7 @@ def _frase(
     dificultad: str,
     precio: float | None,
     saldo: float | None,
+    caja: float | None = None,
 ) -> str:
     linea = _LINEA.get(posicion, "once")
     if delta >= 0.05 and pct is not None and pct > 0:
@@ -205,15 +206,25 @@ def _frase(
         texto = f"No mejora a tus titulares y el valor cede {round(abs(pct))}% esta semana"
     else:
         texto = "No mejora a tus titulares"
+    # ``saldo`` es el poder de puja (caja + crédito del 20 %); ``caja``, lo que tienes hoy.
     if precio is not None and saldo is not None and precio > saldo:
-        texto = f"{texto}. No te llega la caja"
+        texto = f"{texto}. No te llega ni con crédito"
+    elif precio is not None and caja is not None and precio > caja:
+        texto = f"{texto}. Se paga con crédito: vende antes del saque"
     return texto
+
+
+def _num_o_none(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
 
 
 def calcular_nota_mercado(
     jugador: dict[str, Any],
     mi_plantilla: list[dict[str, Any]],
     saldo_disponible: float | int | None,
+    caja: float | int | None = None,
 ) -> dict[str, Any]:
     """Nota 0-10, veredicto y la frase de una línea para la tarjeta de mercado."""
     if not isinstance(jugador, dict):
@@ -283,6 +294,7 @@ def calcular_nota_mercado(
             dificultad=dificultad,
             precio=precio,
             saldo=saldo,
+            caja=_num_o_none(caja),
         ),
         "impacto_xp": round(delta, 2),
         "cabe_en_caja": None if precio is None or saldo is None else precio <= saldo,

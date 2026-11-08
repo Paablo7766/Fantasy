@@ -774,7 +774,8 @@ def _plan_once(
     ventana = meta["modo_liquidez"] == "VENTANA"
     all_in = meta["modo_liquidez"] == "ALL-IN"
     # Parón: lejos del cierre el saldo negativo no cuesta nada hasta el saque.
-    paron_credito = ventana and dias is not None and dias > DIAS_ESCAPARATE
+    # El plan prudente es «solo caja y ventas de hoy»: tampoco usa el crédito del parón.
+    paron_credito = ventana and dias is not None and dias > DIAS_ESCAPARATE and permitir_condicionales
     penalizacion = float(meta["penalizacion_liquidez"])
     saldo = cash if isinstance(cash, int) and not isinstance(cash, bool) else None
     plantilla = [row for row in owned if isinstance(row, dict) and isinstance(row.get("player_id"), str)]

@@ -140,8 +140,15 @@ class NotaMercadoTests(unittest.TestCase):
             1_000_000,
         )
         self.assertEqual(holgado["cabe_en_caja"], False)
-        self.assertIn("No te llega la caja", holgado["frase_mercado"])
+        # El saldo pasado es el poder de puja (caja + crédito): por encima, ni con crédito.
+        self.assertIn("No te llega ni con crédito", holgado["frase_mercado"])
         self.assertEqual(holgado["etiqueta_mercado"], "TE CONVIENE")
+
+    def test_con_credito_la_frase_dice_que_se_paga_con_credito(self) -> None:
+        jugador = {"position": "MC", "xp": 7.0, "prevision_7d_pct": 20, "p_titular": 0.95, "precio": 9_000_000}
+        nota = calcular_nota_mercado(jugador, _titulares(), 30_000_000, caja=250_000)
+        self.assertIn("Se paga con crédito", nota["frase_mercado"])
+        self.assertNotIn("No te llega", nota["frase_mercado"])
 
 
 if __name__ == "__main__":

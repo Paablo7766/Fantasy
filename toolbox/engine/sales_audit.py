@@ -178,6 +178,7 @@ def _motivo(
     xp: float | None,
     alerta_rival: bool,
     jueves_pct: float | None,
+    en_mercado: bool = False,
 ) -> str:
     quien = comprador or LALIGA
     oferta_txt = ""
@@ -233,6 +234,8 @@ def _motivo(
             motivo = f"Está sobrevalorado: vale {_eur_txt(valor)} y su valor justo es {_eur_txt(justo)}."
         else:
             motivo = f"El Plan recomienda vender a {nombre} esta semana."
+        if en_mercado:
+            return f"Hoy no tiene oferta. {motivo} Ya está en el escaparate: mañana llega la oferta de LaLiga."
         return f"Hoy no tiene oferta. {motivo} Ponlo en el mercado hoy para tener oferta de LaLiga mañana."
     if razon == "oferta_baja_sin_tiempo":
         return f"{oferta_txt}Es una oferta baja y ya no hay margen para esperar. No necesitas vender: rechaza y quédatelo."
@@ -317,7 +320,15 @@ def evaluar_ventas_y_ofertas(
         jueves_pct = pct / 7.0 * dias_jueves if pct is not None and dias_jueves is not None else None
         jueves_eur = valor * jueves_pct / 100.0 if jueves_pct is not None else None
         proyectado = valor + jueves_eur if jueves_eur is not None else None
-        sobrevalorado = justo is not None and justo > 0 and valor > justo * SOBREVALORADO
+        # «Sobrevalorado» solo manda vender a quien el once no necesita y no está subiendo:
+        # a un titular que sube (Isco +12 %) se le deja revalorizar, por caro que parezca.
+        sobrevalorado = (
+            justo is not None
+            and justo > 0
+            and valor > justo * SOBREVALORADO
+            and perdida < PIERDE_INTOCABLE
+            and not (pct is not None and pct > 0)
+        )
 
         veredicto = _clasificar(
             oferta=mejor,
@@ -356,6 +367,7 @@ def evaluar_ventas_y_ofertas(
             xp=xp,
             alerta_rival=alerta,
             jueves_pct=jueves_pct,
+            en_mercado=jugador.get("en_mercado") is True,
         )
         if codigo == "MANTENER_INTOCABLE":
             grupo = 2

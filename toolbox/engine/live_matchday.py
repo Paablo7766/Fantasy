@@ -66,6 +66,29 @@ def _kickoff(row: dict[str, Any] | None) -> datetime | None:
     return moment.astimezone(timezone.utc) if moment is not None else None
 
 
+def _vista_en_juego(row: dict[str, Any]) -> dict[str, Any]:
+    """El jugador tal como estaba en la jornada en juego.
+
+    ``own_intel`` corre el xP y el rival de quien aún juega la jornada bloqueada
+    a la siguiente (todas las pantallas hablan de la J13); el partido de esta
+    jornada queda en ``own_en_juego``. Aquí se recupera para el bloque en vivo.
+    """
+    en_juego = row.get("own_en_juego") if isinstance(row, dict) else None
+    if not isinstance(en_juego, dict):
+        return row
+    vista = dict(row)
+    if isinstance(en_juego.get("expected_points"), (int, float)) and not isinstance(en_juego.get("expected_points"), bool):
+        vista["own_expected_points"] = en_juego["expected_points"]
+    fixture = row.get("fixture") if isinstance(row.get("fixture"), dict) else {}
+    vista["fixture"] = {**fixture, "kickoff": en_juego.get("kickoff"), "opponent": en_juego.get("opponent")}
+    calendario = row.get("own_calendar") if isinstance(row.get("own_calendar"), list) else []
+    vista["own_calendar"] = [
+        {"kickoff": en_juego.get("kickoff"), "opponent": en_juego.get("opponent"), "is_home": en_juego.get("is_home")},
+        *calendario,
+    ]
+    return vista
+
+
 def bloque_en_curso(trends_index: dict[str, dict[str, Any]], now: datetime) -> tuple[datetime | None, datetime | None]:
     """(primer saque, último saque) del bloque de partidos que aún no ha terminado.
 
@@ -245,7 +268,7 @@ def construir_jornada_en_juego(
     inactiva = {"activa": False}
     if not isinstance(squads, dict) or not isinstance(trends, dict):
         return inactiva
-    indice = index_trends(trends)
+    indice = {pid: _vista_en_juego(row) for pid, row in index_trends(trends).items()}
     inicio_bloque, fin_bloque = bloque_en_curso(indice, now)
     if inicio_bloque is None:
         return inactiva

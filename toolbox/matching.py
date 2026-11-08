@@ -53,6 +53,7 @@ _CLUB_ALIASES = {
     "deportivo alaves": "alaves",
     "rayo vallecano": "rayo",
     "celta vigo": "celta",
+    "celta de vigo": "celta",
     "real oviedo": "oviedo",
     "real sociedad": "real sociedad",
     "deportivo la coruna": "deportivo",
@@ -181,6 +182,9 @@ def normalize_club(text: str | None) -> str:
     # de La Coruña»…): cualquier «deportivo» que mencione Coruña es el mismo club.
     if "deportivo" in tokens and "coruna" in tokens:
         return "deportivo"
+    # Igual con el Celta: «Celta de Vigo» (LaLiga, mercado) y «Celta» (resto) son el mismo club.
+    if "celta" in tokens:
+        return "celta"
     return folded
 
 

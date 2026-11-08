@@ -172,15 +172,64 @@ def ratio_mercado_liga(
     }
 
 
-def valor_justo_jugador(xp_jornada: float, ratio: float) -> int:
-    """``xp_4_jornadas * (ratio_de_jornada / 4)``.
+#: Curva de valor justo: xP de los titulares de la liga y sus valores, ordenados por separado.
+CurvaValorJusto = dict[str, list[float]]
 
-    Así un titular medio vale, en justo, lo que el mercado paga de media por
-    ese punto, y la referencia de 16,4 M€ sigue siendo € por punto de jornada.
+
+def curva_valor_justo(titulares: list[tuple[float, float]]) -> CurvaValorJusto | None:
+    """Curva por percentiles: el n-ésimo xP de la liga vale el n-ésimo valor de mercado.
+
+    El mercado no paga los puntos en línea recta: un titular de 8 xP no vale el doble
+    que uno de 4, vale lo que valen los mejores. Con la recta (xP × € medio por punto)
+    las estrellas salían «sobrevaloradas» a la mitad de su precio (Isco 70 M€ → 31 M€).
+    Sin muestra suficiente, ``None`` y se usa la recta.
+    """
+    validos = [(float(valor), float(xp)) for valor, xp in titulares if valor > 0 and xp > 0]
+    if len(validos) < MUESTRA_MINIMA_TITULARES:
+        return None
+    return {"xps": sorted(xp for _valor, xp in validos), "valores": sorted(valor for valor, _xp in validos)}
+
+
+def _percentil(valores: list[float], x: float) -> float:
+    """Posición fraccional de ``x`` en ``valores`` (ordenados), entre 0 y len-1."""
+    if x <= valores[0]:
+        return 0.0
+    if x >= valores[-1]:
+        return float(len(valores) - 1)
+    for indice in range(1, len(valores)):
+        if x <= valores[indice]:
+            bajo, alto = valores[indice - 1], valores[indice]
+            tramo = (x - bajo) / (alto - bajo) if alto > bajo else 0.0
+            return indice - 1 + tramo
+    return float(len(valores) - 1)
+
+
+def _cuantil(valores: list[float], posicion: float) -> float:
+    bajo = int(math.floor(posicion))
+    alto = min(len(valores) - 1, bajo + 1)
+    tramo = posicion - bajo
+    return valores[bajo] * (1.0 - tramo) + valores[alto] * tramo
+
+
+def valor_justo_jugador(xp_jornada: float, ratio: float, curva: CurvaValorJusto | None = None) -> int:
+    """Lo que el mercado de esta liga paga por ``xp_jornada`` puntos esperados.
+
+    Con ``curva``, por percentiles (ver ``curva_valor_justo``); fuera del rango de la
+    muestra se prolonga en proporción al xP del extremo. Sin curva, la recta
+    ``xp × ratio`` (``xp_4_jornadas * (ratio / 4)``).
     """
     xp = _numero(xp_jornada, "xp_jornada")
+    if xp <= 0:
+        return 0
+    if curva and curva.get("xps") and curva.get("valores"):
+        xps, valores = curva["xps"], curva["valores"]
+        if xp > xps[-1]:
+            return int(round(valores[-1] * xp / xps[-1]))
+        if xp < xps[0]:
+            return int(round(valores[0] * xp / xps[0]))
+        return int(round(_cuantil(valores, _percentil(xps, xp))))
     precio_punto = _numero(ratio, "ratio_mercado")
-    if xp <= 0 or precio_punto <= 0:
+    if precio_punto <= 0:
         return 0
     xp_4 = xp * HORIZONTE_JORNADAS
     ratio_4 = precio_punto / HORIZONTE_JORNADAS
@@ -212,6 +261,7 @@ def proyectar_7d(
     ratio: int | float,
     *,
     en_forma: bool,
+    curva: CurvaValorJusto | None = None,
 ) -> dict[str, int | float | str]:
     """Precio dentro de siete días.
 
@@ -230,7 +280,7 @@ def proyectar_7d(
     ayer = _numero(delta_ayer, "delta_ayer")
     if precio <= 0:
         raise ValueError("precio_actual tiene que ser positivo")
-    justo = valor_justo_jugador(xp_jornada, ratio)
+    justo = valor_justo_jugador(xp_jornada, ratio, curva)
     ritmo = _ritmo_asentado(precio, hoy, ayer)
     if ritmo is not None:
         valor_en_7 = _al_paso(precio + ritmo * HORIZONTE_DIAS)

@@ -545,7 +545,16 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
   };
   const pujar = decisions.filter((row) => marketAction(row) === "PUJAR").length;
   const empty = SOURCES.find((item) => item.id === source)?.empty || "";
-  const budget = budgetLine(summary);
+  // Con plan de fichajes, la cabecera habla con su voz: lo que invierte y con qué lo paga.
+  const fichajes = trends.plan_fichajes ?? null;
+  const presupuesto = fichajes?.presupuesto ?? null;
+  const gastoPlan = presupuesto ? presupuesto.gasto_pujas + presupuesto.gasto_clausulas : 0;
+  const saldoFinal = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
+  const creditoPlan = Math.max(presupuesto?.credito_paron ?? 0, saldoFinal !== null && saldoFinal < 0 ? -saldoFinal : 0);
+  const budget =
+    gastoPlan > 0
+      ? `El plan invierte ${compact(gastoPlan)}${creditoPlan > 0 ? `, ${compact(creditoPlan)} con el crédito del 20 % (la puja admite deuda; vende antes del ${fichajes?.paron?.ruta_salida?.dia_venta || "saque"})` : " con tu caja"}.`
+      : budgetLine(summary);
   const selected = decisions.find((row) => String(row.player_id) === selectedId) || null;
 
   return (
@@ -562,8 +571,17 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
         {budget ? <p className="relative mt-2 text-[13px] leading-snug text-white/55">{budget}</p> : null}
         <div className="relative mt-5 grid grid-cols-3 gap-2.5">
           <HeroStat value={compact(summary.cash_eur ?? trends.cash_eur)} label="Caja" />
-          <HeroStat value={summary.day_budget_eur != null ? compact(summary.day_budget_eur) : "—"} label="Tope hoy" tone="#FFC08A" />
-          <HeroStat value={summary.plan_cash_after_eur != null ? compact(summary.plan_cash_after_eur) : "—"} label="Te queda" tone={toneOf(summary.plan_cash_after_eur)} />
+          {gastoPlan > 0 ? (
+            <>
+              <HeroStat value={compact(gastoPlan)} label="Invierte el plan" tone="#FFC08A" />
+              <HeroStat value={saldoFinal !== null ? compact(saldoFinal) : "—"} label="Saldo tras el plan" tone={toneOf(saldoFinal)} />
+            </>
+          ) : (
+            <>
+              <HeroStat value={summary.day_budget_eur != null ? compact(summary.day_budget_eur) : "—"} label="Tope hoy" tone="#FFC08A" />
+              <HeroStat value={summary.plan_cash_after_eur != null ? compact(summary.plan_cash_after_eur) : "—"} label="Te queda" tone={toneOf(summary.plan_cash_after_eur)} />
+            </>
+          )}
         </div>
       </section>
 

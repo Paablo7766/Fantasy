@@ -14,7 +14,7 @@ from typing import Any
 from toolbox.analyzer import own_squad
 from toolbox.engine.auction_intel import calcular_pujas, prevision_a_puntos
 from toolbox.engine.clause_advisor import _cuando, _estado_lock
-from toolbox.engine.market_predictor import proyectar_7d, ratio_mercado_liga, valor_justo_jugador
+from toolbox.engine.market_predictor import curva_valor_justo, proyectar_7d, ratio_mercado_liga, valor_justo_jugador
 from toolbox.engine.strategy_layer import (
     _TITULAR_RATIO,
     _cash_map,
@@ -810,6 +810,7 @@ def comparar_jugadores_liga(
         and float(row["p_titular"]) >= _TITULAR_RATIO
     ]
     ratio = float(ratio_mercado_liga(titulares)["ratio_mercado"])
+    curva = curva_valor_justo(titulares)
     previsiones: dict[str, dict[str, Any]] = {}
     for player_id in (actual_id, objetivo_id):
         row = records[player_id]
@@ -827,6 +828,7 @@ def comparar_jugadores_liga(
                 float(jornada),
                 ratio,
                 en_forma=_en_forma(row),
+                curva=curva,
             )
         except (TypeError, ValueError):
             continue
@@ -855,7 +857,7 @@ def comparar_jugadores_liga(
         justo = previsto.get("valor_justo") if isinstance(previsto, dict) else None
         if not isinstance(justo, int):
             jornada = row.get("jornada")
-            justo = valor_justo_jugador(float(jornada), ratio) if isinstance(jornada, (int, float)) and not isinstance(jornada, bool) else 0
+            justo = valor_justo_jugador(float(jornada), ratio, curva) if isinstance(jornada, (int, float)) and not isinstance(jornada, bool) else 0
         valor = row.get("valor") if isinstance(row.get("valor"), int) else 0
         puja = calcular_pujas(
             valor,

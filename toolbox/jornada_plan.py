@@ -12,7 +12,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from toolbox.analyzer import index_trends, lineup_points, own_squad, played_points
-from toolbox.audit import append_audit, build_audit
+from toolbox.audit import ciclo_auditoria
 from toolbox.bid_war import rival_snapshots
 from toolbox.clause_intel import build_clause_intel
 from toolbox.league_race import build_league_race
@@ -115,6 +115,10 @@ def matchday_start(trends: dict[str, Any] | None, *, now: datetime) -> str | Non
     for player in trends.get("players") if isinstance(trends.get("players"), list) else []:
         if not isinstance(player, dict):
             continue
+        en_juego = player.get("own_en_juego") if isinstance(player.get("own_en_juego"), dict) else {}
+        kick_en_juego = _parse_iso(en_juego.get("kickoff"))
+        if kick_en_juego is not None:
+            moments.append(kick_en_juego)
         fixture = player.get("fixture") if isinstance(player.get("fixture"), dict) else {}
         kick = _parse_iso(fixture.get("kickoff"))
         if kick is None:
@@ -1436,9 +1440,21 @@ def plan_from_documents(
         now=current,
         league_race=race,
     )
-    audit = build_audit(optimize, squads, now=current, kickoff=document.get("matchday_start") or document.get("kickoff"))
-    if memory_path is not None:
-        audit = append_audit(audit, memory_path, now=current)
+    # Auditoría del XI: previsión de una jornada contra las actas de esa misma jornada.
+    try:
+        from toolbox.cache import cache_root
+        from toolbox.player_history import actas_en_cache
+
+        audit = ciclo_auditoria(
+            optimize,
+            actas_en_cache(),
+            inicio_proxima=_parse_iso(document.get("kickoff")),
+            now=current,
+            previas_path=cache_root() / "auditoria_xi_previas.json",
+            memory_path=memory_path,
+        )
+    except Exception as exc:  # noqa: BLE001 — la auditoría nunca tumba el plan
+        audit = {"ok": False, "written": False, "reason": f"error: {type(exc).__name__}"}
     document["audit"] = audit
     document["decisions"] = decisions.get("decisions")
     search = strategies_from_documents(market, squads, trends, optimize)

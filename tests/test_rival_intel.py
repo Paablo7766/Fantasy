@@ -421,7 +421,8 @@ class DailyDiffTests(unittest.TestCase):
             after_sale, {"events": []}, auditor=auditor, now=_NOW, persist=False
         )
         team = document["teams"]["r"]
-        self.assertEqual(team["hidden_expenses_eur"], 400_000)
+        # Regla 1:2: subir 2 M€ de cláusula cuesta 1 M€.
+        self.assertEqual(team["hidden_expenses_eur"], 1_000_000)
         self.assertEqual(team["detected_hidden_expenses"][0]["player_id"], "ghost")
 
     def test_a_player_still_in_the_squad_is_not_counted_twice(self) -> None:
@@ -559,8 +560,8 @@ class AdjustmentTests(unittest.TestCase):
             _squads(_squad("r", players=[])), {"events": []}, auditor=auditor, now=_NOW, persist=False
         )
         team = document["teams"]["r"]
-        self.assertEqual(team["hidden_expenses_eur"], 400_000)
-        self.assertEqual(team["calculated_cash"], 5_000_000 + 3 * DAILY_AD_REVENUE - 400_000)
+        self.assertEqual(team["hidden_expenses_eur"], 1_000_000)
+        self.assertEqual(team["calculated_cash"], 5_000_000 + 3 * DAILY_AD_REVENUE - 1_000_000)
 
     def test_broken_adjustments_file_does_not_break_the_audit(self) -> None:
         paths = _Paths()
@@ -622,7 +623,7 @@ class RiskConfigurationTests(unittest.TestCase):
         self.assertEqual(configured_clause_increase_multiplier(), DEFAULT_CLAUSE_INCREASE_MULTIPLIER)
         self.assertEqual(configured_starting_clause_multiplier(), DEFAULT_STARTING_CLAUSE_MULTIPLIER)
         self.assertEqual(configured_league_start_date(), DEFAULT_LEAGUE_START_DATE)
-        self.assertEqual(DEFAULT_CLAUSE_INCREASE_MULTIPLIER, 0.20)
+        self.assertEqual(DEFAULT_CLAUSE_INCREASE_MULTIPLIER, 0.50)
         self.assertEqual(DEFAULT_STARTING_CLAUSE_MULTIPLIER, 1.5)
         self.assertEqual(DEFAULT_LEAGUE_START_DATE, "2026-08-01")
 
@@ -957,3 +958,20 @@ class DailyVideoBandTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class EncadenarSubidasTests(unittest.TestCase):
+    def test_dos_diffs_desde_la_misma_base_no_se_cuentan_dos_veces(self) -> None:
+        """Caso Nico Williams (PABS FC): 45 → 57,5 el día 3 y 45 → 75,2 el día 4 son una subida de 30,2 M€."""
+        from toolbox.rival_intel import _encadenar_subidas
+
+        filas = [
+            {"team_id": "pabs", "player_id": "nico", "day": "2026-11-03", "source": "diario",
+             "clause_before_eur": 45_000_000, "clause_after_eur": 57_500_000, "cost_eur": 2_500_000},
+            {"team_id": "pabs", "player_id": "nico", "day": "2026-11-04", "source": "diario",
+             "clause_before_eur": 45_000_000, "clause_after_eur": 75_219_714, "cost_eur": 6_043_943},
+        ]
+        salida = _encadenar_subidas(filas, 0.5)
+        self.assertEqual(sum(f["increase_eur"] for f in salida), 75_219_714 - 45_000_000)
+        self.assertEqual(sum(f["cost_eur"] for f in salida), round(12_500_000 * 0.5) + round(17_719_714 * 0.5))

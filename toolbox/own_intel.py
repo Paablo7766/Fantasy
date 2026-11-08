@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -1465,12 +1465,120 @@ def apply_own_intel(
     }
     for jugador in con_actas:
         jugador.pop("historial", None)
+    # Jornada en curso: todos los xP y rivales pasan a la próxima jornada que se puede tocar.
+    corridos = promover_jornada_bloqueada(players, now=now)
+    sources["own_intel_calendar"]["jornada_corrida"] = corridos
     return {
         "prediction_rising": rising,
         "prediction_falling": falling_list,
         "sources": sources,
         "history_players": history_ok,
     }
+
+
+#: Hueco entre bloques de partidos que separa una jornada de la siguiente.
+_HUECO_JORNADAS_H = 36.0
+
+
+def _saque(player: dict[str, Any]) -> datetime | None:
+    calendario = player.get("own_calendar") if isinstance(player.get("own_calendar"), list) else []
+    raw = calendario[0].get("kickoff") if calendario and isinstance(calendario[0], dict) else None
+    if raw is None and isinstance(player.get("fixture"), dict):
+        raw = player["fixture"].get("kickoff")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        moment = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def promover_jornada_bloqueada(players: list[dict[str, Any]], *, now: datetime | None = None) -> int:
+    """Con la jornada en curso, el «próximo partido» de cada jugador es el de la siguiente.
+
+    La alineación se bloquea en el primer partido de la jornada. Si al menos dos
+    clubes ya jugaron (su próximo partido cae en un bloque posterior), la jornada
+    está en curso: a quien aún juega en ella se le corre el calendario y su xP,
+    rival y saque pasan a ser los de la próxima jornada que se puede tocar (J13).
+    El partido bloqueado se guarda en ``own_en_juego`` para el bloque «en vivo».
+    Así Equipo, Mercado, el plan y las fichas hablan de la misma jornada.
+    Devuelve cuántos jugadores se corrieron.
+    """
+    momento = now or datetime.now(timezone.utc)
+    por_club: dict[str, datetime] = {}
+    saques: set[datetime] = set()
+    for player in players:
+        if not isinstance(player, dict):
+            continue
+        calendario = player.get("own_calendar") if isinstance(player.get("own_calendar"), list) else []
+        for celda in calendario:
+            raw = celda.get("kickoff") if isinstance(celda, dict) else None
+            if isinstance(raw, str) and raw.strip():
+                try:
+                    k = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                saques.add(k if k.tzinfo else k.replace(tzinfo=timezone.utc))
+        saque = _saque(player)
+        club = player.get("club")
+        if saque is not None and isinstance(club, str) and club:
+            por_club[club] = min(por_club.get(club, saque), saque)
+    futuros = sorted(k for k in saques if k >= momento - timedelta(hours=2))
+    if not futuros:
+        return 0
+    fin_bloque = futuros[0]
+    for k in futuros[1:]:
+        if (k - fin_bloque).total_seconds() / 3600.0 > _HUECO_JORNADAS_H:
+            break
+        fin_bloque = k
+    ya_jugaron = sum(1 for saque in por_club.values() if saque > fin_bloque)
+    if ya_jugaron < 2:
+        return 0
+    corridos = 0
+    for player in players:
+        if not isinstance(player, dict) or player.get("own_en_juego"):
+            continue
+        saque = _saque(player)
+        calendario = player.get("own_calendar") if isinstance(player.get("own_calendar"), list) else []
+        siguientes = player.get("own_xp_siguientes") if isinstance(player.get("own_xp_siguientes"), list) else []
+        if saque is None or saque > fin_bloque or len(calendario) < 2:
+            continue
+        actual = calendario[0] if isinstance(calendario[0], dict) else {}
+        proxima = calendario[1] if isinstance(calendario[1], dict) else {}
+        xp_actual = _as_float(player.get("own_expected_points"))
+        xp_proxima = _as_float(siguientes[0]) if siguientes else None
+        player["own_en_juego"] = {
+            "kickoff": actual.get("kickoff") or (player.get("fixture") or {}).get("kickoff"),
+            "opponent": actual.get("opponent"),
+            "is_home": actual.get("is_home"),
+            "expected_points": xp_actual,
+        }
+        player["own_calendar"] = calendario[1:]
+        player["own_recommendation_pct"] = proxima.get("recommendation_pct")
+        if xp_proxima is not None:
+            factor = xp_proxima / xp_actual if xp_actual and xp_actual > 0 else 1.0
+            player["own_expected_points"] = round(xp_proxima, 3)
+            for key in ("own_ceiling_points", "own_points_if_starts"):
+                valor = _as_float(player.get(key))
+                if valor is not None:
+                    player[key] = round(valor * factor, 3)
+            player["own_xp_siguientes"] = siguientes[1:]
+            precio = _as_int(player.get("fantasy_price"))
+            if precio and precio > 0:
+                player["own_points_per_million"] = round(xp_proxima / (precio / 1_000_000.0), 4)
+        fixture = player.get("fixture") if isinstance(player.get("fixture"), dict) else None
+        if fixture is not None:
+            player["fixture"] = {
+                **fixture,
+                "opponent": proxima.get("opponent") or fixture.get("opponent"),
+                "home": proxima.get("is_home") if proxima.get("is_home") is not None else fixture.get("home"),
+                "kickoff": proxima.get("kickoff"),
+            }
+        player["jornada_corrida"] = True
+        corridos += 1
+    return corridos
+
 
 
 def persist_and_apply_own_intel(

@@ -171,7 +171,7 @@ function stepFacts(step: Step, info: ReturnType<typeof factsFor>, fichajes: Plan
   } else if (kind === "puja") {
     if (typeof info?.market_value === "number") rows.push({ label: "Valor de mercado", value: eurShort(info.market_value) });
     const rivals = rivalsWithCash(amount);
-    if (rivals !== null) rows.push({ label: "Rivales con saldo", value: String(rivals) });
+    if (rivals !== null) rows.push({ label: "Rivales que pueden pujarlo", value: String(rivals) });
   }
   if (typeof action.mejora_neta === "number") rows.push({ label: "Mejora del once", value: `${signedPoints(action.mejora_neta)} pts`, tone: action.mejora_neta >= 0 ? "var(--ini-mint)" : "var(--ini-red)" });
   else if (typeof action.jornada === "number") rows.push({ label: "Puntos esperados", value: `${points(action.jornada)} pts` });
@@ -342,9 +342,14 @@ export function TodayPlan({
     }
   };
 
+  // Rivales que pueden pujar esa cifra: caja + crédito del 20 % de su plantilla (una puja admite deuda).
   const rivalsWithCash = (amount: number | null) => {
     if (amount === null || !squads?.rivals?.length) return null;
-    return squads.rivals.filter((rival) => typeof rival.cash_eur === "number" && rival.cash_eur >= amount).length;
+    return squads.rivals.filter((rival) => {
+      if (typeof rival.cash_eur !== "number") return false;
+      const credito = typeof rival.market_value_total === "number" ? rival.market_value_total * 0.2 : 0;
+      return rival.cash_eur + credito >= amount;
+    }).length;
   };
 
   const checkable = today.filter((step) => step.kind !== "busca");

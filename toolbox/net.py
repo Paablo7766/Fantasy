@@ -1527,6 +1527,15 @@ class LaligaClient:
             document["source_age_seconds"] = round(float(age), 3)
             document["source_stored_at"] = (time.time() - float(age))
         self._stamp_images(document.get("listings"), fresh=fresh)
+        # Con la foto ya puesta se reconocen los entrenadores que llegan sin puesto (``/man3097/``).
+        from toolbox.normalize import _carta_de_entrenador
+
+        listings = document.get("listings") or []
+        jugables = [row for row in listings if not (isinstance(row, dict) and _carta_de_entrenador(row))]
+        if len(jugables) != len(listings):
+            document["descartadas_no_jugables"] = int(document.get("descartadas_no_jugables") or 0) + len(listings) - len(jugables)
+            document["listings"] = jugables
+            document["count"] = len(jugables)
         return document
 
     def players_document(self, *, fresh: bool = False) -> list[Any]:

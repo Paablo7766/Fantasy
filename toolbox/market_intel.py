@@ -1461,9 +1461,24 @@ def _calendar_cell(raw: Any) -> dict[str, Any] | None:
     }
 
 
+def _mismo_partido(own: dict[str, Any] | None, af: dict[str, Any] | None) -> bool:
+    """La casilla de AF habla del mismo partido que la propia (mismo rival)."""
+    if own is None or af is None:
+        return True
+    from toolbox.matching import normalize_club, normalize_name
+
+    def clave(value: Any) -> str:
+        return (normalize_club(value) or normalize_name(value)) if isinstance(value, str) and value else ""
+
+    return clave(own.get("opponent")) == clave(af.get("opponent"))
+
+
 def _fixture_view(trend: dict[str, Any], usable: bool) -> dict[str, Any] | None:
     own = _calendar_cell(trend.get("own_calendar"))
     af = _calendar_cell(trend.get("af_calendar")) if usable else None
+    if not _mismo_partido(own, af):
+        # AF va por otra jornada: su rival y su pronóstico no son los de este partido.
+        af = None
     primary = own or af
     if primary is None:
         return None
@@ -1516,6 +1531,8 @@ def build_jornada_board(
     for key, slot in clubs.items():
         own = slot.get("own") if isinstance(slot.get("own"), dict) else None
         af = slot.get("af") if isinstance(slot.get("af"), dict) else None
+        if not _mismo_partido(own, af):
+            af = None
         primary = own or af
         if primary is None:
             continue
@@ -1577,8 +1594,11 @@ def alertas_escudo_francotirador(
     titulares: list[dict[str, Any]],
     rivales: list[dict[str, Any]],
     jugadores_rivales: list[dict[str, Any]] | None = None,
+    *,
+    caja_propia: int | None = None,
+    ventas_hoy: int = 0,
 ) -> list[dict[str, Any]]:
     """Escudo y francotirador de cláusulas. La regla vive en el trading desk."""
     from toolbox.engine.trading_desk import alertas_escudo_francotirador as _alertas
 
-    return _alertas(titulares, rivales, jugadores_rivales)
+    return _alertas(titulares, rivales, jugadores_rivales, caja_propia=caja_propia, ventas_hoy=ventas_hoy)

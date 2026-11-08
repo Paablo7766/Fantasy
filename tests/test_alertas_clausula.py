@@ -10,11 +10,12 @@ from toolbox.rival_intel import bid_limit_por_puesto
 
 
 class EscudoFrancotiradorTest(unittest.TestCase):
-    def test_escudo_cuando_el_rival_cojea_y_tiene_credito(self) -> None:
-        alertas = alertas_escudo_francotirador(
-            [{"player_id": "n", "nombre": "Nico", "position": "DEL", "clausula": 10_000_000, "valor": 10_000_000, "en_xi": True}],
-            [{"manager": "Sausor10", "poder": 9_000_000, "huecos": [], "flojas": ["DEL"], "saldo": 1_000_000, "debt_limit_eur": 12_000_000}],
-        )
+    def test_escudo_cuando_el_rival_cojea_y_tiene_caja(self) -> None:
+        titular = {"player_id": "n", "nombre": "Nico", "position": "DEL", "clausula": 10_000_000, "valor": 10_000_000, "en_xi": True}
+        # Con 1 M€ de caja y crédito no puede: un clausulazo no admite deuda.
+        con_credito = {"manager": "Sausor10", "poder": 9_000_000, "huecos": [], "flojas": ["DEL"], "saldo": 1_000_000, "debt_limit_eur": 12_000_000}
+        self.assertEqual(alertas_escudo_francotirador([titular], [con_credito]), [])
+        alertas = alertas_escudo_francotirador([titular], [{**con_credito, "saldo": 11_000_000}])
         self.assertEqual(len(alertas), 1)
         self.assertEqual(alertas[0]["tono"], "rojo")
         self.assertEqual(
@@ -68,12 +69,16 @@ class EscudoFrancotiradorTest(unittest.TestCase):
             {"team_id": "n", "manager": "Naviis10", "en_rojo": "seguro", "saldo": -2},
             {"team_id": "s", "manager": "Sano", "en_rojo": None, "saldo": 5_000_000},
         ]
-        alertas = alertas_desde_mercado([], rivales, jugadores)
+        # Sin caja propia para pagar la cláusula (0,25 M€ frente a 5 M€): no hay francotirador.
+        self.assertEqual(alertas_desde_mercado([], rivales, jugadores, caja_propia=250_000), [])
+        self.assertEqual(alertas_desde_mercado([], rivales, jugadores), [])
+        # Con caja más ventas con oferta de hoy, sí.
+        alertas = alertas_desde_mercado([], rivales, jugadores, caja_propia=1_000_000, ventas_hoy=4_500_000)
         self.assertEqual(len(alertas), 1)
         self.assertEqual(alertas[0]["tono"], "verde")
         self.assertIn("Gol", alertas[0]["mensaje"])
         self.assertIn("gerardo_vp", alertas[0]["mensaje"])
-        self.assertTrue(alertas[0]["mensaje"].endswith("Clausúlalo antes del viernes para revenderlo"))
+        self.assertTrue(alertas[0]["mensaje"].endswith("Clausúlalo antes de que cierre el mercado de clausulazos para revenderlo"))
 
     def test_el_rojo_solo_recupera_el_tope_en_el_puesto_vacio(self) -> None:
         limites = bid_limit_por_puesto(
