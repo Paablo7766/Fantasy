@@ -3,12 +3,13 @@
 import { useMemo, useState } from "react";
 import { gradeColor } from "@/components/mercado/MarketGrade";
 import { PlayerCard } from "@/components/mercado/PlayerCard";
+import { LiquidacionBlock, ParonBlock, PlanBlock } from "@/components/mercado/PlanSections";
 import { ACTION_VERDICT, auctionLabel, budgetLine, difficultyLabel, historyLine } from "@/components/mercado/shared";
 import { Disclosure, Empty, Face, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { errorMessage, playerName } from "@/lib/core/format";
 import { executableBid, marketAction } from "@/lib/mercado/marketAction";
-import type { AlertaClausula, CatalogPlayer, JornadaClub, MarketDecision, PlanFichajeAccion, PlanFichajes, TrendsPayload } from "@/lib/types";
+import type { AlertaClausula, CatalogPlayer, JornadaClub, MarketDecision, PlanFichajes, TrendsPayload } from "@/lib/types";
 
 type Source = "liga" | "rival" | "todos";
 
@@ -17,42 +18,6 @@ const SOURCES: { id: Source; label: string; empty: string }[] = [
   { id: "rival", label: "Rivales", empty: "Ningún rival vende jugadores ahora mismo." },
   { id: "todos", label: "Combinado", empty: "No hay jugadores en venta." },
 ];
-
-const PLAN_TONE: Record<string, string> = {
-  "Hazlo ya": TONE.green,
-  Recomendable: TONE.blue,
-  Opcional: TONE.gray,
-};
-
-const TIPO_LABEL: Record<string, string> = {
-  PUJA: "Pujar",
-  CLAUSULAZO: "Clausular",
-  VENDE: "Vender",
-  "VENDER HOY": "Vender hoy",
-  ESCAPARATE: "Poner en venta",
-  BUSCA: "Buscar",
-};
-
-const MOMENTO_LABEL: Record<string, string> = {
-  hoy: "Hoy",
-  radar: "Vigilar",
-  condicional: "Si se da",
-};
-
-/** «MANTENER» → «Mantener»: las acciones llegan en mayúsculas del motor. */
-function sentence(value: string | null | undefined): string {
-  const text = cleanText(value);
-  return text && text === text.toUpperCase() ? text.charAt(0) + text.slice(1).toLowerCase() : text;
-}
-
-const TIPO_TONE: Record<string, string> = {
-  PUJA: TONE.green,
-  CLAUSULAZO: TONE.copper,
-  VENDE: TONE.red,
-  "VENDER HOY": TONE.red,
-  ESCAPARATE: TONE.blue,
-  BUSCA: TONE.amber,
-};
 
 function decimal(value: number, digits = 1): string {
   return value.toLocaleString("es-ES", { maximumFractionDigits: digits });
@@ -121,39 +86,6 @@ function Tile({ player, photo, index, onOpen }: { player: MarketDecision; photo:
   );
 }
 
-function PlanRow({ accion }: { accion: PlanFichajeAccion }) {
-  const tipo = accion.tipo || "PUJA";
-  const color = TIPO_TONE[tipo] || TONE.gray;
-  const hoy = accion.momento === "hoy";
-  const detail = [
-    accion.posicion,
-    typeof accion.jornada === "number" ? `${decimal(accion.jornada)} pts` : "",
-    typeof accion.mejora_neta === "number" && accion.mejora_neta !== 0 ? `${accion.mejora_neta > 0 ? "+" : ""}${decimal(accion.mejora_neta)} pts a tu once` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  return (
-    <li className="flex items-center gap-3 py-2.5">
-      <span className="w-[5.75rem] shrink-0">
-        <span className="inline-flex rounded-full px-2.5 py-1 text-[11.5px] font-semibold" style={{ color, background: `${color}1c` }}>
-          {TIPO_LABEL[tipo] || sentence(tipo)}
-        </span>
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14.5px] font-medium text-white">{accion.nombre || "Jugador"}</span>
-        {detail ? <span className="block truncate text-[12px] tabular-nums text-white/45">{detail}</span> : null}
-      </span>
-      <span className="shrink-0 text-right">
-        {typeof accion.euros === "number" ? <span className="block text-[14.5px] font-semibold tabular-nums text-white">{money(accion.euros)}</span> : null}
-        {accion.etiqueta_paron ? <span className="block text-[11px] font-semibold text-[#7FE0A8]">{accion.etiqueta_paron}</span> : null}
-        <span className={`block text-[11.5px] font-medium ${hoy ? "text-[#FFC08A]" : "text-white/40"}`}>
-          {MOMENTO_LABEL[accion.momento || ""] || "Más adelante"}
-        </span>
-      </span>
-    </li>
-  );
-}
-
 function AlertaRow({ alerta }: { alerta: AlertaClausula }) {
   const defend = alerta.tono !== "verde";
   const tone = defend ? TONE.red : TONE.green;
@@ -206,112 +138,6 @@ function AlertasClausulaBlock({ plan }: { plan: PlanFichajes | null | undefined 
   );
 }
 
-function PlanBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
-  const acciones = Array.isArray(plan?.acciones) ? plan.acciones : [];
-  const radar = Array.isArray(plan?.en_radar) ? plan.en_radar : [];
-  const veredicto = plan?.veredicto || "Opcional";
-  const gain = plan?.mejora_puntos_jornada;
-  return (
-    <Disclosure title="Tu plan de fichajes" meta={<span style={{ color: PLAN_TONE[veredicto] || TONE.gray }}>{veredicto}</span>}>
-      <div className="grid grid-cols-3 gap-2">
-        <HeroStat value={typeof gain === "number" && gain > 0 ? `+${decimal(gain)}` : "0"} label="Al once" tone={typeof gain === "number" && gain > 0 ? TONE.green : undefined} />
-        <HeroStat value={`${plan?.nota ?? 0}/10`} label="Nota del plan" tone="#FFC08A" />
-        <HeroStat value={compact(plan?.saldo_al_final)} label="Caja al final" tone={toneOf(plan?.saldo_al_final)} />
-      </div>
-      {plan?.deuda_paron ? (
-        <p className="mt-3 text-[12.5px] leading-relaxed text-white/55">
-          Parón: el plan usa {money(plan.deuda_paron.eur)} de crédito sin sanción hasta el saque. Decide las ventas en{" "}
-          {Math.round(plan.deuda_paron.decidir_ventas_en_dias)} días y deja el saldo en cero o más antes del cierre.
-          {plan.deuda_paron.aviso ? ` ${plan.deuda_paron.aviso}` : ""}
-        </p>
-      ) : null}
-      {acciones.length ? (
-        <ul className="mt-2 divide-y divide-white/[0.05]">
-          {acciones.map((accion, index) => (
-            <PlanRow key={`${accion.tipo}-${accion.player_id || accion.nombre}-${index}`} accion={accion} />
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-3 text-[13.5px] text-white/50">Hoy nada del mercado mejora tu once lo bastante para gastar caja.</p>
-      )}
-      {radar.length ? (
-        <div className="mt-3 border-t border-white/[0.06] pt-3">
-          <p className="text-[12px] font-medium text-white/45">Para vigilar, sin pujar hoy</p>
-          <ul className="mt-1 divide-y divide-white/[0.05]">
-            {radar.map((accion, index) => (
-              <PlanRow key={`radar-${accion.player_id || accion.nombre}-${index}`} accion={accion} />
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </Disclosure>
-  );
-}
-
-function ParonBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
-  const paron = plan?.paron;
-  if (!paron?.activo) return null;
-  const ruta = paron.ruta_salida;
-  const proy = paron.proyeccion;
-  const grupos: Array<{ titulo: string; items: PlanFichajeAccion[] }> = [
-    { titulo: "Vender ya (corta-hemorragias)", items: paron.corta_hemorragias },
-    { titulo: "Especular con el crédito", items: paron.especular },
-    { titulo: "Recoger beneficios", items: paron.recoger_beneficios },
-  ].filter((grupo) => Array.isArray(grupo.items) && grupo.items.length);
-  return (
-    <Disclosure
-      title="Modo Parón"
-      meta={<span style={{ color: TONE.green }}>{`Fase ${paron.fase} · ${decimal(paron.dias_al_cierre)} días`}</span>}
-    >
-      <p className="text-[12.5px] text-white/55">
-        {paron.fase_nombre}. El saldo puede estar en negativo sin sanción hasta el primer partido de la J13; la venta final cae el {paron.dia_venta}.
-      </p>
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <HeroStat value={`+${compact(proy.beneficio_total_eur)}`} label="Plusvalía prevista" tone={TONE.green} />
-        <HeroStat value={`${proy.mejora_xp_j13 > 0 ? "+" : ""}${decimal(proy.mejora_xp_j13)}`} label="xP en la J13" tone="#FFC08A" />
-        <HeroStat value={compact(proy.saldo_viernes_sin_ruta)} label="Saldo sin vender" tone={toneOf(proy.saldo_viernes_sin_ruta)} />
-      </div>
-      {paron.hold_j13.length ? (
-        <p className="mt-3 text-[12.5px] leading-relaxed text-white/55">
-          <span className="font-semibold text-[#7FE0A8]">🟢 Titular + Subida (Hold J13): </span>
-          {paron.hold_j13.map((item) => `${item.nombre} (+${compact(item.subida_esperada_eur)})`).join(", ")}.
-        </p>
-      ) : null}
-      {grupos.map((grupo) => (
-        <div key={grupo.titulo} className="mt-3 border-t border-white/[0.06] pt-3">
-          <p className="text-[12px] font-medium text-white/45">{grupo.titulo}</p>
-          <ul className="mt-1 divide-y divide-white/[0.05]">
-            {grupo.items.map((accion, index) => (
-              <PlanRow key={`paron-${accion.paron_rol}-${accion.player_id || accion.nombre}-${index}`} accion={accion} />
-            ))}
-          </ul>
-        </div>
-      ))}
-      <div className="mt-3 border-t border-white/[0.06] pt-3">
-        <p className="text-[12px] font-medium text-white/45">{`Ruta de salida · ${ruta.dia_venta}`}</p>
-        <p className="mt-1 text-[12.5px] leading-relaxed" style={{ color: ruta.cubre ? "rgba(255,255,255,0.7)" : TONE.red }}>
-          {ruta.texto}
-        </p>
-        {ruta.ventas.length ? (
-          <ul className="mt-2">
-            {ruta.ventas.map((venta) => (
-              <li key={`ruta-${venta.player_id}`} className="flex items-center gap-3 border-b border-white/[0.06] py-2 last:border-b-0">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-medium text-white">{venta.nombre}</span>
-                  <span className="block truncate text-[12px] tabular-nums text-white/45">
-                    {`${compact(venta.valor_hoy)} hoy → ${compact(venta.valor_proyectado)} el ${ruta.dia_venta}${venta.titular ? " · titular" : " · fuera del once"}`}
-                  </span>
-                </span>
-                <span className="shrink-0 text-[14px] font-semibold tabular-nums text-white">{compact(venta.ingreso)}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-    </Disclosure>
-  );
-}
-
 function TradingBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
   const trading = plan?.trading;
   const operaciones = Array.isArray(trading?.operaciones) ? trading.operaciones : [];
@@ -339,72 +165,6 @@ function TradingBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
             <span className="shrink-0 text-right">
               {typeof op.euros === "number" ? <span className="block text-[14.5px] font-semibold tabular-nums text-white">{money(op.euros)}</span> : null}
               <span className="block text-[11px] font-semibold tabular-nums text-[#7FE0A8]">{`+${compact(op.ganancia_esperada)}`}</span>
-            </span>
-          </li>
-        ))}
-      </ul>
-    </Disclosure>
-  );
-}
-
-const FASE_TEXTO: Record<string, { title: string; text: string; color: string }> = {
-  APALANCAMIENTO: {
-    title: "Apalancamiento",
-    text: "Quedan 3 días o más. Los que no entran en el once son posiciones de trading: se mantienen salvo que la oferta pague el valor.",
-    color: TONE.green,
-  },
-  ESCAPARATE: {
-    title: "Escaparate",
-    text: "Ponlos a la venta hoy. La oferta de LaLiga cambia cada día (valor ±10 %): se acepta la que pague el valor.",
-    color: TONE.copper,
-  },
-  LIQUIDACION: {
-    title: "Liquidación",
-    text: "Último día. Vende con la oferta que haya: deja 11 y el saldo en positivo antes del primer partido.",
-    color: TONE.red,
-  },
-};
-
-function LiquidacionBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
-  const liq = plan?.liquidacion;
-  const sobrantes = Array.isArray(liq?.sobrantes) ? liq.sobrantes : [];
-  if (!liq?.activo || !sobrantes.length || !liq.fase) return null;
-  const fase = FASE_TEXTO[liq.fase] ?? { title: liq.fase, text: "", color: TONE.gray };
-  return (
-    <Disclosure
-      title="Jugadores que sobran"
-      meta={<span style={{ color: fase.color }}>{`${sobrantes.length} · ${fase.title}`}</span>}
-    >
-      <p className="text-[12.5px] text-white/50">
-        {fase.text}
-        {typeof liq.saldo_tras_liquidar === "number" ? ` Vendiéndolos todos acabas con ${money(liq.saldo_tras_liquidar)}` : ""}
-        {typeof liq.saldo_peor_caso === "number" && money(liq.saldo_peor_caso) !== money(liq.saldo_tras_liquidar)
-          ? ` (${money(liq.saldo_peor_caso)} si LaLiga paga un 10 % menos).`
-          : typeof liq.saldo_tras_liquidar === "number"
-            ? "."
-            : ""}
-        {typeof liq.deficit_eur === "number" && liq.deficit_eur > 0
-          ? ` Aun así faltan ${compact(liq.deficit_eur)}: habrá que vender a alguien del once.`
-          : ""}
-      </p>
-      <ul className="mt-2">
-        {sobrantes.map((item, index) => (
-          <li key={`liq-${item.player_id || item.nombre}-${index}`} className="flex items-center gap-3 border-b border-white/[0.06] py-2.5 last:border-b-0">
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[14.5px] font-medium text-white">
-                {[item.nombre || "Jugador", item.position].filter(Boolean).join(" · ")}
-              </span>
-              <span className="block text-[12px] text-white/45">{cleanText(item.etiqueta || item.motivo)}</span>
-            </span>
-            <span className="shrink-0 text-right">
-              <span className="block text-[12px] font-semibold" style={{ color: fase.color }}>
-                {sentence(item.accion)}
-              </span>
-              {typeof item.oferta_eur === "number" ? (
-                <span className="block text-[13px] tabular-nums text-white">{`Oferta ${money(item.oferta_eur)}`}</span>
-              ) : typeof item.valor === "number" ? (
-                <span className="block text-[13px] tabular-nums text-white/60">{`Valor ${money(item.valor)}`}</span>
-              ) : null}
             </span>
           </li>
         ))}
@@ -630,10 +390,10 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
       <CatalogMatches rows={outside} photos={photos} />
 
       <AlertasClausulaBlock plan={trends.plan_fichajes} />
-      <PlanBlock plan={trends.plan_fichajes} />
-      <ParonBlock plan={trends.plan_fichajes} />
+      <PlanBlock plan={trends.plan_fichajes} photos={photos} />
+      <ParonBlock plan={trends.plan_fichajes} photos={photos} />
       <TradingBlock plan={trends.plan_fichajes} />
-      <LiquidacionBlock plan={trends.plan_fichajes} />
+      <LiquidacionBlock plan={trends.plan_fichajes} photos={photos} />
 
       {board.length ? (
         <Disclosure title="Calendario" meta={`${board.length} ${board.length === 1 ? "equipo" : "equipos"}`}>
