@@ -131,22 +131,16 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
 
   const fichajes = plan?.plan_fichajes;
   const cashEnd = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
-  // Parón: si el plan deja deuda, el día límite de venta es tan importante como el saque.
-  const ruta = fichajes?.paron?.activo ? fichajes.paron.ruta_salida : null;
-  // Misma cifra que el Plan de hoy: el crédito que usan las pujas (la ruta de salida ya descuenta premio y ventas).
-  const credit = fichajes?.presupuesto?.credito_paron;
-  const debt = Math.max(typeof credit === "number" ? credit : 0, typeof cashEnd === "number" && cashEnd < 0 ? -cashEnd : 0);
-  const saleDeadline =
-    debt > 0
-      ? `Deuda planificada −${money(debt)}: vende antes del ${ruta?.dia_venta || "cierre"} para empezar la jornada con saldo ≥ 0.`
-      : null;
-  // Cláusulas sin recambio que se abren antes del bloqueo: perderlas deja la jornada en 0 puntos.
-  const priority = plan?.asesor_clausulas?.resumen?.alertas_prioritarias ?? [];
-  const priorityText = priority.length
-    ? `Alerta: ${priority
-        .map((a) => `${a.nombre} (único ${a.posicion || "en su puesto"}${a.abre_el && a.abre_el !== "abierta" ? `, se abre el ${a.abre_el}` : ", cláusula abierta"})`)
-        .join(" · ")}. Ficha recambio antes.`
-    : null;
+  // Fase de la app: en qué momento estamos y, por tanto, en qué se enfoca.
+  // Las alertas largas (deuda, cláusulas) viven en el Plan, no en el hero.
+  const paron = fichajes?.paron?.activo ? fichajes.paron : null;
+  const phase = paron
+    ? { key: "paron", label: "Parón de selecciones", sub: paron.fase_nombre || "Mercado abierto" }
+    : clock.lock
+      ? { key: "prep", label: "Preparando la jornada", sub: "Mercado y once abiertos" }
+      : clock.exhausted
+        ? { key: "live", label: "Jornada en juego", sub: "Once bloqueado" }
+        : null;
 
   const dash = loading ? "…" : "—";
   const negative = typeof cash === "number" && cash < 0;
@@ -216,26 +210,19 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
             </span>
           ) : null}
 
+          {phase ? (
+            <p className="ini-phase" data-phase={phase.key} data-ui="home-phase">
+              <span>{phase.label}</span>
+              <i aria-hidden="true" />
+              <span>{phase.sub}</span>
+            </p>
+          ) : null}
+
           {target && timeText ? (
-            <p className="ini-cta" data-urgent={urgent ? "true" : undefined} role="timer" data-ui="home-countdown">
+            <p className="ini-cta" data-urgent={urgent ? "true" : undefined} role="timer" data-ui="home-countdown" title={eventTitle(target)}>
               <span className="ini-live" aria-hidden="true" />
-              <span className="max-w-[14rem] truncate">{eventTitle(target)}</span>
+              <span className="ini-cta__label">{target.kind === "inicio_jornada" ? "Inicio de jornada" : eventTitle(target)}</span>
               <span className="ini-cta__time">{timeText}</span>
-              {target.localLabel ? <span className="ini-cta__when max-sm:hidden">{target.localLabel}</span> : null}
-            </p>
-          ) : null}
-
-          {priorityText ? (
-            <p className="ini-alert" style={{ color: "#ffb3a4" }} role="alert" data-ui="home-clause-priority">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
-              {priorityText}
-            </p>
-          ) : null}
-
-          {saleDeadline ? (
-            <p className="ini-alert" style={{ color: "#ffd58a" }} role="note" data-ui="home-sale-deadline">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
-              {saleDeadline}
             </p>
           ) : null}
 
