@@ -61,7 +61,11 @@ export function AvisosBell({ className }: { className?: string }) {
         setEstado("apagado");
         return;
       }
-      const info = (await fetch(apiUrl("/api/push/key")).then((r) => r.json())) as {
+      const info = (await fetch(apiUrl("/api/push/key"))
+        .then((r) => r.json())
+        .catch(() => {
+          throw new Error("No se pudo contactar con el servidor.");
+        })) as {
         enabled?: boolean;
         public_key?: string;
       };
@@ -74,21 +78,29 @@ export function AvisosBell({ className }: { className?: string }) {
         setEstado(permiso === "denied" ? "bloqueado" : "apagado");
         return;
       }
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: claveAUint8(info.public_key),
-      });
+      const sub = await reg.pushManager
+        .subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: claveAUint8(info.public_key),
+        })
+        .catch((reason: unknown) => {
+          throw new Error(`El móvil rechazó la suscripción (${reason instanceof Error ? reason.message : "sin detalle"}).`);
+        });
       const res = await fetch(apiUrl("/api/push/subscribe"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sub.toJSON()),
       });
-      if (!res.ok) throw new Error("subscribe");
+      if (!res.ok) {
+        await sub.unsubscribe().catch(() => undefined);
+        const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        throw new Error(`El servidor no guardó el aviso (${res.status}${body?.error?.message ? `: ${body.error.message}` : ""}).`);
+      }
       await fetch(apiUrl("/api/push/test"), { method: "POST" }).catch(() => undefined);
       setEstado("encendido");
       setNota("Listo: te llegará una notificación de prueba.");
-    } catch {
-      setNota("No se pudieron activar los avisos.");
+    } catch (reason) {
+      setNota(reason instanceof Error && reason.message ? reason.message : "No se pudieron activar los avisos.");
     } finally {
       setOcupado(false);
     }
