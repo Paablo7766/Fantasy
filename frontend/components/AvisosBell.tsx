@@ -21,6 +21,7 @@ function claveAUint8(base64: string): Uint8Array<ArrayBuffer> {
 export function AvisosBell({ className }: { className?: string }) {
   const [estado, setEstado] = useState<Estado>("cargando");
   const [nota, setNota] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
 
   useEffect(() => {
     let vivo = true;
@@ -46,6 +47,7 @@ export function AvisosBell({ className }: { className?: string }) {
 
   const alternar = useCallback(async () => {
     setNota(null);
+    setOcupado(true);
     try {
       const reg = await navigator.serviceWorker.ready;
       const actual = await reg.pushManager.getSubscription();
@@ -84,21 +86,24 @@ export function AvisosBell({ className }: { className?: string }) {
       if (!res.ok) throw new Error("subscribe");
       await fetch(apiUrl("/api/push/test"), { method: "POST" }).catch(() => undefined);
       setEstado("encendido");
+      setNota("Listo: te llegará una notificación de prueba.");
     } catch {
       setNota("No se pudieron activar los avisos.");
+    } finally {
+      setOcupado(false);
     }
   }, []);
 
   if (estado === "cargando" || estado === "no-soportado") return null;
 
-  const texto =
-    estado === "encendido"
-      ? "Avisos al terminar · activados"
-      : estado === "bloqueado"
-        ? "Avisos bloqueados en el navegador"
-        : estado === "no-configurado"
-          ? "Avisos sin configurar en el servidor"
-          : "Avisarme al terminar de actualizar";
+  const encendido = estado === "encendido";
+  const texto = ocupado
+    ? "Un momento…"
+    : estado === "bloqueado"
+      ? "Avisos bloqueados en el navegador"
+      : estado === "no-configurado"
+        ? "Avisos sin configurar en el servidor"
+        : "Avisarme al terminar";
 
   return (
     <>
@@ -106,13 +111,46 @@ export function AvisosBell({ className }: { className?: string }) {
         role="menuitem"
         type="button"
         onClick={() => void alternar()}
-        disabled={estado === "bloqueado" || estado === "no-configurado"}
+        disabled={ocupado || estado === "bloqueado" || estado === "no-configurado"}
         className={className}
+        style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}
       >
-        {estado === "encendido" ? "🔔 " : "🔕 "}
-        {texto}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        </svg>
+        <span style={{ flex: 1 }}>{texto}</span>
+        <span
+          aria-hidden="true"
+          style={{
+            position: "relative",
+            width: 30,
+            height: 18,
+            borderRadius: 999,
+            background: encendido ? "#34d399" : "rgba(255,255,255,0.22)",
+            transition: "background 160ms ease",
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 2,
+              left: encendido ? 14 : 2,
+              width: 14,
+              height: 14,
+              borderRadius: 999,
+              background: "#fff",
+              transition: "left 160ms ease",
+            }}
+          />
+        </span>
       </button>
-      {nota ? <p className="mt-1 text-[11.5px] text-[#ffb3a4]" role="alert">{nota}</p> : null}
+      {nota ? (
+        <p className="mt-1 px-2 text-[11.5px] text-white/70" role="status">
+          {nota}
+        </p>
+      ) : null}
     </>
   );
 }
