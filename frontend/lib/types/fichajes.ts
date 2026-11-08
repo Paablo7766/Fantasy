@@ -24,6 +24,10 @@ export type PlanFichajeAccion = {
   sobrepuja_liga_pct?: number | null;
   /** En el parón: la puja se paga con el crédito del 20 %. */
   financia_con_credito?: boolean;
+  /** Modo parón: papel de la acción y etiqueta a mostrar. */
+  paron_rol?: "HOLD_J13" | "ESPECULAR" | "CORTA_HEMORRAGIAS" | "RECOGER_BENEFICIOS" | "RUTA_SALIDA" | string;
+  etiqueta_paron?: string | null;
+  ganancia_esperada_eur?: number | null;
   /** Botón a pulsar: puja en el mercado o pago de la cláusula a un rival. */
   etiqueta?: "PUJAR" | "CLAUSULAR" | null;
   /** Solo en alternativas_liquidez. */
@@ -107,6 +111,53 @@ export type PlanResumen = {
   motivo?: string | null;
 };
 
+/** Modo Parón autónomo: fase por calendario, ruta de salida y proyección hasta el cierre. */
+export type PlanParon = {
+  activo: boolean;
+  fase: 1 | 2 | 3;
+  fase_nombre: string;
+  dias_al_cierre: number;
+  cierre: string;
+  dia_venta: string;
+  acciones: PlanFichajeAccion[];
+  corta_hemorragias: PlanFichajeAccion[];
+  especular: PlanFichajeAccion[];
+  recoger_beneficios: PlanFichajeAccion[];
+  hold_j13: Array<{ player_id: string; nombre: string; euros: number; subida_esperada_eur: number }>;
+  capital_especulacion: { caja: number; credito: number };
+  ruta_salida: {
+    dia_venta: string;
+    deuda_a_saldar: number;
+    saldo_proyectado: number;
+    ventas: Array<{
+      player_id: string;
+      nombre: string;
+      valor_hoy: number;
+      valor_proyectado: number;
+      ingreso: number;
+      titular: boolean;
+      origen: string;
+      xp_perdido: number;
+    }>;
+    reposiciones: Array<{ player_id: string; nombre: string; posicion?: string | null; euros: number; jornada?: number | null }>;
+    ingreso: number;
+    cubre: boolean;
+    falta_eur: number;
+    xp_perdido: number;
+    titulares_vendidos: number;
+    texto: string | null;
+  };
+  proyeccion: {
+    ganancia_hold_eur: number;
+    ganancia_especulacion_eur: number;
+    perdida_evitada_eur: number;
+    beneficio_total_eur: number;
+    mejora_xp_j13: number;
+    saldo_viernes_sin_ruta: number;
+    xp_perdido_por_ruta: number;
+  };
+};
+
 export type PlanFichajes = {
   ok?: boolean;
   mejora_puntos_jornada?: number | null;
@@ -139,6 +190,8 @@ export type PlanFichajes = {
   /** Plan completo frente al prudente (sin ventas que dependan de ganar pujas). */
   comparativa?: { completo?: PlanResumen; prudente?: PlanResumen } | null;
   trading?: TradingDesk;
+  /** Presente solo durante un parón de selecciones. */
+  paron?: PlanParon | null;
   liquidacion?: PlanLiquidacion;
   /** Escudo y francotirador: cláusulas en riesgo y chollos de rivales en rojo. */
   alertas_clausulas?: AlertaClausula[];

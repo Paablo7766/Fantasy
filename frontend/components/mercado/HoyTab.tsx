@@ -145,6 +145,7 @@ function PlanRow({ accion }: { accion: PlanFichajeAccion }) {
       </span>
       <span className="shrink-0 text-right">
         {typeof accion.euros === "number" ? <span className="block text-[14.5px] font-semibold tabular-nums text-white">{money(accion.euros)}</span> : null}
+        {accion.etiqueta_paron ? <span className="block text-[11px] font-semibold text-[#7FE0A8]">{accion.etiqueta_paron}</span> : null}
         <span className={`block text-[11.5px] font-medium ${hoy ? "text-[#FFC08A]" : "text-white/40"}`}>
           {MOMENTO_LABEL[accion.momento || ""] || "Más adelante"}
         </span>
@@ -243,6 +244,70 @@ function PlanBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
           </ul>
         </div>
       ) : null}
+    </Disclosure>
+  );
+}
+
+function ParonBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
+  const paron = plan?.paron;
+  if (!paron?.activo) return null;
+  const ruta = paron.ruta_salida;
+  const proy = paron.proyeccion;
+  const grupos: Array<{ titulo: string; items: PlanFichajeAccion[] }> = [
+    { titulo: "Vender ya (corta-hemorragias)", items: paron.corta_hemorragias },
+    { titulo: "Especular con el crédito", items: paron.especular },
+    { titulo: "Recoger beneficios", items: paron.recoger_beneficios },
+  ].filter((grupo) => Array.isArray(grupo.items) && grupo.items.length);
+  return (
+    <Disclosure
+      title="Modo Parón"
+      meta={<span style={{ color: TONE.green }}>{`Fase ${paron.fase} · ${decimal(paron.dias_al_cierre)} días`}</span>}
+    >
+      <p className="text-[12.5px] text-white/55">
+        {paron.fase_nombre}. El saldo puede estar en negativo sin sanción hasta el primer partido de la J13; la venta final cae el {paron.dia_venta}.
+      </p>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <HeroStat value={`+${compact(proy.beneficio_total_eur)}`} label="Plusvalía prevista" tone={TONE.green} />
+        <HeroStat value={`${proy.mejora_xp_j13 > 0 ? "+" : ""}${decimal(proy.mejora_xp_j13)}`} label="xP en la J13" tone="#FFC08A" />
+        <HeroStat value={compact(proy.saldo_viernes_sin_ruta)} label="Saldo sin vender" tone={toneOf(proy.saldo_viernes_sin_ruta)} />
+      </div>
+      {paron.hold_j13.length ? (
+        <p className="mt-3 text-[12.5px] leading-relaxed text-white/55">
+          <span className="font-semibold text-[#7FE0A8]">🟢 Titular + Subida (Hold J13): </span>
+          {paron.hold_j13.map((item) => `${item.nombre} (+${compact(item.subida_esperada_eur)})`).join(", ")}.
+        </p>
+      ) : null}
+      {grupos.map((grupo) => (
+        <div key={grupo.titulo} className="mt-3 border-t border-white/[0.06] pt-3">
+          <p className="text-[12px] font-medium text-white/45">{grupo.titulo}</p>
+          <ul className="mt-1 divide-y divide-white/[0.05]">
+            {grupo.items.map((accion, index) => (
+              <PlanRow key={`paron-${accion.paron_rol}-${accion.player_id || accion.nombre}-${index}`} accion={accion} />
+            ))}
+          </ul>
+        </div>
+      ))}
+      <div className="mt-3 border-t border-white/[0.06] pt-3">
+        <p className="text-[12px] font-medium text-white/45">{`Ruta de salida · ${ruta.dia_venta}`}</p>
+        <p className="mt-1 text-[12.5px] leading-relaxed" style={{ color: ruta.cubre ? "rgba(255,255,255,0.7)" : TONE.red }}>
+          {ruta.texto}
+        </p>
+        {ruta.ventas.length ? (
+          <ul className="mt-2">
+            {ruta.ventas.map((venta) => (
+              <li key={`ruta-${venta.player_id}`} className="flex items-center gap-3 border-b border-white/[0.06] py-2 last:border-b-0">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-medium text-white">{venta.nombre}</span>
+                  <span className="block truncate text-[12px] tabular-nums text-white/45">
+                    {`${compact(venta.valor_hoy)} hoy → ${compact(venta.valor_proyectado)} el ${ruta.dia_venta}${venta.titular ? " · titular" : " · fuera del once"}`}
+                  </span>
+                </span>
+                <span className="shrink-0 text-[14px] font-semibold tabular-nums text-white">{compact(venta.ingreso)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
     </Disclosure>
   );
 }
@@ -548,6 +613,7 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
 
       <AlertasClausulaBlock plan={trends.plan_fichajes} />
       <PlanBlock plan={trends.plan_fichajes} />
+      <ParonBlock plan={trends.plan_fichajes} />
       <TradingBlock plan={trends.plan_fichajes} />
       <LiquidacionBlock plan={trends.plan_fichajes} />
 

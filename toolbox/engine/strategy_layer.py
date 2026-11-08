@@ -34,6 +34,9 @@ from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, evaluar_c
 from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
 from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes, conserva_esqueleto
+from toolbox.engine.paron import UMBRAL_PARON_DIAS, paron_conocido
+from toolbox.engine.live_matchday import construir_jornada_en_juego
+from toolbox.engine.paron_plan import construir_paron, fase_paron
 from toolbox.engine.trading_desk import alertas_escudo_francotirador
 from toolbox.jornada_plan import earliest_kickoff, matchday_start
 from toolbox.plan_memory import load_objetivos_previos, save_plan
@@ -387,8 +390,24 @@ def _days_to_kickoff(trends: dict[str, Any] | None, now: datetime) -> float | No
         raw = _jornada_kickoff(trends, now)
         moment = _parse_kickoff(raw) if isinstance(raw, str) else None
     if moment is None:
-        moment = _proximo_viernes_2100(now)
+        conocido = paron_conocido(now)
+        moment = conocido[1] if conocido else _proximo_viernes_2100(now)
     return (moment - now).total_seconds() / 86400.0
+
+
+def _ciclo_paron(trends: dict[str, Any] | None, now: datetime, dias: float | None) -> bool:
+    """El ciclo actual es un parón aunque ya falten menos de 7,5 días.
+
+    Lo dice la tabla de parones conocidos, o el último saque ya jugado: si
+    entre aquel partido y el próximo cierre hay más de 7,5 días, es parón.
+    """
+    if dias is None:
+        return False
+    if paron_conocido(now) is not None:
+        return True
+    cierre = now + timedelta(days=dias)
+    jugados = [m for m in _saques(trends) if m < now]
+    return bool(jugados) and (cierre - max(jugados)).total_seconds() / 86400.0 > UMBRAL_PARON_DIAS
 
 
 #: La alineación se bloquea en el primer partido de la jornada (viernes), no
@@ -1128,6 +1147,45 @@ def _alternativas_reposicion(records: dict[str, dict[str, Any]]) -> list[dict[st
     return salida
 
 
+def _rivales_con_premio(
+    rivales: list[dict[str, Any]],
+    board: dict[str, Any],
+    now: datetime,
+) -> list[dict[str, Any]]:
+    """Con la jornada en juego, la caja del rival incluye el premio que cobra al cerrarla.
+
+    El radar de cláusulas mira quién puede pagar el lunes, no quién puede hoy.
+    """
+    try:
+        from toolbox.player_history import actas_en_cache
+
+        vivo = construir_jornada_en_juego(
+            board.get("squads") if isinstance(board.get("squads"), dict) else None,
+            board.get("trends") if isinstance(board.get("trends"), dict) else None,
+            actas_en_cache(),
+            now=now,
+        )
+    except Exception:
+        logger.exception("premio de rivales")
+        return rivales
+    if vivo.get("activa") is not True:
+        return rivales
+    premios = {
+        str(e["team_id"]): int(e["premio_jornada_eur"])
+        for e in vivo.get("clasificacion_jornada") or []
+        if not e.get("is_self") and e.get("team_id") is not None
+    }
+    salida: list[dict[str, Any]] = []
+    for rival in rivales:
+        premio = premios.get(str(rival.get("team_id"))) if isinstance(rival, dict) else None
+        saldo = rival.get("saldo") if isinstance(rival, dict) else None
+        if premio and isinstance(saldo, (int, float)) and not isinstance(saldo, bool):
+            salida.append({**rival, "saldo": saldo + premio, "premio_jornada_eur": premio})
+        else:
+            salida.append(rival)
+    return salida
+
+
 def _asesorar_clausulas(
     records: dict[str, dict[str, Any]],
     war: dict[str, float],
@@ -1145,6 +1203,7 @@ def _asesorar_clausulas(
     puestos = _puestos_liga(board)
     plantillas = _plantillas_rivales(records)
     alternativas = _alternativas_reposicion(records)
+    rivales = _rivales_con_premio(rivales, board, now)
     for row in records.values():
         player_id = row.get("player_id")
         if not isinstance(player_id, str):
@@ -1740,6 +1799,45 @@ def _plan(
         }
     except Exception:
         logger.exception("plan prudente")
+    premio_jornada = 0
+    try:
+        from toolbox.player_history import actas_en_cache
+
+        en_juego = construir_jornada_en_juego(
+            board.get("squads") if isinstance(board.get("squads"), dict) else None,
+            board.get("trends") if isinstance(board.get("trends"), dict) else None,
+            actas_en_cache(),
+            now=now,
+        )
+        plan["jornada_en_juego"] = en_juego
+        if en_juego.get("activa") is True:
+            # El premio entra el lunes: es liquidez para el mercado y para la ruta de salida del parón.
+            premio_jornada = int(en_juego.get("liquidez_entrante_eur") or 0)
+    except Exception:
+        logger.exception("jornada en juego")
+    try:
+        dias_cierre = _num(plan.get("dias_al_cierre"))
+        fase = fase_paron(dias_cierre, _ciclo_paron(trends, now, dias_cierre))
+        if fase is not None and dias_cierre is not None and saldo is not None:
+            paron = construir_paron(
+                fase=fase,
+                dias=dias_cierre,
+                cierre=now + timedelta(days=dias_cierre),
+                saldo=saldo,
+                owned=owned_rows,
+                mercado=mercado,
+                plan=plan,
+                previos={str(item) for item in entrada["objetivos_previos"] or []},
+                premio_jornada=premio_jornada,
+            )
+            plan["paron"] = paron
+            # Una sola voz: en parón la especulación la decide el modo parón, no el trading desk.
+            if isinstance(plan.get("trading"), dict):
+                plan["trading"]["operaciones"] = []
+                plan["trading"]["ganancia_esperada"] = 0
+            plan["acciones"] = [*(plan.get("acciones") or []), *paron["acciones"]]
+    except Exception:
+        logger.exception("modo parón")
     try:
         # La cobertura mira el primer silbato real, no el día con más partidos.
         plan["liquidacion"] = _liquidacion(

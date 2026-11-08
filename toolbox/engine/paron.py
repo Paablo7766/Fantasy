@@ -13,6 +13,8 @@ tocarlas.
 from __future__ import annotations
 
 import math
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 #: Días a los que está calibrada la previsión de precio por jugador.
 HORIZONTE_PREVISION_DIAS = 7.0
@@ -58,3 +60,23 @@ def contexto_paron(dias_al_saque: object) -> dict[str, object]:
             else None
         ),
     }
+
+
+#: Parones con cierre conocido: (primer día del parón, cierre = primer saque de la jornada que vuelve).
+#: Es el respaldo cuando el feed de LaLiga no trae calendario: sin él el motor
+#: apunta al "próximo viernes" y no se entera de que hay dos semanas sin liga.
+#: Hay que añadir una línea por parón (el calendario oficial se publica en verano).
+PARONES_CONOCIDOS: tuple[tuple[str, str], ...] = (
+    ("2026-11-08", "2026-11-20T21:00:00+01:00"),
+)
+
+
+def paron_conocido(now: datetime) -> tuple[datetime, datetime] | None:
+    """(inicio, cierre) del parón que contiene ``now``, si está en la tabla."""
+    zona = ZoneInfo("Europe/Madrid")
+    for inicio, cierre in PARONES_CONOCIDOS:
+        ini = datetime.fromisoformat(inicio).replace(tzinfo=zona)
+        fin = datetime.fromisoformat(cierre)
+        if ini <= now < fin:
+            return ini, fin
+    return None
