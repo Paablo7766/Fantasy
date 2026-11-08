@@ -413,6 +413,52 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }, [fetchBlock, load, shellReady, blankAfterLoad]);
 
   /**
+   * Jornada en vivo: solo ese bloque se relee del servidor (lectura de la foto, sin red).
+   *
+   * El plan guardado en el navegador no se relee para no cambiar recomendaciones con la
+   * misma foto, pero la jornada en juego depende del reloj (qué partidos ya se jugaron),
+   * así que se injerta ``jornada_en_juego`` en el plan que hay, al abrir, cada 2 min y al
+   * volver a la pestaña.
+   */
+  useEffect(() => {
+    if (!shellReady) return;
+    let cancelled = false;
+    const league = leagueFromLocation();
+    const sync = async () => {
+      if (document.visibilityState === "hidden") return;
+      try {
+        const fresh = await getJson<PlanPayload>(endpoint("/api/plan", league));
+        const live = (fresh?.plan_fichajes as { jornada_en_juego?: unknown } | null | undefined)?.jornada_en_juego;
+        if (cancelled || live === undefined) return;
+        setState((prev) => {
+          const plan = prev.plan as (PlanPayload & { plan_fichajes?: Record<string, unknown> | null }) | null;
+          if (!plan || plan.ok === false) return prev;
+          const merged = {
+            ...plan,
+            plan_fichajes: { ...(plan.plan_fichajes ?? {}), jornada_en_juego: live },
+          } as unknown as DashboardState["plan"];
+          writeDashboardBlock(league, "plan", merged);
+          return { ...prev, plan: merged };
+        });
+      } catch {
+        // Sin respuesta se queda lo último que se vio.
+      }
+    };
+    const first = window.setTimeout(() => void sync(), 1500);
+    const timer = window.setInterval(() => void sync(), 120_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void sync();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [shellReady]);
+
+  /**
    * Recargar la pestaña **a mitad de descarga** tiene que mostrar la descarga.
    *
    * El estado del refresco vive en el backend, no en esta pestaña: si se pulsa
