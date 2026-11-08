@@ -248,12 +248,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             {connecting ? "Elige tu cuenta en Chrome…" : "Conectar cuenta"}
           </button>
+          <AvisosBell className="btn btn-ghost mt-1 w-full justify-start px-0" />
         </div>
       </aside>
 
       <div className="app-frame">
         <header className={`app-topbar relative ${home ? "app-topbar--bare" : ""}`}>
-          <AvisosBell />
           <div className="app-topbar__row" data-ui="topbar" hidden={home}>
             <div className="flex min-w-0 items-center gap-3">
               <span className="topbar-mark lg:hidden" aria-hidden="true">

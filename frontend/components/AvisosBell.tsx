@@ -18,7 +18,7 @@ function claveAUint8(base64: string): Uint8Array<ArrayBuffer> {
  * el móvil avise cuando termine una actualización, con la app cerrada o el
  * teléfono bloqueado. En iPhone solo funciona con la app añadida a inicio.
  */
-export function AvisosBell() {
+export function AvisosBell({ className }: { className?: string }) {
   const [estado, setEstado] = useState<Estado>("cargando");
   const [nota, setNota] = useState<string | null>(null);
 
@@ -91,9 +91,9 @@ export function AvisosBell() {
 
   if (estado === "cargando" || estado === "no-soportado") return null;
 
-  const etiqueta =
+  const texto =
     estado === "encendido"
-      ? "Avisos activados"
+      ? "Avisos al terminar · activados"
       : estado === "bloqueado"
         ? "Avisos bloqueados en el navegador"
         : estado === "no-configurado"
@@ -101,23 +101,18 @@ export function AvisosBell() {
           : "Avisarme al terminar de actualizar";
 
   return (
-    <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
-      {nota ? <span className="status-note" role="alert">{nota}</span> : null}
+    <>
       <button
+        role="menuitem"
         type="button"
         onClick={() => void alternar()}
         disabled={estado === "bloqueado" || estado === "no-configurado"}
-        aria-pressed={estado === "encendido"}
-        aria-label={etiqueta}
-        title={etiqueta}
-        className="btn btn-ghost px-2"
-        style={{ opacity: estado === "encendido" ? 1 : 0.6 }}
+        className={className}
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill={estado === "encendido" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-        </svg>
+        {estado === "encendido" ? "🔔 " : "🔕 "}
+        {texto}
       </button>
-    </div>
+      {nota ? <p className="mt-1 text-[11.5px] text-[#ffb3a4]" role="alert">{nota}</p> : null}
+    </>
   );
 }

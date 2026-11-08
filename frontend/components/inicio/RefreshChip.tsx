@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
+import { AvisosBell } from "@/components/AvisosBell";
 
 const HOUR = 3600;
 
@@ -129,6 +130,7 @@ export function RefreshChip() {
             >
               {connecting ? "Elige tu cuenta en Chrome…" : "Conectar cuenta"}
             </button>
+            <AvisosBell className="ini-refresh__item" />
           </div>
         </div>
       ) : null}
