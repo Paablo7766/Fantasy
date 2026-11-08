@@ -4,8 +4,8 @@
 // mismo lenguaje — foto, acción en una pastilla, una frase con el porqué en
 // cifras y el importe a la derecha. Sin jerga del motor.
 
-import type { ReactNode } from "react";
-import { Disclosure, Face, TONE, cleanText, compact, money } from "@/components/ui/kit";
+import { useId, useState, type ReactNode } from "react";
+import { Chevron, Face, TONE, cleanText, compact, money } from "@/components/ui/kit";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { PlanFichajeAccion, PlanFichajes } from "@/lib/types";
 
@@ -48,6 +48,99 @@ function daysUntil(iso: string | null | undefined): number | null {
 }
 
 // ── Piezas comunes ──────────────────────────────────────────────────────────
+
+const ICONS: Record<"plan" | "paron" | "sobran", ReactNode> = {
+  plan: (
+    <svg viewBox="0 0 20 20" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+      <path d="M3 14.5 7.5 10l3 3L17 6.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12.5 6.5H17V11" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  paron: (
+    <svg viewBox="0 0 20 20" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+      <path d="M6 3h8M6 17h8M7 3c0 3.5 6 4 6 7s-6 3.5-6 7M13 3c0 3.5-6 4-6 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  sobran: (
+    <svg viewBox="0 0 20 20" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+      <circle cx="8" cy="7" r="3" />
+      <path d="M2.5 16.5c.6-2.8 2.8-4.5 5.5-4.5s4.9 1.7 5.5 4.5M13.5 9h4" strokeLinecap="round" />
+    </svg>
+  ),
+};
+
+/**
+ * Tarjeta plegable con cabecera que ya informa cerrada: icono con el color de
+ * la sección, título, una línea de resumen y la cifra clave a la derecha.
+ */
+function SectionCard({
+  icon,
+  tone,
+  title,
+  summary,
+  figure,
+  figureTone,
+  figureLabel,
+  progress,
+  defaultOpen = false,
+  children,
+}: {
+  icon: keyof typeof ICONS;
+  tone: string;
+  title: string;
+  summary: ReactNode;
+  figure?: string | null;
+  figureTone?: string;
+  figureLabel?: string;
+  /** 0–1: barra fina bajo la cabecera (fase, cobertura…). */
+  progress?: number | null;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const id = useId();
+  return (
+    <section
+      className="home-glass relative overflow-hidden"
+      style={{ background: `radial-gradient(70% 140% at 0% 0%, ${tone}1f 0%, transparent 60%), linear-gradient(180deg, rgba(255,255,255,0.065) 0%, rgba(255,255,255,0.03) 100%)` }}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-3.5 px-4 py-4 text-left transition-colors duration-200 ease-out hover:bg-white/[0.02]"
+      >
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl" style={{ color: tone, background: `${tone}1f`, boxShadow: `inset 0 0 0 1px ${tone}33` }}>
+          {ICONS[icon]}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[16px] font-semibold tracking-[-0.01em] text-white">{title}</span>
+          <span className="mt-0.5 line-clamp-2 block text-[12.5px] leading-snug text-white/50">{summary}</span>
+        </span>
+        {figure ? (
+          <span className="shrink-0 text-right">
+            <span className="block text-[17px] font-semibold leading-tight tabular-nums" style={{ color: figureTone || "#fff" }}>
+              {figure}
+            </span>
+            {figureLabel ? <span className="block text-[11px] text-white/40">{figureLabel}</span> : null}
+          </span>
+        ) : null}
+        <Chevron open={open} />
+      </button>
+      {typeof progress === "number" ? (
+        <span className="mx-4 mb-3 block h-[3px] overflow-hidden rounded-full bg-white/[0.06]" aria-hidden="true">
+          <span className="block h-full rounded-full transition-[width] duration-700" style={{ width: `${Math.max(4, Math.min(1, progress) * 100)}%`, background: tone }} />
+        </span>
+      ) : null}
+      {open ? (
+        <div id={id} className="row-in border-t border-white/[0.06] px-4 pb-4 pt-3">
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
+}
 
 function Pill({ label, color }: { label: string; color: string }) {
   return (
@@ -247,16 +340,31 @@ export function PlanBlock({ plan, photos }: { plan: PlanFichajes | null | undefi
   const hoy = acciones.filter((a) => !a.momento || a.momento === "hoy");
   const despues = acciones.filter((a) => a.momento && a.momento !== "hoy");
 
+  const counts = new Map<string, number>();
+  for (const a of hoy) {
+    const label = KIND[kindOf(a)].label;
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  const resumen = hoy.length
+    ? [...counts].map(([label, n]) => `${label} ${n}`).join(" · ")
+    : "Nada que hacer hoy";
+
   return (
-    <Disclosure
+    <SectionCard
+      icon="plan"
+      tone={TONE.green}
       title="Tu plan de fichajes"
       defaultOpen
-      meta={
-        <span className="inline-flex items-center gap-2">
-          {gain > 0.05 ? <span className="font-semibold text-[#7FE0A8]">{pts(gain)}</span> : null}
-          <Pill label={veredicto} color={tone} />
-        </span>
+      summary={
+        <>
+          <span className="font-semibold" style={{ color: tone }}>{veredicto}</span>
+          <span className="text-white/30"> · </span>
+          {resumen}
+        </>
       }
+      figure={gain > 0.05 ? pts(gain) : null}
+      figureTone={MINT}
+      figureLabel="a tu once"
     >
       {typeof before === "number" && typeof after === "number" && after > before ? (
         <>
@@ -331,7 +439,7 @@ export function PlanBlock({ plan, photos }: { plan: PlanFichajes | null | undefi
           </div>
         </div>
       ) : null}
-    </Disclosure>
+    </SectionCard>
   );
 }
 
@@ -360,9 +468,27 @@ export function ParonBlock({ plan, photos }: { plan: PlanFichajes | null | undef
     .filter((g) => g.items.length);
 
   return (
-    <Disclosure
+    <SectionCard
+      icon="paron"
+      tone={TONE.copper}
       title="Modo parón"
-      meta={<span className="text-white/55">{`Cierra en ${num(paron.dias_al_cierre, 0)} días`}</span>}
+      summary={
+        <>
+          <span className="font-semibold text-[#FFC08A]">{`Fase ${paron.fase} de 3`}</span>
+          <span className="text-white/30"> · </span>
+          {venta ? `vende el ${venta}` : `cierra en ${num(paron.dias_al_cierre, 0)} días`}
+          {deuda > 0 ? (
+            <>
+              <span className="text-white/30"> · </span>
+              <span style={{ color: ruta.cubre ? MINT : TONE.red }}>{ruta.cubre ? "deuda cubierta" : `faltan ${compact(ruta.falta_eur)}`}</span>
+            </>
+          ) : null}
+        </>
+      }
+      figure={proy.beneficio_total_eur ? compact(proy.beneficio_total_eur, true) : null}
+      figureTone={MINT}
+      figureLabel="en valor"
+      progress={paron.fase / 3}
     >
       <Stepper steps={FASES_PARON} current={Math.min(2, Math.max(0, paron.fase - 1))} color={TONE.copper} />
       <p className="mt-3 text-[13px] leading-snug text-white/60">
@@ -459,7 +585,7 @@ export function ParonBlock({ plan, photos }: { plan: PlanFichajes | null | undef
           </p>
         ) : null}
       </div>
-    </Disclosure>
+    </SectionCard>
   );
 }
 
@@ -495,13 +621,32 @@ export function LiquidacionBlock({ plan, photos }: { plan: PlanFichajes | null |
   const totalValor = sobrantes.reduce((t, s) => t + (typeof s.valor === "number" ? s.valor : 0), 0);
   const peor = typeof liq.saldo_peor_caso === "number" ? liq.saldo_peor_caso : null;
   const tras = typeof liq.saldo_tras_liquidar === "number" ? liq.saldo_tras_liquidar : null;
+  const faseTone = [TONE.gray, TONE.amber, TONE.red][faseIndex];
+  const urgentes = sobrantes.filter((s) => planHoy.has(String(s.player_id)) || sobranteAction(s.accion).label !== "Guardar").length;
 
   return (
-    <Disclosure
+    <SectionCard
+      icon="sobran"
+      tone={faseTone}
       title="Jugadores que sobran"
-      meta={<span className="text-white/55">{`${sobrantes.length} ${sobrantes.length === 1 ? "jugador" : "jugadores"} · ${compact(totalValor)}`}</span>}
+      summary={
+        <>
+          <span className="font-semibold" style={{ color: faseIndex === 0 ? "rgba(255,255,255,0.75)" : faseTone }}>{FASE_LABEL[faseIndex]}</span>
+          <span className="text-white/30"> · </span>
+          {`${sobrantes.length} ${sobrantes.length === 1 ? "jugador" : "jugadores"} fuera del once`}
+          {urgentes ? (
+            <>
+              <span className="text-white/30"> · </span>
+              <span style={{ color: TONE.amber }}>{`${urgentes} hoy`}</span>
+            </>
+          ) : null}
+        </>
+      }
+      figure={compact(totalValor)}
+      figureLabel="en valor"
+      progress={(faseIndex + 1) / 3}
     >
-      <Stepper steps={FASE_LABEL} current={faseIndex} color={[TONE.gray, TONE.amber, TONE.red][faseIndex]} />
+      <Stepper steps={FASE_LABEL} current={faseIndex} color={faseTone} />
       <p className="mt-3 text-[13px] leading-snug text-white/60">
         Fuera de tu once {sobrantes.length === 1 ? "queda 1 jugador" : `quedan ${sobrantes.length} jugadores`}. {FASE_TEXTO[liq.fase] || ""}
       </p>
@@ -549,6 +694,6 @@ export function LiquidacionBlock({ plan, photos }: { plan: PlanFichajes | null |
       {typeof liq.deficit_eur === "number" && liq.deficit_eur > 0 ? (
         <Callout tone={TONE.red}>Aun vendiéndolos faltan {compact(liq.deficit_eur)}: habrá que vender a alguien del once.</Callout>
       ) : null}
-    </Disclosure>
+    </SectionCard>
   );
 }
