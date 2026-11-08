@@ -16,7 +16,7 @@ export function SplashIntro() {
       <div className="splash__content">
         <div className="splash__mark">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-mark.svg" alt="" width={88} height={90} />
+          <img src="/logo-mark-plain.svg" alt="" width={88} height={90} />
         </div>
         <div className="splash__type">
           <p className="splash__eyebrow">Panel del mánager</p>
