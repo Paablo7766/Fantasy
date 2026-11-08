@@ -46,7 +46,7 @@ export function ErrorCard({
 export function Skeleton({ title, rows = 4 }: { title: string; rows?: number }) {
   return (
     <article className={glass("p-5")} aria-busy="true" aria-label={`Cargando ${title}`}>
-      <p className="eyebrow">{title}</p>
+      <p className="eyebrow"><span className="text-working">{title}</span></p>
       <div className="mt-1 h-5 w-40 skeleton-bar" />
       <div className="mt-5 space-y-2.5">
         {Array.from({ length: rows }, (_, index) => (

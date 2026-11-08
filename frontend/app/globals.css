@@ -2372,3 +2372,34 @@ body {
   color: rgba(255, 255, 255, 0.8);
 }
 .lab-panel .btn-secondary:hover { color: #fff; background: rgba(255, 255, 255, 0.09); }
+
+/* ══ Movimiento con intención ═══════════════════════════════════════════════
+   Revelado palabra a palabra (borroso → nítido) para las conclusiones y brillo
+   que recorre el texto mientras la app trabaja.  */
+.blur-text__w {
+  display: inline-block;
+  animation: blur-word 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+@keyframes blur-word {
+  from { opacity: 0; filter: blur(8px); transform: translateY(0.18em); }
+  to { opacity: 1; filter: none; transform: none; }
+}
+
+.text-working {
+  color: transparent;
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.42) 38%, #fff 50%, rgba(255, 255, 255, 0.42) 62%, rgba(255, 255, 255, 0.42) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: text-working 1.6s linear infinite;
+}
+@keyframes text-working {
+  from { background-position: 100% 0; }
+  to { background-position: -150% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blur-text__w { animation: none; }
+  .text-working { animation: none; color: inherit; background: none; }
+}

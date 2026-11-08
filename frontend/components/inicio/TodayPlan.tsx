@@ -1,5 +1,6 @@
 "use client";
 
+import { BlurText } from "@/components/ui/BlurText";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { eur, eurShort, points, titularShare } from "@/lib/core/format";
@@ -412,7 +413,9 @@ export function TodayPlan({
               </svg>
             </span>
           ) : null}
-          <h2 className="text-[28px] font-semibold leading-tight tracking-[-0.03em] text-white">{verdict}</h2>
+          <h2 className="text-[28px] font-semibold leading-tight tracking-[-0.03em] text-white">
+            <BlurText text={verdict} delay={120} />
+          </h2>
         </div>
         <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[13px] tabular-nums text-white/50">
           {typeof delta === "number" && Math.abs(delta) >= 0.05 ? (

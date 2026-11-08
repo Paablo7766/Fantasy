@@ -15,7 +15,7 @@ export function SplashIntro() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="splash__mark" src="/logo-mark-plain.svg" alt="" width={40} height={41} />
         <span className="splash__name">
-          LALIGA <b>Fantasy</b>
+          <span className="splash__word">LALIGA</span> <b className="splash__word splash__word--2">Fantasy</b>
         </span>
       </div>
     </div>

@@ -37,6 +37,15 @@
 }
 .splash__name b { font-weight: 600; color: rgba(255, 255, 255, 0.5); }
 
+/* El logo entra con el bloque; las dos palabras se enfocan una tras otra. */
+.splash__word {
+  display: inline-block;
+  opacity: 0; filter: blur(8px);
+  animation: splash-word 0.55s var(--sp-ease) 0.12s forwards;
+}
+.splash__word--2 { animation-delay: 0.22s; }
+
+@keyframes splash-word { to { opacity: 1; filter: none; } }
 @keyframes splash-in { to { opacity: 1; transform: none; } }
 @keyframes splash-fade { to { opacity: 1; } }
 @keyframes splash-out { to { opacity: 0; visibility: hidden; } }
