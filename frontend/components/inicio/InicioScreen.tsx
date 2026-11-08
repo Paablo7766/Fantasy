@@ -3,6 +3,7 @@
 import { useMemo, type PointerEvent } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { HomeHeader } from "@/components/inicio/HomeHeader";
+import { LiveJornada } from "@/components/inicio/LiveJornada";
 import { SquadDesk } from "@/components/inicio/SquadDesk";
 import { TodayPlan } from "@/components/inicio/TodayPlan";
 import { buildPhotoIndex, buildPlayerIndex } from "@/lib/core/photoIndex";
@@ -36,6 +37,7 @@ export function InicioScreen() {
         <HomeHeader plan={plan} squads={squads} loading={loading} />
       </div>
       <div className="ini-area-plan min-w-0">
+        <LiveJornada plan={plan} />
         <TodayPlan plan={plan} squads={squads} loading={loading} photos={photos} facts={facts} />
       </div>
       <aside className="ini-area-squad min-w-0" aria-label="Plantilla">
