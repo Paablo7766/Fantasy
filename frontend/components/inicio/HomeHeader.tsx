@@ -173,7 +173,14 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   const shown = figures[slide];
   const shownNegative = typeof shown.v === "number" && shown.v < 0 && shown.key !== "gain";
 
-  const timeText = parts ? `${parts.days > 0 ? `${parts.days}d ` : ""}${pad(parts.hours)}:${pad(parts.minutes)}:${pad(parts.seconds)}` : null;
+  // Formato corto: lejos, días y horas; a menos de un día, horas y minutos; en la última hora, minutos y segundos.
+  const timeText = parts
+    ? parts.days > 0
+      ? `${parts.days}d ${parts.hours}h`
+      : parts.hours > 0
+        ? `${parts.hours}h ${pad(parts.minutes)}m`
+        : `${pad(parts.minutes)}:${pad(parts.seconds)}`
+    : null;
 
   return (
     <div className="ini-top">
