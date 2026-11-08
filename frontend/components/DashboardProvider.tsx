@@ -276,7 +276,9 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
   /** Hidrata los cinco bloques desde la foto del servidor. Solo lectura. */
   const load = useCallback(async () => {
-    setPending({ optimize: true, trends: true, squads: true, needs: true, plan: true });
+    // Solo «carga» lo que aún no se ve: releer una foto nueva por debajo de lo ya
+    // pintado es silencioso (sin punto azul ni «Cargando»).
+    setPending(pendingFromSnapshot(stateRef.current));
     // Mercado no espera a caja/once: si Jornada u otro bloque se alarga,
     // Tenaglia y el resto del día tienen que pintar igual.
     // Los cinco bloques son lecturas independientes de la misma foto (el
@@ -395,7 +397,9 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       // la caja y el plan de la copia local, de otra foto.
       // La sonda es «needs» (20 KB, instantánea) y no «trends» (1 MB): decide
       // en décimas de segundo si hay foto nueva y, solo entonces, relee todo.
-      const localAt = oldestPhotoMs(snap.state);
+      // Se compara «needs» con «needs»: los bloques se capturan en instantes algo
+      // distintos y comparar con el más viejo releía todo en cada apertura.
+      const localAt = photoMs(snap.state.needs as PhotoMeta | null) ?? oldestPhotoMs(snap.state);
       void fetchBlock("needs").then((fresh) => {
         const serverAt = photoMs(fresh as PhotoMeta | null);
         if (serverAt !== null && (localAt === null || serverAt > localAt + 1000)) void load();
@@ -429,7 +433,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       try {
         const fresh = await getJson<PhotoMeta>(endpoint("/api/needs", league));
         const serverAt = photoMs(fresh);
-        const localAt = oldestPhotoMs(stateRef.current);
+        const localAt = photoMs(stateRef.current.needs as PhotoMeta | null) ?? oldestPhotoMs(stateRef.current);
         if (serverAt !== null && (localAt === null || serverAt > localAt + 1000)) await load();
       } catch {
         // Sin respuesta se queda lo que hay.
