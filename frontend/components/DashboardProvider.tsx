@@ -393,8 +393,10 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       // Si el servidor ya tiene una foto más nueva (cron, móvil u otra
       // pestaña), se relee entera: si no, el mercado sería de hoy y el once,
       // la caja y el plan de la copia local, de otra foto.
+      // La sonda es «needs» (20 KB, instantánea) y no «trends» (1 MB): decide
+      // en décimas de segundo si hay foto nueva y, solo entonces, relee todo.
       const localAt = oldestPhotoMs(snap.state);
-      void fetchBlock("trends").then((fresh) => {
+      void fetchBlock("needs").then((fresh) => {
         const serverAt = photoMs(fresh as PhotoMeta | null);
         if (serverAt !== null && (localAt === null || serverAt > localAt + 1000)) void load();
       });
@@ -411,6 +413,37 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       }
     });
   }, [fetchBlock, load, shellReady, blankAfterLoad]);
+
+  /**
+   * Al volver a la app (p. ej. tras tocar el aviso de «actualizado») se mira si
+   * el servidor tiene una foto más nueva que la pintada y, si es así, se relee
+   * todo al momento. La sonda es ligera, así que no cuesta nada hacerlo siempre.
+   */
+  useEffect(() => {
+    if (!shellReady) return;
+    const league = leagueFromLocation();
+    let probing = false;
+    const check = async () => {
+      if (document.visibilityState !== "visible" || probing || refreshLeadRef.current) return;
+      probing = true;
+      try {
+        const fresh = await getJson<PhotoMeta>(endpoint("/api/needs", league));
+        const serverAt = photoMs(fresh);
+        const localAt = oldestPhotoMs(stateRef.current);
+        if (serverAt !== null && (localAt === null || serverAt > localAt + 1000)) await load();
+      } catch {
+        // Sin respuesta se queda lo que hay.
+      } finally {
+        probing = false;
+      }
+    };
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    return () => {
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("focus", check);
+    };
+  }, [shellReady, load]);
 
   /**
    * Jornada en vivo: solo ese bloque se relee del servidor (lectura de la foto, sin red).

@@ -228,7 +228,26 @@ def _refresh_status_finish(*, ok: bool, error: Any = None) -> None:
             )
     if was_running:
         # Avisa al móvil aunque la app esté cerrada (Web Push); inerte sin claves.
-        web_push.notify_refresh_done(ok=ok)
+        # Antes se calientan las lecturas pesadas: al tocar el aviso, la app
+        # encuentra la foto nueva lista y no espera a que el servidor la calcule.
+        if ok and web_push.enabled():
+            threading.Thread(
+                target=_prewarm_then_notify, name="web-push-prewarm", daemon=True
+            ).start()
+        else:
+            web_push.notify_refresh_done(ok=ok)
+
+
+def _prewarm_then_notify() -> None:
+    """Calienta las lecturas del panel y después manda el aviso. Nunca lanza."""
+    try:
+        for reader in (api_trends, api_optimize, api_squads, api_needs):
+            try:
+                reader(None)
+            except Exception:  # noqa: BLE001 — calentar es opcional
+                logger.debug("Precalentado fallido en %s", getattr(reader, "__name__", "?"), exc_info=True)
+    finally:
+        web_push.notify_refresh_done(ok=True)
 
 
 def _refresh_elapsed(status: dict[str, Any]) -> float:
@@ -2945,7 +2964,16 @@ def api_trends(
     board = _board("trends", league, tier="full")
     if isinstance(board, JSONResponse):
         return board
-    payload = shape_trends(board)
+
+    def _build() -> dict[str, Any]:
+        built = shape_trends(board)
+        built.update(_photo_fields(board))
+        return built
+
+    # Solo depende de la foto: se calcula una vez por foto (8 s en frío, 1 MB).
+    # Con ``photo_age_seconds`` fijado al construir, el panel lo rejuvenece con
+    # su propio reloj (``liveAge``), así que no hay que recalcular por edad.
+    payload = _photo_memo("trends", league, board, _build)
     payload.update(_photo_fields(board))
     return payload
 
