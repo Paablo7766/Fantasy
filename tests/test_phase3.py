@@ -690,7 +690,8 @@ class FinancialSignalTests(unittest.TestCase):
         player["p_titular"] = None
         player["week_points"] = [0, 4, 0, 2, 8]
         roster = candidates_from_squad(_squad([player]), {})
-        self.assertEqual(roster[0].p_titular, 0.55)
+        self.assertIsNotNone(roster[0].p_titular)
+        self.assertLess(roster[0].p_titular, 0.9)
         self.assertEqual(roster[0].p_titular_source, "week_points")
 
         scraped = {"player_id": "a", "matching_confidence": 0.91, "p_titular": 0.25}
@@ -719,7 +720,9 @@ class FinancialSignalTests(unittest.TestCase):
             confidence=None,
             matches={},
         )
-        self.assertEqual(row["p_titular"], 0.55)
+        # Sin once publicado manda el modelo de minutos: 3 de 5 jornadas no es un fijo.
+        self.assertGreater(row["p_titular"], 0.0)
+        self.assertLess(row["p_titular"], 0.9)
         self.assertEqual(row["p_titular_source"], "week_points")
 
     def test_official_last_stats_count_as_week_points(self) -> None:
@@ -738,8 +741,14 @@ class FinancialSignalTests(unittest.TestCase):
             }
         }
         self.assertEqual(official_week_points(raw), [3.0, 0.0, 0.0, 0.0, 4.0])
-        self.assertEqual(starter_fallback(raw), 0.4)
-        self.assertEqual(starter_fallback({**raw, "lastStats": [{"weekNumber": i, "totalPoints": 3} for i in range(1, 6)]}), 0.55)
+        # Sin once publicado manda el modelo de minutos, no el tope del 55 %:
+        # quien puntúa las cinco jornadas es más titular que quien falta tres.
+        intermitente = starter_fallback(raw)
+        fijo = starter_fallback({"playerMaster": {"lastStats": [{"weekNumber": i, "totalPoints": 6} for i in range(1, 6)]}})
+        self.assertIsNotNone(intermitente)
+        self.assertIsNotNone(fijo)
+        self.assertGreater(fijo, 0.55)
+        self.assertGreater(fijo, intermitente)
         self.assertEqual(
             apply_doubt_titular_discount(0.8, {"player_status": "doubtful"}, None),
             0.36,

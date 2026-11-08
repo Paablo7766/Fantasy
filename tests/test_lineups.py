@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
 
 from toolbox.fantasy_scraper import (
     DOUBT_BELOW,
@@ -209,3 +210,72 @@ class LineupParserTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StartedMatchFilterTest(unittest.TestCase):
+    """Con la jornada en curso, la ficha de un partido ya empezado no es un once probable.
+
+    El 8-nov (J12 en juego) Lejeune salió al 0 % y Redondo al 55 % de respaldo
+    porque las webs pintaban el partido en directo y el plan ya hablaba de J13.
+    """
+
+    FF_INDEX_TIMED = """
+    <time itemprop="startDate" content="2026-11-08 14:00:00"></time>
+    <a href="https://www.futbolfantasy.com/partidos/22535-elche-betis">Elche</a>
+    <time itemprop="startDate" content="2026-11-08 21:00:00"></time>
+    <a href="https://www.futbolfantasy.com/partidos/22533-atletico-barcelona">Atleti</a>
+    """
+
+    AF_INDEX_TIMED = r"""
+    \"fixtures\":[{\"id\":100012050,\"fixtureDate\":\"2026-11-08T13:00:00+00:00\"},
+    {\"id\":100012041,\"fixtureDate\":\"2026-11-08T20:00:00+00:00\"}]
+    <a href="/partido/100012050-elche-real-betis">x</a>
+    <a href="/partido/100012041-atletico-madrid-barcelona">y</a>
+    """
+
+    def test_kickoffs_from_both_indexes(self) -> None:
+        from toolbox.fantasy_scraper import af_kickoffs, ff_kickoffs
+
+        ff = ff_kickoffs(self.FF_INDEX_TIMED)
+        # Hora de Madrid sin zona: 14:00 CET son las 13:00 UTC.
+        self.assertEqual(
+            ff["https://www.futbolfantasy.com/partidos/22535-elche-betis"].astimezone(timezone.utc),
+            datetime(2026, 11, 8, 13, 0, tzinfo=timezone.utc),
+        )
+        af = af_kickoffs(self.AF_INDEX_TIMED)
+        self.assertEqual(
+            af["https://www.analiticafantasy.com/partido/100012050-elche-real-betis"],
+            datetime(2026, 11, 8, 13, 0, tzinfo=timezone.utc),
+        )
+
+    def test_started_match_is_skipped(self) -> None:
+        from unittest import mock
+
+        import toolbox.fantasy_scraper as fs
+
+        pages = {
+            fs.FF_LINEUPS_URL: self.FF_INDEX_TIMED,
+            "https://www.futbolfantasy.com/partidos/22535-elche-betis": FF_MATCH,
+            "https://www.futbolfantasy.com/partidos/22533-atletico-barcelona": FF_MATCH,
+        }
+        fetched: list[str] = []
+
+        def fake_get(_client, url, *, ttl, fresh):
+            fetched.append(url)
+            return pages[url], True, None
+
+        with mock.patch.object(fs, "_get_text", fake_get):
+            status, rows = fs._load_source(
+                None,
+                fs.FF_LINEUPS_URL,
+                fs.parse_ff_fixture_urls,
+                fs.parse_ff_match,
+                ttl=1,
+                fresh=False,
+                kickoffs_in_index=fs.ff_kickoffs,
+                now=datetime(2026, 11, 8, 15, 0, tzinfo=timezone.utc),
+            )
+        self.assertEqual(status["started_skipped"], 1)
+        self.assertNotIn("https://www.futbolfantasy.com/partidos/22535-elche-betis", fetched)
+        self.assertTrue(rows)
+

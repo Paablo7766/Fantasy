@@ -267,10 +267,23 @@ def exposed_clause_rule(player: dict[str, Any]) -> str | None:
 
 
 def starter_fallback(player: dict[str, Any]) -> float | None:
-    """Participación reciente sin scraper: jornadas con puntos / ventana, tope 55 %."""
+    """Titularidad sin once publicado.
+
+    Primero el modelo de titularidad por minutos (el mismo que proyecta J2-J4):
+    sin él, en el parón o con la jornada ya jugada, todo el once caía al tope
+    del 55 % y un fijo como Redondo valía lo mismo que un suplente. Si no hay
+    historial que leer, participación reciente (jornadas con puntos / ventana)
+    con tope del 55 %.
+    """
     weeks = official_week_points(player)
     if not weeks:
         return None
+    from toolbox.engine.xp_calculator import FantasyXPEngine, historial_desde_jugador
+
+    historial = historial_desde_jugador(player) or historial_desde_jugador({"week_points": weeks})
+    modelo = FantasyXPEngine.prob_titular_heuristica(historial)
+    if modelo is not None:
+        return modelo
     played = sum(1 for score in weeks if score > 0)
     return round(min(FALLBACK_TITULAR_CAP, played / len(weeks)), 4)
 

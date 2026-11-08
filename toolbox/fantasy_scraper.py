@@ -21,6 +21,8 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Callable
 
 from toolbox.analyzer import starter_fallback
 from toolbox.matching import (
@@ -51,6 +53,11 @@ _FF_SIDE = re.compile(
     re.I,
 )
 _FF_NAME = re.compile(r'class="nombre[^"]*"[^>]*>\s*([^<]+?)\s*</div>', re.I)
+# Saque de cada partido: en el índice de FútbolFantasy el ``<time startDate>``
+# (hora de Madrid, sin zona) va justo antes del enlace del partido; en la ficha
+# de Analítica Fantasy, dentro del JSON-LD ``SportsEvent`` (con zona).
+_FF_START = re.compile(r'<time\s+itemprop="startDate"\s+content="([^"]+)"', re.I)
+_AF_START = re.compile(r'SportsEvent.{0,800}?startDate\\?"\s*:\s*\\?"([^"\\]+)', re.I | re.S)
 _PERCENT = re.compile(r"(\d+(?:[.,]\d+)?)")
 _AF_POSITION = {0: "POR", 1: "DEF", 2: "MC", 3: "DEL"}
 _INJURY_TOKENS = ("baja", "lesion", "injured", "sancion", "sanction")
@@ -145,6 +152,63 @@ def _unique(urls: list[str], *, limit: int = MAX_MATCHES) -> list[str]:
         if len(ordered) >= limit:
             break
     return ordered
+
+
+def _kickoff(raw: str | None) -> datetime | None:
+    """ISO o «2026-11-08 16:15:00». Sin zona es hora de Madrid."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        moment = datetime.fromisoformat(raw.strip().replace(" ", "T").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        try:
+            from zoneinfo import ZoneInfo
+
+            moment = moment.replace(tzinfo=ZoneInfo("Europe/Madrid"))
+        except Exception:  # noqa: BLE001 — sin base de zonas no se adivina la hora
+            return None
+    return moment
+
+
+def ff_kickoffs(page: str) -> dict[str, datetime]:
+    """Saque de cada partido del índice de FútbolFantasy, por URL."""
+    main = re.split(r"<aside", page, maxsplit=1, flags=re.I)[0]
+    found: dict[str, datetime] = {}
+    for match in _FF_START.finditer(main):
+        moment = _kickoff(match.group(1))
+        link = _FF_MATCH_URL.search(main, match.end())
+        if moment is not None and link is not None:
+            found.setdefault(link.group(0), moment)
+    return found
+
+
+def af_kickoffs(page: str) -> dict[str, datetime]:
+    """Saque de cada partido del índice de Analítica Fantasy (``fixtureDate``), por URL."""
+    payload = _json_after(page, '\\"fixtures\\":')
+    if payload is None:
+        payload = _json_after(page, '"fixtures":')
+    if not isinstance(payload, list):
+        return {}
+    by_id: dict[str, datetime] = {}
+    for item in payload:
+        if not isinstance(item, dict) or item.get("id") is None:
+            continue
+        moment = _kickoff(item.get("fixtureDate") if isinstance(item.get("fixtureDate"), str) else None)
+        if moment is not None:
+            by_id[str(item["id"])] = moment
+    found: dict[str, datetime] = {}
+    for url in parse_af_fixture_urls(page):
+        hit = _AF_MATCH_URL.search(url)
+        if hit is not None and hit.group(1) in by_id:
+            found[url] = by_id[hit.group(1)]
+    return found
+
+
+def af_kickoff(page: str) -> datetime | None:
+    match = _AF_START.search(page)
+    return _kickoff(match.group(1)) if match else None
 
 
 def parse_ff_fixture_urls(page: str) -> list[str]:
@@ -586,32 +650,50 @@ def _load_source(
     *,
     ttl: float,
     fresh: bool,
+    kickoffs_in_index: Callable[[str], dict[str, datetime]] | None = None,
+    kickoff_of: Callable[[str], datetime | None] | None = None,
+    now: datetime | None = None,
 ) -> tuple[dict, list[LineupPlayer]]:
     body, cached, error = _get_text(client, index_url, ttl=ttl, fresh=fresh)
     if error or body is None:
         return _status(ok=False, count=0, error=error or "Sin cuerpo.", from_cache=False), []
     urls = parse_index(body)
+    index_kickoffs = kickoffs_in_index(body) if kickoffs_in_index is not None else {}
+    moment = now or datetime.now(timezone.utc)
     rows: list[LineupPlayer] = []
     flags = [cached]
     errors: list[str] = []
+    started = 0
     for url in urls:
+        # Un partido ya empezado o jugado no es un once probable: la web pinta
+        # la alineación real o deja el % a cero, y la jornada objetivo ya es la
+        # siguiente. Se descarta antes de bajar la ficha si el índice da la hora.
+        kickoff = index_kickoffs.get(url)
+        if kickoff is not None and kickoff <= moment:
+            started += 1
+            continue
         match_body, match_cached, match_error = _get_text(client, url, ttl=ttl, fresh=fresh)
         flags.append(match_cached)
         if match_error or match_body is None:
             errors.append(match_error or url)
             continue
+        if kickoff is None and kickoff_of is not None:
+            kickoff = kickoff_of(match_body)
+            if kickoff is not None and kickoff <= moment:
+                started += 1
+                continue
         rows.extend(parse_match(match_body))
     if urls and not rows and errors:
         return _status(ok=False, count=0, error=errors[0], from_cache=False), []
-    return (
-        _status(
-            ok=True,
-            count=len(rows),
-            error=errors[0] if errors else None,
-            from_cache=all(flags),
-        ),
-        rows,
+    status = _status(
+        ok=True,
+        count=len(rows),
+        error=errors[0] if errors else None,
+        from_cache=all(flags),
     )
+    if started:
+        status["started_skipped"] = started
+    return status, rows
 
 
 def load_lineups(
@@ -619,6 +701,7 @@ def load_lineups(
     *,
     ttl: float,
     fresh: bool,
+    now: datetime | None = None,
 ) -> tuple[dict[str, dict], list[LineupPlayer]]:
     from concurrent.futures import ThreadPoolExecutor
 
@@ -631,6 +714,8 @@ def load_lineups(
             parse_ff_match,
             ttl=ttl,
             fresh=fresh,
+            kickoffs_in_index=ff_kickoffs,
+            now=now,
         )
         # Analítica Fantasy no es info táctica del día: va siempre a su TTL.
         af_future = pool.submit(
@@ -641,6 +726,9 @@ def load_lineups(
             parse_af_match,
             ttl=ttl,
             fresh=False,
+            kickoffs_in_index=af_kickoffs,
+            kickoff_of=af_kickoff,
+            now=now,
         )
         ff_status, ff_rows = ff_future.result()
         af_status, af_rows = af_future.result()
@@ -681,6 +769,7 @@ class FantasyScraper:
             parse_ff_match,
             ttl=self.ttl,
             fresh=self.fresh,
+            kickoffs_in_index=ff_kickoffs,
         )
         self.last_sources["futbolfantasy_lineups"] = status
         return index_by_name(rows)
@@ -693,6 +782,8 @@ class FantasyScraper:
             parse_af_match,
             ttl=self.ttl,
             fresh=self.fresh,
+            kickoffs_in_index=af_kickoffs,
+            kickoff_of=af_kickoff,
         )
         self.last_sources["analiticafantasy_lineups"] = status
         return index_by_name(rows)
