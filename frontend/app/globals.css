@@ -2403,3 +2403,24 @@ body {
   .blur-text__w { animation: none; }
   .text-working { animation: none; color: inherit; background: none; }
 }
+
+/* Cifra que rueda al cambiar: destello de fondo que se apaga solo. */
+.roll { position: relative; }
+.roll__flash {
+  position: absolute;
+  inset: -0.12em -0.4em;
+  border-radius: 0.5em;
+  pointer-events: none;
+  opacity: 0;
+  animation: roll-flash 1.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.roll__flash[data-dir="up"] { background: rgba(52, 211, 153, 0.2); box-shadow: 0 0 18px rgba(52, 211, 153, 0.25); }
+.roll__flash[data-dir="down"] { background: rgba(255, 125, 102, 0.2); box-shadow: 0 0 18px rgba(255, 125, 102, 0.22); }
+@keyframes roll-flash {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .roll__flash { animation-duration: 1.2s; }
+}

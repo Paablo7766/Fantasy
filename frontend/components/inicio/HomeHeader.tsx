@@ -6,6 +6,7 @@ import { points } from "@/lib/core/format";
 import { buildClockReport, countdownParts, eventTitle } from "@/lib/inicio/hoy";
 import { useNow } from "@/lib/core/useClock";
 import { RefreshChip } from "@/components/inicio/RefreshChip";
+import { RollingNumber } from "@/components/ui/RollingNumber";
 import type { PlanPayload, SquadsPayload } from "@/lib/types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -259,19 +260,19 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
           <Ring value={rank !== null ? `${rank}º` : dash} ratio={rankRatio} />
         </Tile>
         <Tile
-          value={pts !== null ? <Figure text={`${Math.round(pts)} pts`} /> : dash}
+          value={pts !== null ? <RollingNumber value={pts} format={(v) => `${Math.round(v)} pts`} render={(t) => <Figure text={t} />} memoKey="tile:puntos" /> : dash}
           label="Puntos"
           sub={typeof gap === "number" && gap !== 0 ? `${gap > 0 ? "+" : "−"}${Math.abs(gap)} vs líder` : gap === 0 ? "Eres líder" : null}
         >
           <VsLeader you={pts} leader={leaderPts} />
         </Tile>
         <Tile
-          value={typeof value === "number" ? <Figure text={money(value)} /> : dash}
+          value={typeof value === "number" ? <RollingNumber value={value} format={money} render={(t) => <Figure text={t} />} memoKey="tile:valor" /> : dash}
           label="Valor de plantilla"
           sub={typeof valueDay === "number" && valueDay !== 0 ? `${signedMoney(valueDay)} hoy` : null}
         />
         <Tile
-          value={onceTarget !== null ? <Figure text={`${points(onceTarget)} pts`} /> : dash}
+          value={onceTarget !== null ? <RollingNumber value={onceTarget} format={(v) => `${points(v)} pts`} render={(t) => <Figure text={t} />} memoKey="tile:once" /> : dash}
           label="Once previsto"
           sub={cashEnd !== null ? `Saldo final ${money(cashEnd)}` : null}
         />

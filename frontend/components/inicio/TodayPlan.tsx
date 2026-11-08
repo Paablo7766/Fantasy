@@ -1,6 +1,7 @@
 "use client";
 
 import { BlurText } from "@/components/ui/BlurText";
+import { RollingNumber } from "@/components/ui/RollingNumber";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { eur, eurShort, points, titularShare } from "@/lib/core/format";
@@ -227,12 +228,29 @@ function StepRow({
   reason: string | null;
 }) {
   const meta = KIND[step.kind];
+  // Al marcar (no al desmarcar ni al cargar ya marcado): pulso en la casilla.
+  const [pop, setPop] = useState(0);
+  useEffect(() => {
+    if (!pop) return;
+    const id = window.setTimeout(() => setPop(0), 700);
+    return () => window.clearTimeout(id);
+  }, [pop]);
   const copyable = step.amount !== null && (step.kind === "puja" || step.kind === "clausula");
   return (
-    <li className="ini-row ini-in" data-done={done} style={{ "--i": index + 2 } as CSSProperties}>
+    <li className="ini-row ini-in" data-done={done} data-pop={pop ? "true" : undefined} style={{ "--i": index + 2 } as CSSProperties}>
       <div className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
         {checkable ? (
-          <button type="button" role="checkbox" aria-checked={done} aria-label={`Marcar como hecho: ${step.name}`} onClick={onToggleDone} className="ini-check">
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={done}
+            aria-label={`Marcar como hecho: ${step.name}`}
+            onClick={() => {
+              if (!done) setPop((n) => n + 1);
+              onToggleDone();
+            }}
+            className="ini-check"
+          >
             <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
               <path d="M3.4 8.4 6.3 11.3 12.6 5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -241,7 +259,9 @@ function StepRow({
         <button type="button" onClick={onToggleOpen} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-3 text-left">
           <Avatar name={step.name} imageUrl={step.imageUrl} color={meta.color} />
           <span className="min-w-0 flex-1">
-            <span className={`block truncate text-[15px] font-medium leading-tight text-white ${done ? "line-through decoration-white/40" : ""}`}>{step.name}</span>
+            <span className="block truncate text-[15px] font-medium leading-tight text-white">
+              <span className="ini-strike">{step.name}</span>
+            </span>
             <span className="mt-1 flex min-w-0 items-center gap-2">
               <Tag label={meta.label} color={meta.color} />
               {step.note ? <span className="truncate text-[12px] text-white/45">{step.note}</span> : null}
@@ -401,13 +421,16 @@ export function TodayPlan({
           <p className="ini-eyebrow">Plan de hoy</p>
           {checkable.length ? (
             <p className="text-[12px] tabular-nums text-white/45">
-              <span className="font-medium text-white">{finished}</span> de {checkable.length} hechas
+              <span className="font-medium text-white">
+                <RollingNumber value={finished} format={(v) => String(Math.round(v))} duration={400} />
+              </span>{" "}
+              de {checkable.length} hechas
             </p>
           ) : null}
         </div>
         <div className="mt-2 flex items-center gap-2.5">
           {allDone ? (
-            <span className="grid h-7 w-7 place-items-center rounded-full bg-[var(--ini-mint)] text-[#04110c]" aria-hidden="true">
+            <span className="ini-done-pop grid h-7 w-7 place-items-center rounded-full bg-[var(--ini-mint)] text-[#04110c]" aria-hidden="true">
               <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4">
                 <path d="M3.4 8.4 6.3 11.3 12.6 5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -421,13 +444,21 @@ export function TodayPlan({
           {typeof delta === "number" && Math.abs(delta) >= 0.05 ? (
             <span>
               <span style={{ color: delta > 0 ? "var(--ini-mint)" : "var(--ini-red)" }} className="font-medium">
-                {signedPoints(delta)} pts
+                <RollingNumber value={delta} format={(v) => `${signedPoints(v)} pts`} memoKey="plan:mejora" />
               </span>{" "}
               en tu once
             </span>
           ) : null}
-          {income > 0 ? <span>Ingresas {eurShort(income)}</span> : null}
-          {spend > 0 ? <span>Inviertes {eurShort(spend)}</span> : null}
+          {income > 0 ? (
+            <span>
+              Ingresas <RollingNumber value={income} format={eurShort} memoKey="plan:ingresos" />
+            </span>
+          ) : null}
+          {spend > 0 ? (
+            <span>
+              Inviertes <RollingNumber value={spend} format={eurShort} memoKey="plan:inversion" />
+            </span>
+          ) : null}
           {presupuesto && presupuesto.gasto_pujas + presupuesto.gasto_clausulas > 0 ? (
             <span className="w-full text-[12px] text-white/40">
               Lo pagas con caja {eurShort(presupuesto.caja)}

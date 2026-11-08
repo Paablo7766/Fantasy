@@ -1,6 +1,7 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useEffect, type CSSProperties } from "react";
+import { RollingNumber, rememberValue } from "@/components/ui/RollingNumber";
 import { eurShort, points } from "@/lib/core/format";
 import type { JornadaEnJuego, LiveEquipo, LiveJugador, PlanPayload } from "@/lib/types";
 
@@ -20,12 +21,22 @@ function saque(row: LiveJugador): string {
 
 function PlayerChip({ row, tone }: { row: LiveJugador; tone: "bad" | "good" | "wait" }) {
   const color = tone === "bad" ? "text-rose-300" : tone === "good" ? "text-emerald-300" : "text-white/70";
+  const memoKey = `live:jugador:${row.player_id ?? row.nombre}`;
+  const pending = row.estado !== "jugado";
+  // Antes de jugar cuenta como 0: al entrar en juego, sus primeros puntos ruedan desde cero.
+  useEffect(() => {
+    if (pending) rememberValue(memoKey, 0);
+  }, [pending, memoKey]);
   const value =
-    row.estado === "jugado"
-      ? row.no_jugo
-        ? "no jugó"
-        : `${points(row.puntos ?? 0)} pts`
-      : `${saque(row)} · xP ${points(row.xp)}`;
+    row.estado === "jugado" ? (
+      row.no_jugo ? (
+        "no jugó"
+      ) : (
+        <RollingNumber value={row.puntos ?? 0} format={(v) => `${points(v)} pts`} memoKey={memoKey} />
+      )
+    ) : (
+      `${saque(row)} · xP ${points(row.xp)}`
+    );
   return (
     <li className="flex items-baseline justify-between gap-3 text-sm">
       <span className="truncate text-white/85">
@@ -62,7 +73,7 @@ function Fila({ row }: { row: LiveEquipo }) {
         <span className="ml-2 text-xs text-white/35">{row.resumen_jugados}</span>
       </span>
       <span className="tabular-nums text-white">
-        {points(row.puntos_proyectados_final_jornada)}
+        <RollingNumber value={row.puntos_proyectados_final_jornada} format={points} memoKey={`live:equipo:${row.team_id ?? row.manager}`} />
         <span className="ml-1 text-xs text-white/35">({points(row.puntos_actuales)} ya)</span>
       </span>
       <span className="w-20 text-right tabular-nums text-emerald-300/90">{eurShort(row.premio_jornada_eur)}</span>
@@ -94,15 +105,21 @@ export function LiveJornada({ plan }: { plan: PlanPayload | null }) {
         <div className="mt-3 grid grid-cols-3 gap-3">
           <div>
             <p className="ini-kicker">Ya sumas</p>
-            <p className="text-2xl font-semibold tabular-nums text-white">{points(propio.puntos_actuales)}</p>
+            <p className="text-2xl font-semibold tabular-nums text-white">
+              <RollingNumber value={propio.puntos_actuales} format={points} memoKey="live:actual" />
+            </p>
           </div>
           <div>
             <p className="ini-kicker">Proyección</p>
-            <p className="text-2xl font-semibold tabular-nums text-white">{points(propio.puntos_proyectados_final_jornada)}</p>
+            <p className="text-2xl font-semibold tabular-nums text-white">
+              <RollingNumber value={propio.puntos_proyectados_final_jornada} format={points} memoKey="live:proyeccion" />
+            </p>
           </div>
           <div>
             <p className="ini-kicker">Cobras</p>
-            <p className="text-2xl font-semibold tabular-nums text-emerald-300">{eurShort(propio.premio_jornada_eur)}</p>
+            <p className="text-2xl font-semibold tabular-nums text-emerald-300">
+              <RollingNumber value={propio.premio_jornada_eur} format={eurShort} memoKey="live:premio" />
+            </p>
           </div>
         </div>
 
