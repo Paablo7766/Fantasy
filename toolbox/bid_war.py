@@ -955,6 +955,10 @@ def _projected_deltas(trend: dict[str, Any], *, usable: bool) -> tuple[list[floa
     return series, vol
 
 
+#: Techo del «% de ganar»: una subasta ciega nunca es segura.
+PROB_EXITO_MAX_PCT = 95
+
+
 def plan_market_auction_bid(
     listing: dict[str, Any],
     trend: dict[str, Any],
@@ -976,8 +980,14 @@ def plan_market_auction_bid(
     rival_profiles: list[RivalProfile] | None,
     own_team_id: str | None,
     history: dict[str, Any] | None,
+    bid_power: int | None = None,
 ) -> dict[str, Any]:
-    """Puja operativa (suggested_bid) + métricas v2 (optimal_bid_eur, win_probability, …)."""
+    """Puja operativa (suggested_bid) + métricas v2 (optimal_bid_eur, win_probability, …).
+
+    ``bid_power`` es lo que puedes pujar de verdad: caja + crédito del 20 % (una
+    puja admite deuda). Con él se calculan la puja smart y su probabilidad de
+    ganar; sin él, la caja. Los topes operativos (``economic_bid``) siguen con caja.
+    """
     hidden = hidden_auction_count(listing)
     caps = economic_bid(
         to_lead=to_lead,
@@ -1001,7 +1011,10 @@ def plan_market_auction_bid(
     sale_price = float(sale or market_value or 0)
     mv = float(market_value or sale_price)
     lead = float(leading) if isinstance(leading, int) and not isinstance(leading, bool) else 0.0
-    own_cash = float(cash) if isinstance(cash, int) and not isinstance(cash, bool) else 0.0
+    if isinstance(bid_power, int) and not isinstance(bid_power, bool):
+        own_cash = float(max(0, bid_power))
+    else:
+        own_cash = float(cash) if isinstance(cash, int) and not isinstance(cash, bool) else 0.0
     projected, vol = _projected_deltas(trend, usable=af_usable)
     profiles = rival_profiles or []
 
@@ -1065,7 +1078,23 @@ def plan_market_auction_bid(
         caps["smart_bid_success_pct"] = int(
             round(100.0 * probability_of_winning_bid(float(smart_bid), max(mv, sale_price), min_legal, pos, pts, profiles))
         )
+    if isinstance(caps.get("smart_bid_success_pct"), int):
+        # Ninguna subasta ciega es segura (pujas ocultas, rivales que venden para pujar).
+        caps["smart_bid_success_pct"] = max(0, min(PROB_EXITO_MAX_PCT, caps["smart_bid_success_pct"]))
     caps["smart_bid_analysis"] = smart["analisis"]
+    if isinstance(bid_power, int) and not isinstance(bid_power, bool) and isinstance(smart_bid, int) and smart_bid > 0:
+        ricos = [str(nombre) for nombre in smart.get("rivales_peligrosos") or []]
+        texto = (
+            f"Pujas con caja + crédito del 20 % (tu tope legal: {bid_power / 1_000_000:.1f} M€). "
+            f"Probabilidad según cómo pujan tus rivales: {caps.get('smart_bid_success_pct')} %."
+        )
+        if ricos:
+            # La regla marca a quien necesita el puesto y puede pagar su valor, no a quien tiene más que tú.
+            texto += (
+                f" {', '.join(ricos)} {'necesita' if len(ricos) == 1 else 'necesitan'} ese puesto "
+                f"y {'puede' if len(ricos) == 1 else 'pueden'} pagar su valor: {'es tu competencia' if len(ricos) == 1 else 'son tu competencia'}."
+            )
+        caps["smart_bid_analysis"] = texto
     if hidden > 0:
         offers = listing.get("offer_count")
         bids_only = listing.get("bid_count")

@@ -203,6 +203,16 @@ def build_market_decisions(
     listings = [row for row in (market or {}).get("listings") or [] if isinstance(row, dict)]
     indexed = index_trends(trends)
     cash = flip.get("cash_eur") if isinstance(flip, dict) and isinstance(flip.get("cash_eur"), int) else None
+    # Poder de puja: caja + crédito legal del 20 % del valor de tu equipo.
+    from toolbox.engine.trading_desk import DEUDA_PCT_EQUIPO
+
+    propio = own_squad(squads) if isinstance(squads, dict) else None
+    valor_equipo = sum(
+        int(jugador.get("market_value") or 0)
+        for jugador in ((propio or {}).get("players") or [])
+        if isinstance(jugador, dict) and isinstance(jugador.get("market_value"), int)
+    )
+    bid_power = cash + int(valor_equipo * DEUDA_PCT_EQUIPO) if isinstance(cash, int) else None
     lineup_void = bool(flip.get("matchday_void")) if isinstance(flip, dict) else False
     own_team_id = flip.get("team_id") if isinstance(flip, dict) and isinstance(flip.get("team_id"), str) else None
 
@@ -252,6 +262,7 @@ def build_market_decisions(
             listing,
             trend,
             cash=cash,
+            bid_power=bid_power,
             lineup_void=lineup_void,
             own_team_id=own_team_id,
             owned=player_id in owned,
@@ -433,6 +444,7 @@ def _decide_listing(
     trend: dict[str, Any],
     *,
     cash: int | None,
+    bid_power: int | None = None,
     lineup_void: bool,
     own_team_id: str | None,
     owned: bool,
@@ -858,6 +870,7 @@ def _decide_listing(
         rival_profiles=listing_profiles,
         own_team_id=own_team_id,
         history=history,
+        bid_power=bid_power,
     )
     if hard_veto or decision == DECISION_NO:
         econ["suggested_bid"] = None

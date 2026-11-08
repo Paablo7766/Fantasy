@@ -507,6 +507,47 @@ def _saltar_jornada_bloqueada(records: dict[str, dict[str, Any]], cierre: dateti
         row.pop("kickoff", None)
 
 
+#: Caja neta de los rivales por foto (``dashboard_at``): la auditoría cuesta ~1 s.
+_CAJA_NETA_MEMO: dict[str, dict[str, int]] = {}
+
+
+def _caja_neta_rivales(board: dict[str, Any]) -> dict[str, int]:
+    """La misma caja rival que enseña la pestaña Rivales (``/api/rival-intel``).
+
+    El libro de movimientos da un techo: no resta las subidas de cláusula, que
+    no salen en el historial. La auditoría las detecta (regla 1:2) y publica la
+    caja neta (``risk_adjusted_cash`` o ``calculated_cash``). Sin ella, el techo.
+    """
+    clave = str(board.get("dashboard_at") or board.get("last_updated") or "")
+    if clave and clave in _CAJA_NETA_MEMO:
+        return _CAJA_NETA_MEMO[clave]
+    salida: dict[str, int] = {}
+    try:
+        from toolbox.rival_intel import events_from_ledgers, get_financial_intel
+
+        squads = board.get("squads") if isinstance(board.get("squads"), dict) else None
+        needs = board.get("needs") if isinstance(board.get("needs"), dict) else {}
+        ledgers = needs.get("ledgers")
+        # Sin libros no hay historial: la auditoría se inventaría la caja. Se queda el techo.
+        if squads and isinstance(ledgers, list) and ledgers:
+            documento = get_financial_intel(squads, events_from_ledgers(ledgers), persist=False)
+            for team_id, team in (documento.get("teams") or {}).items():
+                if not isinstance(team, dict) or team.get("is_self") is True:
+                    continue
+                for key in ("risk_adjusted_cash", "calculated_cash"):
+                    valor = team.get(key)
+                    if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+                        salida[str(team_id)] = int(valor)
+                        break
+    except Exception:
+        logger.exception("caja neta de los rivales")
+        salida = {}
+    if clave:
+        _CAJA_NETA_MEMO.clear()
+        _CAJA_NETA_MEMO[clave] = salida
+    return salida
+
+
 def _cash_map(board: dict[str, Any]) -> dict[str, int]:
     found: dict[str, int] = {}
     squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
@@ -525,6 +566,10 @@ def _cash_map(board: dict[str, Any]) -> dict[str, int]:
         rebuilt = ledger.get("reconstructed_cash_eur")
         if team_id and isinstance(rebuilt, int) and not isinstance(rebuilt, bool):
             found[team_id] = rebuilt
+    # Un solo criterio con la pestaña Rivales: caja neta de subidas de cláusula (1:2).
+    for team_id, neta in _caja_neta_rivales(board).items():
+        if team_id in found:
+            found[team_id] = neta
     return found
 
 
@@ -1551,14 +1596,6 @@ def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
         if isinstance(caja, int) and cifra > caja:
             # Objetivo del plan pagado con crédito: no es un veto, es cómo se financia.
             _sin_veto_de_caja("usa_credito")
-            # El «% de ganar» se calculó solo con tu caja («all-in, tienes menos saldo»):
-            # con el crédito ya no vale. Mejor sin cifra que un 0 % falso.
-            if "saldo" in str(row.get("smart_bid_analysis") or "") or row.get("smart_bid_success_pct") == 0:
-                row["smart_bid_success_pct"] = None
-                row["smart_bid_analysis"] = (
-                    "Se paga con el crédito del 20 %: la probabilidad calculada solo con tu caja no vale. "
-                    "Mira cuántos rivales pueden pujarlo."
-                )
         row["puja_unica_eur"] = cifra
         row["en_plan"] = True
         ventas = objetivo.get("ventas") or objetivo.get("ventas_hoy") or []
