@@ -1,35 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
-import { AvisosBell } from "@/components/AvisosBell";
 
 const HOUR = 3600;
 
 /**
- * Recarga de datos, solo en Inicio y dentro del hero: «hace 2 h» y un icono.
- * El punto pasa de verde (< 1 h) a ámbar (< 6 h) y a rojo cuando conviene
- * descargar. Tocar la hora abre un menú corto con la foto y Conectar cuenta (en móvil no hay barra lateral para llegar a ellos).
+ * Estado de los datos y recarga en un solo gesto, bajo la cifra del hero:
+ * «● Actualizado hace 2 h ⟳». El punto pasa de verde (< 1 h) a ámbar (< 6 h)
+ * y a rojo cuando conviene descargar. Pulsarlo descarga datos nuevos.
  */
-export function RefreshChip({ children }: { children?: ReactNode }) {
-  const {
-    photoAge,
-    photoAgeSeconds,
-    photoLine,
-    refreshing,
-    busy,
-    refreshPct,
-    progress,
-    refreshError,
-    connecting,
-    refresh,
-    connectAccount,
-    trends,
-  } = useDashboard();
-  const [open, setOpen] = useState(false);
+export function RefreshChip() {
+  const { photoAge, photoAgeSeconds, refreshing, busy, refreshPct, progress, refreshError, connecting, refresh } = useDashboard();
   const [justDone, setJustDone] = useState(false);
   const [wasRefreshing, setWasRefreshing] = useState(refreshing);
-  const box = useRef<HTMLDivElement>(null);
 
   if (wasRefreshing !== refreshing) {
     setWasRefreshing(refreshing);
@@ -41,22 +25,6 @@ export function RefreshChip({ children }: { children?: ReactNode }) {
     return () => window.clearTimeout(id);
   }, [justDone]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (event: MouseEvent) => {
-      if (box.current && !box.current.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
   const working = refreshing || busy;
   const pct = refreshing ? refreshPct : progress.pct;
   const old = photoAgeSeconds === null || photoAgeSeconds >= 6 * HOUR;
@@ -66,76 +34,34 @@ export function RefreshChip({ children }: { children?: ReactNode }) {
     : busy
       ? `Cargando ${pct}%`
       : refreshError
-        ? "Falló"
+        ? "No se pudo actualizar · reintentar"
         : justDone
           ? "Al día"
-          : photoAge || "Sin datos";
+          : photoAge
+            ? `Actualizado ${photoAge}`
+            : "Sin datos · actualizar";
 
   return (
-    <div ref={box} className="relative justify-self-end" data-ui="refresh-chip">
-      <div className="ini-refresh ini-refresh--quiet">
-        <button
-          type="button"
-          className="ini-refresh__btn"
-          onClick={() => void refresh()}
-          disabled={connecting || refreshing}
-          aria-label={refreshError ? "Reintentar la descarga" : `Actualizar datos · ${label}`}
-          title="Descargar datos nuevos (R)"
-          data-ui="refresh"
-        >
-          <span className="ini-refresh__dot" style={{ background: tone, boxShadow: old && !working ? `0 0 0 3px ${tone}33` : undefined }} aria-hidden="true" />
-          <svg viewBox="0 0 20 20" className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.1" strokeLinecap="round" />
-            <path d="M16.4 3.6v3.2h-3.2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span aria-live="polite">{working ? label : refreshError ? "Reintentar" : "Actualizar"}</span>
-          {!working && !refreshError ? <em className="ini-refresh__age-note">{justDone ? "Al día" : photoAge || "Sin datos"}</em> : null}
-          {working ? (
-            <span className="ini-refresh__bar" aria-hidden="true">
-              <span style={{ width: `${Math.max(4, Math.min(100, pct))}%` }} />
-            </span>
-          ) : null}
-        </button>
-        {children}
-        <button
-          type="button"
-          className="ini-refresh__more"
-          onClick={() => setOpen((value) => !value)}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-label="Más opciones"
-          title="Foto guardada, cuenta y avisos"
-        >
-          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
-            <circle cx="4.5" cy="10" r="1.4" />
-            <circle cx="10" cy="10" r="1.4" />
-            <circle cx="15.5" cy="10" r="1.4" />
-          </svg>
-        </button>
-      </div>
-
-      {open ? (
-        <div role="menu" className="ini-refresh__menu">
-          <p className="font-mono text-[11px] text-white/70">{photoLine}</p>
-          {refreshError ? <p className="mt-1 text-[11.5px] text-[#ffb3a4]">{refreshError}</p> : null}
-          {trends?.partial ? <p className="mt-1 text-[11.5px] text-[#ffd58a]">Lectura parcial</p> : null}
-          <div className="mt-2.5 flex flex-col gap-1">
-            <button
-              role="menuitem"
-              type="button"
-              className="ini-refresh__item"
-              disabled={connecting || busy}
-              onClick={() => {
-                setOpen(false);
-                void connectAccount();
-              }}
-            >
-              {connecting ? "Elige tu cuenta en Chrome…" : "Conectar cuenta"}
-            </button>
-            <AvisosBell className="ini-refresh__item" />
-          </div>
-        </div>
+    <button
+      type="button"
+      className="ini-sync"
+      onClick={() => void refresh()}
+      disabled={connecting || refreshing}
+      aria-label={refreshError ? "Reintentar la descarga" : "Actualizar datos"}
+      title="Descargar datos nuevos (R)"
+      data-ui="refresh"
+    >
+      <span className="ini-sync__dot" style={{ background: tone, boxShadow: `0 0 0 3px ${tone}2e` }} aria-hidden="true" />
+      <span aria-live="polite" className="ini-sync__text">{label}</span>
+      <svg viewBox="0 0 20 20" className={`ini-sync__icon ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        <path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.1" strokeLinecap="round" />
+        <path d="M16.4 3.6v3.2h-3.2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {working ? (
+        <span className="ini-sync__bar" aria-hidden="true">
+          <span style={{ width: `${Math.max(4, Math.min(100, pct))}%` }} />
+        </span>
       ) : null}
-    </div>
+    </button>
   );
 }

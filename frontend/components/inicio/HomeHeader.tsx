@@ -1,12 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { money, signedMoney } from "@/components/ui/kit";
 import { points } from "@/lib/core/format";
 import { buildClockReport, countdownParts, eventTitle } from "@/lib/inicio/hoy";
 import { useNow } from "@/lib/core/useClock";
+import { HeroTools } from "@/components/inicio/HeroTools";
 import { RefreshChip } from "@/components/inicio/RefreshChip";
 import { RollingNumber } from "@/components/ui/RollingNumber";
 import type { PlanPayload, SquadsPayload } from "@/lib/types";
@@ -127,9 +126,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   const pts = typeof own?.points === "number" ? own.points : (plan?.mode?.own_points ?? null);
   const gap = plan?.mode?.gap_to_leader ?? null;
   const redLine = plan?.red_line;
-  const search = useSearchParams();
-  const labQuery = search.toString();
-  const labHref = labQuery ? `/laboratorio?${labQuery}` : "/laboratorio";
 
   const fichajes = plan?.plan_fichajes;
   const cashEnd = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
@@ -176,6 +172,7 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
     <div className="ini-top">
       <section className="ini-card ini-hero ini-in" style={{ "--i": 0 } as CSSProperties} aria-label="Tu cuenta" data-ui="home-hero">
         <span className="ini-hero__glow" aria-hidden="true" />
+        <HeroTools />
 
         <div className="ini-hero__center">
           <p className="ini-swap" aria-live="polite">
@@ -220,15 +217,7 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
         </div>
 
         <div className="ini-hero__foot">
-          <RefreshChip>
-            <Link href={labHref} className="ini-lab" data-ui="home-lab" aria-label="Laboratorio" title="Laboratorio">
-              <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-                <path d="M8 2.8h4M8.8 2.8v4.6L4.4 15a1.4 1.4 0 0 0 1.2 2.1h8.8A1.4 1.4 0 0 0 15.6 15l-4.4-7.6V2.8" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M6.4 12.2h7.2" strokeLinecap="round" />
-              </svg>
-              <span className="ini-lab__text">Laboratorio</span>
-            </Link>
-          </RefreshChip>
+          <RefreshChip />
         </div>
       </section>
 

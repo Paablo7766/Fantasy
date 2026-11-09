@@ -2694,3 +2694,128 @@
     justify-content: center;
   }
 }
+
+
+/* ══ Hero v4: accesos mínimos ══
+   Abajo, una línea de estado que recarga. Arriba a la derecha, dos botones
+   redondos de cristal: Laboratorio y menú. Nada más. */
+
+.ini-hero__foot {
+  display: flex;
+  justify-content: center;
+  padding: 0 1rem 1.25rem;
+}
+
+.ini-sync {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.6rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  padding: 0.55rem 1rem;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.66);
+  transition: background-color 260ms var(--ini-premium, ease), color 260ms ease, transform 200ms ease;
+}
+
+.ini-sync:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+}
+
+.ini-sync:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.ini-sync:disabled {
+  cursor: default;
+}
+
+.ini-sync__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ini-sync__dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+}
+
+.ini-sync__icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex-shrink: 0;
+  opacity: 0.75;
+  transition: transform 500ms var(--ini-premium, ease);
+}
+
+.ini-sync:hover:not(:disabled) .ini-sync__icon {
+  transform: rotate(180deg);
+}
+
+.ini-sync__bar {
+  position: absolute;
+  inset: auto 1rem 0;
+  height: 2px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.ini-sync__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #fff;
+  transition: width 400ms var(--ini-premium, ease);
+}
+
+.ini-hero__tools {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 6;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.ini-tool {
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.26);
+  color: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(14px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transition: background-color 260ms var(--ini-premium, ease), color 260ms ease, transform 200ms ease;
+}
+
+.ini-tool:hover,
+.ini-tool[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.ini-tool:active {
+  transform: scale(0.94);
+}
+
+.ini-hero__tools .ini-refresh__menu {
+  top: calc(100% + 0.5rem);
+  right: 0;
+  left: auto;
+  bottom: auto;
+  transform: none;
+}
+
+.ini-hero > .ini-hero__tools {
+  position: absolute;
+}
