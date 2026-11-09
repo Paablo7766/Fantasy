@@ -93,6 +93,24 @@ class LeagueHistoryTests(unittest.TestCase):
         self.assertEqual(by_team["them"]["reconstructed_cash_eur"], 72_000_000)
         self.assertTrue(by_team["them"]["cash_is_ceiling"])
 
+    def test_own_residual_does_not_contaminate_rivals(self) -> None:
+        # Tu residual (91,2 M) ya descuenta TUS gastos ocultos: un rival sin caja
+        # publicada parte de los 100 M de la liga, no de ese residual.
+        own = _squad("me", manager_id="1", cash=9_000_000, self_team=True)
+        rival = _squad("them", manager_id="2", cash=None, self_team=False)
+        events = parse_events(
+            [
+                {"activityTypeId": 31, "user1Id": 1, "playerMasterId": 7, "amount": 20_000_000, "createdAt": "2026-10-16T14:08:00+02:00"},
+                {"activityTypeId": 31, "user1Id": 2, "playerMasterId": 8, "amount": 20_000_000, "createdAt": "2026-10-16T14:08:00+02:00"},
+            ]
+        )
+        ledgers, _ = books_from_activity([own, rival], events, {})
+        by_team = {row["team_id"]: row for row in ledgers}
+        self.assertEqual(by_team["me"]["initial_budget_eur"], 29_000_000)
+        self.assertEqual(by_team["me"]["reconstructed_cash_eur"], 9_000_000)
+        self.assertEqual(by_team["them"]["initial_budget_eur"], 100_000_000)
+        self.assertEqual(by_team["them"]["reconstructed_cash_eur"], 80_000_000)
+
     def test_empty_history_does_not_invent_a_budget(self) -> None:
         ledgers, history = books_from_activity([_squad("me", manager_id="1", cash=50, self_team=True)], [], {})
         self.assertIsNone(ledgers[0]["reconstructed_cash_eur"])

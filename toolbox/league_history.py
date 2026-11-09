@@ -29,6 +29,10 @@ DRIFT = 0.02
 BOMB = 1.0
 MIN_WARS = 3
 ROUND_STEP = 100_000
+# Presupuesto de partida de la liga (el mismo para todos). El residual de la
+# caja propia NO sirve para los rivales: ahí caen también tus gastos ocultos
+# (subir cláusulas) y baja de 100,4 M a 91,2 M entre el 20 oct y el 9 nov.
+LEAGUE_INITIAL_BUDGET = 100_000_000
 ROUND_NUDGE_MAX = 100
 
 _ACTIVITY_KIND = {
@@ -252,6 +256,12 @@ def with_shared_initial(
     squads: list[dict[str, Any]],
     initial: int | None,
 ) -> list[dict[str, Any]]:
+    """Inicial por equipo: el residual solo para quien lo midió (la caja propia).
+
+    Un rival con caja publicada usa lo que esa caja dice. Sin caja publicada
+    parte del presupuesto de la liga (100 M): su gasto oculto y sus anuncios
+    quedan fuera del libro y es una cota, no una cifra exacta.
+    """
     if not isinstance(initial, int):
         return events
     present = {event.get("team_id") for event in events if isinstance(event, dict) and event.get("kind") == "initial"}
@@ -260,19 +270,21 @@ def with_shared_initial(
         team_id = squad.get("team_id") if isinstance(squad, dict) else None
         if not isinstance(team_id, str) or not team_id or team_id in present:
             continue
-        # Un rival cuya caja publicada contradice el residual no se rellena:
-        # la cota inventada descuadraría su libro y sus primas.
         published = _squad_cash(squad)
-        if published is not None and initial + _flow_balance(events, team_id) != published:
-            continue
+        if squad.get("is_self") is True:
+            team_initial, label = initial, "presupuesto_inferido"
+        elif published is not None:
+            team_initial, label = published - _flow_balance(events, team_id), "presupuesto_inferido"
+        else:
+            team_initial, label = LEAGUE_INITIAL_BUDGET, "presupuesto_liga"
         injected.append(
             {
                 "team_id": team_id,
                 "manager_id": squad.get("manager_id") if isinstance(squad.get("manager_id"), str) else None,
                 "kind": "initial",
-                "amount_eur": initial,
+                "amount_eur": team_initial,
                 "player_id": None,
-                "label": "presupuesto_inferido",
+                "label": label,
                 "at": None,
             }
         )

@@ -444,7 +444,7 @@ def needs_from_documents(
         },
         "ledger_note": (
             "Caja reconstruida = presupuesto inicial + primas - compras - cláusulas + ventas. "
-            "Si el historial no trae el presupuesto, se infiere del residual de tu caja y se aplica a todos. "
+            "Tu caja parte del residual de tu saldo real; cada rival parte de los 100 M de la liga. "
             "En un rival esa cifra es un techo: subir la cláusula no sale en el historial."
             if history.get("initial_source") == "caja_propia"
             else "Caja reconstruida = presupuesto inicial + primas - compras - cláusulas + ventas. "
