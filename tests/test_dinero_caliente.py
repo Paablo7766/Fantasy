@@ -52,3 +52,28 @@ class DineroCalienteTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LibroSinContraparteTest(unittest.TestCase):
+    """El libro real no trae ``counterparty_manager_id``: la víctima es quien cobra lo mismo en el mismo instante."""
+
+    def test_la_victima_es_el_libro_que_cobra_el_mismo_asiento(self) -> None:
+        at = "2026-11-09T11:03:32+01:00"
+        ledgers = [
+            {"team_id": "40960858", "events": [{"kind": "clause", "team_id": "40960858", "amount_eur": 12_500_000, "at": at, "player_id": "3262"}]},
+            {"team_id": "40960836", "events": [{"kind": "sell", "team_id": "40960836", "amount_eur": 12_500_000, "at": at, "player_id": "3262"}]},
+            # Una venta normal sin cláusula a la vez no marca a nadie.
+            {"team_id": "40960918", "events": [{"kind": "sell", "team_id": "40960918", "amount_eur": 30_219_429, "at": "2026-11-09T12:25:06+01:00", "player_id": "2384"}]},
+        ]
+        hot = victimas_recientes(ledgers, [], {"3262": "Félix Correia"}, now=AHORA)
+        self.assertEqual(set(hot), {"40960836"})
+        self.assertEqual(hot["40960836"]["jugador"], "Félix Correia")
+
+    def test_cobro_ambiguo_no_se_adivina(self) -> None:
+        at = "2026-11-09T11:03:32+01:00"
+        ledgers = [
+            {"team_id": "A", "events": [{"kind": "clause", "team_id": "A", "amount_eur": 5_000_000, "at": at, "player_id": "9"}]},
+            {"team_id": "B", "events": [{"kind": "sell", "team_id": "B", "amount_eur": 5_000_000, "at": at, "player_id": "9"}]},
+            {"team_id": "C", "events": [{"kind": "sell", "team_id": "C", "amount_eur": 5_000_000, "at": at, "player_id": "9"}]},
+        ]
+        self.assertEqual(victimas_recientes(ledgers, [], {}, now=AHORA), {})

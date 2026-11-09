@@ -78,3 +78,15 @@ class OptimizadorTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LiderTest(unittest.TestCase):
+    def test_el_rival_de_referencia_es_el_primero_de_la_clasificacion(self) -> None:
+        squads = [
+            {"is_self": True, "players": _plantilla(1.0, 1.0)},
+            {"is_self": False, "manager_name": "PABS FC", "points": 201, "players": _plantilla(2.0, 2.0)},
+            {"is_self": False, "manager_name": "Otro", "points": 150, "players": _plantilla(9.0, 9.0)},
+        ]
+        brecha = brecha_posicional(squads)
+        assert brecha is not None
+        self.assertEqual(brecha["rival"], "PABS FC")

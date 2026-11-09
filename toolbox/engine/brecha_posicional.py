@@ -65,9 +65,16 @@ def brecha_posicional(squads: list[dict[str, Any]] | None, *, ventana: int = VEN
     mios = _puntos_por_jornada(propia["players"], jornadas)
     lider: dict[str, Any] | None = None
     lider_puntos: dict[str, float] = {}
+    # El rival de referencia es el primero de la clasificación (más puntos de liga); sin ese
+    # dato, el que más suma en la ventana.
+    def _fuerza(rival: dict[str, Any], puntos: dict[str, float]) -> tuple[float, float]:
+        liga = rival.get("points")
+        liga = float(liga) if isinstance(liga, (int, float)) and not isinstance(liga, bool) else -1.0
+        return liga, sum(puntos.values())
+
     for rival in rivales:
         puntos = _puntos_por_jornada(rival["players"], jornadas)
-        if lider is None or sum(puntos.values()) > sum(lider_puntos.values()):
+        if lider is None or _fuerza(rival, puntos) > _fuerza(lider, lider_puntos):
             lider, lider_puntos = rival, puntos
     if lider is None or sum(lider_puntos.values()) <= 0:
         return None

@@ -46,9 +46,10 @@ def victimas_recientes(
 ) -> dict[str, dict[str, Any]]:
     """``{team_id: alerta}`` de los rivales a los que han clausulado en las últimas ``horas``.
 
-    Cada cláusula del flujo (``kind == clause`` con ``counterparty_manager_id``)
-    nombra a la víctima. Si hay varias dentro de la ventana, el importe se suma
-    y el jugador y la hora son los del cobro más reciente.
+    La víctima sale de ``counterparty_manager_id`` en la cláusula o, si falta, del
+    libro que cobra ese mismo importe por ese jugador en ese mismo instante. Si hay
+    varias cláusulas dentro de la ventana, el importe se suma y el jugador y la
+    hora son los del cobro más reciente.
     """
     ahora = (now or datetime.now(timezone.utc)).astimezone(_MADRID)
     manager_a_team: dict[str, str] = {}
@@ -59,31 +60,46 @@ def victimas_recientes(
         team = squad.get("team_id")
         if isinstance(manager, (str, int)) and not isinstance(manager, bool) and isinstance(team, str) and team:
             manager_a_team[str(manager)] = team
-    vistas: set[tuple[Any, ...]] = set()
     cobros: dict[str, list[tuple[datetime, int, str | None]]] = {}
+    vistas: set[tuple[Any, ...]] = set()
+    cobros_vistos: dict[tuple[Any, ...], dict[str, Any]] = {}
+    # (instante, importe, jugador) -> equipos que cobran con ese mismo asiento.
+    ingresos: dict[tuple[Any, ...], set[str]] = {}
     for ledger in ledgers or []:
         if not isinstance(ledger, dict):
             continue
+        equipo = str(ledger.get("team_id")) if ledger.get("team_id") is not None else None
         for event in ledger.get("events") or []:
-            if not isinstance(event, dict) or event.get("kind") != "clause":
+            if not isinstance(event, dict):
                 continue
-            victima = event.get("counterparty_manager_id")
             importe = event.get("amount_eur")
-            momento = _parse_at(event.get("at"))
-            if (
-                victima is None
-                or isinstance(importe, bool)
-                or not isinstance(importe, int)
-                or importe <= 0
-                or momento is None
-            ):
+            if isinstance(importe, bool) or not isinstance(importe, int) or importe <= 0:
                 continue
-            clave = (event.get("at"), importe, event.get("player_id"), str(victima))
-            if clave in vistas:
+            asiento = (event.get("at"), importe, event.get("player_id"))
+            kind = event.get("kind")
+            team = str(event.get("team_id") if event.get("team_id") is not None else equipo)
+            if kind in {"sell", "premium"} and team != "None":
+                ingresos.setdefault(asiento, set()).add(team)
+            if kind != "clause":
                 continue
-            vistas.add(clave)
-            team = manager_a_team.get(str(victima), str(victima))
-            cobros.setdefault(team, []).append((momento, importe, event.get("player_id")))
+            cobros_vistos.setdefault(asiento, {"comprador": team, "victima_manager": event.get("counterparty_manager_id")})
+    for asiento, info in cobros_vistos.items():
+        momento = _parse_at(asiento[0])
+        if momento is None:
+            continue
+        if info["victima_manager"] is not None:
+            victima = manager_a_team.get(str(info["victima_manager"]), str(info["victima_manager"]))
+        else:
+            # El libro de la víctima trae un cobro con el mismo instante, importe y jugador.
+            candidatas = ingresos.get(asiento, set()) - {info["comprador"]}
+            if len(candidatas) != 1:
+                continue
+            victima = next(iter(candidatas))
+        clave = (*asiento, victima)
+        if clave in vistas:
+            continue
+        vistas.add(clave)
+        cobros.setdefault(victima, []).append((momento, asiento[1], asiento[2]))
     salida: dict[str, dict[str, Any]] = {}
     for team, filas in cobros.items():
         dentro = [
