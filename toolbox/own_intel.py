@@ -856,6 +856,7 @@ def expected_opta_points(
     player: dict[str, Any] | None = None,
     p_cs_own: float | None = None,
     monte_carlo: bool = True,
+    rival: str | None = None,
 ) -> dict[str, float | None]:
     """E[Pts] OPTA v2 + techo Monte Carlo (P90) y P(gol)/P(asist).
 
@@ -884,6 +885,7 @@ def expected_opta_points(
     payload = {
         **base_player,
         "position": pos,
+        "rival": rival,
         "p_titular": p_titular,
         "form": form,
         "sanction": base_player.get("sanction") if isinstance(base_player.get("sanction"), dict) else {},
@@ -911,6 +913,7 @@ def expected_opta_points(
         "xp_desglose": result.get("xp_desglose"),
         "xp_breakout": result.get("xp_breakout"),
         "xp_balon_parado": result.get("xp_balon_parado"),
+        "xp_ajuste_rival": result.get("xp_ajuste_rival"),
         "xp_cambio_cronico": result.get("xp_cambio_cronico"),
         "xp_produccion_pura_90": result.get("xp_produccion_pura_90"),
         "xp_suelo_muro": result.get("xp_suelo_muro"),
@@ -1223,6 +1226,7 @@ def apply_own_intel(
             fdr=fixture.fdr if fixture else None,
             player=vista,
             p_cs_own=_as_float(cell.get("p_cs_for")) if cell else None,
+            rival=cell.get("opponent") if cell and isinstance(cell.get("opponent"), str) else None,
         )
         if pts["expected_points"] is not None:
             prelim_points[pid] = float(pts["expected_points"])
@@ -1261,6 +1265,7 @@ def apply_own_intel(
                     player=jugador_j,
                     p_cs_own=_as_float(later_cell.get("p_cs_for")),
                     monte_carlo=False,
+                    rival=later_cell.get("opponent") if isinstance(later_cell.get("opponent"), str) else None,
                 )
                 if later_pts["expected_points"] is None:
                     break
@@ -1373,6 +1378,7 @@ def apply_own_intel(
                 ("xp_desglose", "own_xp_desglose"),
                 ("xp_breakout", "own_xp_breakout"),
                 ("xp_balon_parado", "own_xp_balon_parado"),
+                ("xp_ajuste_rival", "own_ajuste_rival"),
                 ("xp_cambio_cronico", "own_cambio_cronico"),
                 ("xp_produccion_pura_90", "own_produccion_pura_90"),
                 ("xp_suelo_muro", "own_suelo_muro"),

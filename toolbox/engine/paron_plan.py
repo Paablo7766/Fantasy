@@ -44,7 +44,12 @@ from toolbox.engine.signing_plan import (
     _valor_jugador,
     conserva_esqueleto,
 )
-from toolbox.engine.reglamento import OFERTA_LALIGA_MIN
+from toolbox.engine.reglamento import (
+    OFERTA_ESPERADA_VENTANA,
+    OFERTA_LALIGA_MIN,
+    OFERTA_MAQUINA_MEDIANA_VIERNES,
+    OFERTA_MAQUINA_MINIMO_HISTORICO,
+)
 from toolbox.engine.trading_desk import DEUDA_PCT_EQUIPO
 
 _MADRID = ZoneInfo("Europe/Madrid")
@@ -139,6 +144,43 @@ def valor_proyectado(row: dict[str, Any], dias_hasta_venta: float, *, hoy: date 
     if valor <= 0 or pct is None:
         return valor
     return int(round(valor * (1.0 + (pct / 100.0) * (dias_hasta_venta / 7.0))))
+
+
+def dia_de_venta(cierre: datetime, dias: float) -> datetime:
+    """Cuándo se pone el escaparate: martes o miércoles antes del cierre, nunca el viernes.
+
+    Entre lunes y miércoles la máquina de LaLiga pagó una mediana de 1,034× el
+    valor (viernes: 0,974×). Se parte de ``cierre - 2 días``; si cae fuera de
+    martes/miércoles se retrocede al miércoles anterior. Si ese miércoles ya
+    pasó, se vende hoy mismo.
+    """
+    candidato = cierre - timedelta(days=DIAS_VENTA_ANTES_CIERRE)
+    local = candidato.astimezone(_MADRID)
+    if local.weekday() not in (1, 2):
+        atras = (local.weekday() - 2) % 7
+        candidato = candidato - timedelta(days=atras if atras else 7)
+    ahora = cierre - timedelta(days=float(dias))
+    return max(candidato, ahora)
+
+
+def ofertas_de_ruta(dia_venta: datetime) -> dict[str, Any]:
+    """Los dos escenarios de oferta de la máquina según el día de la venta."""
+    en_ventana = dia_venta.astimezone(_MADRID).weekday() in (0, 1, 2)
+    if en_ventana:
+        return {
+            "en_ventana": True,
+            "esperado": OFERTA_ESPERADA_VENTANA,
+            "estres": OFERTA_MAQUINA_MINIMO_HISTORICO,
+        }
+    return {"en_ventana": False, "esperado": OFERTA_MAQUINA_MEDIANA_VIERNES, "estres": MARGEN_OFERTA}
+
+
+def _ventana_texto(dia_venta: datetime) -> str:
+    local = dia_venta.astimezone(_MADRID)
+    if local.weekday() == 2:
+        martes = local - timedelta(days=1)
+        return f"{_dia_texto(martes)} / {_dia_texto(local)}"
+    return _dia_texto(local)
 
 
 def _post_jornada(hoy: date | None) -> bool:
@@ -376,15 +418,23 @@ def ruta_salida(
     Si vender deja la plantilla sin once legal, se tapa el hueco con el fichaje
     más barato del mercado de esa posición y se cuenta su coste.
     """
-    dia_venta = cierre - timedelta(days=DIAS_VENTA_ANTES_CIERRE)
+    dia_venta = dia_de_venta(cierre, dias)
     dias_hasta_venta = _horizonte_dias(dias)
+    ofertas = ofertas_de_ruta(dia_venta)
+    esperado = float(ofertas["esperado"])
+    estres = float(ofertas["estres"])
     deuda = max(0, -int(saldo_proyectado))
     base_puntos, xi_ids = _puntos(squad)
     resultado: dict[str, Any] = {
         "dia_venta": _dia_texto(dia_venta),
         "dia_venta_at": dia_venta.astimezone(_MADRID).isoformat(),
+        "ventana_escaparate": _ventana_texto(dia_venta),
         "holgura_eur": HOLGURA_RUTA_EUR if deuda > 0 else 0,
-        "margen_oferta": MARGEN_OFERTA,
+        "margen_oferta": esperado,
+        "oferta_esperada": esperado,
+        "oferta_estres": estres,
+        "en_ventana_buena": bool(ofertas["en_ventana"]),
+        "escenarios": None,
         "deuda_a_saldar": deuda,
         "saldo_proyectado": int(saldo_proyectado),
         "premio_jornada_incluido": int(premio_jornada),
@@ -401,12 +451,12 @@ def ruta_salida(
         resultado["texto"] = "Sin deuda prevista: el saldo llega al cierre en cero o más sin vender nada más."
         return resultado
 
-    def ingreso(row: dict[str, Any]) -> int:
-        # Peor caso: la menor entre el valor de hoy y el proyectado, con la oferta más baja de LaLiga.
+    def ingreso(row: dict[str, Any], razon: float = esperado) -> int:
+        # La menor entre el valor de hoy y el proyectado, por la oferta del escenario.
         hoy = _valor_jugador(row)
         proyectado = valor_proyectado(row, dias_hasta_venta)
         base = min(hoy, proyectado) if hoy > 0 else proyectado
-        return int(base * MARGEN_OFERTA)
+        return int(base * razon)
 
     objetivo = deuda + HOLGURA_RUTA_EUR
 
@@ -457,6 +507,7 @@ def ruta_salida(
             "valor_hoy": _valor_jugador(item["row"]),
             "valor_proyectado": valor_proyectado(item["row"], dias_hasta_venta),
             "ingreso": ingreso(item["row"]),
+            "ingreso_estres": ingreso(item["row"], estres),
             "titular": item["row"]["player_id"] in xi_ids,
             "origen": item["row"].get("origen") or "plantilla",
             "xp_perdido": round(item["perdida"], 2),
@@ -474,6 +525,25 @@ def ruta_salida(
         for rep in repuestos
     ]
     resultado["ingreso"] = neto
+    coste_reposiciones = sum(int(rep["euros"]) for rep in repuestos)
+    neto_estres = sum(item["ingreso_estres"] for item in resultado["ventas"]) - coste_reposiciones
+    resultado["ingreso_estres"] = neto_estres
+    resultado["cubre_estres"] = neto_estres >= deuda
+    resultado["escenarios"] = {
+        "esperado": {
+            "oferta": esperado,
+            "ingreso": neto,
+            "cubre": neto >= deuda,
+            "etiqueta": f"Escenario esperado ({esperado:.3f}×)".replace(".", ","),
+        },
+        "estres": {
+            "oferta": estres,
+            "ingreso": neto_estres,
+            "cubre": neto_estres >= deuda,
+            "falta_eur": max(0, deuda - neto_estres),
+            "etiqueta": f"Suelo de estrés histórico ({estres:.2f}×)".replace(".", ","),
+        },
+    }
     resultado["cubre"] = neto >= deuda
     resultado["con_holgura"] = neto >= objetivo
     resultado["falta_eur"] = max(0, deuda - neto)
@@ -490,9 +560,16 @@ def ruta_salida(
     if resultado["cubre"]:
         resultado["texto"] = (
             f"Ruta de salida antes del {_dia_texto(cierre)}: el {resultado['dia_venta']} vende {nombres}{cola}. "
-            f"Entran {neto / _MILLON:.1f} M€ netos en el peor caso (oferta del 90 % sobre el menor entre el valor de hoy y el previsto) "
+            f"Entran {neto / _MILLON:.1f} M€ netos en el escenario esperado ({esperado:.2f}× sobre el menor entre el valor de hoy y el previsto) "
             f"para cubrir {deuda / _MILLON:.1f} M€ de deuda"
             + (f"; el once pierde {perdido:.1f} xP." if perdido > 0 else " sin tocar el once.")
+            + f" Suelo de estrés histórico ({estres:.2f}×): {neto_estres / _MILLON:.1f} M€"
+            + (" (también cubre)." if neto_estres >= deuda else f" (faltarían {(deuda - neto_estres) / _MILLON:.1f} M€).")
+            + (
+                ""
+                if ofertas["en_ventana"]
+                else " Fuera de lunes-miércoles la máquina paga menos (viernes: 0,974× de mediana)."
+            )
             + premio_txt
         )
     else:

@@ -315,6 +315,9 @@ function RivalDialog({
               ) : null}
             </p>
           ) : null}
+          {squad.dinero_caliente ? (
+            <p className="mt-3 rounded-xl bg-[#FF6B3D]/10 px-3 py-2 text-[12.5px] leading-snug text-[#FFB08A]">{squad.dinero_caliente.aviso}</p>
+          ) : null}
           {squad.huella ? (
             <div className="mt-3 flex flex-col gap-1.5 text-[12.5px] text-white/60">
               {squad.huella.cola ? (

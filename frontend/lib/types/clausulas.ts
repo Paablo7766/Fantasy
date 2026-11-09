@@ -53,6 +53,11 @@ export type ClausulaEnPeligro = {
   rival_mas_rico?: { manager?: string | null; caja: number } | null;
   necesitan_su_posicion: string[];
   bloqueada_hasta?: string | null;
+  /** Hora y minuto exactos (Madrid) en que vence el candado. */
+  candado_hhmm?: string | null;
+  candado_vence_texto?: string | null;
+  /** «⏱️ Peligro crítico en los primeros 60 min tras abrirse el candado». */
+  aviso_critico?: string | null;
   clausula_perfecta?: NivelClausula | null;
   subida_recomendada?: NivelClausula | null;
   niveles: NivelClausula[];
@@ -156,6 +161,9 @@ export type RadarAntiRobo = {
   rivales_con_caja: number;
   clausula_abierta?: boolean;
   dias_para_abrir?: number | null;
+  candado_hhmm?: string | null;
+  candado_vence_texto?: string | null;
+  aviso_critico?: string | null;
 };
 
 export type AsesorClausulas = {

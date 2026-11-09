@@ -258,8 +258,13 @@ def prediccion_xp2(
     lambda_favor: float,
     lambda_contra: float,
     prob_porteria_cero: float | None = None,
+    ajuste_rival: float = 0.0,
 ) -> dict[str, Any] | None:
-    """xP de jornada, xP si es titular y su desglose. ``None`` sin actas desglosadas."""
+    """xP de jornada, xP si es titular y su desglose. ``None`` sin actas desglosadas.
+
+    ``ajuste_rival`` (puntos, de ``toolbox.rival_posicional``) suma o resta a
+    valoración + acciones según lo que ese rival concede a este puesto.
+    """
     slot = canonical_slot(str(player.get("position") or "MC"))
     actas = actas_del_jugador(player)
     titular = [a for a in actas if a.minutos >= 45]
@@ -307,7 +312,9 @@ def prediccion_xp2(
     llega_60 = float(cronico["llega_60"]) if cronico else LLEGA_60[slot]
     puntos_cero = puntos_porteria(slot, lam_c, prob_porteria_cero) * llega_60
 
-    condicional = suelo + bono_partido + ajuste_precio + puntos_gol + puntos_asist + puntos_cero
+    ajuste_rival = float(ajuste_rival) * factor_min if math.isfinite(float(ajuste_rival)) else 0.0
+    suelo_partido = suelo + bono_partido + ajuste_precio + ajuste_rival
+    condicional = suelo_partido + puntos_gol + puntos_asist + puntos_cero
 
     # 6) Titularidad y rosco.
     p = min(1.0, max(0.0, float(prob_titular)))
@@ -320,7 +327,8 @@ def prediccion_xp2(
     return {
         "xp": round(max(0.0, jornada), 3),
         "xp_condicional": round(condicional, 3),
-        "suelo": round(suelo + bono_partido + ajuste_precio, 3),
+        "suelo": round(suelo_partido, 3),
+        "ajuste_rival_posicional": round(ajuste_rival, 3),
         "gol": round(puntos_gol, 3),
         "asistencia": round(puntos_asist, 3),
         "porteria": round(puntos_cero, 3),

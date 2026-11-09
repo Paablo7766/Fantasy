@@ -760,6 +760,7 @@ def _plan_once(
     objetivos_previos: list[str] | set[str] | None = None,
     trading_out: list[dict[str, Any]] | None = None,
     permitir_condicionales: bool = True,
+    bonus_posicional: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Maximiza ``xP - peaje × drenaje neto``. No envía órdenes.
 
@@ -1256,6 +1257,19 @@ def _plan_once(
     puntos_futuro = pulp.lpSum(_futuro_efectivo(row) * variable for row, variable in _filas_con(en_futuro))
     puntos_futuro += pulp.lpSum(3.0 * BUSCA_PUNTOS * busca_futuro[position] for position in POSITIONS)
     puntos = _horizonte(puntos_j1, puntos_futuro)
+    # Brecha posicional: un fichaje que juega en el puesto donde más puntos faltan
+    # frente al líder suma un extra pequeño de xP. Solo desempata entre fichajes parecidos.
+    extra_posicional = {
+        str(position): float(valor)
+        for position, valor in (bonus_posicional or {}).items()
+        if isinstance(valor, (int, float)) and not isinstance(valor, bool) and valor > 0
+    }
+    prioridad_posicional = pulp.lpSum(
+        extra_posicional.get(str(row.get("position")), 0.0) * en_once[f"{origen}:{row['player_id']}"]
+        for origen, filas in (("bid", compras), ("clause", raids))
+        for row in filas
+        if f"{origen}:{row['player_id']}" in en_once
+    )
     bonus = pulp.lpSum(
         [
             *(
@@ -1338,6 +1352,7 @@ def _plan_once(
     )
     problem += (
         puntos
+        + prioridad_posicional
         + bonus
         + bonus_baja
         + continuidad

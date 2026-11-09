@@ -1627,6 +1627,12 @@ def shape_trends(board: dict[str, Any]) -> dict[str, Any]:
     raw_decisions = intel.get("decisions") if isinstance(intel.get("decisions"), list) else []
     decisions = [_normalize_market_decision(row) for row in raw_decisions if isinstance(row, dict)]
     _attach_player_card(decisions, board)
+    hot_money = _hot_money_index(board)
+    if hot_money:
+        for item in decisions:
+            hot = hot_money.get(str(item.get("seller_team_id"))) if item.get("seller_team_id") is not None else None
+            if hot is not None:
+                item["dinero_caliente"] = hot
     summary = intel.get("summary") if isinstance(intel.get("summary"), dict) else {}
     league_for_track = trends.get("league_id") if isinstance(trends.get("league_id"), str) else None
     try:
@@ -1746,6 +1752,22 @@ def _attach_bid_profiles(rivals: list[dict[str, Any]], needs: dict[str, Any]) ->
         }
 
 
+def _hot_money_index(board: dict[str, Any], ledger_rows: list[dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
+    """``{team_id: alerta}`` de rivales a los que acaban de clausular (dinero caliente)."""
+    try:
+        from toolbox.dinero_caliente import victimas_recientes
+
+        document = board.get("squads") if isinstance(board.get("squads"), dict) else board
+        squads = [sq for sq in document.get("squads") or [] if isinstance(sq, dict)]
+        if ledger_rows is None:
+            needs = board.get("needs") if isinstance(board.get("needs"), dict) else {}
+            ledger_rows = [row for row in needs.get("ledgers") or [] if isinstance(row, dict)]
+        return victimas_recientes(ledger_rows, squads, player_name_index(squads))
+    except Exception:
+        logger.debug("Sin alerta de dinero caliente", exc_info=True)
+        return {}
+
+
 def _attach_huellas(
     rivals: list[dict[str, Any]],
     needs: dict[str, Any],
@@ -1798,6 +1820,7 @@ def shape_squads(board: dict[str, Any]) -> dict[str, Any]:
     clauses: list[dict[str, Any]] = []
     roster_raw = [squad for squad in squads if isinstance(squad, dict)]
     names = player_name_index(roster_raw)
+    hot_money = _hot_money_index(board, ledger_rows)
     portfolio_doc: dict[str, Any] | None = None
     for squad in roster_raw:
         view = _squad_view(squad, trend_index, snapshot_deltas)
@@ -1818,8 +1841,14 @@ def shape_squads(board: dict[str, Any]) -> dict[str, Any]:
             }
             own = view
             continue
+        hot = hot_money.get(str(squad.get("team_id")))
+        if hot is not None:
+            view["dinero_caliente"] = hot
         rivals.append(view)
-        clauses.extend(_clause_rows(squad))
+        for clause_row in _clause_rows(squad):
+            if hot is not None:
+                clause_row["dinero_caliente"] = hot
+            clauses.append(clause_row)
     _attach_bid_profiles(rivals, needs)
     _attach_huellas(rivals, needs, ledgers, board)
     rivals.sort(key=_squad_sort)
@@ -3309,6 +3338,12 @@ def api_clause_board(
         ledgers=ledgers,
         market_listings=market_doc.get("listings") if isinstance(market_doc.get("listings"), list) else None,
     )
+    hot_money = _hot_money_index(board)
+    if hot_money:
+        for row in payload.get("rows") or []:
+            hot = hot_money.get(str(row.get("team_id"))) if isinstance(row, dict) else None
+            if hot is not None:
+                row["dinero_caliente"] = hot
     payload["league_id"] = _board_league_id(board, league)
     payload["league_name"] = document.get("league_name") or board.get("league_name")
     payload.update(_photo_fields(board))

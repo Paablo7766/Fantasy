@@ -34,6 +34,7 @@ from toolbox.engine.market_predictor import (
 from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, evaluar_clausulas, inicio_jornada_estimado
 from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
+from toolbox.engine.brecha_posicional import brecha_posicional
 from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes, conserva_esqueleto
 from toolbox.engine.paron import UMBRAL_PARON_DIAS, paron_conocido
 from toolbox.engine.live_matchday import construir_jornada_en_juego
@@ -1749,9 +1750,9 @@ def _sellar_pujas_plan(
         accion["puja_anti_pizarra"] = puja.get("puja_anti_pizarra")
         accion["diferencial_anti_pizarra_eur"] = puja.get("diferencial_anti_pizarra_eur") or 0
         accion["alta_demanda"] = puja.get("alta_demanda") is True
-        margen = holgura if isinstance(holgura, int) and not isinstance(holgura, bool) else 0
         accion["puja_recomendada"] = puja.get("puja_recomendada")
         accion["puja_maxima"] = puja.get("puja_maxima")
+        margen = holgura if isinstance(holgura, int) and not isinstance(holgura, bool) else 0
         if accion.get("financia_con_credito") is True:
             tope = presupuesto.get("credito_20pct")
             usado = presupuesto.get("credito_paron")
@@ -1957,9 +1958,18 @@ def _plan(
         "baseline_puntos": baseline,
         "objetivos_previos": board.get("plan_objetivos_previos") or None,
     }
+    brecha = None
+    try:
+        squads_doc = board.get("squads") if isinstance(board.get("squads"), dict) else {}
+        brecha = brecha_posicional([sq for sq in squads_doc.get("squads") or [] if isinstance(sq, dict)])
+    except Exception:
+        logger.debug("Sin brecha posicional", exc_info=True)
+    if brecha and brecha.get("bonus_xp"):
+        entrada["bonus_posicional"] = brecha["bonus_xp"]
     try:
         plan = build_plan_fichajes(**entrada)
         plan.setdefault("estado_calculo", "ok")
+        plan["brecha_posicional"] = brecha
     except Exception as exc:
         logger.exception("plan de fichajes")
         vacio = _empty_plan(saldo, ratio)

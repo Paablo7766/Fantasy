@@ -64,3 +64,15 @@ export type RefreshStatusPayload = ApiError & {
   core_saved_at?: string | null;
   error?: ApiError["error"];
 };
+
+/** Rival al que acaban de clausular: el 65 % gasta lo cobrado en menos de 24 h. */
+export type DineroCaliente = {
+  importe_eur: number;
+  jugador: string;
+  jugador_id?: string | null;
+  hace_horas: number;
+  at: string;
+  n_cobros: number;
+  prob_gasto_24h: number;
+  aviso: string;
+};

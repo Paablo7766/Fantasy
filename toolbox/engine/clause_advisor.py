@@ -19,15 +19,16 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from toolbox.engine.lineup_math import solve_best_xi
-from toolbox.engine.signing_plan import conserva_esqueleto
+from toolbox.engine.reglamento import AVISO_PELIGRO_CANDADO, MULTIPLO_CLAUSULA_SEGURA
+from toolbox.engine.signing_plan import _mejora_neta, conserva_esqueleto, evaluar_patrimonio_clausula
 from toolbox.normalize import parse_clause_lock
 
 _MADRID = ZoneInfo("Europe/Madrid")
 
 #: Suelo de cláusula de la app: nadie puede bajarla de aquí.
 CLAUSULA_MINIMA = 1_000_000
-#: La cláusula está «en peligro» si no pasa de 1,25 veces el valor (misma regla que el tablero).
-MULTIPLO_EN_PELIGRO = 1.25
+#: La cláusula está «en peligro» si no pasa de 1,35 veces el valor: es lo que pagan los rivales (mediana 1,33×–1,40×).
+MULTIPLO_EN_PELIGRO = MULTIPLO_CLAUSULA_SEGURA
 #: Un rival no paga una cláusula que pase de 2,5 veces lo que vale el jugador: la regla de oro
 #: ya llama chollo a hasta 2,2×, así que por encima nadie la compra.
 MULTIPLO_CREIBLE = 2.5
@@ -65,6 +66,7 @@ TITULARES_MINIMOS = 11
 MENSAJE_GOLPE_RIVAL = "Golpe al rival: lo dejas sin recambio en su once"
 MAX_NIVELES = 4
 _DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+_DIAS_SEMANA_LARGO = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 _MESES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 
 #: Título del aviso cuando perder al jugador deja la plantilla sin once legal.
@@ -212,6 +214,18 @@ def _niveles(
             }
         )
     return niveles
+
+
+def candado_critico(momento: datetime | None, ahora: datetime) -> dict[str, Any]:
+    """Hora y minuto exactos (Madrid) en que vence el candado y aviso de los primeros 60 minutos."""
+    if momento is None or momento <= ahora:
+        return {"candado_hhmm": None, "candado_vence_texto": None, "aviso_critico": None}
+    local = momento.astimezone(_MADRID)
+    return {
+        "candado_hhmm": local.strftime("%H:%M"),
+        "candado_vence_texto": f"{_DIAS_SEMANA_LARGO[local.weekday()]} {local.day}-{_MESES[local.month - 1]} a las {local.strftime('%H:%M')}",
+        "aviso_critico": AVISO_PELIGRO_CANDADO,
+    }
 
 
 def _fecha_corta(momento: datetime) -> str:
@@ -473,6 +487,7 @@ def _proteger(
                 ),
                 "necesitan_su_posicion": [str(r.get("manager") or "Rival") for r in necesitan],
                 "bloqueada_hasta": desbloqueo.isoformat() if desbloqueo is not None and bloqueada is True else None,
+                **candado_critico(desbloqueo if bloqueada is True else None, ahora),
                 "clausula_perfecta": perfecta,
                 "subida_recomendada": elegido,
                 "niveles": niveles,
@@ -660,9 +675,12 @@ def _clausulazos(
             continue
         if bloqueada and (desbloqueo is None or (cierre is not None and desbloqueo >= cierre)):
             continue
-        fantasma = {"player_id": f"nuevo:{player_id}", "position": jugador["position"], "jornada": xp}
-        con = solve_best_xi([*elegibles, fantasma])
-        mejora = round(max(0.0, float(con["puntos"]) - base_puntos), 2) if con["ok"] else 0.0
+        # Cláusula muy por encima del valor de mercado sin subida que la cubra: patrimonio quemado.
+        if evaluar_patrimonio_clausula(
+            {"euros": clausula, "valor": valor, "pct": _num(jugador.get("pct"))}
+        )["descartar"]:
+            continue
+        mejora = round(_mejora_neta({"player_id": player_id, "position": jugador["position"], "jornada": xp}, elegibles, base_puntos, base["ok"]), 2)
         justo = _int(jugador.get("valor_justo"))
         margen_justo = (justo / clausula - 1) * 100.0 if justo else None
         # El valor justo es xP × €/punto, no dinero: si pasa de 2,5× el valor de mercado es
@@ -921,9 +939,9 @@ def evaluar_clausulas(
     return {"resumen": resumen, "proteger": proteger, "preparar": preparar, "clausulazos": clausulazos, "reventa": reventa}
 
 
-# Por debajo de 1,15× el valor, la cláusula es un chollo. Desde 1,30×, robarlo nos beneficia.
-_UMBRAL_VULNERABLE = 1.15
-_UMBRAL_SOBREPROTEGIDO = 1.30
+# Por debajo de 1,35× el valor, la cláusula es un chollo. Desde 1,40×, robarlo nos beneficia.
+_UMBRAL_VULNERABLE = MULTIPLO_CLAUSULA_SEGURA
+_UMBRAL_SOBREPROTEGIDO = 1.40
 _VENTANA_APERTURA_DIAS = 3
 # Un sustituto debe rendir como mucho 0,3 xP menos que el jugador que te roban.
 _TOLERANCIA_SUSTITUTO_XP = 0.3
@@ -960,6 +978,16 @@ def _momento_apertura(value: Any, ahora: datetime) -> datetime | None:
         if isinstance(epoch, (int, float)) and not isinstance(epoch, bool):
             return datetime.fromtimestamp(float(epoch) / 1000.0, tz=timezone.utc)
     return None
+
+
+def _apertura_de(jugador: dict[str, Any], ahora: datetime) -> datetime | None:
+    """Momento exacto en que se abre el candado del jugador, si el dato lo trae."""
+    raw = jugador.get("clausulaAbre")
+    if raw is None:
+        raw = jugador.get("clausula_abre")
+    if raw is None:
+        raw = jugador.get("bloqueo") if jugador.get("bloqueo") is not None else jugador.get("clause_lock")
+    return _momento_apertura(raw, ahora) if raw is not None else None
 
 
 def _ventana_clausula(
@@ -1160,6 +1188,7 @@ def auditar_clausulas_plantilla(
                 "rivales_con_caja": rivales_con_caja,
                 "clausula_abierta": abierta,
                 "dias_para_abrir": None if dias is None else round(dias, 2),
+                **candado_critico(_apertura_de(jugador, momento), momento),
                 "coste_reposicion": reposicion,
                 "perdida_si_te_lo_roban": perdida if reposicion is not None else None,
             }

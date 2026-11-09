@@ -15,6 +15,7 @@ from scipy.special import gammainc
 from scipy.stats import norm
 
 from toolbox.engine.xp2 import prediccion_xp2, prob_titular_portero
+from toolbox.rival_posicional import ajuste_rival_posicional
 from toolbox.engine.xp_calculator import predecir_desde_jugador
 
 GOAL_PTS = {"POR": 6.0, "DEF": 6.0, "MC": 5.0, "DEL": 4.0}
@@ -218,6 +219,7 @@ def compute_expected_opta_points_v2(
         lambda_favor=lambda_own,
         lambda_contra=lambda_opp,
         prob_porteria_cero=p_cs_own,
+        ajuste_rival=ajuste_rival_posicional(player.get("rival"), pos),
     )
     if xp2 is not None:
         volatilidad = techo - xp_condicional
@@ -264,6 +266,7 @@ def compute_expected_opta_points_v2(
         }
         salida["xp_breakout"] = xp2["breakout"]
         salida["xp_balon_parado"] = xp2["balon_parado"]
+        salida["xp_ajuste_rival"] = xp2.get("ajuste_rival_posicional")
         salida["xp_cambio_cronico"] = xp2.get("cambio_cronico")
         salida["xp_produccion_pura_90"] = xp2.get("produccion_pura_90")
         salida["xp_suelo_muro"] = xp2.get("suelo_muro")

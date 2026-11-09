@@ -589,13 +589,13 @@ class RadarAntiRoboTests(unittest.TestCase):
 
     def test_sobreprotegido_no_depende_de_la_caja(self) -> None:
         filas = auditar_clausulas_plantilla(
-            [self._jugador("banco", 13_000_000, 10_000_000, AHORA + timedelta(days=2))],
+            [self._jugador("banco", 14_000_000, 10_000_000, AHORA + timedelta(days=2))],
             [{"dineroEstimado": 40_000_000}],
             ahora=AHORA,
         )
         self.assertEqual(filas[0]["estado"], "SOBREPROTEGIDO")
         self.assertEqual(filas[0]["badge"], "verde")
-        self.assertIn("ganas 3,0M", filas[0]["consejo"])
+        self.assertIn("ganas 4,0M", filas[0]["consejo"])
         self.assertIn("No hace falta subir la cláusula", filas[0]["consejo"])
 
     def test_escasez_si_lo_que_cobras_no_alcanza_para_reponerlo(self) -> None:
@@ -614,7 +614,7 @@ class RadarAntiRoboTests(unittest.TestCase):
         self.assertIn("Pierdes 17,7M", filas[0]["consejo"])
 
     def test_con_sustituto_barato_sigue_sobreprotegido(self) -> None:
-        jugador = self._jugador("banco", 13_000_000, 10_000_000, AHORA + timedelta(days=2))
+        jugador = self._jugador("banco", 14_000_000, 10_000_000, AHORA + timedelta(days=2))
         jugador.update({"position": "DF", "jornada": 6.0})
         alternativas = [{"player_id": "ok", "position": "DF", "coste": 9_000_000, "xp": 5.8}]
         filas = auditar_clausulas_plantilla([jugador], [{"dineroEstimado": 40_000_000}], ahora=AHORA, alternativas=alternativas)
@@ -638,11 +638,37 @@ class RadarAntiRoboTests(unittest.TestCase):
 
     def test_multiplo_intermedio_no_genera_tarjeta(self) -> None:
         filas = auditar_clausulas_plantilla(
-            [self._jugador("medio", 12_000_000, 10_000_000, AHORA - timedelta(hours=1))],
+            [self._jugador("medio", 13_700_000, 10_000_000, AHORA - timedelta(hours=1))],
             [{"dineroEstimado": 20_000_000}],
             ahora=AHORA,
         )
         self.assertEqual(filas, [])
+
+    def test_1_15_ya_no_es_seguro_si_hay_un_rival_con_caja(self) -> None:
+        # 1,20× (antes «intermedio», sin tarjeta) con un rival que puede pagarla: riesgo alto.
+        filas = auditar_clausulas_plantilla(
+            [self._jugador("titular", 12_000_000, 10_000_000, AHORA - timedelta(hours=1))],
+            [{"dineroEstimado": 20_000_000}],
+            ahora=AHORA,
+        )
+        self.assertEqual(filas[0]["estado"], "RIESGO_ALTO")
+
+    def test_candado_muestra_hora_y_minuto_exactos_y_aviso_critico(self) -> None:
+        abre = AHORA + timedelta(days=2, hours=3, minutes=7)
+        filas = auditar_clausulas_plantilla(
+            [self._jugador("radu", 8_000_000, 10_000_000, abre.isoformat())],
+            [{"dineroEstimado": 20_000_000}],
+            ahora=AHORA,
+        )
+        self.assertRegex(filas[0]["candado_hhmm"], r"^\d\d:\d\d$")
+        self.assertIn(filas[0]["candado_hhmm"], filas[0]["candado_vence_texto"])
+        self.assertEqual(filas[0]["aviso_critico"], "⏱️ Peligro crítico en los primeros 60 min tras abrirse el candado")
+        abierta = auditar_clausulas_plantilla(
+            [self._jugador("abierta", 8_000_000, 10_000_000, AHORA - timedelta(days=1))],
+            [{"dineroEstimado": 20_000_000}],
+            ahora=AHORA,
+        )
+        self.assertIsNone(abierta[0]["aviso_critico"])
 
 
 if __name__ == "__main__":

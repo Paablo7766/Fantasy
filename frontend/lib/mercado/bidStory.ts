@@ -437,6 +437,13 @@ function theoryText(player: MarketDecision): string {
 
 function facts(player: MarketDecision): BidFact[] {
   const rows: BidFact[] = [];
+  if (player.dinero_caliente) {
+    rows.push({
+      label: "Vendedor con dinero caliente",
+      value: `+${eur(player.dinero_caliente.importe_eur)}`,
+      note: player.dinero_caliente.aviso,
+    });
+  }
   const pts = player.own_expected_points ?? player.af_expected_points ?? player.expected_points;
   if (typeof player.smart_bid_eur === "number") {
     rows.push({

@@ -136,6 +136,17 @@ export type PlanParon = {
     holgura_eur?: number | null;
     /** Fracción del valor que cuenta cada venta (0,90: peor oferta de LaLiga). */
     margen_oferta?: number | null;
+    /** «martes 17-nov / miércoles 18-nov»: los dos días de escaparate (lun-mié la máquina paga más). */
+    ventana_escaparate?: string | null;
+    en_ventana_buena?: boolean | null;
+    oferta_esperada?: number | null;
+    oferta_estres?: number | null;
+    ingreso_estres?: number | null;
+    cubre_estres?: boolean | null;
+    escenarios?: {
+      esperado: { oferta: number; ingreso: number; cubre: boolean; etiqueta: string };
+      estres: { oferta: number; ingreso: number; cubre: boolean; falta_eur?: number; etiqueta: string };
+    } | null;
     con_holgura?: boolean | null;
     deuda_a_saldar: number;
     saldo_proyectado: number;
@@ -168,8 +179,20 @@ export type PlanParon = {
   };
 };
 
+export type BrechaPosicional = {
+  rival: string;
+  jornadas: number[];
+  mios: Record<string, number>;
+  rival_puntos: Record<string, number>;
+  diferencia: Record<string, number>;
+  bonus_xp: Record<string, number>;
+  texto: string;
+};
+
 export type PlanFichajes = {
   ok?: boolean;
+  /** Puntos que faltan por puesto frente al rival más fuerte; el optimizador premia DEL/DEF si ahí se pierde. */
+  brecha_posicional?: BrechaPosicional | null;
   /** «ok» y «sin_cambios» son cálculos terminados; el resto es un fallo y no significa «nada que hacer». */
   estado_calculo?: "ok" | "sin_cambios" | "fallo_solver" | "impagable" | "sin_caja" | "error" | string | null;
   estado_detalle?: string | null;

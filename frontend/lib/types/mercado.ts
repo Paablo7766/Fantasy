@@ -1,5 +1,5 @@
 // Mercado de la liga (`/api/trends`): decisiones, pujas y catálogo.
-import type { ApiError, PhotoMeta } from "./common";
+import type { ApiError, DineroCaliente, PhotoMeta } from "./common";
 import type { PlanFichajes, VentaForzada } from "./fichajes";
 import type { CalibrationPayload, EngineConfidence } from "./laboratorio";
 import type { CapitanPick, Player } from "./once";
@@ -52,6 +52,8 @@ export type JornadaClub = {
 };
 
 export type MarketDecision = Player & {
+  /** El vendedor acaba de cobrar una cláusula: probablemente puja fuerte hoy. */
+  dinero_caliente?: DineroCaliente | null;
   decision?: "PUJAR" | "ESPERAR" | "NO" | string | null;
   primary_motive?: string | null;
   motives?: string[];

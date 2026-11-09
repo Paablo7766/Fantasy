@@ -61,6 +61,8 @@ export function DangerRow({ row, photos, index }: { row: ClausulaEnPeligro; phot
     tone: row.rivales_que_pueden_pagar ? "var(--ini-red)" : undefined,
   });
   if (row.rival_mas_rico) facts.push({ label: "Rival más rico", value: money(row.rival_mas_rico.caja) });
+  if (row.candado_hhmm) facts.push({ label: "Candado vence", value: `${row.candado_vence_texto || row.candado_hhmm}`, tone: "var(--ini-red)" });
+  if (row.aviso_critico) facts.push({ label: "Ojo", value: row.aviso_critico, tone: "var(--ini-red)" });
   if (row.abre_el) facts.push({ label: "Cláusula", value: row.abre_el === "abierta" ? "Abierta" : `Se abre el ${row.abre_el}`, tone: row.alerta_prioritaria ? "var(--ini-red)" : undefined });
   if (row.recambio_sugerido?.coste) facts.push({ label: "Recambio", value: `${row.recambio_sugerido.nombre || "Fichaje"} · ${money(row.recambio_sugerido.coste)}` });
   facts.push({ label: "Tu once pierde", value: bench ? "Nada · fuera del once" : `−${points(row.tu_once_pierde_sin_el)} pts`, tone: bench ? undefined : "var(--ini-red)" });

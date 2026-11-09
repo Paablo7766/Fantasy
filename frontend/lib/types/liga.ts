@@ -1,5 +1,5 @@
 // Liga: plantillas, rivales, cláusulas ajenas y carrera de liga.
-import type { ApiError, PhotoMeta } from "./common";
+import type { ApiError, DineroCaliente, PhotoMeta } from "./common";
 import type { PlanFichajes, VentaForzada } from "./fichajes";
 import type { CapitanPick, ClauseLock, Player } from "./once";
 import type { LeagueMode } from "./plan";
@@ -151,6 +151,7 @@ export type RivalSquad = {
   activity_profile?: ActivityProfile | null;
   bid_profile?: BidProfile | null;
   huella?: RivalHuella | null;
+  dinero_caliente?: DineroCaliente | null;
   portfolio?: PortfolioSummary | null;
   /** Cota calibrada contra el saldo observado. Nunca por debajo de él. */
   risk_adjusted_cash?: number | null;
@@ -189,6 +190,7 @@ export type ClauseRow = {
   is_locked?: boolean;
   at_risk?: boolean;
   clause_lock?: ClauseLock | null;
+  dinero_caliente?: DineroCaliente | null;
 };
 
 /** Subida de cláusula fechada: qué día, de cuánto a cuánto y qué costó subirla. */

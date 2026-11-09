@@ -16,6 +16,7 @@ from typing import Any
 import pulp
 
 from toolbox.engine.paron import dias_de_prevision, es_paron
+from toolbox.engine.reglamento import MULTIPLO_CLAUSULA_SEGURA
 
 #: LaLiga permite endeudarse hasta el 20 % del valor del equipo.
 DEUDA_PCT_EQUIPO = 0.20
@@ -135,7 +136,7 @@ def build_trading_desk(
 
 
 #: Por debajo de esto, tu titular está a tiro de cláusula.
-RATIO_ESCUDO = 1.20
+RATIO_ESCUDO = MULTIPLO_CLAUSULA_SEGURA
 #: Por debajo de esto, la cláusula del rival en rojo es un objetivo de trading.
 RATIO_FRANCOTIRADOR = 1.15
 
@@ -244,7 +245,7 @@ def alertas_escudo_francotirador(
 ) -> list[dict[str, Any]]:
     """Escudo (te pueden clausular) y francotirador (clausulazo a un rojo seguro).
 
-    El escudo mira a los 11 titulares. Si ``clausula / precio < 1,20`` y un
+    El escudo mira a los 11 titulares. Si ``clausula / precio < 1,35`` y un
     rival con caja (sin crédito: un clausulazo no admite deuda) tiene un hueco
     o una línea floja en ese puesto, hay alerta roja. El francotirador mira a
     los rivales en rojo seguro: cláusula por debajo de 1,15 veces el precio,

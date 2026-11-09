@@ -217,11 +217,42 @@ def test_calendario_conocido_sustituye_al_viernes_por_defecto():
 
 
 def test_ruta_cuenta_el_peor_caso_y_deja_holgura():
-    """Cada venta cuenta al 90 % del menor entre el valor de hoy y el previsto, y la ruta busca 0,5 M€ de colchón."""
+    """Cada venta cuenta al escenario esperado (1,00× lun-mié) del menor entre hoy y el previsto; la ruta busca 0,5 M€ de colchón."""
     squad = _plantilla()
     squad[-1]["pct"] = 20.0  # el suplente que sube no infla el ingreso: cuenta su valor de hoy
     ruta = ruta_salida(squad=squad, saldo_proyectado=-2 * M, dias=12.0, cierre=CIERRE)
     for venta in ruta["ventas"]:
-        assert venta["ingreso"] == int(min(venta["valor_hoy"], venta["valor_proyectado"]) * 0.90)
+        base = min(venta["valor_hoy"], venta["valor_proyectado"])
+        assert venta["ingreso"] == int(base * 1.00)
+        assert venta["ingreso_estres"] == int(base * 0.93)
     assert ruta["ingreso"] >= 2 * M + 500_000
     assert ruta["con_holgura"] is True
+
+
+def test_escaparate_siempre_martes_o_miercoles_y_nunca_viernes():
+    from toolbox.engine.paron_plan import dia_de_venta
+
+    # Cierre en sábado 21 a las 16:15: cierre-2d es jueves; se retrocede al miércoles 18.
+    cierre_sabado = datetime(2026, 11, 21, 16, 15, tzinfo=ZoneInfo("Europe/Madrid"))
+    dia = dia_de_venta(cierre_sabado, 12.0)
+    assert dia.astimezone(ZoneInfo("Europe/Madrid")).weekday() == 2
+    # Cierre un viernes: cierre-2d ya es miércoles y se conserva.
+    assert dia_de_venta(CIERRE, 12.0).astimezone(ZoneInfo("Europe/Madrid")).day == 18
+
+
+def test_ruta_muestra_escenario_esperado_y_suelo_de_estres():
+    ruta = ruta_salida(squad=_plantilla(), saldo_proyectado=-6 * M, dias=12.0, cierre=CIERRE)
+    assert ruta["en_ventana_buena"] is True
+    assert ruta["escenarios"]["esperado"]["oferta"] == 1.0
+    assert ruta["escenarios"]["estres"]["oferta"] == 0.93
+    assert ruta["escenarios"]["estres"]["ingreso"] <= ruta["escenarios"]["esperado"]["ingreso"]
+    assert ruta["ventana_escaparate"] == "martes 17-nov / miércoles 18-nov"
+    assert "estrés" in ruta["texto"]
+
+
+def test_fuera_de_ventana_usa_el_viernes_y_el_suelo_legal():
+    # Ya es jueves 19: la ventana lun-mié se perdió y se cuenta 0,974× / 0,90×.
+    ruta = ruta_salida(squad=_plantilla(), saldo_proyectado=-6 * M, dias=1.5, cierre=CIERRE)
+    assert ruta["en_ventana_buena"] is False
+    assert ruta["oferta_esperada"] == 0.974
+    assert ruta["oferta_estres"] == 0.90

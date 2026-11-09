@@ -271,7 +271,7 @@ function DefendCard({
             <span className="mt-0.5 block truncate text-[12.5px] text-white/45">
               {row.en_candado ? (
                 <>
-                  <span className="text-white/70">Candado hasta {row.expuesta_cuando || "—"}</span> · hoy la pagarían {row.rivales_que_pueden_pagar} de {row.rivales_total}
+                  <span className="text-white/70">Candado hasta {row.candado_vence_texto || row.expuesta_cuando || "—"}</span> · hoy la pagarían {row.rivales_que_pueden_pagar} de {row.rivales_total}
                 </>
               ) : (
                 <>
@@ -438,6 +438,11 @@ function PlainClauseRow({ row, photos, index }: { row: ClauseBoardRow; photos: P
           <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11.5px] font-medium" style={{ color: openNow ? TONE.green : "rgba(255,255,255,0.6)" }}>
             {opensLabel(row)}
           </span>
+          {row.dinero_caliente ? (
+            <span className="rounded-full bg-[#FF6B3D]/15 px-2.5 py-1 text-[11.5px] font-medium text-[#FFB08A]">
+              🔥 {row.manager_name || "Rival"} acaba de cobrar +{(row.dinero_caliente.importe_eur / 1_000_000).toLocaleString("es-ES", { maximumFractionDigits: 1 })} M€
+            </span>
+          ) : null}
         </span>
       </button>
       {open ? (

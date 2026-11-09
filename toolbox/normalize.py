@@ -593,6 +593,12 @@ def normalize_listing(item: dict[str, Any], *, now: datetime | None = None) -> d
         # ``directOffer``: la venta es una oferta cerrada y no una subasta.
         "direct_offer": item["directOffer"] if isinstance(item.get("directOffer"), bool) else None,
         "seller_team_value": _as_int(seller_team.get("teamValue")),
+        "last_season_points": _as_int(_first(master, "lastSeasonPoints")),
+        "is_in_ideal_formation": (
+            item["isInIdealFormation"]
+            if isinstance(item.get("isInIdealFormation"), bool)
+            else master.get("isInIdealFormation") if isinstance(master.get("isInIdealFormation"), bool) else None
+        ),
         "listing_expires_at": expires_at,
         "listing_expires_local_time": expires_local,
         "clause_lock": clause_lock_from(item, now=now),

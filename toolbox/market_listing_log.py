@@ -33,9 +33,14 @@ create table if not exists {TABLE} (
     seller_team_value integer,
     expires_at text,
     stored_at real not null,
+    last_season_points integer,
+    is_in_ideal_formation integer,
     primary key (market_id, day)
 )
 """
+
+#: Columnas añadidas después de crear la tabla: se migran en bases ya existentes.
+_COLUMNAS_NUEVAS = (("last_season_points", "integer"), ("is_in_ideal_formation", "integer"))
 
 
 def _db_path() -> Path:
@@ -76,6 +81,8 @@ def rows_from_listings(listings: list[dict[str, Any]], *, league_id: str | None,
                 _int(listing.get("seller_team_value")),
                 _text(listing.get("listing_expires_at")),
                 now,
+                _int(listing.get("last_season_points")),
+                _flag(listing.get("is_in_ideal_formation")),
             )
         )
     return rows
@@ -99,7 +106,11 @@ def record_market_listings(
     conn = sqlite3.connect(target, timeout=10)
     try:
         conn.execute(_SCHEMA)
-        conn.executemany(f"insert or replace into {TABLE} values (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        have = {str(fila[1]) for fila in conn.execute(f"pragma table_info({TABLE})")}
+        for nombre, tipo in _COLUMNAS_NUEVAS:
+            if nombre not in have:
+                conn.execute(f"alter table {TABLE} add column {nombre} {tipo}")
+        conn.executemany(f"insert or replace into {TABLE} values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
         conn.commit()
     finally:
         conn.close()

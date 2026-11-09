@@ -496,6 +496,10 @@ export function ParonBlock({ plan, photos }: { plan: PlanFichajes | null | undef
         {cierre ? ` al ${cierre}` : " al cierre"} con saldo positivo.
       </p>
 
+      {plan?.brecha_posicional?.texto ? (
+        <p className="mt-3 rounded-xl bg-white/[0.04] px-3 py-2 text-[12.5px] leading-snug text-white/65">{plan.brecha_posicional.texto}</p>
+      ) : null}
+
       <div className="mt-4 grid grid-cols-3 gap-2">
         <div className="min-w-0 rounded-2xl bg-white/[0.04] p-3">
           <p className="text-[11px] text-white/40">Ganas en valor</p>
@@ -554,6 +558,23 @@ export function ParonBlock({ plan, photos }: { plan: PlanFichajes | null | undef
             <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
               <span className="block h-full rounded-full transition-[width] duration-700" style={{ width: `${cobertura * 100}%`, background: ruta.cubre ? TONE.green : TONE.red }} />
             </span>
+            {ruta.escenarios ? (
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[12px] tabular-nums">
+                {[ruta.escenarios.esperado, ruta.escenarios.estres].map((esc) => (
+                  <div key={esc.etiqueta} className="rounded-xl bg-white/[0.04] p-2.5">
+                    <p className="text-white/45">{esc.etiqueta}</p>
+                    <p className="mt-0.5 font-semibold" style={{ color: esc.cubre ? TONE.green : TONE.red }}>
+                      {compact(esc.ingreso)} · {esc.cubre ? "cubre" : "no cubre"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {ruta.ventana_escaparate ? (
+              <p className="mt-2 text-[12px] leading-snug text-white/50">
+                Escaparate: {ruta.ventana_escaparate}. Entre lunes y miércoles la máquina pagó una mediana de +3,4 %; el viernes, −2,6 %.
+              </p>
+            ) : null}
           </>
         ) : (
           <p className="mt-2 text-[12.5px] text-white/60">No hay deuda que saldar: no hace falta vender.</p>
