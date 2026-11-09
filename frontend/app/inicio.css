@@ -2866,3 +2866,31 @@
     right: 0.9rem;
   }
 }
+
+/* Pie simétrico: matraz · estado que recarga · menú. */
+.ini-dock {
+  position: relative;
+  display: flex;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.ini-dock .ini-tool {
+  width: 2.4rem;
+  height: 2.4rem;
+  flex-shrink: 0;
+}
+
+.ini-dock .ini-sync {
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.ini-dock .ini-refresh__menu {
+  top: auto;
+  bottom: calc(100% + 0.5rem);
+  right: 0;
+  left: auto;
+}

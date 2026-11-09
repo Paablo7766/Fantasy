@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { AvisosBell } from "@/components/AvisosBell";
 
 /**
- * Esquina superior derecha del hero: dos botones redondos y discretos.
- * El matraz abre el Laboratorio; «⋯» guarda la foto, Conectar cuenta y Avisos
+ * Pie del hero, simétrico: matraz (Laboratorio) a la izquierda, el estado que
+ * recarga en el centro y «⋯» (foto, Conectar cuenta y Avisos) a la derecha
  * (en móvil no hay barra lateral para llegar a ellos).
  */
-export function HeroTools() {
+export function HeroTools({ children }: { children: ReactNode }) {
   const { photoLine, refreshError, connecting, busy, connectAccount, trends } = useDashboard();
   const search = useSearchParams();
   const [open, setOpen] = useState(false);
@@ -36,13 +36,14 @@ export function HeroTools() {
   }, [open]);
 
   return (
-    <div ref={box} className="ini-hero__tools" data-ui="hero-tools">
+    <div ref={box} className="ini-dock" data-ui="hero-tools">
       <Link href={labHref} className="ini-tool" aria-label="Laboratorio" title="Laboratorio · estado del modelo" data-ui="home-lab">
         <svg viewBox="0 0 20 20" className="h-[1.05rem] w-[1.05rem]" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
           <path d="M8 2.8h4M8.8 2.8v4.6L4.4 15a1.4 1.4 0 0 0 1.2 2.1h8.8A1.4 1.4 0 0 0 15.6 15l-4.4-7.6V2.8" strokeLinecap="round" strokeLinejoin="round" />
           <path d="M6.4 12.2h7.2" strokeLinecap="round" />
         </svg>
       </Link>
+      {children}
       <button type="button" className="ini-tool" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open} aria-label="Más opciones" title="Foto guardada, cuenta y avisos">
         <svg viewBox="0 0 20 20" className="h-[1.05rem] w-[1.05rem]" fill="currentColor" aria-hidden="true">
           <circle cx="4.5" cy="10" r="1.4" />

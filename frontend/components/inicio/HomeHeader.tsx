@@ -172,7 +172,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
     <div className="ini-top">
       <section className="ini-card ini-hero ini-in" style={{ "--i": 0 } as CSSProperties} aria-label="Tu cuenta" data-ui="home-hero">
         <span className="ini-hero__glow" aria-hidden="true" />
-        <HeroTools />
 
         <div className="ini-hero__center">
           <p className="ini-swap" aria-live="polite">
@@ -217,7 +216,9 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
         </div>
 
         <div className="ini-hero__foot">
-          <RefreshChip />
+          <HeroTools>
+            <RefreshChip />
+          </HeroTools>
         </div>
       </section>
 
