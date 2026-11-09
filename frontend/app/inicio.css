@@ -2253,3 +2253,138 @@
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.5);
 }
+
+/* ══ Movimiento premium: despliegues, cambio de pestaña y entrada de filas ══
+   Una sola curva (desaceleración suave, sin rebote), aperturas algo más largas
+   que los cierres, contenido que entra un instante después del hueco y listas
+   que aparecen en cascada. Solo opacidad y transform: nada de desenfoques. */
+
+:root {
+  --ini-premium: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Despliegue: el hueco se abre, el contenido aparece y sube un poco después. */
+.ini-collapse {
+  visibility: hidden;
+  opacity: 1;
+  transition:
+    grid-template-rows 420ms var(--ini-premium),
+    visibility 0s linear 420ms;
+}
+
+.ini-collapse[data-open="true"] {
+  visibility: visible;
+  transition:
+    grid-template-rows 520ms var(--ini-premium),
+    visibility 0s;
+}
+
+.ini-collapse > div > * {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 180ms ease, transform 260ms var(--ini-premium);
+}
+
+.ini-collapse[data-open="true"] > div > * {
+  opacity: 1;
+  transform: none;
+  transition: opacity 360ms ease 110ms, transform 520ms var(--ini-premium) 80ms;
+}
+
+/* Los datos del detalle entran en cascada. */
+.ini-collapse[data-open="true"] .ini-facts > div {
+  animation: ini-rise 460ms var(--ini-premium) both;
+}
+
+.ini-collapse[data-open="true"] .ini-facts > div:nth-child(1) { animation-delay: 120ms; }
+.ini-collapse[data-open="true"] .ini-facts > div:nth-child(2) { animation-delay: 160ms; }
+.ini-collapse[data-open="true"] .ini-facts > div:nth-child(3) { animation-delay: 200ms; }
+.ini-collapse[data-open="true"] .ini-facts > div:nth-child(4) { animation-delay: 240ms; }
+
+@keyframes ini-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Filas de listas: aparecen en cascada sin desenfoque (más fluido con muchas). */
+.ini .ini-divide > .ini-in {
+  animation: ini-rise 560ms var(--ini-premium) both;
+  animation-delay: calc(min(var(--i, 0), 8) * 45ms);
+}
+
+/* Cambio de pestaña o de lista: el panel entra con un fundido corto. */
+.ini-fade {
+  animation: ini-fade 380ms var(--ini-premium) both;
+}
+
+@keyframes ini-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Indicador de pestañas y resumen: mismo ritmo. */
+.ini-tabs__ind {
+  transition: transform 460ms var(--ini-premium), width 460ms var(--ini-premium);
+}
+
+.ini-tab {
+  transition: color 240ms ease;
+}
+
+.ini-sum {
+  animation: ini-fade 420ms var(--ini-premium) both;
+}
+
+.ini-sum__chips span {
+  animation: ini-rise 460ms var(--ini-premium) both;
+}
+
+.ini-sum__chips span:nth-child(2) { animation-delay: 60ms; }
+.ini-sum__chips span:nth-child(3) { animation-delay: 120ms; }
+
+/* Tacto: las filas responden al pulsar. */
+.ini .ini-divide > li {
+  transition: background-color 240ms ease, box-shadow 320ms ease, transform 320ms var(--ini-premium);
+}
+
+.ini .ini-divide > li:active {
+  transform: scale(0.992);
+}
+
+.ini-switch__tabs button,
+.ini .ini-more {
+  transition: background-color 260ms var(--ini-premium), color 260ms ease, transform 200ms var(--ini-premium);
+}
+
+.ini-switch__tabs button:active,
+.ini .ini-more:active {
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ini-collapse,
+  .ini-collapse > div > *,
+  .ini-tabs__ind,
+  .ini .ini-divide > li {
+    transition: none !important;
+  }
+  .ini-fade,
+  .ini-sum,
+  .ini-sum__chips span,
+  .ini .ini-divide > .ini-in,
+  .ini-collapse[data-open="true"] .ini-facts > div {
+    animation: none !important;
+  }
+}

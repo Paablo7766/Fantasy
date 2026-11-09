@@ -325,7 +325,7 @@ function MoreTabs({ tabs }: { tabs: MoreTab[] }) {
         ))}
       </div>
       <Collapse open={current !== null}>
-        <div className="ini-switch__panel">{current?.body}</div>
+        <div key={current?.key} className="ini-switch__panel ini-fade">{current?.body}</div>
       </Collapse>
     </div>
   );
