@@ -2133,50 +2133,73 @@
   }
 }
 
-/* Plan de hoy: secundarios en un solo selector, no en cuatro desplegables. */
-.ini-more {
-  border-top: 1px solid var(--ini-line, rgba(255, 255, 255, 0.07));
-  padding-bottom: 0.25rem;
+/* Plan de hoy: secundarios en un solo selector, no en cuatro desplegables.
+   (.ini-more ya existe como botón-píldora; este bloque usa otro nombre.) */
+.ini-switch {
+  margin-top: 0.25rem;
+  padding: 0 0.625rem 0.75rem;
 }
 
-.ini-more__tabs {
+.ini-switch__tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 1rem 1.25rem;
+  gap: 0.25rem;
+  overflow-x: auto;
+  border-radius: 9999px;
+  background: var(--ini-surface-2);
+  padding: 0.25rem;
+  scrollbar-width: none;
 }
 
-.ini-more__tabs button {
+.ini-switch__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.ini-switch__tabs button {
   display: inline-flex;
+  flex: 1 1 auto;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
+  white-space: nowrap;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 0.4rem 0.85rem;
+  padding: 0.55rem 0.9rem;
   font-size: 12.5px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.65);
-  transition: background-color 180ms ease, color 180ms ease;
+  color: rgba(255, 255, 255, 0.6);
+  transition: background-color 200ms ease, color 200ms ease;
 }
 
-.ini-more__tabs button span {
+.ini-switch__tabs button span {
   color: rgba(255, 255, 255, 0.35);
 }
 
-.ini-more__tabs button:hover {
-  background: rgba(255, 255, 255, 0.1);
+.ini-switch__tabs button:hover {
+  color: #fff;
 }
 
-.ini-more__tabs button[data-on="true"] {
+.ini-switch__tabs button[data-on="true"] {
   background: #fff;
   color: #0b0b0b;
 }
 
-.ini-more__tabs button[data-on="true"] span {
+.ini-switch__tabs button[data-on="true"] span {
   color: rgba(11, 11, 11, 0.5);
 }
 
-/* Cabecera del plan más aireada */
-.ini-card > header .ini-eyebrow + * {
-  margin-top: 0;
+.ini-switch__panel {
+  padding-top: 0.5rem;
+}
+
+.ini-switch .ini-divide {
+  padding: 0;
+}
+
+.ini-switch__card {
+  border-radius: 1.25rem;
+  background: var(--ini-surface-2);
+  padding: 0.9rem 1rem;
+}
+
+.ini .ini-switch .ini-collapse > div > div {
+  padding-inline: 0 !important;
 }

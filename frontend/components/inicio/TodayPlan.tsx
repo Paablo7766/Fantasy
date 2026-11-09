@@ -308,8 +308,8 @@ function MoreTabs({ tabs }: { tabs: MoreTab[] }) {
   if (!visible.length) return null;
   const current = visible.find((t) => t.key === active) ?? null;
   return (
-    <div className="ini-more">
-      <div className="ini-more__tabs" role="tablist" aria-label="Más movimientos">
+    <div className="ini-switch">
+      <div className="ini-switch__tabs" role="tablist" aria-label="Más movimientos">
         {visible.map((t) => (
           <button
             key={t.key}
@@ -324,7 +324,9 @@ function MoreTabs({ tabs }: { tabs: MoreTab[] }) {
           </button>
         ))}
       </div>
-      <Collapse open={current !== null}>{current?.body}</Collapse>
+      <Collapse open={current !== null}>
+        <div className="ini-switch__panel">{current?.body}</div>
+      </Collapse>
     </div>
   );
 }
@@ -332,8 +334,8 @@ function MoreTabs({ tabs }: { tabs: MoreTab[] }) {
 function MiniRow({ row, photos, sub }: { row: { player_id?: string | number | null; nombre?: string | null; euros?: number | null }; photos: PhotoIndex; sub: string }) {
   const name = row.nombre || "Jugador";
   return (
-    <li className="flex items-center gap-3 px-5 py-3">
-      <Avatar name={name} imageUrl={photoFor(photos, row.player_id as never, name)} size={32} />
+    <li className="flex items-center gap-3 px-3.5 py-3">
+      <Avatar name={name} imageUrl={photoFor(photos, row.player_id as never, name)} size={36} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px] text-white/85">{name}</span>
         <span className="block truncate text-[12px] text-white/40">{sub}</span>
@@ -559,12 +561,12 @@ export function TodayPlan({
             label: "Prudente",
             count: comparativa?.completo && comparativa?.prudente ? 1 : 0,
             body: comparativa?.completo && comparativa?.prudente ? (
-              <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 {([
                   ["Plan completo", comparativa.completo],
                   ["Solo caja y ventas de hoy", comparativa.prudente],
                 ] as const).map(([titulo, r]) => (
-                  <div key={titulo} className="min-w-0">
+                  <div key={titulo} className="ini-switch__card min-w-0">
                     <p className="text-[12px] font-medium text-white/60">{titulo}</p>
                     <p className="mt-1 text-[13px] tabular-nums text-white/80">
                       {typeof r.mejora_puntos_jornada === "number" ? `${signedPoints(r.mejora_puntos_jornada)} pts` : "—"} · {r.compras?.length ?? 0} compras · {r.ventas?.length ?? 0} ventas
