@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from toolbox.engine import strategy_layer
 from toolbox.engine.auction_intel import (
+    cola_anti_picos,
     SOBREPUJA_MAX,
     estimar_sobrepuja_liga,
     puja_competitiva_liga,
@@ -51,7 +52,9 @@ class EstimadorTests(unittest.TestCase):
 
 class EscalonTests(unittest.TestCase):
     def test_sube_la_estimacion_sobre_nuestra_cifra(self) -> None:
-        self.assertEqual(puja_competitiva_liga(10_000_000, 14_000_000, 0.13), 11_300_000)
+        cifra = puja_competitiva_liga(10_000_000, 14_000_000, 0.13, clave="7")
+        self.assertEqual(cifra, 11_300_000 + cola_anti_picos("7"))
+        self.assertNotEqual(cifra % 10, 0)
 
     def test_nunca_pasa_del_techo_de_rentabilidad(self) -> None:
         self.assertEqual(puja_competitiva_liga(10_000_000, 10_500_000, 0.13), 10_500_000)
@@ -114,9 +117,9 @@ class PlanTests(unittest.TestCase):
         pujas = {"7": {"puja_maxima": 14_000_000, "puja_pizarra": 10_300_000}}
         strategy_layer._sellar_pujas_plan(plan, pujas, {"estimada": 0.13, "perdidas": 6, "con_sobrepuja": 2})
         accion = plan["acciones"][0]
-        self.assertEqual(accion["puja_competitiva_liga"], 11_300_000)
+        self.assertEqual(accion["puja_competitiva_liga"], 11_300_000 + cola_anti_picos("7"))
         self.assertEqual(accion["sobrepuja_liga_pct"], 13.0)
-        self.assertEqual(pujas["7"]["puja_competitiva_liga"], 11_300_000)
+        self.assertEqual(pujas["7"]["puja_competitiva_liga"], 11_300_000 + cola_anti_picos("7"))
 
     def test_sin_holgura_en_el_presupuesto_no_ofrece_escalon(self) -> None:
         plan = {

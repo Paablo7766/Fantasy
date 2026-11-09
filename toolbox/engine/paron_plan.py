@@ -24,7 +24,7 @@ espera que valga el jugador el día de la venta, si es menor que el de hoy) y al
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -32,6 +32,7 @@ import pulp
 
 from toolbox.analyzer import POSITIONS
 from toolbox.engine.lineup_math import solve_best_xi
+from toolbox.engine.market_predictor import cambio_pct_desde_delta, proyectar_inercia, vender_en_pico_prohibido
 from toolbox.engine.paron import HORIZONTE_PREVISION_DIAS, es_paron
 from toolbox.engine.signing_plan import (
     CREDITO_PARON_PCT,
@@ -113,13 +114,46 @@ def _horizonte_dias(dias: float) -> float:
     return min(HORIZONTE_PREVISION_DIAS, max(0.0, dias - DIAS_VENTA_ANTES_CIERRE))
 
 
-def valor_proyectado(row: dict[str, Any], dias_hasta_venta: float) -> int:
-    """Valor esperado el día de la venta: ``valor × (1 + pct/100 × días/7)``."""
+def valor_proyectado(row: dict[str, Any], dias_hasta_venta: float, *, hoy: date | None = None) -> int:
+    """Valor esperado el día de la venta.
+
+    Con el cambio de hoy conocido (``delta_hoy``) se proyecta con la ley
+    ``0,041 % + 0,944 * cambio`` día a día (domingos planos) y, tras una
+    jornada con puntos altos, con el impulso de arranque. Sin él, la previsión
+    a 7 días en lineal: ``valor × (1 + pct/100 × días/7)``.
+    """
     valor = _valor_jugador(row)
+    delta = row.get("delta_hoy")
+    if valor > 0 and isinstance(delta, (int, float)) and not isinstance(delta, bool) and delta != 0:
+        return int(
+            proyectar_inercia(
+                valor,
+                cambio_pct_desde_delta(valor, delta),
+                dias_hasta_venta,
+                desde=hoy,
+                puntos_jornada=row.get("puntos_ultima"),
+                post_jornada=_post_jornada(hoy),
+            )["valor"]
+        )
     pct = _leer_pct(row)
     if valor <= 0 or pct is None:
         return valor
     return int(round(valor * (1.0 + (pct / 100.0) * (dias_hasta_venta / 7.0))))
+
+
+def _post_jornada(hoy: date | None) -> bool:
+    """Lunes o martes: el salto de precio tras la jornada recién jugada."""
+    dia = hoy or datetime.now(_MADRID).date()
+    return dia.weekday() in (0, 1)
+
+
+def venta_prematura(row: dict[str, Any], *, dia_limite_caja: bool) -> bool:
+    """No se recomienda vender en el pico a quien hoy sube con claridad, salvo el dia limite de caja."""
+    delta = row.get("delta_hoy")
+    valor = _valor_jugador(row)
+    if valor <= 0 or isinstance(delta, bool) or not isinstance(delta, (int, float)):
+        return False
+    return vender_en_pico_prohibido(cambio_pct_desde_delta(valor, delta), dia_limite_caja=dia_limite_caja)
 
 
 def beneficio_especulacion(
@@ -565,6 +599,8 @@ def construir_paron(
         for row in owned_ok:
             player_id = row["player_id"]
             if player_id in vendidos_ya or player_id in xi_final:
+                continue
+            if venta_prematura(row, dia_limite_caja=dias_venta <= 0):
                 continue
             pct = _leer_pct(row)
             flip = player_id in previos

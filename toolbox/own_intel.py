@@ -911,6 +911,9 @@ def expected_opta_points(
         "xp_desglose": result.get("xp_desglose"),
         "xp_breakout": result.get("xp_breakout"),
         "xp_balon_parado": result.get("xp_balon_parado"),
+        "xp_cambio_cronico": result.get("xp_cambio_cronico"),
+        "xp_produccion_pura_90": result.get("xp_produccion_pura_90"),
+        "xp_suelo_muro": result.get("xp_suelo_muro"),
     }
 
 
@@ -1068,6 +1071,33 @@ def snapshot_rows_from_players(
             }
         )
     return rows
+
+
+def catalog_snapshot_rows(
+    catalog: list[dict[str, Any]] | None,
+    *,
+    already: set[str],
+    league_id: str | None,
+    day: str | None = None,
+) -> list[dict[str, Any]]:
+    """Filas de precio de los jugadores del catálogo que no están en plantillas ni mercado.
+
+    ``snapshot_rows_from_players`` solo archivaba plantillas y anuncios del día:
+    el resto de libres llegaba al mercado sin serie previa. El catálogo
+    (``/competition/1/players``) trae el ``marketValue`` de los ~880 fichas.
+    Los ids de ``already`` ya tienen fila (con valor oficial del mercado/plantilla)
+    y no se tocan.
+    """
+    pendientes = [
+        row
+        for row in (catalog or [])
+        if isinstance(row, dict)
+        and isinstance(row.get("player_id"), str)
+        and row["player_id"] not in already
+        and row.get("player_status") != "out_of_league"
+        and _as_int(row.get("market_value")) not in (None, 0)
+    ]
+    return snapshot_rows_from_players(pendientes, league_id=league_id, day=day)
 
 
 def _strength_for(
@@ -1343,6 +1373,9 @@ def apply_own_intel(
                 ("xp_desglose", "own_xp_desglose"),
                 ("xp_breakout", "own_xp_breakout"),
                 ("xp_balon_parado", "own_xp_balon_parado"),
+                ("xp_cambio_cronico", "own_cambio_cronico"),
+                ("xp_produccion_pura_90", "own_produccion_pura_90"),
+                ("xp_suelo_muro", "own_suelo_muro"),
             ):
                 if pts.get(origen) is not None:
                     player[destino] = pts[origen]
@@ -1592,6 +1625,7 @@ def persist_and_apply_own_intel(
     store: PriceSnapshotStore | None = None,
     root: Any = None,
     day: str | None = None,
+    catalog: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Upsert snapshots del día y aplica el motor. ``root`` solo para tests locales.
 
@@ -1602,6 +1636,13 @@ def persist_and_apply_own_intel(
     """
     snap_store = store or PriceSnapshotStore(root=root)
     rows = snapshot_rows_from_players(players, league_id=league_id, day=day)
+    catalog_rows = catalog_snapshot_rows(
+        catalog,
+        already={row["player_id"] for row in rows},
+        league_id=league_id,
+        day=day,
+    )
+    rows = rows + catalog_rows
     written = 0
     try:
         written = snap_store.upsert_price_snapshots(rows)
@@ -1644,6 +1685,7 @@ def persist_and_apply_own_intel(
         "error": read_error,
         "from_cache": False,
         "missing_days": snapshot_missing_days(histories),
+        "catalog_rows": len(catalog_rows),
     }
     return summary
 

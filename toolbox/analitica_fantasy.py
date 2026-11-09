@@ -907,6 +907,33 @@ def _fraccion(value: Any) -> float | None:
     return number if 0.0 <= number <= 1.0 else None
 
 
+#: Analitica Fantasy publica exactamente 0,50 cuando no opina. FutbolFantasy acerto 10/10
+#: en esos casos cuando traia una probabilidad definida.
+AF_SIN_OPINION = 0.50
+FF_DEFINIDA_ALTA = 0.75
+FF_DEFINIDA_BAJA = 0.25
+
+
+def filtrar_af_fantasma(player: dict[str, Any]) -> bool:
+    """Ignora el 0,50 de AF si FutbolFantasy trae una probabilidad definida (>= 0,75 o <= 0,25).
+
+    Se quita ``af_p_titular`` (queda ``af_p_titular_fantasma`` en verdadero) y
+    manda el 100 % de FutbolFantasy. Devuelve ``True`` si lo filtro.
+    """
+    player.pop("af_p_titular_fantasma", None)
+    if player.get("p_titular_source") != "scraper":
+        return False
+    ff = _fraccion(player.get("p_titular"))
+    af = _fraccion(player.get("af_p_titular"))
+    if ff is None or af is None or af != AF_SIN_OPINION:
+        return False
+    if ff >= FF_DEFINIDA_ALTA or ff <= FF_DEFINIDA_BAJA:
+        player["af_p_titular"] = None
+        player["af_p_titular_fantasma"] = True
+        return True
+    return False
+
+
 def _consenso_titularidad_baja(player: dict[str, Any]) -> None:
     """Marca ``p_titular_consenso = "bajo"`` si AF y FútbolFantasy dan ≤ 20 %.
 
@@ -1014,6 +1041,7 @@ def apply_analitica_fantasy(
             player["af_points_per_million"] = ppm
             if pts.p_titular is not None:
                 player["af_p_titular"] = pts.p_titular
+        filtrar_af_fantasma(player)
         _consenso_titularidad_baja(player)
         if injured is not None:
             from toolbox.normalize import titularity_overrides_injury

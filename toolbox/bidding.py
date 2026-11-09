@@ -430,12 +430,13 @@ def needs_from_documents(
     }
 
     def build_books() -> dict[str, Any]:
-        from toolbox.league_history import books_from_activity
+        from toolbox.league_history import books_from_activity, hidden_costs_from_log
 
         ledgers, history = books_from_activity(
             [squad for squad in roster if isinstance(squad, dict)],
             [event for event in events if isinstance(event, dict)],
             snapshots,
+            hidden_costs=hidden_costs_from_log(),
         )
         return {"ledgers": ledgers, "history": history}
 

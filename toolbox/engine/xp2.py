@@ -132,6 +132,66 @@ def actas_del_jugador(player: dict[str, Any]) -> list[ActaDesglosada]:
     return sorted(actas, key=lambda a: a.jornada)
 
 
+# --- Cambio cronico, produccion pura y suelo muro (Frentes 4 y 8) ----------
+#: Un titular sustituido entre el 45' y el 59' no llega a los 60' de la porteria.
+MINUTO_TITULAR = 45
+MINUTO_CAMBIO_TARDIO = 60
+#: Titularidades recientes que se miran y las que hacen falta para llamarlo cronico.
+VENTANA_CAMBIO = 4
+MIN_TITULARIDADES_CAMBIO = 3
+MIN_CAMBIOS_TEMPRANOS = 2
+RATIO_CAMBIO_CRONICO = 0.5
+#: Minutos de un titular que juega entero: el techo real se mide contra esto.
+MINUTOS_TITULAR_TIPICO = 80.0
+#: Suelo muro: minimo de puntos en partidos largos.
+MINUTOS_PARTIDO_LARGO = 70
+PUNTOS_SUELO_MURO = 6.0
+MIN_PARTIDOS_SUELO_MURO = 3
+
+
+def cambio_cronico(titular: list[ActaDesglosada]) -> dict[str, Any] | None:
+    """Titular al que cambian de forma repetida entre el 45' y el 59'.
+
+    Mira sus ultimas ``VENTANA_CAMBIO`` titularidades. Cronico: al menos
+    ``MIN_CAMBIOS_TEMPRANOS`` salidas tempranas y la mitad o mas. Devuelve su
+    techo real de minutos y la fraccion de titularidades que llegan a 60'.
+    """
+    recientes = titular[-VENTANA_CAMBIO:]
+    if len(recientes) < MIN_TITULARIDADES_CAMBIO:
+        return None
+    tempranos = sum(1 for a in recientes if a.minutos < MINUTO_CAMBIO_TARDIO)
+    if tempranos < MIN_CAMBIOS_TEMPRANOS or tempranos / len(recientes) < RATIO_CAMBIO_CRONICO:
+        return None
+    techo = sum(a.minutos for a in recientes) / len(recientes)
+    return {
+        "activo": True,
+        "n_titularidades": len(recientes),
+        "n_cambios_antes_60": tempranos,
+        "minutos_techo": round(techo, 1),
+        "llega_60": round(1.0 - tempranos / len(recientes), 3),
+        "factor_minutos": round(min(1.0, techo / MINUTOS_TITULAR_TIPICO), 3),
+    }
+
+
+def produccion_pura_90(actas: list[ActaDesglosada]) -> float | None:
+    """(valoracion + acciones) por 90 minutos, sobre todas sus actas con minutos."""
+    jugadas = [a for a in actas if a.minutos > 0]
+    minutos = sum(a.minutos for a in jugadas)
+    if minutos < MINUTO_TITULAR:
+        return None
+    total = sum(a.bloques.get("rating", 0.0) + a.bloques.get("act", 0.0) for a in jugadas)
+    return round(total / minutos * 90.0, 2)
+
+
+def suelo_muro(actas: list[ActaDesglosada]) -> dict[str, Any] | None:
+    """Minimo de puntos en partidos de mas de 70'. Muro: ese minimo es >= 6."""
+    largos = [a for a in actas if a.minutos >= MINUTOS_PARTIDO_LARGO]
+    if len(largos) < MIN_PARTIDOS_SUELO_MURO:
+        return None
+    minimo = min(a.puntos for a in largos)
+    return {"activo": minimo >= PUNTOS_SUELO_MURO, "minimo": round(minimo, 1), "n_partidos": len(largos)}
+
+
 def _pois(k: int, lam: float) -> float:
     return math.exp(-lam) * lam**k / math.factorial(k)
 
@@ -208,12 +268,16 @@ def prediccion_xp2(
     revulsivo = [a.puntos for a in actas if 0 < a.minutos < 45]
 
     breakout = es_breakout(slot, titular)
+    cronico = cambio_cronico(titular)
+    factor_min = float(cronico["factor_minutos"]) if cronico else 1.0
 
     # 1) Suelo, con más peso en lo reciente.
     pesos = [math.exp(DECAY_SUELO * i) for i in range(len(titular))]
     media_suelo = sum(a.suelo * w for a, w in zip(titular, pesos)) / sum(pesos)
     k_suelo = K_SUELO_BREAKOUT if breakout else K_SUELO
-    suelo = (len(titular) * media_suelo + k_suelo * SUELO_PUESTO[slot]) / (len(titular) + k_suelo)
+    # El prior del puesto supone un titular que juega entero: a quien salen antes del 60' se le
+    # aplica su techo real de minutos.
+    suelo = (len(titular) * media_suelo + k_suelo * SUELO_PUESTO[slot] * factor_min) / (len(titular) + k_suelo)
 
     # 2) Partido: el favorito puntúa más (valoración, juego, resultado).
     lam_f = max(0.05, float(lambda_favor))
@@ -233,14 +297,15 @@ def prediccion_xp2(
     goles = _contrae([a.cantidades.get("goals", 0.0) for a in titular], GOLES_PUESTO[slot], K_GOL)
     if "penalties" in roles and slot != "PT":
         goles += GOLES_PENALTI_POR_PARTIDO
-    puntos_gol = goles * ataque * PUNTOS_GOL[slot]
+    puntos_gol = goles * ataque * PUNTOS_GOL[slot] * factor_min
     asist = _contrae([a.bloques.get("ast", 0.0) for a in titular], ASIST_PUESTO[slot], K_ASIST)
     if roles & {"corners", "indirect"}:
         asist += ASIST_BALON_PARADO * PUNTOS_ASISTENCIA
-    puntos_asist = asist * ataque
+    puntos_asist = asist * ataque * factor_min
 
     # 5) Portería de esta jornada.
-    puntos_cero = puntos_porteria(slot, lam_c, prob_porteria_cero) * LLEGA_60[slot]
+    llega_60 = float(cronico["llega_60"]) if cronico else LLEGA_60[slot]
+    puntos_cero = puntos_porteria(slot, lam_c, prob_porteria_cero) * llega_60
 
     condicional = suelo + bono_partido + ajuste_precio + puntos_gol + puntos_asist + puntos_cero
 
@@ -263,6 +328,9 @@ def prediccion_xp2(
         "breakout": breakout,
         "balon_parado": sorted(roles),
         "n_titular": len(titular),
+        "cambio_cronico": cronico,
+        "produccion_pura_90": produccion_pura_90(actas),
+        "suelo_muro": suelo_muro(actas),
     }
 
 

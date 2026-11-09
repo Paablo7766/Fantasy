@@ -6,14 +6,15 @@ No toca la red ni el caché. El plan de fichajes es el único que llama al solve
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from toolbox.engine.auction_intel import calcular_pujas, capitanes, nota_y_veredicto, prima_quemada_mercado
+from toolbox.engine.auction_intel import cola_anti_picos, calcular_pujas, capitanes, nota_y_veredicto, prima_quemada_mercado
 from toolbox.engine.lineup_math import war_del_once
 from toolbox.engine.market_predictor import (
     EUROS_POR_PUNTO,
     formatear_pct,
     proyectar_7d,
+    proyectar_inercia,
     ratio_mercado_liga,
     valor_justo_jugador,
 )
@@ -75,18 +76,19 @@ class RatioYPrecioTests(unittest.TestCase):
         self.assertLess(caro["valor_en_7d"], 12_000_000)
         self.assertTrue(str(caro["prevision_7d_pct"]).startswith("-"))
 
-    def test_un_millon_diario_dos_dias_seguidos_se_mantiene_la_semana(self) -> None:
+    def test_un_millon_diario_dos_dias_seguidos_sigue_la_ley_de_inercia(self) -> None:
         # El valor justo por puntos está muy por debajo. No puede convertir
-        # una racha de ~1 M€/día en 390.000 € al día siguiente.
+        # una racha de ~1 M€/día en 390.000 € al día siguiente: manda la ley
+        # 0,041 % + 0,944 × cambio, que decae despacio.
         precio = 38_865_975
         hoy = 969_556
         ayer = 1_023_041
-        previsto = proyectar_7d(precio, hoy, ayer, 5.7, 3_760_000, en_forma=True)
-        ritmo = (hoy + ayer) / 2
-        esperado = int(round((precio + ritmo * 7) / 10_000)) * 10_000
+        previsto = proyectar_7d(precio, hoy, ayer, 5.7, 3_760_000, en_forma=True, desde=date(2026, 11, 9))
+        pct_hoy = hoy / (precio - hoy) * 100
+        esperado = proyectar_inercia(precio, pct_hoy, 7, desde=date(2026, 11, 9))["valor"]
         self.assertEqual(previsto["valor_en_7d"], esperado)
-        self.assertGreater(previsto["valor_en_7d"], 45_000_000)
-        self.assertGreater(float(previsto["pct"]), 15)
+        self.assertGreater(previsto["valor_en_7d"], 43_000_000)
+        self.assertGreater(float(previsto["pct"]), 10)
 
     def test_un_pico_de_un_dia_no_se_repite_siete_veces(self) -> None:
         precio = 10_000_000
@@ -194,7 +196,7 @@ class WarYCapitanTests(unittest.TestCase):
 class PujaYForzadaTests(unittest.TestCase):
     def test_recomendada_suma_la_subida_de_hoy_y_el_techo_es_dinamico(self) -> None:
         pujas = calcular_pujas(10_000_000, 200_000, 8_000_000, tu_saldo=20_000_000, rivales=[], posicion="MC")
-        self.assertEqual(pujas["puja_recomendada"], 10_670_000)
+        self.assertEqual(pujas["puja_recomendada"], 10_670_000 + cola_anti_picos(10_000_000))
         # Sin previsión ni dificultad: prima base del +15 %, no el valor justo.
         self.assertEqual(pujas["puja_maxima"], 11_500_000)
         con_revalorizacion = calcular_pujas(
@@ -219,7 +221,7 @@ class PujaYForzadaTests(unittest.TestCase):
             rivales=[{"saldo": 1_000_000, "posiciones": ["MC"]}, {"saldo": 9_000_000, "posiciones": ["DEL"]}],
             posicion="MC",
         )
-        self.assertEqual(pujas["puja_smart"], 1_100_000)
+        self.assertEqual(pujas["puja_smart"], 1_100_000 + cola_anti_picos(1_000_000))
 
     def test_smart_no_persigue_al_rival_mas_rico(self) -> None:
         pujas = calcular_pujas(
@@ -230,7 +232,7 @@ class PujaYForzadaTests(unittest.TestCase):
             rivales=[{"saldo": 4_000_000, "posiciones": ["MC"]}],
             posicion="MC",
         )
-        self.assertEqual(pujas["puja_smart"], 1_050_000)
+        self.assertEqual(pujas["puja_smart"], 1_050_000 + cola_anti_picos(1_000_000))
         self.assertLessEqual(pujas["puja_smart"], pujas["puja_maxima"])
 
 

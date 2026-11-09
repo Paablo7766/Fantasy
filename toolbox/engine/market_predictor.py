@@ -14,7 +14,11 @@ es un pico, el impulso se apaga.
 from __future__ import annotations
 
 import math
+from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
+
+_MADRID = ZoneInfo("Europe/Madrid")
 
 # 1 punto esperado de jornada = 16,4 millones de valor de mercado.
 EUROS_POR_PUNTO = 16_400_000
@@ -125,6 +129,101 @@ def predecir_precio(
         "valor_en_7_dias": valor_en_7_dias,
         "pct_cambio": pct_cambio,
     }
+
+
+# ---------------------------------------------------------------------------
+# Ley de inercia medida (9 nov 2026, precios reales de la liga)
+# ---------------------------------------------------------------------------
+# cambio%(t+1) = 0,041 % + 0,944 * cambio%(t), R2 = 0,858. El signo del cambio
+# se repite el 95,7 % de los dias. Los domingos el precio no se mueve (0,0 %).
+LEY_INERCIA_ALFA_PCT = 0.041
+LEY_INERCIA_BETA = 0.944
+SIGNO_REPETIDO_PCT = 95.7
+#: La ley se ajusto con cambios diarios normales; un pico mayor se trata como este tope
+#: (extrapolar un +11 % a 0,944 por dia compuesto no esta medido).
+CAMBIO_MAX_EXTRAPOLABLE_PCT = 5.0
+#: Un cambio diario por encima de esto es «claramente positivo»: el jugador sigue en racha.
+CAMBIO_CLARAMENTE_POSITIVO_PCT = 0.5
+#: Impulso de arranque tras puntuar (residuo medio sobre la ley, por tramo de precio):
+#: (precio_min, precio_max, puntos_minimos, impulso_pct). En 3-15 M, de 6 puntos para
+#: arriba el residuo medio fue +0,43 % a +0,73 % y positivo en 35 de 40 casos.
+#: En >20 M no se midio impulso positivo (8 pts: -0,16 %, 3 de 10 positivos), asi que
+#: su impulso es 0 hasta que haya muestra; el umbral queda registrado.
+IMPULSOS_POST_JORNADA: tuple[tuple[int, int | None, int, float], ...] = (
+    (3_000_000, 15_000_000, 6, 0.58),
+    (20_000_000, None, 8, 0.0),
+)
+
+
+def cambio_pct_desde_delta(precio: int | float, delta: int | float) -> float:
+    """Cambio de hoy en % respecto al precio de ayer (``precio`` ya incluye el delta)."""
+    base = float(precio) - float(delta)
+    if base <= 0:
+        return 0.0
+    return float(delta) / base * 100.0
+
+
+def impulso_post_jornada_pct(precio: int | float, puntos: int | float | None) -> float:
+    """Impulso (en %) del primer dia tras una jornada con puntos altos. 0 si no aplica."""
+    if puntos is None or isinstance(puntos, bool) or not math.isfinite(float(puntos)):
+        return 0.0
+    for minimo, maximo, umbral, impulso in IMPULSOS_POST_JORNADA:
+        if float(precio) >= minimo and (maximo is None or float(precio) < maximo) and float(puntos) >= umbral:
+            return impulso
+    return 0.0
+
+
+def proyectar_inercia(
+    precio_actual: int | float,
+    cambio_pct_hoy: int | float,
+    dias: int | float,
+    *,
+    desde: date | None = None,
+    puntos_jornada: int | float | None = None,
+    post_jornada: bool = False,
+) -> dict[str, Any]:
+    """Precio dentro de ``dias`` con la ley 0,041 % + 0,944 * cambio de ayer.
+
+    Los domingos no se mueve y no gastan inercia. Con ``post_jornada`` (lunes o
+    martes tras jugar) el primer dia suma el impulso de arranque medido para los
+    puntos de la jornada; despues lo arrastra la propia inercia.
+    """
+    precio = _numero(precio_actual, "precio_actual")
+    pct = _numero(cambio_pct_hoy, "cambio_pct_hoy")
+    if precio <= 0:
+        raise ValueError("precio_actual tiene que ser positivo")
+    pct = max(-CAMBIO_MAX_EXTRAPOLABLE_PCT, min(CAMBIO_MAX_EXTRAPOLABLE_PCT, pct))
+    pasos = max(0, int(round(float(dias))))
+    dia = desde or datetime.now(_MADRID).date()
+    impulso = impulso_post_jornada_pct(precio, puntos_jornada) if post_jornada else 0.0
+    valor = precio
+    serie: list[float] = []
+    for _paso in range(pasos):
+        dia = dia + timedelta(days=1)
+        if dia.weekday() == 6:
+            serie.append(0.0)
+            continue
+        pct = LEY_INERCIA_ALFA_PCT + LEY_INERCIA_BETA * pct + impulso
+        impulso = 0.0
+        valor *= 1.0 + pct / 100.0
+        serie.append(round(pct, 4))
+    final = _al_paso(valor)
+    return {
+        "valor": final,
+        "pct": round((final - precio) / precio * 100.0, 2),
+        "serie_pct": serie,
+    }
+
+
+def vender_en_pico_prohibido(cambio_pct_hoy: int | float | None, *, dia_limite_caja: bool = False) -> bool:
+    """``True`` si vender hoy es prematuro: sigue subiendo con fuerza y no hay urgencia de caja.
+
+    El signo del cambio se repite el 95,7 % de los dias: mientras hoy suba con
+    claridad, mañana (casi seguro) sube otra vez. Solo el dia limite de caja lo salta.
+    """
+    if dia_limite_caja or cambio_pct_hoy is None or isinstance(cambio_pct_hoy, bool):
+        return False
+    return float(cambio_pct_hoy) > CAMBIO_CLARAMENTE_POSITIVO_PCT
 
 
 def formatear_pct(pct: float) -> str:
@@ -262,8 +361,16 @@ def proyectar_7d(
     *,
     en_forma: bool,
     curva: CurvaValorJusto | None = None,
+    desde: date | None = None,
+    puntos_jornada: int | float | None = None,
+    post_jornada: bool = False,
 ) -> dict[str, int | float | str]:
     """Precio dentro de siete días.
+
+    Con movimiento hoy (``delta_hoy`` distinto de cero) manda la ley medida
+    ``0,041 % + 0,944 * cambio`` (``proyectar_inercia``): sustituye al ritmo
+    asentado y a la inercia que se apaga. Sin movimiento no hay inercia que
+    proyectar y entra la fuerza hacia el valor justo.
 
     Si hoy y ayer se mueven al mismo lado y con un paso parecido, esos siete
     días repiten ese ritmo. El valor justo no lo corrige: una racha de un
@@ -281,10 +388,17 @@ def proyectar_7d(
     if precio <= 0:
         raise ValueError("precio_actual tiene que ser positivo")
     justo = valor_justo_jugador(xp_jornada, ratio, curva)
-    ritmo = _ritmo_asentado(precio, hoy, ayer)
-    if ritmo is not None:
-        valor_en_7 = _al_paso(precio + ritmo * HORIZONTE_DIAS)
-        pct = round((valor_en_7 - precio) / precio * 100.0, 2)
+    if hoy != 0:
+        ley = proyectar_inercia(
+            precio,
+            cambio_pct_desde_delta(precio, hoy),
+            HORIZONTE_DIAS,
+            desde=desde,
+            puntos_jornada=puntos_jornada,
+            post_jornada=post_jornada,
+        )
+        valor_en_7 = int(ley["valor"])
+        pct = float(ley["pct"])
     else:
         # El motor de inercia valora 1 punto de jornada a 16,4 M€. Se le pasa el
         # xp equivalente al justo de esta liga para reutilizar la misma fuerza.

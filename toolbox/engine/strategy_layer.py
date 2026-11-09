@@ -126,6 +126,14 @@ def _prob(value: Any) -> float | None:
     return number
 
 
+def _puntos_ultima(row: dict[str, Any]) -> float | None:
+    """Puntos de la última jornada jugada, si el registro los trae."""
+    recientes = row.get("recientes") if isinstance(row.get("recientes"), list) else []
+    if recientes and isinstance(recientes[-1], (int, float)) and not isinstance(recientes[-1], bool):
+        return float(recientes[-1])
+    return None
+
+
 def _blank() -> dict[str, Any]:
     return {
         "player_id": None,
@@ -913,6 +921,8 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
                 ratio,
                 en_forma=_en_forma(row),
                 curva=curva,
+                puntos_jornada=_puntos_ultima(row),
+                post_jornada=datetime.now(_MADRID).weekday() in (0, 1),
             )
         except (TypeError, ValueError):
             continue
@@ -960,6 +970,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
             posicion=row.get("position") if isinstance(row.get("position"), str) else None,
             prevision_7d_pct=previsto_pct,
             dificultad=row.get("dificultad") if isinstance(row.get("dificultad"), str) else None,
+            clave=player_id,
         )
         _aplicar_anti_pizarra(pujas[player_id], row, notas.get(player_id), previsto_pct, saldo)
         # Demanda alta en el mercado: el escalón de liga también se enseña fuera del plan.
@@ -974,6 +985,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
             maxima=pujas[player_id].get("puja_maxima"),
             sobrepuja=sobrepuja_liga,
             margen=(saldo - base_mercado) if isinstance(saldo, int) and isinstance(base_mercado, int) else None,
+            clave=player_id,
         )
 
     forzadas: dict[str, str] = {}
@@ -1495,10 +1507,11 @@ def _aplicar_competitiva(
     maxima: Any,
     sobrepuja: dict[str, Any] | None,
     margen: Any = None,
+    clave: Any = None,
 ) -> None:
     """Escribe ``puja_competitiva_liga`` y el porcentaje que la sostiene, o los deja en ``None``."""
     estimada = sobrepuja.get("estimada") if isinstance(sobrepuja, dict) else None
-    cifra = puja_competitiva_liga(base, maxima, estimada, margen=margen)
+    cifra = puja_competitiva_liga(base, maxima, estimada, margen=margen, clave=clave)
     destino["puja_competitiva_liga"] = cifra
     destino["sobrepuja_liga_pct"] = round(float(estimada) * 100.0, 1) if cifra is not None else None
     destino["sobrepuja_liga_muestra"] = (
@@ -1748,6 +1761,7 @@ def _sellar_pujas_plan(
             maxima=puja.get("puja_maxima"),
             sobrepuja=sobrepuja,
             margen=margen,
+            clave=accion.get("player_id"),
         )
         # Mercado ve la misma cifra que el plan.
         puja["puja_competitiva_liga"] = accion["puja_competitiva_liga"]
@@ -1804,6 +1818,8 @@ def _plan(
                 "war": war.get(row["player_id"]),
                 "pct": _pct_previsto(previsto, row["player_id"]),
                 "valor": row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None,
+                "delta_hoy": row.get("delta_hoy"),
+                "puntos_ultima": _puntos_ultima(row),
                 "p_titular": row.get("p_titular") if isinstance(row.get("p_titular"), (int, float)) and not isinstance(row.get("p_titular"), bool) else row.get("prob_titular"),
                 "si_titular": row.get("si_titular") if isinstance(row.get("si_titular"), (int, float)) and not isinstance(row.get("si_titular"), bool) else None,
                 "kickoff": row.get("kickoff"),
@@ -1848,6 +1864,7 @@ def _plan(
             posicion=row.get("position"),
             prevision_7d_pct=_pct_previsto(previsto, player_id),
             dificultad=row.get("dificultad") if isinstance(row.get("dificultad"), str) else None,
+            clave=player_id,
         )
         _aplicar_anti_pizarra(
             puja,
@@ -1882,6 +1899,8 @@ def _plan(
                 "pct": _pct_previsto(previsto, player_id),
                 "valor": row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None,
                 "af_alerta_bajada": row.get("af_alerta_bajada") is True,
+                "delta_hoy": row.get("delta_hoy"),
+                "puntos_ultima": _puntos_ultima(row),
             }
         )
     mercado.sort(key=lambda item: float(item["jornada"]), reverse=True)

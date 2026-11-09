@@ -264,4 +264,7 @@ def compute_expected_opta_points_v2(
         }
         salida["xp_breakout"] = xp2["breakout"]
         salida["xp_balon_parado"] = xp2["balon_parado"]
+        salida["xp_cambio_cronico"] = xp2.get("cambio_cronico")
+        salida["xp_produccion_pura_90"] = xp2.get("produccion_pura_90")
+        salida["xp_suelo_muro"] = xp2.get("suelo_muro")
     return salida

@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 import statistics
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -291,6 +291,138 @@ def with_shared_initial(
     return [*injected, *events]
 
 
+# --- Anclaje de suelo legal -------------------------------------------------
+# El libro no ve los ingresos que el feed no publica (anuncios, ventas a la
+# maquina). Dos reglas del servidor los acotan por abajo:
+#   1. En cada viernes 21:00 en que el equipo puntuo, la caja era >= 0: con
+#      saldo negativo el juego anula la jornada.
+#   2. Justo antes de cada clausulazo pagado, la caja era >= el importe: la
+#      clausula no admite deuda.
+# Ademas, subir la clausula propia cuesta 1:2 del aumento (gasto oculto del
+# registro diario de clausulas), que el feed tampoco publica.
+LOCK_WEEKDAY = 4  # viernes
+LOCK_HOUR = 21
+PRIZE_WINDOW_DAYS = 5
+PRIZE_STEP = 100_000
+
+
+def _parse_at(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=_MADRID)
+    return moment.astimezone(_MADRID)
+
+
+def friday_locks(first: datetime, last: datetime) -> list[datetime]:
+    """Viernes 21:00 (Madrid) entre dos instantes, ambos incluidos."""
+    cursor = first.astimezone(_MADRID).replace(hour=LOCK_HOUR, minute=0, second=0, microsecond=0)
+    cursor += timedelta(days=(LOCK_WEEKDAY - cursor.weekday()) % 7)
+    locks: list[datetime] = []
+    while cursor <= last:
+        if cursor >= first:
+            locks.append(cursor)
+        cursor = (cursor + timedelta(days=7)).replace(hour=LOCK_HOUR)
+    return locks
+
+
+def hidden_costs_from_log(path: Any = None) -> list[dict[str, Any]]:
+    """Subidas de clausula propias (coste 1:2) del registro diario. Vacio si no hay."""
+    try:
+        from toolbox.cache import cache_root
+        from toolbox.rival_intel import HIDDEN_EXPENSES_FILENAME, _clean_expense_entry, _read_json
+
+        data, _error = _read_json(path or cache_root() / HIDDEN_EXPENSES_FILENAME)
+        rows = data.get("entries") if isinstance(data, dict) else data
+        out: list[dict[str, Any]] = []
+        for row in rows if isinstance(rows, list) else []:
+            cleaned = _clean_expense_entry(row)
+            if cleaned is not None and cleaned["cost_eur"] > 0:
+                out.append(cleaned)
+        return out
+    except Exception:  # noqa: BLE001 - sin registro la caja queda sin ese gasto
+        return []
+
+
+def anchor_legal_floor(
+    ledgers: list[dict[str, Any]],
+    hidden_costs: list[dict[str, Any]] | None = None,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Recalcula la caja de cada equipo sin caja publicada con los suelos legales.
+
+    Anade ``anchored`` al libro y sustituye ``reconstructed_cash_eur``; el valor
+    del libro puro queda en ``raw_reconstructed_cash_eur``. Un equipo con caja
+    observada no se toca: esa caja ya es la verdad.
+    """
+    stamp = (now or datetime.now(timezone.utc)).astimezone(_MADRID)
+    costs_by_team: dict[str, list[dict[str, Any]]] = {}
+    for cost in hidden_costs or []:
+        costs_by_team.setdefault(str(cost.get("team_id")), []).append(cost)
+    for ledger in ledgers:
+        initial = ledger.get("initial_budget_eur")
+        if not isinstance(initial, int) or isinstance(initial, bool):
+            continue
+        if isinstance(ledger.get("observed_cash_eur"), int):
+            continue
+        timed: list[tuple[datetime, int, dict[str, Any]]] = []
+        prizes: list[datetime] = []
+        for line in ledger.get("events") or []:
+            at = _parse_at(line.get("at"))
+            if at is None:
+                continue
+            timed.append((at, 0, line))
+            if line.get("kind") == "premium" and int(line.get("amount_eur") or 0) % PRIZE_STEP == 0:
+                prizes.append(at)
+        for cost in costs_by_team.get(str(ledger.get("team_id")), []):
+            day = _parse_at(f"{cost['day']}T12:00:00")
+            if day is not None and day <= stamp:
+                timed.append(
+                    (day, 0, {"kind": "raise", "amount_eur": cost["cost_eur"], "signed_eur": -cost["cost_eur"]})
+                )
+        if not timed:
+            continue
+        first = min(item[0] for item in timed)
+        for lock in friday_locks(first, stamp):
+            if any(lock < prize <= lock + timedelta(days=PRIZE_WINDOW_DAYS) for prize in prizes):
+                timed.append((lock, 1, {"kind": "lock"}))
+        timed.sort(key=lambda item: (item[0], item[1]))
+        cash = initial
+        lifts: list[dict[str, Any]] = []
+        raise_cost = 0
+        for at, _order, line in timed:
+            kind = line.get("kind")
+            if kind == "lock":
+                if cash < 0:
+                    lifts.append({"at": at.isoformat(), "why": "viernes", "lift_eur": -cash})
+                    cash = 0
+            elif kind == "clause":
+                need = int(line["amount_eur"])
+                if cash < need:
+                    lifts.append({"at": at.isoformat(), "why": "clausula", "lift_eur": need - cash})
+                    cash = need
+                cash -= need
+            else:
+                cash += int(line["signed_eur"])
+                if kind == "raise":
+                    raise_cost += int(line["amount_eur"])
+        ledger["raw_reconstructed_cash_eur"] = ledger.get("reconstructed_cash_eur")
+        ledger["reconstructed_cash_eur"] = int(cash)
+        ledger["anchored"] = {
+            "lifts": lifts,
+            "lifted_eur": sum(item["lift_eur"] for item in lifts),
+            "clause_raise_cost_eur": raise_cost,
+        }
+
+
 def annotate_ledgers(
     ledgers: list[dict[str, Any]],
     squads: list[dict[str, Any]],
@@ -309,6 +441,7 @@ def books_from_activity(
     squads: list[dict[str, Any]],
     events: list[dict[str, Any]],
     snapshots: dict[tuple[str, str], int] | None = None,
+    hidden_costs: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Libros de caja y la muestra de guerras. No inventa primas sin valor del día."""
     roster = [squad for squad in squads if isinstance(squad, dict)]
@@ -316,6 +449,7 @@ def books_from_activity(
     initial, source = infer_shared_initial(bound, roster)
     prepared = with_shared_initial(bound, roster, initial) if source == "caja_propia" else bound
     ledgers = reconstruct_ledgers(roster, prepared)
+    anchor_legal_floor(ledgers, hidden_costs)
     annotate_ledgers(ledgers, roster, source if initial is not None or source == "historial" else None)
     if source == "historial" and not any(ledger.get("initial_budget_eur") is not None for ledger in ledgers):
         source = None

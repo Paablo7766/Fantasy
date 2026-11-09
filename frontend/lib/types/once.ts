@@ -69,6 +69,19 @@ export type Player = {
   own_signal_strength?: number | null;
   own_predicted_delta?: number | null;
   own_expected_points?: number | null;
+  /** (valoración + acciones) por 90 minutos, de sus actas. */
+  own_produccion_pura_90?: number | null;
+  /** Mínimo de puntos en partidos de más de 70'. `activo` = muro (mínimo >= 6). */
+  own_suelo_muro?: { activo: boolean; minimo: number; n_partidos: number } | null;
+  /** Titular al que cambian entre el 45' y el 59' de forma repetida. */
+  own_cambio_cronico?: {
+    activo: boolean;
+    n_titularidades: number;
+    n_cambios_antes_60: number;
+    minutos_techo: number;
+    llega_60: number;
+    factor_minutos: number;
+  } | null;
   own_ceiling_points?: number | null;
   own_goal_probability?: number | null;
   own_assist_probability?: number | null;

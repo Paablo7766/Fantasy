@@ -1746,6 +1746,31 @@ def _attach_bid_profiles(rivals: list[dict[str, Any]], needs: dict[str, Any]) ->
         }
 
 
+def _attach_huellas(
+    rivals: list[dict[str, Any]],
+    needs: dict[str, Any],
+    ledgers: dict[str, Any],
+    board: dict[str, Any],
+) -> None:
+    """Estilo de cola, ventanas de clausulazo y ofertas humanas de cada rival."""
+    try:
+        from toolbox.rival_huella import huella_de_rival
+
+        history = needs.get("history") if isinstance(needs.get("history"), dict) else {}
+        buys = [item for item in history.get("activity_buys") or [] if isinstance(item, dict)]
+        market = board.get("market") if isinstance(board.get("market"), dict) else {}
+        listings = [row for row in market.get("listings") or [] if isinstance(row, dict)]
+        for view in rivals:
+            team_id = view.get("team_id")
+            if team_id is None:
+                continue
+            ledger = ledgers.get(str(team_id)) if isinstance(ledgers, dict) else None
+            eventos = ledger.get("events") if isinstance(ledger, dict) and isinstance(ledger.get("events"), list) else []
+            view["huella"] = huella_de_rival(str(team_id), compras=buys, eventos=eventos, listings=listings)
+    except Exception:
+        logger.debug("Sin huella de puja de los rivales", exc_info=True)
+
+
 def shape_squads(board: dict[str, Any]) -> dict[str, Any]:
     document = board.get("squads") if isinstance(board.get("squads"), dict) else board
     squads = document.get("squads") if isinstance(document.get("squads"), list) else []
@@ -1796,6 +1821,7 @@ def shape_squads(board: dict[str, Any]) -> dict[str, Any]:
         rivals.append(view)
         clauses.extend(_clause_rows(squad))
     _attach_bid_profiles(rivals, needs)
+    _attach_huellas(rivals, needs, ledgers, board)
     rivals.sort(key=_squad_sort)
     clauses.sort(key=_clause_sort)
     own_players = own.get("players") if isinstance(own, dict) else []

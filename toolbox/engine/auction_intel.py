@@ -43,6 +43,51 @@ SOBREPUJA_MAX = 0.20
 DIFERENCIALES_EUR = tuple(v for v in range(140_000, 220_001, 10_000) if v % 50_000 != 0)
 
 
+# Cola anti-picos. floren romi (.004/.005), Naviis10 y pablooceballos (.001/.010)
+# ganan subastas pujando 1-10 EUR por encima de un numero redondo. La API acepta
+# cualquier importe en euros, asi que nuestra cifra lleva una cola no redonda de
+# varios miles de euros: barre cualquier +1 / +10 sobre el escalon redondo.
+COLA_MIN_EUR = 1_111
+COLA_MAX_EUR = 9_899
+
+
+def cola_anti_picos(clave: Any) -> int:
+    """Cola en euros, estable por jugador, nunca terminada en 0 (ni multiplo de 100)."""
+    semilla = zlib.crc32(f"cola|{clave}".encode("utf-8"))
+    cola = COLA_MIN_EUR + semilla % (COLA_MAX_EUR - COLA_MIN_EUR + 1)
+    if cola % 10 == 0:
+        cola += 3
+    if cola % 100 == 0:
+        cola += 7
+    return min(cola, COLA_MAX_EUR)
+
+
+def con_cola_anti_picos(
+    puja: Any,
+    *,
+    clave: Any,
+    techo: Any = None,
+    saldo: Any = None,
+) -> Any:
+    """``puja`` mas la cola, sin pasar nunca del techo dinamico ni del presupuesto.
+
+    Si la puja ya llega al techo o al presupuesto no hay hueco para la cola y se
+    devuelve igual. Una cifra que ya trae cola (no termina en 0) tampoco se toca.
+    """
+    if isinstance(puja, bool) or not isinstance(puja, (int, float)) or puja <= 0:
+        return puja
+    if int(puja) % 10 != 0:
+        return puja
+    objetivo = int(puja) + cola_anti_picos(clave)
+    for tope in (techo, saldo):
+        if isinstance(tope, bool) or not isinstance(tope, (int, float)):
+            continue
+        if tope <= puja:
+            return puja
+        objetivo = min(objetivo, int(tope))
+    return int(objetivo)
+
+
 def _paso(valor: float, paso: int = PASO_PRECIO) -> int:
     if paso <= 0:
         return int(round(valor))
@@ -145,8 +190,12 @@ def calcular_pujas(
     posicion: str | None,
     prevision_7d_pct: Any = None,
     dificultad: str | None = None,
+    clave: Any = None,
 ) -> dict[str, int | None]:
     """Puja recomendada, techo dinámico y puja que deja atrás al rival.
+
+    ``puja_recomendada`` y ``puja_smart`` llevan la cola anti-picos
+    (``con_cola_anti_picos``) con ``clave`` (id del jugador; si falta, el valor).
 
     ``puja_recomendada`` es el valor por 1,047 más la subida de hoy, si la hay.
     ``puja_maxima`` es el techo dinámico (previsión a 7 días y dificultad),
@@ -204,10 +253,13 @@ def calcular_pujas(
     else:
         smart_out = int(smart)
 
+    cola_clave = clave if clave is not None else valor_actual
+    recomendada_out = con_cola_anti_picos(recomendada, clave=cola_clave, techo=maxima, saldo=saldo)
+    smart_cola = con_cola_anti_picos(smart_out, clave=cola_clave, techo=maxima, saldo=saldo)
     return {
-        "puja_recomendada": recomendada if recomendada > 0 else None,
+        "puja_recomendada": recomendada_out if recomendada > 0 else None,
         "puja_maxima": maxima,
-        "puja_smart": smart_out,
+        "puja_smart": smart_cola,
     }
 
 
@@ -272,6 +324,12 @@ def puja_anti_pizarra(
     objetivo = int(math.floor(objetivo / PASO_PRECIO)) * PASO_PRECIO
     if objetivo <= pizarra:
         return salida
+    objetivo = con_cola_anti_picos(
+        objetivo,
+        clave=clave if clave is not None else valor_actual,
+        techo=maxima if isinstance(maxima, int) and not isinstance(maxima, bool) and maxima > 0 else None,
+        saldo=saldo,
+    )
     salida["puja_anti_pizarra"] = objetivo
     salida["diferencial_anti_pizarra_eur"] = objetivo - pizarra
     return salida
@@ -322,6 +380,7 @@ def puja_competitiva_liga(
     sobrepuja: Any,
     *,
     margen: Any = None,
+    clave: Any = None,
 ) -> int | None:
     """Escalón por encima de nuestra cifra que cubre lo que suele pagar la liga.
 
@@ -343,7 +402,12 @@ def puja_competitiva_liga(
         objetivo = min(objetivo, float(base) + max(0.0, float(margen)))
     # El epsilon evita que 10 M€ × 1,13 = 11 299 999,999… caiga un escalón entero.
     objetivo = int(math.floor(objetivo / PASO_PRECIO + 1e-9)) * PASO_PRECIO
-    return objetivo if objetivo > base else None
+    if objetivo <= base:
+        return None
+    techo = float(maxima)
+    if isinstance(margen, (int, float)) and not isinstance(margen, bool):
+        techo = min(techo, float(base) + max(0.0, float(margen)))
+    return con_cola_anti_picos(objetivo, clave=clave if clave is not None else base, techo=techo)
 
 
 def capitanes(

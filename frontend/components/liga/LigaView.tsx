@@ -315,6 +315,29 @@ function RivalDialog({
               ) : null}
             </p>
           ) : null}
+          {squad.huella ? (
+            <div className="mt-3 flex flex-col gap-1.5 text-[12.5px] text-white/60">
+              {squad.huella.cola ? (
+                <p>
+                  <Tag label={squad.huella.cola.etiqueta} color="#FFC08A" />
+                  <span className="ml-2">en {squad.huella.cola.n_compras} compras</span>
+                </p>
+              ) : null}
+              {squad.huella.ventanas_clausulazo?.length ? (
+                <p>
+                  Clausula hacia las <span className="text-white/80">{squad.huella.ventanas_clausulazo.join(" / ")}</span>
+                </p>
+              ) : null}
+              {(squad.huella.ofertas_humanas || []).map((oferta) => (
+                <p key={oferta.market_id || oferta.player_id}>
+                  <Tag label={oferta.etiqueta} color={TONE.red} />
+                  <span className="ml-2">
+                    {oferta.nombre} · {oferta.offer_count} ofertas
+                  </span>
+                </p>
+              ))}
+            </div>
+          ) : null}
           <div className="mt-4 grid grid-cols-3 gap-2">
             <HeroStat value={compact(cash)} label="Caja" tone={cash !== null && cash < 0 ? TONE.red : undefined} />
             <HeroStat value={compact(read.bidLimit)} label="Puja máxima" tone="#FFC08A" />

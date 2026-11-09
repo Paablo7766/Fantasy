@@ -563,6 +563,27 @@ function facts(player: MarketDecision): BidFact[] {
   } else if (typeof pts === "number") {
     rows.push({ label: "Si juega", value: `${points(pts)} pts`, note: "Puntos esperados del partido" });
   }
+  if (typeof player.own_produccion_pura_90 === "number") {
+    rows.push({
+      label: "Producción pura",
+      value: `${points(player.own_produccion_pura_90)} /90`,
+      note: "(valoración + acciones) por 90 minutos",
+    });
+  }
+  if (player.own_suelo_muro?.activo) {
+    rows.push({
+      label: "Suelo muro",
+      value: `≥ ${points(player.own_suelo_muro.minimo)} pts`,
+      note: `Mínimo en ${player.own_suelo_muro.n_partidos} partidos de más de 70'`,
+    });
+  }
+  if (player.own_cambio_cronico?.activo) {
+    rows.push({
+      label: "Cambio crónico",
+      value: `${Math.round(player.own_cambio_cronico.minutos_techo)}' de techo`,
+      note: `Sustituido antes del 60' en ${player.own_cambio_cronico.n_cambios_antes_60} de ${player.own_cambio_cronico.n_titularidades} titularidades: xP descontado`,
+    });
+  }
   if (typeof player.af_expected_points === "number" && player.expected_points_source !== "af") {
     rows.push({
       label: "Analítica Fantasy",

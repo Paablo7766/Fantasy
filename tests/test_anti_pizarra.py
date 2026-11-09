@@ -6,6 +6,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from toolbox.engine.auction_intel import (
+    cola_anti_picos,
     DIFERENCIALES_EUR,
     alta_demanda,
     puja_anti_pizarra,
@@ -47,9 +48,11 @@ class PujaAntiPizarraTests(unittest.TestCase):
             10_000_000, 0, nota_mercado=8.4, prevision_7d_pct=2, clave="p1", maxima=13_000_000, saldo=50_000_000
         )
         self.assertEqual(info["puja_pizarra"], 10_500_000)
-        self.assertIn(info["diferencial_anti_pizarra_eur"], DIFERENCIALES_EUR)
+        cola = cola_anti_picos("p1")
+        self.assertIn(info["diferencial_anti_pizarra_eur"] - cola, DIFERENCIALES_EUR)
         self.assertEqual(info["puja_anti_pizarra"], 10_500_000 + info["diferencial_anti_pizarra_eur"])
         self.assertNotEqual(info["puja_anti_pizarra"] % 100_000, 0)
+        self.assertNotEqual(info["puja_anti_pizarra"] % 10, 0)
         # Estable entre refrescos.
         otra = puja_anti_pizarra(10_000_000, 0, nota_mercado=8.4, clave="p1", maxima=13_000_000, saldo=50_000_000)
         self.assertEqual(otra["puja_anti_pizarra"], info["puja_anti_pizarra"])

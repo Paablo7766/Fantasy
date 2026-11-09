@@ -115,6 +115,24 @@ export type BidProfile = {
   typical_premium_pct?: number | null;
 };
 
+/** Huella de puja: cómo termina su importe, a qué hora clausula y qué anuncios suyos ya tienen a una persona pujando. */
+export type RivalHuella = {
+  cola?: {
+    estilo: "pica" | "redondea_100k" | "redondea_10k" | "mixto";
+    etiqueta: string;
+    n_compras: number;
+  } | null;
+  ventanas_clausulazo?: string[];
+  ofertas_humanas?: Array<{
+    market_id?: string | null;
+    player_id?: string | null;
+    nombre?: string | null;
+    offer_count: number;
+    sale_price?: number | null;
+    etiqueta: string;
+  }>;
+};
+
 export type RivalSquad = {
   team_id?: string | null;
   manager_name?: string | null;
@@ -132,6 +150,7 @@ export type RivalSquad = {
   players?: RivalPlayer[];
   activity_profile?: ActivityProfile | null;
   bid_profile?: BidProfile | null;
+  huella?: RivalHuella | null;
   portfolio?: PortfolioSummary | null;
   /** Cota calibrada contra el saldo observado. Nunca por debajo de él. */
   risk_adjusted_cash?: number | null;

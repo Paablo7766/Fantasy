@@ -1869,6 +1869,13 @@ def build_trends(
             from toolbox.own_intel import persist_and_apply_own_intel
 
             league_id = market.get("league_id") or squads.get("league_id")
+            try:
+                from toolbox.normalize import normalize_catalog
+                from toolbox.quant_valuation import cached_catalog
+
+                catalog_rows = normalize_catalog(cached_catalog())
+            except Exception:  # noqa: BLE001 — sin catálogo solo se archivan plantillas y mercado
+                catalog_rows = []
             own_summary = persist_and_apply_own_intel(
                 players,
                 league_id=league_id if isinstance(league_id, str) else None,
@@ -1877,6 +1884,7 @@ def build_trends(
                 team_rolling=team_rolling,
                 match_odds=match_odds,
                 day=_snapshot_day(market),
+                catalog=catalog_rows,
             )
             sources.update(own_summary.get("sources") or {})
             # Goleadores de mercado: solo se miden junto al modelo, no entran en el xP.
