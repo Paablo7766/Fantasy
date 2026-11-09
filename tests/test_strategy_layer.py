@@ -117,6 +117,35 @@ class RatioYPrecioTests(unittest.TestCase):
         records = _collect(board, datetime(2026, 11, 3, tzinfo=timezone.utc))
         self.assertEqual(records["3077"]["delta_ayer"], 1_992_597 - 969_556)
 
+    def test_la_actividad_manda_sobre_una_plantilla_atrasada(self) -> None:
+        """9 nov: Correia seguía con su dueño y su candado tras ficharlo otro."""
+        def jugador(pid: str, clausula: int) -> dict:
+            return {"player_id": pid, "position": "DEL", "buyout_clause": clausula, "market_value": clausula,
+                    "clause_lock": {"is_locked": True, "local_date": "2026-11-09", "local_time": "14:08"}}
+
+        board = {
+            "trends": {"players": []},
+            "squads": {"squads": [
+                {"team_id": "gon", "manager_name": "Gon", "is_self": False, "players": [jugador("3262", 9_000_000), jugador("1", 5_000_000)]},
+                {"team_id": "yo", "manager_name": "Yo", "is_self": True, "players": [jugador("2", 4_000_000)]},
+            ]},
+            "needs": {"ledgers": [
+                {"team_id": "gon", "manager_name": "Gon", "events": [{"kind": "buy", "player_id": "3262", "amount_eur": 6_250_000, "at": "2026-10-26T14:08:31+01:00"}]},
+                {"team_id": "pablo", "manager_name": "Pablo", "events": [{"kind": "clause", "player_id": "3262", "amount_eur": 12_500_000, "at": "2026-11-09T11:03:32+01:00"}]},
+                {"team_id": "yo", "manager_name": "Yo", "events": [{"kind": "clause", "player_id": "1", "amount_eur": 5_000_000, "at": "2026-11-09T12:00:00+01:00"}]},
+            ]},
+            "market": {"listings": []},
+            "optimize": {},
+        }
+        records = _collect(board, datetime(2026, 11, 9, 12, tzinfo=timezone.utc))
+        self.assertEqual(records["3262"]["team_id"], "pablo")
+        self.assertEqual(records["3262"]["manager"], "Pablo")
+        self.assertIsNone(records["3262"]["clause"])
+        self.assertIsNone(records["3262"]["clause_lock"])
+        self.assertTrue(records["1"]["is_self"])
+        self.assertIsNone(records["1"]["clause"])
+        self.assertEqual(records["2"]["clause"], 4_000_000)
+
     def test_el_porcentaje_lleva_signo_y_un_decimal(self) -> None:
         self.assertEqual(formatear_pct(10.94), "+10.9%")
         self.assertEqual(formatear_pct(-2.14), "-2.1%")

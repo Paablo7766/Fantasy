@@ -599,6 +599,18 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
             row["excluded"] = True
 
     squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
+    # La plantilla oficial va por detrás de la actividad (9 nov: Correia seguía
+    # con su dueño y su candado 48 min después de que otro lo fichara). La
+    # actividad manda: el jugador pasa a su nuevo dueño y, sin su cláusula
+    # nueva, no entra como en peligro ni como clausulazo.
+    from toolbox.clause_board import _latest_takers
+
+    needs_doc = board.get("needs") if isinstance(board.get("needs"), dict) else {}
+    takers = _latest_takers(needs_doc.get("ledgers"))
+    own_team_id = next(
+        (_pid(sq.get("team_id")) for sq in squads.get("squads") or [] if isinstance(sq, dict) and sq.get("is_self") is True),
+        None,
+    )
     for squad in squads.get("squads") or []:
         if not isinstance(squad, dict):
             continue
@@ -615,24 +627,35 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
             _set_name(row, player)
             _set_points(row, player, prefer=False)
             _set_price(row, player)
-            row["team_id"] = team_id
-            row["is_self"] = is_self
-            row["manager"] = manager
-            clause = _int(player.get("buyout_clause"))
-            if clause is not None and clause > 0:
-                row["clause"] = clause
-            if player.get("is_shielded") is True:
-                row["shielded"] = True
-            lock = player.get("clause_lock")
-            if isinstance(lock, dict):
-                row["clause_lock"] = lock
+            taker = takers.get(player_id)
+            moved = bool(taker) and _pid(taker.get("team_id")) not in (None, team_id)
+            if moved:
+                new_team = _pid(taker.get("team_id"))
+                row["team_id"] = new_team
+                row["is_self"] = new_team == own_team_id
+                row["manager"] = taker.get("manager_name") if isinstance(taker.get("manager_name"), str) else None
+                row["traspasado"] = {"desde": team_id, "at": taker.get("at"), "importe": taker.get("amount_eur")}
+            else:
+                row["team_id"] = team_id
+                row["is_self"] = is_self
+                row["manager"] = manager
+            # Cláusula, escudo y candado de la plantilla vieja ya no valen si se movió.
+            if not moved:
+                clause = _int(player.get("buyout_clause"))
+                if clause is not None and clause > 0:
+                    row["clause"] = clause
+                if player.get("is_shielded") is True:
+                    row["shielded"] = True
+                lock = player.get("clause_lock")
+                if isinstance(lock, dict):
+                    row["clause_lock"] = lock
             if exclusion_from_status(player.get("player_status") if isinstance(player.get("player_status"), str) else None):
                 row["excluded"] = True
             if not row.get("recientes"):
                 row["recientes"] = _recientes(player)
-            if player.get("tiene_oferta_laliga") is True:
+            if player.get("tiene_oferta_laliga") is True and not moved:
                 row["tiene_oferta_laliga"] = True
-            if is_self:
+            if is_self and not moved:
                 for key in _OFERTA_KEYS:
                     importe = _int(player.get(key))
                     if importe is not None and importe > 0:

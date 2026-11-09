@@ -108,6 +108,7 @@ def load_activity(client: ActivityClient, league_id: str | None, *, fresh: bool)
             "error": fetched.get("error") or "endpoint_not_found",
             "attempts": fetched.get("attempts") or [],
         }
+    _log_raw_activity(fetched.get("payload"))
     return {
         "ok": True,
         "events": parse_events(fetched.get("payload")),
@@ -115,6 +116,44 @@ def load_activity(client: ActivityClient, league_id: str | None, *, fresh: bool)
         "error": None,
         "attempts": [],
     }
+
+
+RAW_ACTIVITY_LOG = "activity_raw_log.json"
+
+
+def _log_raw_activity(payload: Any) -> None:
+    """Guarda cada movimiento oficial entero, con todos sus campos.
+
+    El libro de caja solo se queda con tipo, importe, jugador y hora. Para saber
+    si una cláusula pagada y una oferta aceptada se distinguen en algún campo
+    (el 9 nov Correia salió a 12,5 M con el candado puesto) hace falta la fila
+    tal cual llega. Solo escribe en disco; un fallo aquí nunca tumba la caja.
+    """
+    try:
+        import json
+
+        from toolbox.cache import cache_root
+
+        rows = _event_rows(payload)
+        if not rows:
+            return
+        path = cache_root() / RAW_ACTIVITY_LOG
+        known: dict[str, Any] = {}
+        if path.exists():
+            known = json.loads(path.read_text(encoding="utf8"))
+        changed = False
+        for row in rows:
+            key = row.get("id")
+            key = str(key) if key is not None else json.dumps(row, sort_keys=True, ensure_ascii=False)
+            if key not in known:
+                known[key] = row
+                changed = True
+        if changed:
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_text(json.dumps(known, ensure_ascii=False), encoding="utf8")
+            tmp.replace(path)
+    except Exception:  # noqa: BLE001 - es solo un registro
+        return
 
 
 def parse_events(payload: Any) -> list[dict[str, Any]]:
