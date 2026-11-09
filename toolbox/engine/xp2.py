@@ -73,6 +73,13 @@ LIGA_LAMBDA = 1.30
 #: Prob. de entrar desde el banquillo si no es titular (portero: casi nunca).
 FACTOR_BANQUILLO = {"PT": 0.05, "DF": 0.55, "MC": 0.55, "DL": 0.55}
 
+# --- Histórico de temporadas pasadas (toolbox.season_history) ---------------
+#: Partidos de titular (ponderados) que valen lo mismo que la media del puesto. Con
+#: pocas jornadas este año, el pasado del propio jugador sustituye al puesto.
+K_HIST_SUELO = 12.0
+K_HIST_GOL = 25.0
+K_HIST_ASIST = 25.0
+
 # --- Balón parado (Analítica Fantasy) ---------------------------------------
 #: Penaltis a favor por equipo y partido en LaLiga (~0,13) × acierto (~0,78).
 GOLES_PENALTI_POR_PARTIDO = 0.10
@@ -239,6 +246,35 @@ def _precio(player: dict[str, Any]) -> float | None:
     return None
 
 
+def prior_con_historico(player: dict[str, Any], slot: str) -> tuple[float, float, float]:
+    """Punto de partida de suelo, goles y asistencia: el puesto, movido hacia el pasado del jugador.
+
+    ``player["hist_prior"]`` trae la distancia del jugador a la media de su puesto
+    medida en temporadas anteriores (``toolbox.season_history``) y los partidos de
+    titular que la respaldan. Cuantos más partidos, más se aleja del puesto. Sin
+    histórico devuelve el puesto tal cual, y el modelo queda como antes.
+    """
+    suelo, goles, asist = SUELO_PUESTO[slot], GOLES_PUESTO[slot], ASIST_PUESTO[slot]
+    hist = player.get("hist_prior")
+    if hist is None:
+        from toolbox.season_history import hist_prior_de
+
+        hist = hist_prior_de(player)
+    if not isinstance(hist, dict):
+        return suelo, goles, asist
+    n = _num(hist.get("n"))
+    if n is None or n <= 0:
+        return suelo, goles, asist
+    d_suelo = _num(hist.get("suelo")) or 0.0
+    d_goles = _num(hist.get("goles")) or 0.0
+    d_asist = _num(hist.get("asistencia")) or 0.0
+    return (
+        suelo + n / (n + K_HIST_SUELO) * d_suelo,
+        max(0.0, goles + n / (n + K_HIST_GOL) * d_goles),
+        max(0.0, asist + n / (n + K_HIST_ASIST) * d_asist),
+    )
+
+
 def es_breakout(slot: str, titularidades: list[ActaDesglosada]) -> bool:
     """Dos titularidades recientes seguidas con suelo en el 25 % alto del puesto.
 
@@ -306,7 +342,8 @@ def prediccion_xp2(
     k_suelo = K_SUELO_BREAKOUT if breakout else K_SUELO
     # El prior del puesto supone un titular que juega entero: a quien salen antes del 60' se le
     # aplica su techo real de minutos.
-    suelo = (len(titular) * media_suelo + k_suelo * SUELO_PUESTO[slot] * factor_min) / (len(titular) + k_suelo)
+    prior_suelo, prior_goles, prior_asist = prior_con_historico(player, slot)
+    suelo = (len(titular) * media_suelo + k_suelo * prior_suelo * factor_min) / (len(titular) + k_suelo)
 
     # 2) Partido: el favorito puntúa más (valoración, juego, resultado).
     lam_f = max(0.05, float(lambda_favor))
@@ -323,11 +360,11 @@ def prediccion_xp2(
     # 4) Gol y asistencia: contracción fuerte hacia el puesto + balón parado.
     roles = _roles_balon_parado(player)
     ataque = (lam_f / LIGA_LAMBDA) ** ELASTICIDAD_ATAQUE
-    goles = _contrae([a.cantidades.get("goals", 0.0) for a in titular], GOLES_PUESTO[slot], K_GOL)
+    goles = _contrae([a.cantidades.get("goals", 0.0) for a in titular], prior_goles, K_GOL)
     if "penalties" in roles and slot != "PT":
         goles += GOLES_PENALTI_POR_PARTIDO
     puntos_gol = goles * ataque * PUNTOS_GOL[slot] * factor_min
-    asist = _contrae([a.bloques.get("ast", 0.0) for a in titular], ASIST_PUESTO[slot], K_ASIST)
+    asist = _contrae([a.bloques.get("ast", 0.0) for a in titular], prior_asist, K_ASIST)
     if roles & {"corners", "indirect"}:
         asist += ASIST_BALON_PARADO * PUNTOS_ASISTENCIA
     puntos_asist = asist * ataque * factor_min
