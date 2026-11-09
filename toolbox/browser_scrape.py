@@ -9,12 +9,19 @@ y el scraper se queda con lo que haya en caché.
 from __future__ import annotations
 
 import json
+import threading
 import os
 import urllib.parse
 from typing import Any
 
 from toolbox import api_meter
 from toolbox.net import REQUIRED_HEADERS, offline_mode
+
+
+# Un solo Chromium a la vez: cada uno pesa 300-500 MB y varias peticiones
+# simultáneas (refresco + web) acumulaban procesos hasta pasar el límite de Render.
+_BROWSER_LOCK = threading.Lock()
+_CHROMIUM_ARGS = ["--disable-dev-shm-usage", "--disable-gpu", "--no-zygote", "--disable-extensions"]
 
 
 def browser_scrape_enabled() -> bool:
@@ -45,8 +52,8 @@ def render_with_browser(url: str) -> str | None:
     except ImportError:
         return None
     try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
+        with _BROWSER_LOCK, sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, args=_CHROMIUM_ARGS)
             try:
                 page = browser.new_page()
                 with api_meter.call(url=url, via="browser") as probe:
@@ -74,8 +81,8 @@ def fetch_json_with_browser(url: str) -> tuple[Any | None, str | None]:
         **extra,
     }
     try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
+        with _BROWSER_LOCK, sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, args=_CHROMIUM_ARGS)
             try:
                 context = browser.new_context(extra_http_headers=headers)
                 with api_meter.call(url=url, via="browser") as probe:
