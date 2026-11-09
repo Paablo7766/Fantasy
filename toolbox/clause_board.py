@@ -35,7 +35,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Mapping, Sequence
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -203,6 +203,51 @@ def _acquisitions(ledgers: Any) -> dict[tuple[str, str], int]:
     return prices
 
 
+def _moment(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else None
+
+
+def _latest_takers(ledgers: Any) -> dict[str, dict[str, Any]]:
+    """Último fichaje oficial (compra o cláusula) de cada jugador, de cualquier equipo.
+
+    La lista de plantillas de LaLiga va por detrás de la actividad: el 9 nov un
+    rival pagó la cláusula de Félix Correia a las 11:03 y a las 11:51 la
+    plantilla seguía poniéndolo con su dueño anterior y su candado de las
+    14:08. La actividad es lo que manda: si dice que lo tiene otro, ya no es
+    una cláusula que se pueda pagar.
+    """
+    latest: dict[str, tuple[datetime, dict[str, Any]]] = {}
+    for ledger in ledgers if isinstance(ledgers, list) else []:
+        if not isinstance(ledger, Mapping) or not isinstance(ledger.get("team_id"), str):
+            continue
+        for event in ledger.get("events") or []:
+            if not isinstance(event, Mapping) or event.get("kind") not in {"buy", "clause"}:
+                continue
+            player_id = event.get("player_id")
+            moment = _moment(event.get("at"))
+            if not isinstance(player_id, str) or not player_id or moment is None:
+                continue
+            if player_id in latest and latest[player_id][0] >= moment:
+                continue
+            latest[player_id] = (
+                moment,
+                {
+                    "team_id": ledger["team_id"],
+                    "manager_name": ledger.get("manager_name"),
+                    "kind": event.get("kind"),
+                    "at": event.get("at"),
+                    "amount_eur": event.get("amount_eur"),
+                },
+            )
+    return {player_id: value[1] for player_id, value in latest.items()}
+
+
 def _sort_row(row: dict[str, Any]) -> tuple[int, int, str, str, str]:
     lock = row.get("clause_lock") or {}
     missing = 0 if lock.get("local_date") and lock.get("local_time") else 1
@@ -246,6 +291,7 @@ def build_clause_board(
     # queda en ``from_day``.
     gap_days = _days_between(from_day, day) if from_day and day else None
     paid_index = _acquisitions(ledgers)
+    takers = _latest_takers(ledgers)
     # Un jugador anunciado en el mercado se compra por oferta o puja sin esperar
     # al candado de su cláusula: sin este cruce el tablero decía «abre a las
     # 14:08» de uno que un rival se llevó por oferta horas antes.
@@ -312,8 +358,15 @@ def build_clause_board(
                 auto_raise = 0
                 paid_raise = max(0, clause - floor) if floor is not None else 0
             listing = listed.get((team_id, player_id)) or listed.get(("", player_id))
+            taker = takers.get(player_id)
+            taken = taker if taker and taker["team_id"] != team_id else None
             rows.append(
                 {
+                    "taken_by_other": taken is not None,
+                    "taken_by_manager": taken.get("manager_name") if taken else None,
+                    "taken_at": taken.get("at") if taken else None,
+                    "taken_kind": taken.get("kind") if taken else None,
+                    "taken_eur": taken.get("amount_eur") if taken else None,
                     "on_market": listing is not None,
                     "market_listing_expires_at": listing.get("listing_expires_at") if listing else None,
                     "market_listing_expires_local_time": listing.get("listing_expires_local_time") if listing else None,
@@ -354,6 +407,9 @@ def build_clause_board(
             )
 
     rows.sort(key=_sort_row)
+    # Fichados ya por otro: no se pueden pagar, no cuentan como abiertos ni con candado.
+    taken_rows = [row for row in rows if row["taken_by_other"]]
+    rows = [row for row in rows if not row["taken_by_other"]]
     locked = sum(1 for row in rows if row["is_locked"])
     return {
         "ok": True,
@@ -373,4 +429,5 @@ def build_clause_board(
             "auto_raise": sum(1 for row in rows if row["clause_auto_raise_eur"]),
         },
         "rows": rows,
+        "taken": taken_rows,
     }

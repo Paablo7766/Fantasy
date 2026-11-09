@@ -132,7 +132,8 @@ function browseClauses(
 } {
   const byId = new Map(suggested.map((row) => [String(row.player_id), row]));
   const order = new Map(suggested.map((row, index) => [String(row.player_id), index]));
-  const seen = new Set<string>();
+  const taken = new Set((board?.taken || []).map((row) => String(row.player_id)));
+  const seen = new Set<string>(taken);
   const items: ClauseBrowseItem[] = [];
   const source = board?.ok !== false && board?.rows?.length ? board.rows : rowsFromSquads(squads);
   for (const row of source) {

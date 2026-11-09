@@ -249,6 +249,31 @@ class ClauseBoardTests(unittest.TestCase):
         self.assertEqual(rows["p1"]["market_listing_expires_local_time"], "09:29")
         self.assertFalse(rows["p2"]["on_market"])
 
+    def test_player_taken_by_another_team_in_the_feed_is_not_payable(self) -> None:
+        squads = _squads(
+            _squad("gon", [_player("p1", clause=9_000_000, lock=_lock("2026-11-09")), _player("p2", clause=5_000_000, lock=_lock("2026-11-09"))]),
+        )
+        ledgers = [
+            {"team_id": "gon", "manager_name": "Gon", "events": [{"kind": "buy", "player_id": "p1", "amount_eur": 6_250_000, "at": "2026-10-26T14:08:31+01:00"}]},
+            {"team_id": "pablo", "manager_name": "Pablo", "events": [{"kind": "clause", "player_id": "p1", "amount_eur": 12_500_000, "at": "2026-11-09T11:03:32+01:00"}]},
+        ]
+        document = build_clause_board(squads, ledgers=ledgers)
+        self.assertEqual([row["player_id"] for row in document["rows"]], ["p2"])
+        self.assertEqual(document["taken"][0]["player_id"], "p1")
+        self.assertEqual(document["taken"][0]["taken_by_manager"], "Pablo")
+        self.assertEqual(document["taken"][0]["taken_eur"], 12_500_000)
+        self.assertEqual(document["counts"]["total"], 1)
+
+    def test_owner_who_bought_it_back_later_keeps_the_row(self) -> None:
+        squads = _squads(_squad("gon", [_player("p1", clause=9_000_000, lock=_lock("2026-11-09"))]))
+        ledgers = [
+            {"team_id": "pablo", "manager_name": "Pablo", "events": [{"kind": "clause", "player_id": "p1", "amount_eur": 1, "at": "2026-11-01T11:00:00+01:00"}]},
+            {"team_id": "gon", "manager_name": "Gon", "events": [{"kind": "buy", "player_id": "p1", "amount_eur": 2, "at": "2026-11-05T14:08:00+01:00"}]},
+        ]
+        document = build_clause_board(squads, ledgers=ledgers)
+        self.assertEqual([row["player_id"] for row in document["rows"]], ["p1"])
+        self.assertEqual(document["taken"], [])
+
     def test_self_squad_is_excluded_by_default(self) -> None:
         squads = _squads(
             _squad("mine", [_player("own-1", clause=4_000_000, lock=_lock("2026-10-27"))], self_team=True),

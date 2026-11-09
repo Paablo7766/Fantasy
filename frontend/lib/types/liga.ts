@@ -181,6 +181,12 @@ export type ClauseRaise = {
 
 /** Fila del tablero completo: cualquier jugador con cláusula, no solo los de la regla A/B. */
 export type ClauseBoardRow = ClauseRow & {
+  /** La actividad oficial dice que otro equipo lo fichó después: no se puede pagar. */
+  taken_by_other?: boolean;
+  taken_by_manager?: string | null;
+  taken_at?: string | null;
+  taken_kind?: string | null;
+  taken_eur?: number | null;
   /** Está anunciado en el mercado: se compra por oferta o puja, sin esperar al candado. */
   on_market?: boolean;
   market_listing_expires_local_time?: string | null;
@@ -208,6 +214,8 @@ export type ClauseBoardRow = ClauseRow & {
 };
 
 export type ClauseBoardPayload = ApiError & PhotoMeta & {
+  /** Cláusulas que la plantilla oficial aún muestra pero que la actividad ya da por fichadas. */
+  taken?: ClauseBoardRow[];
   ok?: boolean;
   league_id?: string | null;
   league_name?: string | null;
