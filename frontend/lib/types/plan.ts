@@ -79,6 +79,7 @@ export type PlanClockEvent = {
   nickname?: string | null;
   is_self?: boolean;
   amount_eur?: number | null;
+  buyout_clause?: number | null;
 };
 
 export type PlanMarketSummary = {
@@ -190,6 +191,8 @@ export type PlanPayload = ApiError & PhotoMeta & {
   /** Las 4 tarjetas: what / cost / when / ignore. */
   priority_actions?: PlanPriorityAction[];
   clock?: PlanClockEvent[];
+  /** Cláusulas que se abren en las próximas 24 h. */
+  clause_unlocks_24h?: PlanClockEvent[];
   lineup?: {
     formation?: string | null;
     saved_formation?: string | null;

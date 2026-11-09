@@ -444,3 +444,42 @@ export type PreviaPayload = {
   editions?: PreviaEdition[];
   evaluation?: PreviaEvalRow[];
 };
+
+export type PremiumGroup = {
+  n?: number;
+  mediana?: number | null;
+  p25?: number | null;
+  p75?: number | null;
+  minimo?: number | null;
+  maximo?: number | null;
+  muestra_pequena?: boolean;
+  buyer_id?: string;
+  seller_id?: string;
+  n_eventos?: number;
+  n_sin_referencia?: number;
+  n_sin_datos?: number;
+  por_comprador?: PremiumGroup[];
+  por_vendedor?: PremiumGroup[];
+};
+
+export type PremiumComparison = {
+  mediana?: number | null;
+  n?: number;
+  mas_cerca?: "prima_puja" | "sobreprecio_rival" | "empate" | null;
+  muestra_pequena?: boolean;
+  nota?: string | null;
+  prima_puja_ratio?: number | null;
+  sobreprecio_rival_ratio?: number | null;
+};
+
+export type PremiumReport = {
+  ok?: boolean;
+  error?: { message?: string };
+  n_filas?: number;
+  n_distintos?: number;
+  n_snapshots?: number;
+  compras_laliga?: PremiumGroup;
+  clausulazos?: PremiumGroup;
+  comparacion_laliga?: PremiumComparison;
+  comparacion_clausulazos?: PremiumComparison;
+};

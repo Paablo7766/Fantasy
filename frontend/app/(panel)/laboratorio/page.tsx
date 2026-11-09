@@ -4,6 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo } from "react";
 import { prefetchLaboratorio } from "@/lib/laboratorio/prefetch";
 import { CalibrationDashboard } from "@/components/laboratorio/CalibrationDashboard";
+import { PremiumPanel } from "@/components/laboratorio/PremiumPanel";
 import { PostMortemPanel } from "@/components/laboratorio/PostMortemPanel";
 import { useDashboard } from "@/components/DashboardProvider";
 import { ModelReportPanel } from "@/components/laboratorio/ModelReportPanel";
@@ -126,6 +127,7 @@ function LaboratorioContent() {
         ) : tab === "calibracion" ? (
           <div className="flex min-w-0 flex-col gap-4">
             <CalibrationDashboard />
+            <PremiumPanel />
             <PostMortemPanel />
           </div>
         ) : tab === "senales" ? (

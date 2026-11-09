@@ -13,6 +13,7 @@ export function prefetchLaboratorio(apiLeague: string | null, queryLeague: strin
     endpoint("/api/laboratorio/previa", apiLeague),
     endpoint("/api/laboratorio/post-mortem", apiLeague),
     endpoint("/api/calibration", apiLeague),
+    endpoint("/api/laboratorio/primas", apiLeague),
     endpoint("/api/market/quant-radar", queryLeague),
     endpoint("/api/catalog/free-agents", queryLeague),
     endpoint("/api/rival-intel", queryLeague),

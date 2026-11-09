@@ -960,6 +960,96 @@ def _lineup_detail(lineup: dict[str, Any]) -> str:
     return f"XI {formation}. Entran {enters}. Salen {leaves}.{suffix}"
 
 
+def clause_unlocks_within(
+    squads: dict[str, Any] | None,
+    market: dict[str, Any] | None,
+    *,
+    now: datetime,
+    hours: float = 24,
+) -> list[dict[str, Any]]:
+    """Cláusulas que se abren desde ahora hasta dentro de ``hours`` horas.
+
+    Junta plantilla y anuncios. Si el mismo jugador sale en las dos fotos, se
+    queda la de ``fetched_at`` más nuevo. ``is_shielded`` true no entra. Un
+    candado ya pasado tampoco: esa cláusula ya está abierta.
+    """
+    horizon = now + timedelta(hours=hours)
+    shielded: set[str] = set()
+    candidates: dict[str, tuple[datetime | None, dict[str, Any]]] = {}
+
+    def _consider(player: dict[str, Any], *, owner: Any, is_self: bool, photo_at: datetime | None, amount: Any) -> None:
+        player_id = player.get("player_id")
+        if not isinstance(player_id, str) or not player_id:
+            return
+        if player.get("is_shielded") is True:
+            shielded.add(player_id)
+            candidates.pop(player_id, None)
+            return
+        if player_id in shielded:
+            return
+        lock = player.get("clause_lock") if isinstance(player.get("clause_lock"), dict) else {}
+        moment = _lock_moment(lock)
+        if moment is None or moment < now or moment > horizon:
+            return
+        clause = amount if isinstance(amount, int) and not isinstance(amount, bool) and amount > 0 else None
+        if clause is None:
+            raw = player.get("buyout_clause")
+            clause = raw if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0 else None
+        row = {
+            "player_id": player_id,
+            "name": player.get("name") if isinstance(player.get("name"), str) else None,
+            "nickname": player.get("nickname") if isinstance(player.get("nickname"), str) else None,
+            "manager_name": owner if isinstance(owner, str) and owner else None,
+            "is_self": is_self,
+            "buyout_clause": clause,
+            **_clock(moment),
+        }
+        current = candidates.get(player_id)
+        if current is not None:
+            previous_at, previous = current
+            if previous_at is not None and (photo_at is None or photo_at < previous_at):
+                if previous.get("buyout_clause") is None and clause is not None:
+                    previous["buyout_clause"] = clause
+                return
+            if previous.get("buyout_clause") is not None and row.get("buyout_clause") is None:
+                row["buyout_clause"] = previous["buyout_clause"]
+            if not row.get("manager_name") and previous.get("manager_name"):
+                row["manager_name"] = previous["manager_name"]
+        candidates[player_id] = (photo_at, row)
+
+    squad_at = _parse_iso(squads.get("fetched_at")) if isinstance(squads, dict) else None
+    if isinstance(squads, dict):
+        for squad in squads.get("squads") or []:
+            if not isinstance(squad, dict):
+                continue
+            owner = squad.get("manager_name") or squad.get("fantasy_team_name") or squad.get("team_id")
+            for player in squad.get("players") or []:
+                if isinstance(player, dict):
+                    _consider(
+                        player,
+                        owner=owner,
+                        is_self=squad.get("is_self") is True,
+                        photo_at=squad_at,
+                        amount=player.get("buyout_clause"),
+                    )
+    market_at = _parse_iso(market.get("fetched_at")) if isinstance(market, dict) else None
+    listings = market.get("listings") if isinstance(market, dict) else None
+    if isinstance(listings, list):
+        for listing in listings:
+            if not isinstance(listing, dict):
+                continue
+            _consider(
+                listing,
+                owner=listing.get("seller_manager"),
+                is_self=False,
+                photo_at=market_at,
+                amount=listing.get("buyout_clause"),
+            )
+    rows = [row for _at, row in candidates.values() if row.get("player_id") not in shielded]
+    rows.sort(key=lambda item: (item.get("at") or "", str(item.get("player_id") or "")))
+    return rows
+
+
 def build_jornada_plan(
     *,
     market: dict[str, Any] | None,
@@ -981,6 +1071,7 @@ def build_jornada_plan(
         decisions=[row for row in decision_rows if isinstance(row, dict)],
         now=current,
     )
+    unlocks_24h = clause_unlocks_within(squads, market, now=current)
     lineup = lineup_delta(optimize)
     if isinstance(optimize, dict):
         # Los fichajes que tapan cada hueco los calcula el optimizador: vienen
@@ -1022,6 +1113,7 @@ def build_jornada_plan(
         "matchday_start": matchday_start(trends, now=current),
         "clause_market_close": close_clock,
         "clock": clock,
+        "clause_unlocks_24h": unlocks_24h,
         "lineup": lineup,
         "actions": actions,
         "priority_actions": ranked,
@@ -1398,6 +1490,7 @@ def plan_from_documents(
     memory_path: Path | None = None,
     note_text: str | None = None,
     league_race: dict[str, Any] | None = None,
+    status_index: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     current = now or datetime.now(timezone.utc)
     rivals = needs.get("rivals") if isinstance(needs, dict) and isinstance(needs.get("rivals"), list) else None
@@ -1413,6 +1506,7 @@ def plan_from_documents(
         squads=squads,
         history=needs.get("history") if isinstance(needs, dict) and isinstance(needs.get("history"), dict) else None,
         now=current,
+        status_index=status_index,
     )
     clauses = attach_clause_window(
         build_clause_intel(squads, trends, optimize, rivals, now=current),

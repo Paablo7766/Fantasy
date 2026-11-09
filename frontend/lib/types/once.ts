@@ -15,6 +15,8 @@ export type Player = {
   p_titular?: number | null;
   p_titular_source?: string | null;
   player_status?: string | null;
+  /** Estado de la foto más nueva entre mercado, plantilla y catálogo. */
+  official_status?: string | null;
   market_value?: number | null;
   buyout_clause?: number | null;
   average_points?: number | null;

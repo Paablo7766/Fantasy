@@ -1621,7 +1621,9 @@ def shape_trends(board: dict[str, Any]) -> dict[str, Any]:
     signings = flip.get("signings") if flip.get("ok") and isinstance(flip.get("signings"), list) else []
     listings = market.get("listings") if isinstance(market.get("listings"), list) else []
     flips = _enrich_flip_deltas(signings, trends, listings)
-    intel = decisions_from_board(board)
+    from toolbox.player_status import cached_status_index
+
+    intel = decisions_from_board(board, status_index=cached_status_index())
     raw_decisions = intel.get("decisions") if isinstance(intel.get("decisions"), list) else []
     decisions = [_normalize_market_decision(row) for row in raw_decisions if isinstance(row, dict)]
     _attach_player_card(decisions, board)
@@ -1836,6 +1838,19 @@ def shape_squads(board: dict[str, Any]) -> dict[str, Any]:
         "error": document.get("error") if document.get("ok") is False else None,
     }
     publish_strategy(board, payload)
+    try:
+        from toolbox.player_status import cached_status_index, stamp_roster
+
+        index = cached_status_index()
+        photo_at = payload.get("fetched_at")
+        own = payload.get("self")
+        if isinstance(own, dict):
+            stamp_roster(own.get("players"), index, photo_at=photo_at)
+        for rival in payload.get("rivals") or []:
+            if isinstance(rival, dict):
+                stamp_roster(rival.get("players"), index, photo_at=photo_at)
+    except Exception:
+        logger.debug("Estado oficial de plantilla no disponible", exc_info=True)
     return payload
 
 
@@ -2915,6 +2930,18 @@ def api_optimize(
         )
     body = dict(optimize)
     _stamp_squad_price_delta(body, board)
+    try:
+        from toolbox.player_status import cached_status_index, stamp_roster
+
+        index = cached_status_index()
+        photo_at = board.get("squads", {}).get("fetched_at") if isinstance(board.get("squads"), dict) else None
+        for key in ("xi", "benched", "excluded"):
+            stamp_roster(body.get(key), index, photo_at=photo_at)
+        saved = body.get("saved_lineup")
+        if isinstance(saved, dict):
+            stamp_roster(saved.get("xi"), index, photo_at=photo_at)
+    except Exception:
+        logger.debug("Estado oficial del once no disponible", exc_info=True)
     body["dashboard_at"] = board.get("dashboard_at")
     body.update(_photo_fields(board))
     publish_strategy(board, body)
@@ -3447,6 +3474,21 @@ def api_model_report(league: str | None = Query(default=None)) -> Any:
     return report
 
 
+@app.get("/api/laboratorio/primas")
+@_read_only
+def api_primas(league: str | None = Query(default=None)) -> Any:
+    """Prima pagada en compras a LaLiga y en clausulazos. Solo caché y snapshots."""
+    from toolbox.premium_audit import report_from_cache
+
+    try:
+        report = report_from_cache(_league(league))
+    except Exception as exc:
+        return error_response("primas", exc)
+    report["schema_version"] = SCHEMA_VERSION
+    report["command"] = "primas"
+    return report
+
+
 @app.get("/api/laboratorio/previa")
 @_read_only
 def api_previa(league: str | None = Query(default=None)) -> Any:
@@ -3520,6 +3562,8 @@ def _plan_document(board: dict[str, Any]) -> dict[str, Any]:
     note = read_expert_note(_note_path())
     trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
     experts = experts_from_pages({"mentions": [], "lineups": [], "sources": {}}, trends, note_text=note)
+    from toolbox.player_status import cached_status_index
+
     document = plan_from_documents(
         board.get("market") if isinstance(board.get("market"), dict) else {},
         board.get("squads") if isinstance(board.get("squads"), dict) else {},
@@ -3529,6 +3573,7 @@ def _plan_document(board: dict[str, Any]) -> dict[str, Any]:
         board.get("needs") if isinstance(board.get("needs"), dict) else None,
         experts=experts,
         memory_path=_memory_path(),
+        status_index=cached_status_index(),
     )
     document["dashboard_at"] = board.get("dashboard_at")
     document.update(_photo_fields(board))

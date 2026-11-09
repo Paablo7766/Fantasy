@@ -61,6 +61,8 @@ export type RivalPlayer = {
   venta_forzada_rival?: boolean | null;
   venta_forzada_detalle?: string | null;
   clause_lock?: ClauseLock | null;
+  player_status?: string | null;
+  official_status?: string | null;
   is_shielded?: boolean | null;
   cost_eur?: number | null;
   gain_eur?: number | null;

@@ -6,6 +6,7 @@ import { PlayerCard } from "@/components/mercado/PlayerCard";
 import { LiquidacionBlock, ParonBlock, PlanBlock } from "@/components/mercado/PlanSections";
 import { ACTION_VERDICT, auctionLabel, budgetLine, difficultyLabel, historyLine } from "@/components/mercado/shared";
 import { Disclosure, Empty, Face, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, money, parsePct, projected7d, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { errorMessage, playerName } from "@/lib/core/format";
 import { executableBid, marketAction } from "@/lib/mercado/marketAction";
@@ -64,6 +65,7 @@ function Tile({ player, photo, index, onOpen }: { player: MarketDecision; photo:
               {heat}
             </span>
           ) : null}
+          <StatusBadge status={player.official_status || player.player_status} />
         </span>
         <span className="mt-auto flex items-end justify-between gap-2 border-t border-white/[0.06] px-3 py-2.5">
           <span className="min-w-0">

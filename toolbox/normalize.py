@@ -568,6 +568,9 @@ def normalize_listing(item: dict[str, Any], *, now: datetime | None = None) -> d
     if bid_count is None and amounts:
         bid_count = len(amounts)
     expires_at, expires_local = _listing_expiry(item)
+    from toolbox.player_status import canonical_status
+
+    player_status = canonical_status(master.get("playerStatus")) if isinstance(master, dict) else None
     return {
         "market_id": _as_str(_first(item, "id", "marketId")),
         "player_id": _as_str(_first(master, "id", "playerId")),
@@ -593,6 +596,7 @@ def normalize_listing(item: dict[str, Any], *, now: datetime | None = None) -> d
         "listing_expires_at": expires_at,
         "listing_expires_local_time": expires_local,
         "clause_lock": clause_lock_from(item, now=now),
+        "player_status": player_status,
     }
 
 

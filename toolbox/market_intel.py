@@ -197,6 +197,7 @@ def build_market_decisions(
     squads: dict[str, Any] | None = None,
     history: dict[str, Any] | None = None,
     now: datetime | None = None,
+    status_index: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """Veredicto por listing del mercado del día."""
     current = now or datetime.now(timezone.utc)
@@ -258,6 +259,13 @@ def build_market_decisions(
         if not player_id:
             continue
         trend = indexed.get(player_id) or {}
+        status_observations = _status_observations(
+            player_id,
+            listing,
+            market_at=market.get("fetched_at") if isinstance(market, dict) else None,
+            squad_observations=_squad_status(squads) if status_index is not None else {},
+            status_index=status_index,
+        )
         decision = _decide_listing(
             listing,
             trend,
@@ -277,6 +285,7 @@ def build_market_decisions(
                 listing.get("position") if isinstance(listing.get("position"), str) else "", 0
             ),
             now=current,
+            status_observations=status_observations,
         )
         decision.update(
             calcular_nota_mercado(
@@ -406,7 +415,59 @@ def build_market_intel_command(
             store.close()
 
 
-def decisions_from_board(board: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+def _squad_status(squads: dict[str, Any] | None) -> dict[str, list[dict[str, Any]]]:
+    if not isinstance(squads, dict):
+        return {}
+    photo_at = squads.get("fetched_at")
+    found: dict[str, list[dict[str, Any]]] = {}
+    for squad in squads.get("squads") or []:
+        if not isinstance(squad, dict):
+            continue
+        for player in squad.get("players") or []:
+            if not isinstance(player, dict):
+                continue
+            player_id = player.get("player_id")
+            status = player.get("player_status")
+            if not isinstance(player_id, str) or not isinstance(status, str) or not status.strip():
+                continue
+            found.setdefault(player_id, []).append({"status": status, "at": photo_at, "source": "squad"})
+    return found
+
+
+def _status_observations(
+    player_id: str,
+    listing: dict[str, Any],
+    *,
+    market_at: Any,
+    squad_observations: dict[str, list[dict[str, Any]]],
+    status_index: dict[str, list[dict[str, Any]]] | None,
+) -> list[dict[str, Any]]:
+    observations: list[dict[str, Any]] = []
+    if status_index is not None:
+        observations.extend(status_index.get(player_id) or [])
+        observations.extend(squad_observations.get(player_id) or [])
+    listing_status = listing.get("player_status")
+    if isinstance(listing_status, str) and listing_status.strip():
+        observations.append({"status": listing_status, "at": market_at, "source": "market"})
+    return observations
+
+
+def _resolved_display_status(observations: list[dict[str, Any]] | None) -> str | None:
+    from toolbox.player_status import resolve_status
+
+    resolved = resolve_status(observations)
+    if not isinstance(resolved, dict):
+        return None
+    status = resolved.get("status")
+    return status if isinstance(status, str) else None
+
+
+def decisions_from_board(
+    board: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    status_index: dict[str, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
     """Construye decisions desde la foto del dashboard (server)."""
     market = board.get("market") if isinstance(board.get("market"), dict) else {}
     trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
@@ -425,6 +486,7 @@ def decisions_from_board(board: dict[str, Any], *, now: datetime | None = None) 
         squads=squads,
         history=needs.get("history") if isinstance(needs, dict) and isinstance(needs.get("history"), dict) else None,
         now=now,
+        status_index=status_index,
     )
 
 
@@ -457,6 +519,7 @@ def _decide_listing(
     base_rival_profiles: dict[str, Any] | None = None,
     free_tier_peers_count: int = 0,
     now: datetime,
+    status_observations: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     player_id = listing.get("player_id") if isinstance(listing.get("player_id"), str) else None
     position = (
@@ -468,7 +531,12 @@ def _decide_listing(
     purchase = assess_purchase(cash=cash, cost=amount, lineup_void=lineup_void)
     usable = trend_usable(trend)
     p_titular = _probability(trend.get("p_titular"))
-    blocked = unavailable_reason(listing, trend if usable else None)
+    # El estado oficial se enseña, pero no entra en el veto: el scoring de esta
+    # pasada no cambia por copiar playerStatus al anuncio.
+    veto_listing = listing
+    if isinstance(listing.get("player_status"), str) and listing.get("player_status").strip():
+        veto_listing = {key: value for key, value in listing.items() if key != "player_status"}
+    blocked = unavailable_reason(veto_listing, trend if usable else None)
     af_injury = trend.get("af_injury") if isinstance(trend.get("af_injury"), dict) else None
     af_suspension = trend.get("af_suspension") if isinstance(trend.get("af_suspension"), dict) else None
     if af_injury and not blocked and not titularity_overrides_injury(
@@ -887,6 +955,7 @@ def _decide_listing(
         if primary not in reasons:
             reasons.append(primary)
 
+    shown_status = _resolved_display_status(status_observations)
     action, is_vetoed, action_reason = _action_from_decision(
         decision,
         conflict=conflict,
@@ -901,7 +970,13 @@ def _decide_listing(
         econ["suggested_bid"] = None
         econ["raise_to"] = None
 
-    return {
+    status_aviso = None
+    if shown_status in {"injured", "suspended"}:
+        status_aviso = _REASON_COPY["lesionado" if shown_status == "injured" else "sancionado"]
+        if status_aviso not in action_reason:
+            action_reason = f"{action_reason} {status_aviso}".strip()
+
+    payload = {
         "player_id": player_id,
         "name": trend.get("name") if isinstance(trend.get("name"), str) else listing.get("name"),
         "nickname": trend.get("nickname") if isinstance(trend.get("nickname"), str) else listing.get("nickname"),
@@ -1008,6 +1083,12 @@ def _decide_listing(
         "action_reason": action_reason,
         "source_conflict": conflict,
     }
+    if shown_status in {"injured", "doubtful", "suspended"}:
+        payload["player_status"] = shown_status
+        payload["official_status"] = shown_status
+    if status_aviso:
+        payload["status_aviso"] = status_aviso
+    return payload
 
 
 def _offer_source(listing: dict[str, Any], own_team_id: str | None) -> tuple[str, str | None, str | None]:

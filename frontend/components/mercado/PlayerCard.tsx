@@ -9,6 +9,7 @@ import { ACTION_VERDICT, auctionLabel, winShare } from "@/components/mercado/sha
 import { bidStory } from "@/lib/mercado/bidStory";
 import { playerName } from "@/lib/core/format";
 import { actionReason, executableBid, isVetoed, marketAction } from "@/lib/mercado/marketAction";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import type { MarketDecision } from "@/lib/types";
 
 type Match = { opponent: string; home: boolean | null; difficulty: string | null };
@@ -306,6 +307,7 @@ export function PlayerCard({
             </Pill>
             {note !== null ? <Pill color={accent}>Nota {dec(note)}</Pill> : null}
             {heat ? <Pill color={TONE.amber}>{heat}</Pill> : null}
+            <StatusBadge status={player.official_status || player.player_status} />
           </div>
           <p className="mt-3 line-clamp-3 text-[14px] leading-snug text-white/80">{reason}</p>
         </header>

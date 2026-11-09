@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { playerName, points, titularShare } from "@/lib/core/format";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
+import { statusBadgeLabel } from "@/components/ui/StatusBadge";
 import type { ActivityProfile, AuditoriaVenta, PlanPayload, RivalPlayer, SquadsPayload, VeredictoVenta } from "@/lib/types";
 import {
   Chevron,
@@ -401,6 +402,8 @@ function PlayerCard({
   if (audit?.oferta_activa?.comprador) tags.push({ label: "Con oferta", color: TONE.green });
   else if (audit?.en_mercado) tags.push({ label: "En venta", color: TONE.blue });
   if (danger) tags.push({ label: "Cláusula en peligro", color: TONE.red });
+  const estado = statusBadgeLabel(player.official_status || player.player_status);
+  if (estado) tags.push({ label: estado, color: estado === "Duda" ? TONE.amber : TONE.red });
   const caption = hasCost
     ? days !== null
       ? `${days === 0 ? "Llegó hoy" : `${days} ${days === 1 ? "día" : "días"} contigo`}`

@@ -60,6 +60,8 @@ export type MarketDecision = Player & {
   is_vetoed?: boolean | null;
   /** Frase corta que explica el veredicto. */
   action_reason?: string | null;
+  /** Aviso visible de lesión o sanción. No cambia el veredicto. */
+  status_aviso?: string | null;
   price_band?: "bargain" | "fair" | "overpay" | "unknown" | string | null;
   jornada_ev?: number | null;
   expected_points_source?: "own" | "af" | "opta" | string | null;

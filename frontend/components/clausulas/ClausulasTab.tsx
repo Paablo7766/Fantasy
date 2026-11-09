@@ -5,6 +5,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { CompararButton } from "@/components/comparador/ComparadorReal";
 import { endpoint, getJson } from "@/lib/core/api";
 import { buildClausulazosGuide, type DateBucket } from "@/lib/clausulas/clausulazosGuide";
+import { UnlockWindow } from "@/components/clausulas/UnlockWindow";
 import { playerName, points } from "@/lib/core/format";
 import { countdownClock, countdownParts } from "@/lib/inicio/hoy";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
@@ -744,6 +745,7 @@ export function ClausulasTab({
     return (
       <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] min-[1100px]:items-start">
         <div className="flex min-w-0 flex-col gap-4">
+          <UnlockWindow rows={plan?.clause_unlocks_24h} />
           {hero}
           <section aria-label="Clausulazos" className="flex flex-col gap-3">
             <SectionHead title="A quién clausular" meta={abiertas.length + cerradas.length ? `${abiertas.length + cerradas.length}` : undefined} />
@@ -818,7 +820,10 @@ export function ClausulasTab({
 
   return (
     <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] min-[1100px]:items-start">
-      <div className="flex min-w-0 flex-col gap-4">{hero}</div>
+      <div className="flex min-w-0 flex-col gap-4">
+        <UnlockWindow rows={plan?.clause_unlocks_24h} />
+        {hero}
+      </div>
       <div className="flex min-w-0 flex-col gap-4">
         <section aria-label="Jugadores en peligro" className="flex flex-col gap-3">
           <SectionHead title="Qué proteger" meta={proteger.length ? `${proteger.length}` : undefined} />

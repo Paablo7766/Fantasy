@@ -5,6 +5,7 @@ import { jornadaEv, playerName, points, projectedLineupPoints, titularShare } fr
 import { REGLAMENTO } from "@/lib/core/reglamento";
 import { signedPoints } from "@/lib/inicio/hoy";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
+import { StatusBadge, statusBadgeLabel } from "@/components/ui/StatusBadge";
 import type { CapitanPick, Gap, OptimizePayload, PlanPayload, Player, SquadsPayload } from "@/lib/types";
 import {
   Disclosure,
@@ -63,12 +64,8 @@ function layout(players: Player[], gaps: Gap[]): Slot[] {
   return out;
 }
 
-function statusLabel(status: string | null | undefined): string | null {
-  const folded = (status || "").trim().toLowerCase();
-  if (["doubtful", "doubt", "duda"].includes(folded)) return "Duda";
-  if (["injured", "injury", "lesionado", "out", "baja"].includes(folded)) return "Lesión";
-  if (["suspended", "sanctioned", "sancionado"].includes(folded)) return "Sanción";
-  return null;
+function shownStatus(player: { official_status?: string | null; player_status?: string | null }): string | null {
+  return player.official_status || player.player_status || null;
 }
 
 function idOf(player: Player): string {
@@ -170,6 +167,7 @@ function Pitch({
         const id = slot.player_id ? String(slot.player_id) : null;
         const badge = id && id === safeId ? "C" : id && id === boldId ? "R" : null;
         const share = titularShare(slot.p_titular);
+        const flag = statusBadgeLabel(shownStatus(slot));
         return (
           <button
             key={slot.key}
@@ -185,8 +183,13 @@ function Pitch({
             onClick={() => onSelect(slot.key)}
           >
             <span className="eq-card row-in" style={{ animationDelay: `${index * 30}ms` }}>
-              <span className="eq-card__photo">
+              <span className="eq-card__photo relative">
                 <Face name={name} src={slot.image_url || photoFor(photos, slot.player_id, name)} size={0} ring={ringColor(share)} />
+                {flag ? (
+                  <span className="absolute left-0 top-0 z-10">
+                    <StatusBadge status={shownStatus(slot)} />
+                  </span>
+                ) : null}
                 {badge ? (
                   <span className="eq-badge" style={{ background: badge === "C" ? "#fff" : TONE.copper, color: "#120C09" }}>
                     {badge}
@@ -209,7 +212,7 @@ function Pitch({
 function PlayerSheet({ player, photos, onClose }: { player: Slot; photos: PhotoIndex; onClose: () => void }) {
   const name = player.gap ? `Falta un ${player.position}` : playerName(player);
   const share = titularShare(player.p_titular);
-  const flag = statusLabel(player.player_status);
+  const flag = statusBadgeLabel(shownStatus(player));
   const ev = jornadaEv(player);
   const ifStarts = typeof player.points_if_starts === "number" ? player.points_if_starts : null;
   const trend = parsePct(player.prevision_7d_pct);
@@ -373,7 +376,7 @@ export function OnceTab({
   const delta = model.recPts !== null && model.savedPts !== null && model.saved.length ? model.recPts - model.savedPts : null;
   const shares = shown.map((row) => titularShare(row.p_titular)).filter((value): value is number => value !== null);
   const avgShare = shares.length ? shares.reduce((sum, value) => sum + value, 0) / shares.length : null;
-  const doubts = shown.filter((row) => statusLabel(row.player_status)).length;
+  const doubts = shown.filter((row) => statusBadgeLabel(shownStatus(row))).length;
   const gapCount = (optimize.gaps || []).reduce((sum, gap) => sum + (Number(gap.missing) || 0), 0);
   const band = redLine(plan, optimize, Boolean(model.saved.length && !model.same));
   const active = slots.find((slot) => slot.key === selected) || null;
