@@ -587,6 +587,9 @@ def normalize_listing(item: dict[str, Any], *, now: datetime | None = None) -> d
         "bid_count": bid_count,
         "offer_count": offer_count,
         "own_bid": _own_bid(item),
+        # ``directOffer``: la venta es una oferta cerrada y no una subasta.
+        "direct_offer": item["directOffer"] if isinstance(item.get("directOffer"), bool) else None,
+        "seller_team_value": _as_int(seller_team.get("teamValue")),
         "listing_expires_at": expires_at,
         "listing_expires_local_time": expires_local,
         "clause_lock": clause_lock_from(item, now=now),

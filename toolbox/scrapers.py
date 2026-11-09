@@ -37,7 +37,7 @@ from toolbox.matching import (
 from toolbox.net import ExternalClient, ExternalHttpError, FantasyHttpError, inherited, transfermarkt_api_base
 from toolbox.analyzer import official_price_delta, starter_fallback
 from toolbox.normalize import SCHEMA_VERSION, attach_image_urls
-from toolbox.odds_archive import SCORER_BOOKMAKER, kickoff_iso, scorer_prices
+from toolbox.odds_archive import SCORER_BOOKMAKER, extra_lines, kickoff_iso, scorer_prices
 
 logger = logging.getLogger("fantasy.scrapers")
 
@@ -423,6 +423,9 @@ def parse_oddspapi_payload(payload: Any, *, now: datetime | None = None) -> dict
         scorers = scorer_prices(fixture)
         if scorers:
             row["anytime_scorers"] = scorers
+        lines = extra_lines(fixture, bookmaker=PREFERRED_BOOKMAKER)
+        if lines:
+            row["extra_lines"] = lines
         index[key] = row
     return index
 
@@ -1897,6 +1900,16 @@ def build_trends(
                 )
             except Exception:  # noqa: BLE001 — el registro es de medición, nunca tumba trends
                 logger.debug("Sin registro de señales del día", exc_info=True)
+            try:
+                from toolbox.market_listing_log import record_market_listings
+
+                record_market_listings(
+                    market.get("listings") if isinstance(market.get("listings"), list) else None,
+                    league_id=league_id if isinstance(league_id, str) else None,
+                    day=_snapshot_day(market),
+                )
+            except Exception:  # noqa: BLE001 — el registro es de medición, nunca tumba trends
+                logger.debug("Sin registro de anuncios del día", exc_info=True)
         except Exception as exc:  # noqa: BLE001 — own intel no tumba trends
             sources["own_intel"] = {
                 "ok": False,

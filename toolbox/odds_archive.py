@@ -72,6 +72,24 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    # Líneas extra de Pinnacle (totales por equipo, totales y hándicaps). Sirven
+    # para medir si la portería a cero sale mejor de ``teamTotal`` a 0,5 que del
+    # 1X2 con Poisson. Solo se miden: no entran en el xP.
+    conn.execute(
+        """
+        create table if not exists odds_lines_snapshots (
+            match_key text not null,
+            day text not null,
+            kind text not null,
+            outcome text not null,
+            price real not null,
+            source text,
+            kickoff text,
+            stored_at real not null,
+            primary key (match_key, day, kind, outcome)
+        )
+        """
+    )
     conn.commit()
 
 
@@ -116,6 +134,42 @@ def scorer_prices(fixture: dict[str, Any], *, bookmaker: str = SCORER_BOOKMAKER)
                 continue
             seen.add(label)
             rows.append({"name": label, "price": float(price), "bookmaker": bookmaker})
+    return rows
+
+
+_LINE_KINDS = ("teamTotal", "totals", "spreads")
+
+
+def extra_lines(fixture: dict[str, Any], *, bookmaker: str) -> list[dict[str, Any]]:
+    """Cuotas activas de totales por equipo, totales y hándicaps de una respuesta ``/odds``.
+
+    El nombre de la línea (``home/0.5/under``) viene en ``bookmakerOutcomeId``.
+    Los mercados especiales de número suelto no se guardan: sin el catálogo de
+    OddsPapi no se sabe qué son.
+    """
+    books = fixture.get("bookmakerOdds") if isinstance(fixture.get("bookmakerOdds"), dict) else {}
+    book = books.get(bookmaker)
+    if not isinstance(book, dict) or book.get("suspended") is True:
+        return []
+    markets = book.get("markets") if isinstance(book.get("markets"), dict) else {}
+    rows: list[dict[str, Any]] = []
+    for market in markets.values():
+        if not isinstance(market, dict) or market.get("marketActive") is False:
+            continue
+        kind = str(market.get("bookmakerMarketId") or "").rsplit("/", 1)[-1]
+        if kind not in _LINE_KINDS:
+            continue
+        for outcome in (market.get("outcomes") or {}).values():
+            players = outcome.get("players") if isinstance(outcome, dict) else None
+            line = players.get("0") if isinstance(players, dict) else None
+            if not isinstance(line, dict) or line.get("active") is False:
+                continue
+            name, price = line.get("bookmakerOutcomeId"), line.get("price")
+            if not isinstance(name, str) or not name:
+                continue
+            if isinstance(price, bool) or not isinstance(price, (int, float)) or float(price) <= 1.0:
+                continue
+            rows.append({"kind": kind, "outcome": name, "price": float(price)})
     return rows
 
 
@@ -297,6 +351,19 @@ def archive_match_odds(
                 """,
                 (key, stamp_day, str(bundle.get("source")), kickoff, home, draw, away, over, under, yes, no, stamp),
             )
+            for line in bundle.get("extra_lines") or []:
+                if not isinstance(line, dict) or not isinstance(line.get("outcome"), str):
+                    continue
+                db.execute(
+                    """
+                    insert into odds_lines_snapshots values (?,?,?,?,?,?,?,?)
+                    on conflict(match_key, day, kind, outcome) do update set
+                        price=excluded.price, source=excluded.source,
+                        kickoff=excluded.kickoff, stored_at=excluded.stored_at
+                    """,
+                    (key, stamp_day, str(line.get("kind")), line["outcome"], float(line["price"]),
+                     str(bundle.get("source")), kickoff, stamp),
+                )
             for scorer in bundle.get("anytime_scorers") or []:
                 if not isinstance(scorer, dict) or not isinstance(scorer.get("name"), str):
                     continue
