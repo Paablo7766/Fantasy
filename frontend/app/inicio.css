@@ -2944,3 +2944,34 @@
     gap: 0.35rem;
   }
 }
+
+/* Tarjetas de cifras: enlazan al Laboratorio. */
+.ini-tile--link {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ini-tile__go {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  color: rgba(255, 255, 255, 0.28);
+  transition: color 260ms ease, transform 320ms var(--ini-premium, ease);
+}
+
+.ini-tile--link:hover .ini-tile__go {
+  color: rgba(255, 255, 255, 0.85);
+  transform: translate(2px, -2px);
+}
+
+.ini-tile--link:active {
+  transform: scale(0.985);
+}
+
+.ini-tile--link:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 2px;
+}
