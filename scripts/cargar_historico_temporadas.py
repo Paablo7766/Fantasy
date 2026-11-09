@@ -91,7 +91,7 @@ def descargar_jugador(slug: str, equipo: str, previo: dict[str, Any], pausa: flo
         if pagina is None:
             continue
         datos = parse_temporada(pagina)
-        datos["coherente"] = temporada_coherente(datos)
+        datos["coherente"] = temporada_coherente(datos, temporada)
         if not datos["coherente"]:
             datos = {"filas": [], "total_web": datos.get("total_web"), "coherente": False}
         entrada["temporadas"][temporada] = datos

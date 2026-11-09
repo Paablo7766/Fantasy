@@ -2,8 +2,16 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from toolbox import season_history as sh
 from toolbox.engine import xp2
+
+
+@pytest.fixture(autouse=True)
+def _temporadas_cortas(monkeypatch):
+    """Los ejemplos tienen pocas filas; el mínimo real se prueba aparte."""
+    monkeypatch.setattr(sh, "MIN_FILAS_TEMPORADA", 1)
 
 
 def _fila(jornada: int, puntos: int | None, *, cambio: str = "", goles: int = 0, asist: int = 0, estado: str = "") -> str:
@@ -77,6 +85,21 @@ def test_no_confunde_goles_encajados_ni_asistencias_sin_gol_con_goles_y_asistenc
     )
     parsed = sh.parse_temporada(_pagina([fila], total=8))["filas"][0]
     assert parsed["goles"] == 0 and parsed["asistencias"] == 0
+
+
+def test_temporada_de_reserva_de_este_ano_no_cuenta_como_pasado(monkeypatch):
+    """La web devuelve la temporada en curso (12 filas, otro título) si el jugador no estuvo en LaLiga."""
+    monkeypatch.setattr(sh, "MIN_FILAS_TEMPORADA", 15)
+    pagina = "<title>Grimaldo - Perfil Fantasy - LaLiga 2026/27 - Alineaciones</title>" + _pagina(
+        [_fila(j, 6) for j in range(1, 13)], total=72
+    )
+    temporada = sh.parse_temporada(pagina)
+    assert temporada["temporada_pagina"] == "laliga-26-27"
+    assert not sh.temporada_coherente(temporada, "laliga-24-25")  # pocas filas y otro título
+    assert sh.resumen_historico({"laliga-24-25": temporada}, "DF") is None
+    monkeypatch.setattr(sh, "MIN_FILAS_TEMPORADA", 1)
+    assert not sh.temporada_coherente(temporada, "laliga-24-25")  # solo por el título
+    assert sh.temporada_coherente(temporada, "laliga-26-27")
 
 
 def test_temporada_incoherente_si_la_suma_no_cuadra_o_no_hay_filas():

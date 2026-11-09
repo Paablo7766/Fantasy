@@ -35,6 +35,7 @@ _BLOQUE_OFICIAL = re.compile(r'<div class="desg laliga-fantasy">(.*?)(?=<div cla
 _ESTADISTICA = re.compile(r"(\d+)\s+(Goles|Asistencias)\s+-?\d+(?:\.\d+)?\s*p\b")
 _PUNTOS_ESTAD = re.compile(r"Puntos estad[^<]*?(-?\d+)\s*p")
 _PUNTOS_RELEVO = re.compile(r"Puntos Relevo[^<]*?(-?\d+)\s*p")
+_TITULO_TEMPORADA = re.compile(r"<title>[^<]*?LaLiga\s+(\d{4})/(\d{2})")
 _TOTAL = re.compile(r"Total de puntos</strong>.*?(\d+)", re.S)
 _ESTADOS = ("Lesionado", "Convocado, no jugó", "Sancionado", "No convocado")
 
@@ -97,19 +98,32 @@ def parse_temporada(page: str) -> dict[str, Any]:
             }
         )
     total = _TOTAL.search(page)
+    titulo = _TITULO_TEMPORADA.search(page)
     filas.sort(key=lambda f: f["j"])
-    return {"total_web": int(total.group(1)) if total else None, "filas": filas}
+    return {
+        "total_web": int(total.group(1)) if total else None,
+        "temporada_pagina": f"laliga-{titulo.group(1)[2:]}-{titulo.group(2)}" if titulo else None,
+        "filas": filas,
+    }
 
 
-def temporada_coherente(temporada: dict[str, Any]) -> bool:
-    """La suma de las filas tiene que cuadrar con el total que enseña la web.
+#: Una temporada de verdad tiene casi todas las jornadas (38). La web, cuando el
+#: jugador no estuvo en LaLiga ese año, devuelve la temporada en curso (12 filas).
+MIN_FILAS_TEMPORADA = 15
 
-    Si el jugador no jugó en LaLiga ese año la web devuelve otra cosa (otra
-    temporada o competición): no cuadra o no tiene filas, y se descarta.
+
+def temporada_coherente(temporada: dict[str, Any], esperada: str | None = None) -> bool:
+    """La temporada es la pedida, está completa y su suma cuadra con el total de la web.
+
+    Sin esto, un jugador sin LaLiga previa se llevaría los datos de este año como
+    si fueran del pasado (la web redirige a la temporada en curso).
     """
     filas = temporada.get("filas") or []
     total = temporada.get("total_web")
-    if not filas or total is None:
+    if len(filas) < MIN_FILAS_TEMPORADA or total is None:
+        return False
+    pagina = temporada.get("temporada_pagina")
+    if esperada and pagina and pagina != esperada:
         return False
     return sum(f["puntos"] for f in filas if f["puntos"] is not None) == total
 
@@ -172,7 +186,7 @@ def resumen_historico(temporadas: dict[str, Any], slot: str) -> dict[str, Any] |
     partidos_posibles = 0
     jugados = 0
     for nombre, temporada in (temporadas or {}).items():
-        if not temporada_coherente(temporada):
+        if not temporada_coherente(temporada, nombre):
             continue
         peso = PESO_TEMPORADA_PASADA.get(nombre, 0.5)
         for fila in temporada["filas"]:
