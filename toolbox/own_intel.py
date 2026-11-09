@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -1643,5 +1643,32 @@ def persist_and_apply_own_intel(
         "count": written,
         "error": read_error,
         "from_cache": False,
+        "missing_days": snapshot_missing_days(histories),
     }
     return summary
+
+
+def snapshot_missing_days(histories: dict[str, list[dict[str, Any]]]) -> list[str]:
+    """Días civiles sin ninguna captura entre la primera y la última del histórico.
+
+    Un hueco rompe ``price_delta_3`` y los ritmos de subida: el delta de un
+    tramo de varios días no es el de un día. Se publica para que se vea.
+    """
+    days: set[date] = set()
+    for rows in histories.values():
+        for row in rows:
+            raw = row.get("day")
+            if isinstance(raw, str):
+                try:
+                    days.add(date.fromisoformat(raw[:10]))
+                except ValueError:
+                    continue
+    if len(days) < 2:
+        return []
+    first, last = min(days), max(days)
+    missing = [
+        (first + timedelta(days=offset)).isoformat()
+        for offset in range((last - first).days + 1)
+        if (first + timedelta(days=offset)) not in days
+    ]
+    return missing
