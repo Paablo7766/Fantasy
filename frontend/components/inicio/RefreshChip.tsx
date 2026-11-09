@@ -76,33 +76,42 @@ export function RefreshChip({ children }: { children?: ReactNode }) {
       <div className="ini-refresh ini-refresh--quiet">
         <button
           type="button"
-          className="ini-refresh__age"
-          onClick={() => setOpen((value) => !value)}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          title={`${label} · ver la foto`}
-        >
-          <span className="ini-refresh__dot" style={{ background: tone, boxShadow: old && !working ? `0 0 0 3px ${tone}33` : undefined }} aria-hidden="true" />
-          <span aria-live="polite" className={working ? "text-working" : undefined}>{label}</span>
-        </button>
-        <button
-          type="button"
           className="ini-refresh__btn"
           onClick={() => void refresh()}
           disabled={connecting || refreshing}
-          aria-label={refreshError ? "Reintentar la descarga" : "Actualizar datos"}
+          aria-label={refreshError ? "Reintentar la descarga" : `Actualizar datos · ${label}`}
           title="Descargar datos nuevos (R)"
           data-ui="refresh"
-          data-progress={working ? "true" : undefined}
-          style={{ "--p": `${Math.max(0, Math.min(100, pct))}%` } as CSSProperties}
         >
+          <span className="ini-refresh__dot" style={{ background: tone, boxShadow: old && !working ? `0 0 0 3px ${tone}33` : undefined }} aria-hidden="true" />
           <svg viewBox="0 0 20 20" className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
             <path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.1" strokeLinecap="round" />
             <path d="M16.4 3.6v3.2h-3.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <span>{refreshError ? "Reintentar" : "Actualizar"}</span>
+          <span aria-live="polite">{working ? label : refreshError ? "Reintentar" : "Actualizar"}</span>
+          {!working && !refreshError ? <em className="ini-refresh__age-note">{justDone ? "Al día" : photoAge || "Sin datos"}</em> : null}
+          {working ? (
+            <span className="ini-refresh__bar" aria-hidden="true">
+              <span style={{ width: `${Math.max(4, Math.min(100, pct))}%` }} />
+            </span>
+          ) : null}
         </button>
         {children}
+        <button
+          type="button"
+          className="ini-refresh__more"
+          onClick={() => setOpen((value) => !value)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label="Más opciones"
+          title="Foto guardada, cuenta y avisos"
+        >
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+            <circle cx="4.5" cy="10" r="1.4" />
+            <circle cx="10" cy="10" r="1.4" />
+            <circle cx="15.5" cy="10" r="1.4" />
+          </svg>
+        </button>
       </div>
 
       {open ? (

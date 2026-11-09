@@ -221,12 +221,12 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
 
         <div className="ini-hero__foot">
           <RefreshChip>
-            <Link href={labHref} className="ini-lab" data-ui="home-lab">
+            <Link href={labHref} className="ini-lab" data-ui="home-lab" aria-label="Laboratorio" title="Laboratorio">
               <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
                 <path d="M8 2.8h4M8.8 2.8v4.6L4.4 15a1.4 1.4 0 0 0 1.2 2.1h8.8A1.4 1.4 0 0 0 15.6 15l-4.4-7.6V2.8" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M6.4 12.2h7.2" strokeLinecap="round" />
               </svg>
-              Laboratorio
+              <span className="ini-lab__text">Laboratorio</span>
             </Link>
           </RefreshChip>
         </div>
