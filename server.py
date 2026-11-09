@@ -581,14 +581,34 @@ def _write_disk_snapshot(
         snapshot_remote.save(kind, _league_dir_key(league), envelope)
 
 
+_restore_lock = threading.Lock()
+
+
 def _restore_remote_snapshot(kind: str, league: str | None, path: Path) -> dict[str, Any] | None:
-    """Disco vacío (despliegue nuevo): recupera la última foto copiada en Supabase."""
+    """Disco vacío (despliegue nuevo): recupera la última foto copiada en Supabase.
+
+    Tras un despliegue llegan varias peticiones a la vez con el disco vacío: sin
+    candado cada una bajaba la foto entera de Supabase (pico de memoria) y todas
+    pisaban el mismo ``.tmp``. Ahora entra una sola; las demás leen el fichero ya escrito.
+    """
+    with _restore_lock:
+        if path.is_file():
+            try:
+                cached = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(cached, dict) and isinstance(cached.get("value"), dict):
+                    return cached
+            except (OSError, json.JSONDecodeError):
+                pass
+        return _restore_remote_snapshot_unlocked(kind, league, path)
+
+
+def _restore_remote_snapshot_unlocked(kind: str, league: str | None, path: Path) -> dict[str, Any] | None:
     envelope = snapshot_remote.load(kind, _league_dir_key(league))
     if envelope is None or not _board_has_data(envelope.get("value")):
         return None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
+        tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
         tmp.write_text(json.dumps(envelope, ensure_ascii=False), encoding="utf-8")
         tmp.replace(path)
     except OSError:

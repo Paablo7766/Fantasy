@@ -45,8 +45,13 @@ def _ensure_predicted_win_column(conn: sqlite3.Connection) -> None:
         if column not in have:
             # Quién se lo llevó y por cuánto: con eso se mide si la puja recomendada
             # se quedó corta (lo pagó un rival por encima) o si sobraba.
-            conn.execute(f"alter table market_decision_snapshots add column {column} {kind}")
-            conn.commit()
+            try:
+                conn.execute(f"alter table market_decision_snapshots add column {column} {kind}")
+                conn.commit()
+            except sqlite3.OperationalError as exc:
+                # Otra petición la añadió entre el pragma y el alter.
+                if "duplicate column" not in str(exc).lower():
+                    raise
 
 
 def _ensure_tracking_schema(conn: sqlite3.Connection) -> None:
