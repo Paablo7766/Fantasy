@@ -15,7 +15,9 @@ import {
   Sparkline,
   TONE,
   compact,
+  forecastHint,
   money,
+  projected7d,
   parsePct,
   signedMoney,
   signedPct,
@@ -236,9 +238,10 @@ function OfferRow({ row, photos, index }: { row: AuditoriaVenta; photos: PhotoIn
           <div className="mt-3 grid grid-cols-3 gap-3">
             <Fact label="Vale hoy" value={money(row.valor_mercado)} />
             <Fact
-              label="Previsión 7 días"
-              value={signedPct(row.prevision_7d_pct)}
+              label="Valor en 7 días"
+              value={projected7d(row.valor_mercado, row.prevision_7d_pct) !== null ? money(projected7d(row.valor_mercado, row.prevision_7d_pct)) : signedPct(row.prevision_7d_pct)}
               tone={toneOf(row.prevision_7d_pct)}
+              hint={projected7d(row.valor_mercado, row.prevision_7d_pct) !== null ? `${signedPct(row.prevision_7d_pct)} sobre hoy` : undefined}
             />
             <Fact
               label="Tu once sin él"
@@ -440,7 +443,7 @@ function PlayerCard({
                 <GainPill value={gain} />
               ) : (
                 <span className="text-[12px] tabular-nums" style={{ color: toneOf(trend) }}>
-                  {trend !== null ? `${signedPct(trend)} 7d` : ""}
+                  {forecastHint(player.market_value, trend)?.replace("→ ", "") ?? ""}
                 </span>
               )}
             </span>
@@ -520,7 +523,12 @@ function PlayerCard({
               value={`${points(player.own_expected_points)} xP`}
               hint={share !== null ? `Titular ${Math.round(share * 100)}%` : undefined}
             />
-            <Fact label="Previsión 7 días" value={trend !== null ? signedPct(trend) : "—"} tone={toneOf(trend)} />
+            <Fact
+              label="Valor en 7 días"
+              value={projected7d(player.market_value, trend) !== null ? money(projected7d(player.market_value, trend)) : trend !== null ? signedPct(trend) : "—"}
+              tone={toneOf(trend)}
+              hint={projected7d(player.market_value, trend) !== null ? `${signedPct(trend)} sobre hoy` : undefined}
+            />
             <Fact label="Cláusula" value={money(player.buyout_clause)} hint={lockCaption(player) || undefined} />
           </div>
           {audit && !audit.oferta_activa?.comprador && audit.veredicto_codigo === "PONER_ESCAPARATE" ? (

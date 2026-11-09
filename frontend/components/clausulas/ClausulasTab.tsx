@@ -22,7 +22,7 @@ import type {
   VeredictoClausulazo,
   VeredictoProteger,
 } from "@/lib/types";
-import { Chevron, Disclosure, Empty, Face, Fact, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, forecastHint, money, signedPct } from "@/components/ui/kit";
+import { Chevron, Disclosure, Empty, Face, Fact, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, forecastHint, money } from "@/components/ui/kit";
 
 /** «Mías» defiende tu plantilla; «Clausulazos» ataca la de los rivales. */
 export type ClausulasView = "mias" | "clausulazos";

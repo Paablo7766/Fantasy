@@ -1,6 +1,7 @@
 "use client";
 
 import { points } from "@/lib/core/format";
+import { projected7d } from "@/components/ui/kit";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { money, signedPct } from "@/components/inicio/ClauseAdvisor";
 import { AdvisorRow, Meter, type Fact } from "@/components/inicio/ui";
@@ -27,7 +28,7 @@ export function SaleRow({ row, photos, index }: { row: AuditoriaVenta; photos: P
   if (typeof spread === "number") facts.push({ label: "Sobre su valor", value: signedPct(spread), tone: spread >= 0 ? "var(--ini-mint)" : "var(--ini-red)" });
   if (typeof row.xp_jornada === "number") facts.push({ label: "Puntos esperados", value: `${points(row.xp_jornada)} pts` });
   facts.push({ label: "Tu once pierde", value: bench ? "Nada · fuera del once" : `−${points(row.tu_once_pierde_sin_el)} pts`, tone: bench ? undefined : "var(--ini-red)" });
-  if (typeof pct === "number") facts.push({ label: "Previsión 7 días", value: signedPct(pct), tone: pct >= 0 ? "var(--ini-mint)" : "var(--ini-red)" });
+  if (typeof pct === "number") facts.push({ label: "Valor en 7 días", value: projected7d(row.valor_mercado, pct) !== null ? money(projected7d(row.valor_mercado, pct) as number) : signedPct(pct), tone: pct >= 0 ? "var(--ini-mint)" : "var(--ini-red)" });
 
   const sub = [
     row.posicion ? row.posicion.slice(0, 3).toUpperCase() : null,

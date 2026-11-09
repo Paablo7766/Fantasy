@@ -1,6 +1,7 @@
 "use client";
 
 import { points } from "@/lib/core/format";
+import { projected7d } from "@/components/ui/kit";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { AdvisorRow, Meter, type Fact } from "@/components/inicio/ui";
 import type { ClausulaEnPeligro, ClausulazoSugerido, VeredictoClausulazo, VeredictoProteger } from "@/lib/types";
@@ -115,7 +116,7 @@ export function RaidRow({ row, photos, index }: { row: ClausulazoSugerido; photo
   }
   if (row.mejora_once > 0) facts.push({ label: "Mejora del once", value: `+${points(row.mejora_once)} pts`, tone: "var(--ini-mint)" });
   facts.push({ label: "Puntos esperados", value: `${points(row.xp_jornada)} pts` });
-  if (typeof pct === "number") facts.push({ label: "Previsión 7 días", value: signedPct(pct), tone: pct >= 0 ? "var(--ini-mint)" : "var(--ini-red)" });
+  if (typeof pct === "number") facts.push({ label: "Valor en 7 días", value: projected7d(row.valor_mercado, pct) !== null ? money(projected7d(row.valor_mercado, pct) as number) : signedPct(pct), tone: pct >= 0 ? "var(--ini-mint)" : "var(--ini-red)" });
   if (row.rivales_que_pueden_quitartelo) facts.push({ label: "Rivales con caja", value: String(row.rivales_que_pueden_quitartelo), tone: "var(--ini-red)" });
 
   return (

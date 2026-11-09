@@ -5,7 +5,7 @@ import { gradeColor } from "@/components/mercado/MarketGrade";
 import { PlayerCard } from "@/components/mercado/PlayerCard";
 import { LiquidacionBlock, ParonBlock, PlanBlock } from "@/components/mercado/PlanSections";
 import { ACTION_VERDICT, auctionLabel, budgetLine, difficultyLabel, historyLine } from "@/components/mercado/shared";
-import { Disclosure, Empty, Face, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
+import { Disclosure, Empty, Face, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, money, parsePct, projected7d, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { errorMessage, playerName } from "@/lib/core/format";
 import { executableBid, marketAction } from "@/lib/mercado/marketAction";
@@ -159,7 +159,7 @@ function TradingBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[14.5px] font-medium text-white">{op.nombre || "Jugador"}</span>
               <span className="block truncate text-[12px] tabular-nums text-white/45">
-                {[typeof op.pct === "number" ? `+${decimal(op.pct)}% a 7 días` : "", op.cierre].filter(Boolean).join(" · ")}
+                {[typeof op.pct === "number" ? `${typeof op.euros === "number" ? `vendes ~${money(projected7d(op.euros, op.pct))} · ` : ""}+${decimal(op.pct)}% a 7 días` : "", op.cierre].filter(Boolean).join(" · ")}
               </span>
             </span>
             <span className="shrink-0 text-right">
