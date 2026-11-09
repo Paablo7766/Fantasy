@@ -6,6 +6,7 @@ import { REGLAMENTO } from "@/lib/core/reglamento";
 import { signedPoints } from "@/lib/inicio/hoy";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { statusBadgeLabel } from "@/components/ui/StatusBadge";
+import { Crest } from "@/components/ui/Crest";
 import type { CapitanPick, Gap, OptimizePayload, PlanPayload, Player, SquadsPayload } from "@/lib/types";
 import {
   Disclosure,
@@ -29,6 +30,35 @@ const ROW_Y: Record<string, number> = { DEL: 15, MC: 39, DEF: 63, POR: 86 };
 const LINES = ["DEL", "MC", "DEF", "POR"] as const;
 
 type Slot = Player & { gap?: boolean; x: number; y: number; key: string };
+
+type NextMatch = { en: number; opponent: string; home: boolean | null; difficulty: string | null };
+
+const DIFFICULTY: Record<string, { label: string; color: string }> = {
+  muy_facil: { label: "Muy fácil", color: TONE.green },
+  very_easy: { label: "Muy fácil", color: TONE.green },
+  facil: { label: "Fácil", color: "#4FD1A5" },
+  easy: { label: "Fácil", color: "#4FD1A5" },
+  media: { label: "Media", color: TONE.amber },
+  medium: { label: "Media", color: TONE.amber },
+  dificil: { label: "Difícil", color: "#FF9A5A" },
+  hard: { label: "Difícil", color: "#FF9A5A" },
+  muy_dificil: { label: "Muy difícil", color: TONE.red },
+  very_hard: { label: "Muy difícil", color: TONE.red },
+};
+
+/** Próximos rivales del servidor; sin ellos, los calendarios propio y de terceros sin repetir rival. */
+function nextMatches(player: Player): NextMatch[] {
+  if (player.proximos_rivales?.length) {
+    return player.proximos_rivales.slice(0, 3).map((row) => ({ en: row.en, opponent: row.rival, home: row.casa, difficulty: row.dificultad }));
+  }
+  const out: NextMatch[] = [];
+  for (const row of [...(player.own_calendar || []), ...(player.af_calendar || [])]) {
+    if (!row.opponent || out.some((match) => match.opponent === row.opponent)) continue;
+    out.push({ en: out.length + 1, opponent: row.opponent, home: row.is_home ?? null, difficulty: row.difficulty ?? null });
+  }
+  return out.slice(0, 3);
+}
+
 type View = "rec" | "saved";
 
 function xFor(index: number, count: number): number {
@@ -237,6 +267,7 @@ function PlayerSheet({
   const next4 = typeof player.xp_4_jornadas === "number" ? player.xp_4_jornadas : null;
   const lost = typeof player.tu_once_pierde_sin_el === "number" && player.tu_once_pierde_sin_el >= 0.05 ? player.tu_once_pierde_sin_el : null;
   const trend = parsePct(player.prevision_7d_pct);
+  const matches = player.gap ? [] : nextMatches(player);
   return (
     <article className={`home-glass row-in p-4 ${className}`} aria-live="polite">
       <div className="flex items-center gap-3">
@@ -280,6 +311,29 @@ function PlayerSheet({
               hint={forecastHint(player.market_value, trend)}
             />
           </div>
+          {matches.length ? (
+            <div className="mt-3 border-t border-white/[0.06] pt-3">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-white/40">Próximos rivales</p>
+              <ul className="mt-2 grid grid-cols-3 gap-2">
+                {matches.map((match, index) => {
+                  const diff = (match.difficulty && DIFFICULTY[match.difficulty]) || { label: "s/d", color: TONE.gray };
+                  return (
+                    <li key={`${match.opponent}-${index}`} className="relative overflow-hidden rounded-xl bg-white/[0.04] px-2.5 py-2">
+                      <span className="absolute inset-y-0 left-0 w-1" style={{ background: diff.color }} aria-hidden="true" />
+                      <p className="text-[10.5px] text-white/40">
+                        {match.en === 1 ? "Próximo" : `En ${match.en}`} · {match.home === true ? "casa" : match.home === false ? "fuera" : "—"}
+                      </p>
+                      <p className="mt-0.5 flex items-center gap-1.5 text-[13px] font-semibold text-white">
+                        <Crest club={match.opponent} size={18} />
+                        <span className="truncate">{match.opponent}</span>
+                      </p>
+                      <p className="text-[11px] font-medium" style={{ color: diff.color }}>{diff.label}</p>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
           {next4 !== null || lost !== null ? (
             <p className="mt-3 border-t border-white/[0.06] pt-3 text-[13px] leading-relaxed text-white/50">
               {next4 !== null ? (
@@ -377,6 +431,7 @@ export function OnceTab({
         market_value: row.market_value ?? base?.market_value ?? own?.market_value,
         prevision_7d_pct: row.prevision_7d_pct ?? base?.prevision_7d_pct ?? own?.prevision_7d_pct,
         tu_once_pierde_sin_el: row.tu_once_pierde_sin_el ?? base?.tu_once_pierde_sin_el ?? own?.tu_once_pierde_sin_el,
+        proximos_rivales: row.proximos_rivales ?? base?.proximos_rivales ?? own?.proximos_rivales,
       };
     };
     const recommended = (optimize.xi || []).map(enrich);

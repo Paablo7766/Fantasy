@@ -1078,6 +1078,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
             "usa_referencia": mercado.get("usa_referencia") is True,
         },
         "previsiones": previsiones,
+        "calendarios": {pid: row["calendario"] for pid, row in records.items() if row.get("calendario")},
         "war": war,
         "pujas": pujas,
         "consejos": consejos,
@@ -2250,6 +2251,28 @@ def _consejos(
     return consejos
 
 
+def _proximos_rivales(calendario: Any) -> list[dict[str, Any]]:
+    """Rival, localía y dificultad de los próximos partidos; ``en`` = jornadas desde hoy (1 = la próxima)."""
+    if not isinstance(calendario, list):
+        return []
+    salida: list[dict[str, Any]] = []
+    for indice, celda in enumerate(calendario[:4], start=1):
+        rival = celda.get("opponent") if isinstance(celda, dict) else None
+        if not isinstance(rival, str) or not rival.strip():
+            continue
+        casa = celda.get("is_home")
+        dificultad = celda.get("difficulty") or celda.get("dificultad")
+        salida.append(
+            {
+                "en": indice,
+                "rival": rival.strip(),
+                "casa": casa if isinstance(casa, bool) else None,
+                "dificultad": dificultad if isinstance(dificultad, str) else None,
+            }
+        )
+    return salida
+
+
 def _stamp_row(row: dict[str, Any], report: dict[str, Any]) -> None:
     player_id = _pid(row.get("player_id"))
     if player_id is None:
@@ -2260,6 +2283,9 @@ def _stamp_row(row: dict[str, Any], report: dict[str, Any]) -> None:
         row["valor_en_7d"] = previsto.get("valor_en_7d")
         row["valor_justo"] = previsto.get("valor_justo")
         row["xp_4_jornadas"] = previsto.get("xp_4_jornadas")
+    proximos = _proximos_rivales((report.get("calendarios") or {}).get(player_id))
+    if proximos:
+        row["proximos_rivales"] = proximos
     if player_id in report["war"]:
         row["tu_once_pierde_sin_el"] = report["war"][player_id]
     consejo = report["consejos"].get(player_id)

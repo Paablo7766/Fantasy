@@ -130,6 +130,8 @@ export type Player = {
   valor_en_7d?: number | null;
   valor_justo?: number | null;
   xp_4_jornadas?: number | null;
+  /** Próximos rivales (``en`` 1 = la próxima jornada). */
+  proximos_rivales?: Array<{ en: number; rival: string; casa: boolean | null; dificultad: string | null }> | null;
   /** Puntos oficiales de las últimas jornadas, de la más antigua a la última. */
   week_points?: number[] | null;
   /** Valor diario guardado en local, del día más antiguo al más reciente. */

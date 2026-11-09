@@ -1,5 +1,6 @@
 "use client";
 
+import { Crest } from "@/components/ui/Crest";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDashboard } from "@/components/DashboardProvider";
@@ -371,6 +372,7 @@ function Fixtures({ items, align }: { items: Lado["proximos"]; align: "left" | "
         return (
           <li key={`${item.rival}-${index}`} className="flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px]" style={{ background: `${color}17` }}>
             <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
+            <Crest club={item.rival} size={16} />
             <span className="truncate text-white/80">{item.rival}</span>
             <span className="shrink-0 text-white/35">{item.casa === true ? "C" : item.casa === false ? "F" : ""}</span>
           </li>

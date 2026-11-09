@@ -10,6 +10,7 @@ import { bidStory } from "@/lib/mercado/bidStory";
 import { playerName } from "@/lib/core/format";
 import { actionReason, executableBid, isVetoed, marketAction } from "@/lib/mercado/marketAction";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { Crest } from "@/components/ui/Crest";
 import type { MarketDecision } from "@/lib/types";
 
 type Match = { opponent: string; home: boolean | null; difficulty: string | null };
@@ -446,7 +447,10 @@ export function PlayerCard({
                     <p className="text-[10.5px] text-white/40">
                       {index === 0 ? "Próximo" : `En ${index + 1}`} · {match.home === true ? "casa" : match.home === false ? "fuera" : "—"}
                     </p>
-                    <p className="mt-0.5 truncate text-[14px] font-semibold text-white">{match.opponent}</p>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-[14px] font-semibold text-white">
+                      <Crest club={match.opponent} size={20} />
+                      <span className="truncate">{match.opponent}</span>
+                    </p>
                     <p className="mt-0.5 text-[11.5px] font-medium" style={{ color: diff.color }}>
                       {diff.label}
                     </p>

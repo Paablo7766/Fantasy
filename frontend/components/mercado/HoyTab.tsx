@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { errorMessage, playerName } from "@/lib/core/format";
 import { executableBid, marketAction } from "@/lib/mercado/marketAction";
+import { Crest } from "@/components/ui/Crest";
 import type { AlertaClausula, CatalogPlayer, JornadaClub, MarketDecision, PlanFichajes, TrendsPayload } from "@/lib/types";
 
 type Source = "liga" | "rival" | "todos";
@@ -185,10 +186,11 @@ function FixtureList({ clubs }: { clubs: JornadaClub[] }) {
         return (
           <li key={club.club || club.opponent || "club"} className="py-3">
             <div className="flex items-center gap-3">
+              <Crest club={club.club} size={28} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14.5px] font-medium text-white">{club.club}</span>
-                <span className="block truncate text-[12px] text-white/45">
-                  {club.is_home === true ? "En casa" : club.is_home === false ? "Fuera" : "Partido"} contra {club.opponent || "—"}
+                <span className="flex items-center gap-1.5 truncate text-[12px] text-white/45">
+                  {club.is_home === true ? "En casa" : club.is_home === false ? "Fuera" : "Partido"} contra <Crest club={club.opponent} size={14} />{club.opponent || "—"}
                   {club.predicted_score ? ` · ${club.predicted_score}` : ""}
                   {diff ? ` · ${diff.charAt(0).toUpperCase()}${diff.slice(1)}` : ""}
                 </span>
