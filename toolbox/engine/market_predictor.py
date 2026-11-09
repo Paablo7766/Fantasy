@@ -132,26 +132,29 @@ def predecir_precio(
 
 
 # ---------------------------------------------------------------------------
-# Ley de inercia medida (9 nov 2026, precios reales de la liga)
+# Ley de inercia por régimen (Frente 19, precios reales hasta el 9 nov 2026)
 # ---------------------------------------------------------------------------
-# cambio%(t+1) = 0,041 % + 0,944 * cambio%(t), R2 = 0,858. El signo del cambio
-# se repite el 95,7 % de los dias. Los domingos el precio no se mueve (0,0 %).
-LEY_INERCIA_ALFA_PCT = 0.041
-LEY_INERCIA_BETA = 0.944
-SIGNO_REPETIDO_PCT = 95.7
-#: La ley se ajusto con cambios diarios normales; un pico mayor se trata como este tope
-#: (extrapolar un +11 % a 0,944 por dia compuesto no esta medido).
+# Si hoy sube (n=598, R2=0,789): cambio%(mañana) = 0,008 % + 0,951 * cambio%(hoy).
+# Si hoy baja (n=647, R2=0,732): cambio%(mañana) = -0,036 % + 0,932 * cambio%(hoy).
+# Los domingos el precio no se mueve (0 %) y no gastan inercia.
+LEY_SUBIDA_ALFA_PCT = 0.008
+LEY_SUBIDA_BETA = 0.951
+LEY_BAJADA_ALFA_PCT = -0.036
+LEY_BAJADA_BETA = 0.932
+# Alias de la subida: quien leía la ley única de la fase 1 sigue encontrando el beta vigente.
+LEY_INERCIA_ALFA_PCT = LEY_SUBIDA_ALFA_PCT
+LEY_INERCIA_BETA = LEY_SUBIDA_BETA
+SIGNO_REPETIDO_PCT = 91.6
+#: La ley se ajustó con cambios diarios normales; un pico mayor se trata como este tope.
 CAMBIO_MAX_EXTRAPOLABLE_PCT = 5.0
-#: Un cambio diario por encima de esto es «claramente positivo»: el jugador sigue en racha.
-CAMBIO_CLARAMENTE_POSITIVO_PCT = 0.5
-#: Impulso de arranque tras puntuar (residuo medio sobre la ley, por tramo de precio):
-#: (precio_min, precio_max, puntos_minimos, impulso_pct). En 3-15 M, de 6 puntos para
-#: arriba el residuo medio fue +0,43 % a +0,73 % y positivo en 35 de 40 casos.
-#: En >20 M no se midio impulso positivo (8 pts: -0,16 %, 3 de 10 positivos), asi que
-#: su impulso es 0 hasta que haya muestra; el umbral queda registrado.
+#: Por debajo de esto el jugador «llegaba cayendo» (J12: 12 de 13 siguieron cayendo el lunes).
+UMBRAL_DIP_PCT = -0.5
+#: Subida media del lunes en quien NO llegaba cayendo y fue titular con partido alto (n=30, +1,779 %).
+IMPULSO_POST_JORNADA_PCT = 1.78
+#: (precio_min, precio_max exclusivo o None, puntos mínimos, impulso %). El tramo 15–20 M€ no está medido.
 IMPULSOS_POST_JORNADA: tuple[tuple[int, int | None, int, float], ...] = (
-    (3_000_000, 15_000_000, 6, 0.58),
-    (20_000_000, None, 8, 0.0),
+    (3_000_000, 15_000_000, 6, IMPULSO_POST_JORNADA_PCT),
+    (20_000_000, None, 8, IMPULSO_POST_JORNADA_PCT),
 )
 
 
@@ -163,9 +166,34 @@ def cambio_pct_desde_delta(precio: int | float, delta: int | float) -> float:
     return float(delta) / base * 100.0
 
 
-def impulso_post_jornada_pct(precio: int | float, puntos: int | float | None) -> float:
-    """Impulso (en %) del primer dia tras una jornada con puntos altos. 0 si no aplica."""
+def siguiente_cambio_pct(cambio_hoy: float) -> float:
+    """Cambio de mañana según el régimen de hoy. Un día plano no arranca solo."""
+    if cambio_hoy > 0:
+        return LEY_SUBIDA_ALFA_PCT + LEY_SUBIDA_BETA * cambio_hoy
+    if cambio_hoy < 0:
+        return LEY_BAJADA_ALFA_PCT + LEY_BAJADA_BETA * cambio_hoy
+    return 0.0
+
+
+def impulso_post_jornada_pct(
+    precio: int | float,
+    puntos: int | float | None,
+    cambio_hoy: int | float | None = None,
+) -> float:
+    """+1,78 % el primer día hábil tras puntuar, si no llegaba cayendo.
+
+    En la J12 quien llegaba por debajo de −0,5 %/día y puntuó bien siguió
+    cayendo: ahí el impulso es 0 y manda la ley de bajada. El +1,78 % es la
+    media observada del lunes, no un residuo que se suma encima de la ley.
+    """
     if puntos is None or isinstance(puntos, bool) or not math.isfinite(float(puntos)):
+        return 0.0
+    if (
+        cambio_hoy is not None
+        and not isinstance(cambio_hoy, bool)
+        and math.isfinite(float(cambio_hoy))
+        and float(cambio_hoy) < UMBRAL_DIP_PCT
+    ):
         return 0.0
     for minimo, maximo, umbral, impulso in IMPULSOS_POST_JORNADA:
         if float(precio) >= minimo and (maximo is None or float(precio) < maximo) and float(puntos) >= umbral:
@@ -182,20 +210,21 @@ def proyectar_inercia(
     puntos_jornada: int | float | None = None,
     post_jornada: bool = False,
 ) -> dict[str, Any]:
-    """Precio dentro de ``dias`` con la ley 0,041 % + 0,944 * cambio de ayer.
+    """Precio dentro de ``dias`` con la ley asimétrica 0,951 / 0,932.
 
-    Los domingos no se mueve y no gastan inercia. Con ``post_jornada`` (lunes o
-    martes tras jugar) el primer dia suma el impulso de arranque medido para los
-    puntos de la jornada; despues lo arrastra la propia inercia.
+    Los domingos no se mueven y no gastan inercia. Con ``post_jornada`` el
+    primer día hábil usa el +1,78 % observado si es mayor que la ley y el
+    jugador no llegaba cayendo; los días siguientes los arrastra el régimen.
     """
     precio = _numero(precio_actual, "precio_actual")
     pct = _numero(cambio_pct_hoy, "cambio_pct_hoy")
     if precio <= 0:
         raise ValueError("precio_actual tiene que ser positivo")
+    llegada = pct
     pct = max(-CAMBIO_MAX_EXTRAPOLABLE_PCT, min(CAMBIO_MAX_EXTRAPOLABLE_PCT, pct))
     pasos = max(0, int(round(float(dias))))
     dia = desde or datetime.now(_MADRID).date()
-    impulso = impulso_post_jornada_pct(precio, puntos_jornada) if post_jornada else 0.0
+    impulso = impulso_post_jornada_pct(precio, puntos_jornada, llegada) if post_jornada else 0.0
     valor = precio
     serie: list[float] = []
     for _paso in range(pasos):
@@ -203,8 +232,11 @@ def proyectar_inercia(
         if dia.weekday() == 6:
             serie.append(0.0)
             continue
-        pct = LEY_INERCIA_ALFA_PCT + LEY_INERCIA_BETA * pct + impulso
-        impulso = 0.0
+        salto = siguiente_cambio_pct(pct)
+        if impulso > 0:
+            salto = max(salto, impulso)
+            impulso = 0.0
+        pct = salto
         valor *= 1.0 + pct / 100.0
         serie.append(round(pct, 4))
     final = _al_paso(valor)
@@ -216,14 +248,14 @@ def proyectar_inercia(
 
 
 def vender_en_pico_prohibido(cambio_pct_hoy: int | float | None, *, dia_limite_caja: bool = False) -> bool:
-    """``True`` si vender hoy es prematuro: sigue subiendo con fuerza y no hay urgencia de caja.
+    """``True`` si vender hoy es prematuro: el precio de hoy sube y no hay urgencia de caja.
 
-    El signo del cambio se repite el 95,7 % de los dias: mientras hoy suba con
-    claridad, mañana (casi seguro) sube otra vez. Solo el dia limite de caja lo salta.
+    Mientras ``cambio%_hoy > 0`` el régimen de subida sigue al día siguiente.
+    Solo el día límite de caja lo salta.
     """
     if dia_limite_caja or cambio_pct_hoy is None or isinstance(cambio_pct_hoy, bool):
         return False
-    return float(cambio_pct_hoy) > CAMBIO_CLARAMENTE_POSITIVO_PCT
+    return float(cambio_pct_hoy) > 0.0
 
 
 def formatear_pct(pct: float) -> str:
@@ -367,10 +399,9 @@ def proyectar_7d(
 ) -> dict[str, int | float | str]:
     """Precio dentro de siete días.
 
-    Con movimiento hoy (``delta_hoy`` distinto de cero) manda la ley medida
-    ``0,041 % + 0,944 * cambio`` (``proyectar_inercia``): sustituye al ritmo
-    asentado y a la inercia que se apaga. Sin movimiento no hay inercia que
-    proyectar y entra la fuerza hacia el valor justo.
+    Con movimiento hoy (``delta_hoy`` distinto de cero) manda la ley por régimen
+    (``0,008 % + 0,951 ×`` si sube, ``-0,036 % + 0,932 ×`` si baja). Sin
+    movimiento no hay inercia que proyectar y entra la fuerza hacia el valor justo.
 
     Si hoy y ayer se mueven al mismo lado y con un paso parecido, esos siete
     días repiten ese ritmo. El valor justo no lo corrige: una racha de un

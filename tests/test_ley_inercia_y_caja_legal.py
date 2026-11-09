@@ -1,4 +1,4 @@
-"""Bloques de la fase 3: ley de inercia 0,944, venta en pico y suelo legal de la caja."""
+"""Ley asimétrica 0,951/0,932, venta en pico y suelo legal de la caja."""
 
 from __future__ import annotations
 
@@ -20,31 +20,41 @@ MADRID = ZoneInfo("Europe/Madrid")
 
 class LeyInerciaTests(unittest.TestCase):
     def test_un_dia_aplica_la_ley_exacta(self) -> None:
-        # lunes 9 nov -> martes 10: 0,041 + 0,944 * 2 = 1,929 %
+        # lunes 9 nov -> martes 10, subiendo: 0,008 + 0,951 * 2 = 1,910 %
         res = proyectar_inercia(10_000_000, 2.0, 1, desde=date(2026, 11, 9))
-        self.assertAlmostEqual(res["serie_pct"][0], 1.929, places=3)
+        self.assertAlmostEqual(res["serie_pct"][0], 1.910, places=3)
+        # bajando: -0,036 + 0,932 * -2 = -1,900 %
+        baja = proyectar_inercia(10_000_000, -2.0, 1, desde=date(2026, 11, 9))
+        self.assertAlmostEqual(baja["serie_pct"][0], -1.900, places=3)
 
     def test_el_domingo_no_se_mueve_ni_gasta_inercia(self) -> None:
         # sábado 7 nov: el domingo 8 es plano, el lunes 9 sigue desde el sábado.
         res = proyectar_inercia(10_000_000, 2.0, 2, desde=date(2026, 11, 7))
         self.assertEqual(res["serie_pct"][0], 0.0)
-        self.assertAlmostEqual(res["serie_pct"][1], 1.929, places=3)
+        self.assertAlmostEqual(res["serie_pct"][1], 1.910, places=3)
 
     def test_impulso_solo_en_tramo_y_con_puntos(self) -> None:
         self.assertEqual(impulso_post_jornada_pct(8_000_000, 5), 0.0)
-        self.assertGreater(impulso_post_jornada_pct(8_000_000, 6), 0.0)
-        # En >20 M no hay impulso medido: el umbral existe, el impulso es 0.
-        self.assertEqual(impulso_post_jornada_pct(30_000_000, 9), 0.0)
+        self.assertEqual(impulso_post_jornada_pct(8_000_000, 6), 1.78)
+        self.assertEqual(impulso_post_jornada_pct(30_000_000, 8), 1.78)
+        self.assertEqual(impulso_post_jornada_pct(30_000_000, 7), 0.0)
+        # Quien llegaba cayendo no recibe el impulso: sigue la ley de bajada.
+        self.assertEqual(impulso_post_jornada_pct(8_000_000, 10, cambio_hoy=-0.8), 0.0)
+        # El tramo 15–20 M€ no está medido.
+        self.assertEqual(impulso_post_jornada_pct(18_000_000, 9), 0.0)
         base = proyectar_inercia(8_000_000, 0.0, 3, desde=date(2026, 11, 9))
         con = proyectar_inercia(
             8_000_000, 0.0, 3, desde=date(2026, 11, 9), puntos_jornada=8, post_jornada=True
         )
         self.assertGreater(con["valor"], base["valor"])
+        self.assertAlmostEqual(con["serie_pct"][0], 1.78, places=2)
 
     def test_no_se_vende_en_el_pico_salvo_dia_limite(self) -> None:
         self.assertTrue(vender_en_pico_prohibido(1.5))
         self.assertFalse(vender_en_pico_prohibido(1.5, dia_limite_caja=True))
-        self.assertFalse(vender_en_pico_prohibido(0.1))
+        self.assertTrue(vender_en_pico_prohibido(0.1))
+        self.assertFalse(vender_en_pico_prohibido(0.0))
+        self.assertFalse(vender_en_pico_prohibido(-0.4))
         fila = {"valor": 10_000_000, "delta_hoy": 300_000}
         self.assertTrue(venta_prematura(fila, dia_limite_caja=False))
         self.assertFalse(venta_prematura(fila, dia_limite_caja=True))
@@ -147,3 +157,27 @@ class ColaAntiPicosTests(unittest.TestCase):
         self.assertEqual(con_cola_anti_picos(10_000_000, clave="p", techo=10_000_000), 10_000_000)
         # Una cifra que ya trae cola no se toca.
         self.assertEqual(con_cola_anti_picos(10_003_719, clave="p"), 10_003_719)
+
+    def test_la_recomendada_no_pasa_del_10_por_ciento(self) -> None:
+        from toolbox.engine.auction_intel import calcular_pujas, techo_sobrepuja_eur
+
+        puja = calcular_pujas(
+            10_000_000,
+            0,
+            12_000_000,
+            tu_saldo=50_000_000,
+            rivales=[],
+            posicion="DEL",
+            prevision_7d_pct=40,
+            clave="p",
+        )
+        techo = techo_sobrepuja_eur(10_000_000)
+        self.assertLessEqual(puja["puja_recomendada"], techo)
+        self.assertGreater(puja["puja_recomendada"], 10_000_000)
+        self.assertNotEqual(puja["puja_recomendada"] % 1000, 0)
+        disparada = calcular_pujas(
+            10_000_000, 2_000_000, 12_000_000, tu_saldo=50_000_000, rivales=[], posicion="DEL", clave="q"
+        )
+        self.assertLessEqual(disparada["puja_recomendada"], techo)
+        # El parche barato que tapa un once vacío puede pasar del +10 %.
+        self.assertIsNone(techo_sobrepuja_eur(900_000, supervivencia=True))

@@ -17,10 +17,12 @@ from toolbox.bidding import MIN_HEADCOUNT
 from toolbox.engine.auction_intel import (
     PREVISION_ALTA_PCT,
     UMBRAL_WAR_OFERTA,
+    PARCHE_SUPERVIVENCIA_EUR,
     calcular_pujas,
     capitanes,
     puja_anti_pizarra,
     puja_competitiva_liga,
+    techo_sobrepuja_eur,
 )
 from toolbox.engine.lineup_math import solve_best_xi, war_del_once
 from toolbox.engine.liquidacion import plan_liquidacion
@@ -950,6 +952,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
     poder_pujas = saldo + int(valor_equipo * DEUDA_PCT_EQUIPO) if isinstance(saldo, int) else None
     notas = _notas_mercado(records, previsiones, poder_pujas, caja=saldo)
     sobrepuja_liga = _sobrepuja_liga()
+    huecos = _puestos_en_hueco(records)
 
     pujas: dict[str, dict[str, Any]] = {}
     for row in records.values():
@@ -957,6 +960,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         valor = row.get("valor")
         if not isinstance(player_id, str) or not isinstance(valor, int) or valor <= 0:
             continue
+        row["supervivencia"] = _es_parche_supervivencia(row, huecos)
         justo = previsiones.get(player_id, {}).get("valor_justo")
         if not isinstance(justo, int):
             jornada = row.get("jornada")
@@ -972,7 +976,10 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
             prevision_7d_pct=previsto_pct,
             dificultad=row.get("dificultad") if isinstance(row.get("dificultad"), str) else None,
             clave=player_id,
+            supervivencia=row["supervivencia"] is True,
         )
+        techo = techo_sobrepuja_eur(valor, supervivencia=row["supervivencia"] is True)
+        pujas[player_id]["techo_sobrepuja"] = None if techo is None else int(math.floor(techo))
         _aplicar_anti_pizarra(pujas[player_id], row, notas.get(player_id), previsto_pct, saldo)
         # Demanda alta en el mercado: el escalón de liga también se enseña fuera del plan.
         base_mercado = (
@@ -987,6 +994,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
             sobrepuja=sobrepuja_liga,
             margen=(saldo - base_mercado) if isinstance(saldo, int) and isinstance(base_mercado, int) else None,
             clave=player_id,
+            techo_absoluto=pujas[player_id].get("techo_sobrepuja"),
         )
 
     forzadas: dict[str, str] = {}
@@ -1460,6 +1468,28 @@ def _pct_previsto(previsiones: dict[str, dict[str, Any]], player_id: str) -> flo
     return float(pct)
 
 
+_MINIMOS_ONCE = {"POR": 1, "DEF": 3, "MC": 3, "DEL": 1}
+
+
+def _puestos_en_hueco(records: dict[str, dict[str, Any]]) -> set[str]:
+    """Puestos donde la plantilla no llega al mínimo de línea: sin ellos el viernes es 0."""
+    cuentas = dict.fromkeys(_MINIMOS_ONCE, 0)
+    for row in records.values():
+        if row.get("is_self") is not True or row.get("excluded") is True:
+            continue
+        puesto = row.get("position")
+        if puesto in cuentas:
+            cuentas[puesto] += 1
+    return {puesto for puesto, minimo in _MINIMOS_ONCE.items() if cuentas[puesto] < minimo}
+
+
+def _es_parche_supervivencia(row: dict[str, Any], huecos: set[str]) -> bool:
+    valor = row.get("valor") if isinstance(row.get("valor"), int) else row.get("market_value")
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)) or valor <= 0 or valor >= PARCHE_SUPERVIVENCIA_EUR:
+        return False
+    return row.get("position") in huecos
+
+
 def _aplicar_anti_pizarra(
     puja: dict[str, Any],
     row: dict[str, Any],
@@ -1469,13 +1499,20 @@ def _aplicar_anti_pizarra(
 ) -> None:
     """Con demanda alta sube ``puja_recomendada`` por encima del escalón de La Pizarra."""
     valor = row.get("valor") or row.get("sale_price") or 0
+    maxima = puja.get("puja_maxima") if isinstance(puja.get("puja_maxima"), int) else None
+    techo = techo_sobrepuja_eur(
+        valor if isinstance(valor, (int, float)) and not isinstance(valor, bool) else 0,
+        supervivencia=row.get("supervivencia") is True,
+    )
+    if techo is not None:
+        maxima = int(math.floor(techo)) if maxima is None else min(maxima, int(math.floor(techo)))
     info = puja_anti_pizarra(
         valor,
         row.get("delta_hoy"),
         nota_mercado=nota.get("nota_mercado") if isinstance(nota, dict) else None,
         prevision_7d_pct=pct,
         clave=row.get("player_id"),
-        maxima=puja.get("puja_maxima") if isinstance(puja.get("puja_maxima"), int) else None,
+        maxima=maxima,
         saldo=saldo,
     )
     puja["puja_pizarra"] = info["puja_pizarra"]
@@ -1483,7 +1520,7 @@ def _aplicar_anti_pizarra(
     puja["diferencial_anti_pizarra_eur"] = info["diferencial_anti_pizarra_eur"]
     puja["alta_demanda"] = info["alta_demanda"]
     anti = info["puja_anti_pizarra"]
-    if isinstance(anti, int):
+    if isinstance(anti, int) and (techo is None or anti <= techo):
         puja["puja_recomendada"] = anti
         smart = puja.get("puja_smart")
         if not isinstance(smart, int) or smart < anti:
@@ -1509,10 +1546,13 @@ def _aplicar_competitiva(
     sobrepuja: dict[str, Any] | None,
     margen: Any = None,
     clave: Any = None,
+    techo_absoluto: Any = None,
 ) -> None:
     """Escribe ``puja_competitiva_liga`` y el porcentaje que la sostiene, o los deja en ``None``."""
     estimada = sobrepuja.get("estimada") if isinstance(sobrepuja, dict) else None
-    cifra = puja_competitiva_liga(base, maxima, estimada, margen=margen, clave=clave)
+    cifra = puja_competitiva_liga(
+        base, maxima, estimada, margen=margen, clave=clave, techo_absoluto=techo_absoluto
+    )
     destino["puja_competitiva_liga"] = cifra
     destino["sobrepuja_liga_pct"] = round(float(estimada) * 100.0, 1) if cifra is not None else None
     destino["sobrepuja_liga_muestra"] = (
@@ -1765,6 +1805,7 @@ def _sellar_pujas_plan(
             sobrepuja=sobrepuja,
             margen=margen,
             clave=accion.get("player_id"),
+            techo_absoluto=puja.get("techo_sobrepuja"),
         )
         # Mercado ve la misma cifra que el plan.
         puja["puja_competitiva_liga"] = accion["puja_competitiva_liga"]
@@ -1858,6 +1899,8 @@ def _plan(
         jornada = row.get("jornada")
         if not isinstance(jornada, (int, float)) or isinstance(jornada, bool) or float(jornada) <= 0:
             continue
+        parche = _es_parche_supervivencia(row, _puestos_en_hueco(records))
+        row["supervivencia"] = parche
         puja = calcular_pujas(
             row.get("valor") or row.get("sale_price") or 0,
             float(row.get("delta_hoy") or 0.0),
@@ -1868,6 +1911,7 @@ def _plan(
             prevision_7d_pct=_pct_previsto(previsto, player_id),
             dificultad=row.get("dificultad") if isinstance(row.get("dificultad"), str) else None,
             clave=player_id,
+            supervivencia=parche,
         )
         _aplicar_anti_pizarra(
             puja,
@@ -1930,6 +1974,9 @@ def _plan(
         valor = row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None
         if not valor and isinstance(row.get("market_value"), int) and not isinstance(row.get("market_value"), bool):
             valor = row["market_value"] if row["market_value"] > 0 else None
+        parche = _es_parche_supervivencia({**row, "valor": valor}, _puestos_en_hueco(records))
+        if isinstance(valor, int) and valor > 0 and clause > valor * 1.25 and not parche:
+            continue
         clausulas.append(
             {
                 "player_id": player_id,
@@ -1942,6 +1989,7 @@ def _plan(
                 "pct": _pct_previsto(previsto, player_id),
                 "valor": valor if isinstance(valor, int) and valor > 0 else None,
                 "af_alerta_bajada": row.get("af_alerta_bajada") is True,
+                "supervivencia": parche,
             }
         )
     clausulas.sort(key=lambda item: float(item["eficiencia"]), reverse=True)

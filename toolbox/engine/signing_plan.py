@@ -59,7 +59,9 @@ DIAS_REFERENCIA_LUNES = 4.0
 FACTOR_AJUSTE = XP_POR_MILLON_LUNES * 7.0 / DIAS_REFERENCIA_LUNES
 # Cláusula / valor de mercado. Por encima, solo pasa si la subida a 7 días
 # cubre al menos el 60 % del sobreprecio.
-RATIO_CLAUSULA_MAX = 1.35
+# Frente 20: las cláusulas por encima de 1,25× perdieron en 6/6 (−4,91 M€). Techo duro.
+RATIO_CLAUSULA_MAX = 1.25
+PARCHE_SUPERVIVENCIA_EUR = 1_500_000
 COBERTURA_SOBREPRECIO = 0.60
 # Sobreprecio que LaLiga no devuelve. Por encima, el clausulazo de un jugador
 # de valor medio o bajo se descarta antes del solver.
@@ -226,14 +228,40 @@ def clasificar_impulso(
     return "NORMAL"
 
 
-def merece_credito_paron(*, origen: str, pct: float | None, mejora: float) -> bool:
+def _cambio_hoy_pct(row: dict[str, Any]) -> float | None:
+    """Cambio de hoy en % (el delta ya está dentro del valor). ``None`` sin dato."""
+    delta = row.get("delta_hoy")
+    valor = _valor_jugador(row)
+    if isinstance(delta, bool) or not isinstance(delta, (int, float)) or valor <= 0:
+        return None
+    base = valor - float(delta)
+    if base <= 0:
+        return None
+    return float(delta) / base * 100.0
+
+
+def merece_credito_paron(
+    *,
+    origen: str,
+    pct: float | None,
+    mejora: float,
+    cambio_hoy_pct: float | None = None,
+) -> bool:
     """Puja que puede pagarse con el crédito del parón: sube mucho o mejora el once de verdad.
 
     Las cláusulas se pagan siempre con caja: LaLiga no da crédito para ellas.
-    Quien mejora el once pero se prevé que baje no entra: esperar a comprarlo
-    cuesta menos que comprarlo ya, y el plan lo reevalúa cada día.
+    Quien mejora el once pero se prevé que baje no entra. En el parón tampoco
+    entra quien sigue cayendo hoy (J12: 12 de 13 titulares en dip siguieron
+    bajando el lunes aunque hubieran puntuado).
     """
     if origen != "bid":
+        return False
+    if (
+        cambio_hoy_pct is not None
+        and not isinstance(cambio_hoy_pct, bool)
+        and isinstance(cambio_hoy_pct, (int, float))
+        and float(cambio_hoy_pct) < 0
+    ):
         return False
     if pct is not None and pct >= CREDITO_PARON_PCT:
         return True
@@ -491,7 +519,8 @@ def evaluar_patrimonio_clausula(row: dict[str, Any]) -> dict[str, Any]:
     subida = float(valor) * (pct / 100.0)
     prima = max(0.0, float(clausula) - (float(valor) + subida))
     descartar = False
-    if ratio > RATIO_CLAUSULA_MAX and subida < COBERTURA_SOBREPRECIO * max(sobreprecio, 0.0):
+    parche = valor < PARCHE_SUPERVIVENCIA_EUR and row.get("supervivencia") is True
+    if ratio > RATIO_CLAUSULA_MAX and not parche:
         descartar = True
     if valor < VALOR_MEDIO_BAJO and prima > PRIMA_QUEMADA_MAX:
         descartar = True
@@ -902,7 +931,12 @@ def _plan_once(
             "impulso": impulso,
             "origen": origen,
             "prima": prima_quemada_mercado(euros, _valor_mercado(row), pct) if origen == "bid" else 0.0,
-            "credito_paron": paron_credito and merece_credito_paron(origen=origen, pct=pct, mejora=mejora),
+            "credito_paron": paron_credito and merece_credito_paron(
+                origen=origen,
+                pct=pct,
+                mejora=mejora,
+                cambio_hoy_pct=_cambio_hoy_pct(row),
+            ),
         }
         if impulso == "HOLD":
             dias_txt = _dias_texto(dias or 0.0)

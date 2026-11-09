@@ -55,11 +55,11 @@ def test_fases_por_calendario():
     assert fase_paron(None) is None
 
 
-def test_beneficio_descuenta_sobreprecio_y_peor_oferta_del_90():
+def test_beneficio_descuenta_sobreprecio_y_suelo_de_estres():
     # 10 M€ que suben un 20 % en 7 días; puja un 5 % por encima del valor.
     neto = beneficio_especulacion(valor=10 * M, puja=int(10.5 * M), pct=20.0, dias_hasta_venta=7.0)
-    # LaLiga ofrece entre −10 % y +10 %: se cuenta la peor oferta (90 %).
-    assert neto == round(12 * M * 0.90 - 10.5 * M)
+    # Suelo de estrés observado de la máquina: 0,93×, no el 0,90× legal.
+    assert neto == round(12 * M * 0.93 - 10.5 * M)
     # Sube lo mismo pero con prima alta: ya no sale a cuenta.
     assert beneficio_especulacion(valor=10 * M, puja=13 * M, pct=20.0, dias_hasta_venta=7.0) < 0
 
@@ -250,9 +250,9 @@ def test_ruta_muestra_escenario_esperado_y_suelo_de_estres():
     assert "estrés" in ruta["texto"]
 
 
-def test_fuera_de_ventana_usa_el_viernes_y_el_suelo_legal():
-    # Ya es jueves 19: la ventana lun-mié se perdió y se cuenta 0,974× / 0,90×.
+def test_fuera_de_ventana_usa_el_viernes_y_el_suelo_observado():
+    # Ya es jueves 19: la ventana lun-mié se perdió y se cuenta 0,974× / 0,93×.
     ruta = ruta_salida(squad=_plantilla(), saldo_proyectado=-6 * M, dias=1.5, cierre=CIERRE)
     assert ruta["en_ventana_buena"] is False
     assert ruta["oferta_esperada"] == 0.974
-    assert ruta["oferta_estres"] == 0.90
+    assert ruta["oferta_estres"] == 0.93

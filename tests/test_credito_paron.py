@@ -75,6 +75,13 @@ class ReglaDelCreditoTests(unittest.TestCase):
         self.assertFalse(merece_credito_paron(origen="bid", pct=-3.0, mejora=4.0))
         # Una cláusula se paga siempre con caja.
         self.assertFalse(merece_credito_paron(origen="clause", pct=30.0, mejora=6.0))
+        # Dip: aunque la semana pinte bien, hoy sigue cayendo y el crédito no entra.
+        self.assertFalse(
+            merece_credito_paron(origen="bid", pct=30.0, mejora=4.0, cambio_hoy_pct=-0.8)
+        )
+        self.assertTrue(
+            merece_credito_paron(origen="bid", pct=30.0, mejora=0.0, cambio_hoy_pct=0.4)
+        )
 
 
 class PujarConCreditoTests(unittest.TestCase):

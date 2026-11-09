@@ -39,6 +39,11 @@ UMBRAL_PREVISION_DEMANDA = 15.0
 SOBREPUJA_PRIOR = 0.05
 SOBREPUJA_PESO_PRIOR = 4.0
 SOBREPUJA_MAX = 0.20
+# Frente 20: por encima de +10 % sobre el valor la puja pierde dinero
+# (−0,85 M€ en +10..25 %, −2,94 M€ por encima de +25 %). Techo duro.
+TECHO_SOBREPUJA = 0.10
+# Un parche por debajo de esto, y solo si tapa un once que si no hace 0, puede saltarse el techo.
+PARCHE_SUPERVIVENCIA_EUR = 1_500_000
 # Entre 140.000 y 220.000 €, en pasos de 10.000, sin múltiplos de 50.000.
 DIFERENCIALES_EUR = tuple(v for v in range(140_000, 220_001, 10_000) if v % 50_000 != 0)
 
@@ -49,6 +54,15 @@ DIFERENCIALES_EUR = tuple(v for v in range(140_000, 220_001, 10_000) if v % 50_0
 # varios miles de euros: barre cualquier +1 / +10 sobre el escalon redondo.
 COLA_MIN_EUR = 1_111
 COLA_MAX_EUR = 9_899
+
+
+def techo_sobrepuja_eur(valor: int | float, *, supervivencia: bool = False) -> float | None:
+    """Tope en euros de la puja. ``None`` solo en el parche de supervivencia barato."""
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)) or valor <= 0:
+        return None
+    if supervivencia and float(valor) < PARCHE_SUPERVIVENCIA_EUR:
+        return None
+    return float(valor) * (1.0 + TECHO_SOBREPUJA)
 
 
 def cola_anti_picos(clave: Any) -> int:
@@ -78,13 +92,21 @@ def con_cola_anti_picos(
         return puja
     if int(puja) % 10 != 0:
         return puja
-    objetivo = int(puja) + cola_anti_picos(clave)
+    cola = cola_anti_picos(clave)
+    objetivo = int(puja) + cola
     for tope in (techo, saldo):
         if isinstance(tope, bool) or not isinstance(tope, (int, float)):
             continue
         if tope <= puja:
             return puja
         objetivo = min(objetivo, int(tope))
+    # La cola tiene que seguir dentro del techo: un tope redondo no puede
+    # dejar la cifra terminada en .000 ni en .001–.010.
+    terminacion = objetivo % 1000
+    if terminacion == 0 or terminacion <= 10:
+        hueco = 11 - terminacion if terminacion <= 10 else 11
+        if objetivo - hueco > int(puja):
+            objetivo -= hueco
     return int(objetivo)
 
 
@@ -191,6 +213,7 @@ def calcular_pujas(
     prevision_7d_pct: Any = None,
     dificultad: str | None = None,
     clave: Any = None,
+    supervivencia: bool = False,
 ) -> dict[str, int | None]:
     """Puja recomendada, techo dinámico y puja que deja atrás al rival.
 
@@ -216,6 +239,9 @@ def calcular_pujas(
     maxima = techo_puja_dinamico(valor, prevision_7d_pct, dificultad)
     if maxima <= 0:
         maxima = None
+    techo_duro = techo_sobrepuja_eur(valor, supervivencia=supervivencia)
+    if techo_duro is not None:
+        recomendada = min(recomendada, techo_duro)
 
     saldo = None
     if isinstance(tu_saldo, (int, float)) and not isinstance(tu_saldo, bool):
@@ -254,8 +280,11 @@ def calcular_pujas(
         smart_out = int(smart)
 
     cola_clave = clave if clave is not None else valor_actual
-    recomendada_out = con_cola_anti_picos(recomendada, clave=cola_clave, techo=maxima, saldo=saldo)
-    smart_cola = con_cola_anti_picos(smart_out, clave=cola_clave, techo=maxima, saldo=saldo)
+    techo_cola = maxima
+    if techo_duro is not None:
+        techo_cola = techo_duro if maxima is None else min(float(maxima), techo_duro)
+    recomendada_out = con_cola_anti_picos(recomendada, clave=cola_clave, techo=techo_cola, saldo=saldo)
+    smart_cola = con_cola_anti_picos(smart_out, clave=cola_clave, techo=techo_cola, saldo=saldo)
     return {
         "puja_recomendada": recomendada_out if recomendada > 0 else None,
         "puja_maxima": maxima,
@@ -381,6 +410,7 @@ def puja_competitiva_liga(
     *,
     margen: Any = None,
     clave: Any = None,
+    techo_absoluto: Any = None,
 ) -> int | None:
     """Escalón por encima de nuestra cifra que cubre lo que suele pagar la liga.
 
@@ -400,6 +430,8 @@ def puja_competitiva_liga(
     objetivo = min(float(base) * (1.0 + float(sobrepuja)), float(maxima))
     if isinstance(margen, (int, float)) and not isinstance(margen, bool):
         objetivo = min(objetivo, float(base) + max(0.0, float(margen)))
+    if isinstance(techo_absoluto, (int, float)) and not isinstance(techo_absoluto, bool) and techo_absoluto > 0:
+        objetivo = min(objetivo, float(techo_absoluto))
     # El epsilon evita que 10 M€ × 1,13 = 11 299 999,999… caiga un escalón entero.
     objetivo = int(math.floor(objetivo / PASO_PRECIO + 1e-9)) * PASO_PRECIO
     if objetivo <= base:
@@ -407,6 +439,8 @@ def puja_competitiva_liga(
     techo = float(maxima)
     if isinstance(margen, (int, float)) and not isinstance(margen, bool):
         techo = min(techo, float(base) + max(0.0, float(margen)))
+    if isinstance(techo_absoluto, (int, float)) and not isinstance(techo_absoluto, bool) and techo_absoluto > 0:
+        techo = min(techo, float(techo_absoluto))
     return con_cola_anti_picos(objetivo, clave=clave if clave is not None else base, techo=techo)
 
 

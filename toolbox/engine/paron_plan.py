@@ -17,8 +17,9 @@ Tres fases, medidas en días hasta el cierre:
   ruta de salida se ejecuta: saldo en cero o más con el mejor once posible.
 
 La ruta de salida se calcula siempre. Vende a valor proyectado (lo que se
-espera que valga el jugador el día de la venta, si es menor que el de hoy) y al
-90 %, que es lo mínimo que LaLiga puede ofrecer (regla oficial ±10 %).
+espera que valga el jugador el día de la venta, si es menor que el de hoy).
+El suelo de estrés es el mínimo observado de la máquina (0,93×), no el 0,90×
+legal. La ventana de escaparate es martes o miércoles.
 """
 
 from __future__ import annotations
@@ -122,10 +123,10 @@ def _horizonte_dias(dias: float) -> float:
 def valor_proyectado(row: dict[str, Any], dias_hasta_venta: float, *, hoy: date | None = None) -> int:
     """Valor esperado el día de la venta.
 
-    Con el cambio de hoy conocido (``delta_hoy``) se proyecta con la ley
-    ``0,041 % + 0,944 * cambio`` día a día (domingos planos) y, tras una
-    jornada con puntos altos, con el impulso de arranque. Sin él, la previsión
-    a 7 días en lineal: ``valor × (1 + pct/100 × días/7)``.
+    Con el cambio de hoy conocido (``delta_hoy``) se proyecta con la ley por
+    régimen (0,951 si sube, 0,932 si baja; domingos planos) y, tras una
+    jornada con puntos altos de quien no llegaba cayendo, con el impulso de
+    +1,78 %. Sin delta, la previsión a 7 días va en lineal.
     """
     valor = _valor_jugador(row)
     delta = row.get("delta_hoy")
@@ -172,7 +173,7 @@ def ofertas_de_ruta(dia_venta: datetime) -> dict[str, Any]:
             "esperado": OFERTA_ESPERADA_VENTANA,
             "estres": OFERTA_MAQUINA_MINIMO_HISTORICO,
         }
-    return {"en_ventana": False, "esperado": OFERTA_MAQUINA_MEDIANA_VIERNES, "estres": MARGEN_OFERTA}
+    return {"en_ventana": False, "esperado": OFERTA_MAQUINA_MEDIANA_VIERNES, "estres": OFERTA_MAQUINA_MINIMO_HISTORICO}
 
 
 def _ventana_texto(dia_venta: datetime) -> str:
@@ -205,9 +206,9 @@ def beneficio_especulacion(
     pct: float,
     dias_hasta_venta: float,
 ) -> int:
-    """Euros netos de comprar hoy a ``puja`` y vender el día de venta con la peor oferta (90 %) del valor proyectado."""
+    """Euros netos de comprar hoy a ``puja`` y vender el día de venta al suelo de estrés (0,93×)."""
     final = valor * (1.0 + (pct / 100.0) * (dias_hasta_venta / 7.0))
-    return int(round(final * MARGEN_OFERTA - puja))
+    return int(round(final * OFERTA_MAQUINA_MINIMO_HISTORICO - puja))
 
 
 def _pool_xi(filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -361,6 +362,12 @@ def _especular(
         valor = row.get("valor") or euros
         if pct is None or pct <= 0 or not isinstance(euros, int) or euros <= 0 or not valor:
             continue
+        # Prohibido comprar el dip con crédito: si hoy sigue cayendo, el lunes
+        # de la J12 demostró que un buen partido no lo frena.
+        delta = row.get("delta_hoy")
+        if isinstance(delta, (int, float)) and not isinstance(delta, bool) and float(valor) > float(delta):
+            if float(delta) / (float(valor) - float(delta)) < 0:
+                continue
         if fase == 2 and pct < CREDITO_PARON_PCT:
             continue
         neto = beneficio_especulacion(valor=int(valor), puja=euros, pct=pct, dias_hasta_venta=dias_venta)

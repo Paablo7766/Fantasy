@@ -74,6 +74,22 @@ class FantasmaAfTests(unittest.TestCase):
         self.assertFalse(filtrar_af_fantasma(otra))
 
 
+class OffsetClubTests(unittest.TestCase):
+    def test_solo_los_clubes_medidos_y_dentro_del_tramo(self) -> None:
+        self.assertEqual(xp2.ajuste_club_valoracion("Atlético de Madrid"), 0.39)
+        self.assertEqual(xp2.ajuste_club_valoracion("Villarreal CF"), 0.35)
+        self.assertEqual(xp2.ajuste_club_valoracion("Athletic Club"), 0.25)
+        self.assertEqual(xp2.ajuste_club_valoracion("Getafe CF"), -0.38)
+        self.assertEqual(xp2.ajuste_club_valoracion("C.A. Osasuna"), -0.26)
+        self.assertEqual(xp2.ajuste_club_valoracion("Valencia CF"), -0.25)
+        self.assertEqual(xp2.ajuste_club_valoracion("Real Madrid"), 0.0)
+        atleti = xp(jugador("MC", [acta(j) for j in range(8, 12)], club="Atlético de Madrid"))
+        getafe = xp(jugador("MC", [acta(j) for j in range(8, 12)], club="Getafe CF"))
+        self.assertGreater(atleti["xp_condicional"], getafe["xp_condicional"])
+        self.assertAlmostEqual(atleti["ajuste_club"], 0.39, places=2)
+        self.assertAlmostEqual(getafe["ajuste_club"], -0.38, places=2)
+
+
 class LocaliaUnicaTests(unittest.TestCase):
     def test_xp2_no_recibe_bonus_de_local(self) -> None:
         # La localia ya esta en los lambdas del calendario: xP 2.0 no tiene parametro de local

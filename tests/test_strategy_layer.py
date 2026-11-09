@@ -221,7 +221,9 @@ class PujaYForzadaTests(unittest.TestCase):
             rivales=[{"saldo": 1_000_000, "posiciones": ["MC"]}, {"saldo": 9_000_000, "posiciones": ["DEL"]}],
             posicion="MC",
         )
-        self.assertEqual(pujas["puja_smart"], 1_100_000 + cola_anti_picos(1_000_000))
+        # El rival queda en 1,1 M€, que ya es el techo duro del +10 %: no cabe cola por encima.
+        self.assertEqual(pujas["puja_smart"], 1_100_000)
+        self.assertLessEqual(pujas["puja_smart"], 1_000_000 * 1.10)
 
     def test_smart_no_persigue_al_rival_mas_rico(self) -> None:
         pujas = calcular_pujas(
@@ -616,12 +618,15 @@ class ProteccionPatrimonioTests(unittest.TestCase):
         cubierto = evaluar_patrimonio_clausula({"euros": 8_000_000, "valor": 4_000_000, "pct": 60})
         self.assertEqual(cubierto["subida_7d_euros"], 2_400_000)
         self.assertEqual(cubierto["prima_quemada_neta"], 1_600_000)
-        self.assertFalse(cubierto["descartar"])
+        # 2,0× sigue fuera: el techo de cláusula es 1,25× aunque la subida cubra parte.
+        self.assertTrue(cubierto["descartar"])
 
-        justo = evaluar_patrimonio_clausula({"euros": 13_500_000, "valor": 10_000_000, "pct": 0})
-        self.assertEqual(justo["ratio_clausula"], 1.35)
-        self.assertEqual(justo["prima_quemada_neta"], 3_500_000)
+        justo = evaluar_patrimonio_clausula({"euros": 12_500_000, "valor": 10_000_000, "pct": 0})
+        self.assertEqual(justo["ratio_clausula"], 1.25)
         self.assertFalse(justo["descartar"])
+        por_encima = evaluar_patrimonio_clausula({"euros": 13_500_000, "valor": 10_000_000, "pct": 0})
+        self.assertEqual(por_encima["ratio_clausula"], 1.35)
+        self.assertTrue(por_encima["descartar"])
 
     def test_no_paga_8m_por_un_jugador_de_4m(self) -> None:
         owned = _once(5.0)
@@ -637,7 +642,7 @@ class ProteccionPatrimonioTests(unittest.TestCase):
         self.assertEqual(plan["acciones"], [])
         self.assertEqual(plan["saldo_al_final"], 8_000_000)
 
-        # La subida a 7 días cubre el 60 % del sobreprecio: el clausulazo puede entrar.
+        # Aunque la subida cubra parte del sobreprecio, 2,0× queda por encima del techo.
         con_subida = build_plan_fichajes(
             cash=8_000_000,
             owned=owned,
@@ -647,8 +652,7 @@ class ProteccionPatrimonioTests(unittest.TestCase):
             dias_para_jornada=0,
             baseline_puntos=55.0,
         )
-        self.assertEqual([accion["tipo"] for accion in con_subida["acciones"]], ["CLAUSULAZO"])
-        self.assertIn("Prima quemada", con_subida["acciones"][0]["detalle"])
+        self.assertEqual(con_subida["acciones"], [])
 
     def test_prima_de_mas_de_3_5m_en_valor_medio_se_descarta_y_en_una_estrella_no(self) -> None:
         # 12 M€ de valor, cláusula a +35 % exacto: prima 4,2 M€ y valor por debajo de 15 M€.
@@ -667,15 +671,18 @@ class ProteccionPatrimonioTests(unittest.TestCase):
         )
         self.assertEqual(plan["acciones"], [])
 
-        # Misma prima, pero el jugador ya vale 20 M€: el filtro de 3,5 M€ no le aplica.
+        # El filtro de 3,5 M€ no le aplica, pero 1,35× sí: el techo duro es 1,25×.
         estrella = evaluar_patrimonio_clausula({"euros": 27_000_000, "valor": 20_000_000, "pct": 0})
         self.assertGreater(estrella["prima_quemada_neta"], 3_500_000)
-        self.assertFalse(estrella["descartar"])
+        self.assertTrue(estrella["descartar"])
+        dentro = evaluar_patrimonio_clausula({"euros": 25_000_000, "valor": 20_000_000, "pct": 0})
+        self.assertEqual(dentro["ratio_clausula"], 1.25)
+        self.assertFalse(dentro["descartar"])
         paga = build_plan_fichajes(
-            cash=27_000_000,
+            cash=25_000_000,
             owned=owned,
             mercado=[],
-            clausulas=[_jugador("estrella", "DEL", 12.0, euros=27_000_000, valor=20_000_000)],
+            clausulas=[_jugador("estrella", "DEL", 12.0, euros=25_000_000, valor=20_000_000)],
             ratio=2_000_000,
             dias_para_jornada=0,
             baseline_puntos=55.0,

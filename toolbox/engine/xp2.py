@@ -251,6 +251,30 @@ def es_breakout(slot: str, titularidades: list[ActaDesglosada]) -> bool:
     return all(acta.suelo >= umbral for acta in titularidades[-2:])
 
 
+# Frente 17: residuo de valoración (sin gol ni asistencia), encogido n/(n+12)
+# y acotado al tramo que aguanta |t| alto. Atlético 0,566 (n=26) → 0,39.
+# Villarreal 0,471 (n=26) → 0,35. Athletic se fija en +0,25 (t=3,26 sin meter
+# el gol; con gol el |t| baja de 3). Getafe −0,474 (n=48) → −0,38. Osasuna
+# −0,310 (n=59) → −0,26. Valencia −0,277 (n=40, |t|=2,37) → −0,25.
+_OFFSET_CLUB_VALORACION = {
+    "atletico madrid": 0.39,
+    "villarreal": 0.35,
+    "athletic": 0.25,
+    "getafe": -0.38,
+    "osasuna": -0.26,
+    "valencia": -0.25,
+}
+
+
+def ajuste_club_valoracion(club: Any) -> float:
+    """Puntos que suman o restan a la valoración según el club. 0 si no está medido."""
+    if not isinstance(club, str) or not club.strip():
+        return 0.0
+    from toolbox.matching import normalize_club
+
+    return _OFFSET_CLUB_VALORACION.get(normalize_club(club), 0.0)
+
+
 def prediccion_xp2(
     player: dict[str, Any],
     *,
@@ -313,7 +337,8 @@ def prediccion_xp2(
     puntos_cero = puntos_porteria(slot, lam_c, prob_porteria_cero) * llega_60
 
     ajuste_rival = float(ajuste_rival) * factor_min if math.isfinite(float(ajuste_rival)) else 0.0
-    suelo_partido = suelo + bono_partido + ajuste_precio + ajuste_rival
+    ajuste_club = ajuste_club_valoracion(player.get("club")) * factor_min
+    suelo_partido = suelo + bono_partido + ajuste_precio + ajuste_rival + ajuste_club
     condicional = suelo_partido + puntos_gol + puntos_asist + puntos_cero
 
     # 6) Titularidad y rosco.
@@ -329,6 +354,7 @@ def prediccion_xp2(
         "xp_condicional": round(condicional, 3),
         "suelo": round(suelo_partido, 3),
         "ajuste_rival_posicional": round(ajuste_rival, 3),
+        "ajuste_club": round(ajuste_club, 3),
         "gol": round(puntos_gol, 3),
         "asistencia": round(puntos_asist, 3),
         "porteria": round(puntos_cero, 3),

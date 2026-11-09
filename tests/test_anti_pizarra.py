@@ -145,7 +145,7 @@ class GolpeAlRivalTests(unittest.TestCase):
                 "player_id": "t1-POR",
                 "nombre": "Portero Rival",
                 "position": "POR",
-                "valor": 3_000_000,
+                "valor": 3_200_000,
                 "clausula": 4_000_000,
                 "blindado": False,
                 "bloqueo": {"is_locked": False},
