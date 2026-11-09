@@ -28,9 +28,6 @@ function Figure({ text }: { text: string }) {
 function Tile({ href, icon, value, label, sub, children }: { href: string; icon?: ReactNode; value?: ReactNode; label: string; sub?: string | null; children?: ReactNode }) {
   return (
     <Link href={href} className="ini-tile ini-tile--link" data-ui="home-tile" aria-label={`${label}: abrir el Laboratorio`}>
-      <svg viewBox="0 0 16 16" className="ini-tile__go" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-        <path d="M5 11 11 5M6 5h5v5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
       {icon ? (
         <span className="ini-tile__icon" aria-hidden="true">
           {icon}
