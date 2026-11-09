@@ -299,19 +299,47 @@ function StepRow({
   );
 }
 
-function Disclosure({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  if (!count) return null;
+type MoreTab = { key: string; label: string; count: number; body: React.ReactNode };
+
+/** Un solo selector para todo lo secundario: una lista visible a la vez, cerrada por defecto. */
+function MoreTabs({ tabs }: { tabs: MoreTab[] }) {
+  const [active, setActive] = useState<string | null>(null);
+  const visible = tabs.filter((t) => t.count > 0);
+  if (!visible.length) return null;
+  const current = visible.find((t) => t.key === active) ?? null;
   return (
-    <div className="ini-disclosure">
-      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left sm:px-5">
-        <span className="text-[13px] font-medium text-white/60">
-          {title} <span className="ml-1 tabular-nums text-white/35">{count}</span>
-        </span>
-        <Chevron open={open} />
-      </button>
-      <Collapse open={open}>{children}</Collapse>
+    <div className="ini-more">
+      <div className="ini-more__tabs" role="tablist" aria-label="Más movimientos">
+        {visible.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={current?.key === t.key}
+            data-on={current?.key === t.key ? "true" : undefined}
+            onClick={() => setActive(current?.key === t.key ? null : t.key)}
+          >
+            {t.label}
+            {t.key !== "cmp" ? <span className="tabular-nums">{t.count}</span> : null}
+          </button>
+        ))}
+      </div>
+      <Collapse open={current !== null}>{current?.body}</Collapse>
     </div>
+  );
+}
+
+function MiniRow({ row, photos, sub }: { row: { player_id?: string | number | null; nombre?: string | null; euros?: number | null }; photos: PhotoIndex; sub: string }) {
+  const name = row.nombre || "Jugador";
+  return (
+    <li className="flex items-center gap-3 px-5 py-3">
+      <Avatar name={name} imageUrl={photoFor(photos, row.player_id as never, name)} size={32} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14px] text-white/85">{name}</span>
+        <span className="block truncate text-[12px] text-white/40">{sub}</span>
+      </span>
+      {typeof row.euros === "number" ? <span className="text-[13px] tabular-nums text-white/60">{eurShort(row.euros)}</span> : null}
+    </li>
   );
 }
 
@@ -461,12 +489,10 @@ export function TodayPlan({
           ) : null}
           {presupuesto && presupuesto.gasto_pujas + presupuesto.gasto_clausulas > 0 ? (
             <span className="w-full text-[12px] text-white/40">
-              Lo pagas con caja {eurShort(presupuesto.caja)}
-              {presupuesto.ventas_hoy > 0 ? ` + ventas de hoy ${eurShort(presupuesto.ventas_hoy)}` : ""}
-              {presupuesto.ventas_si_ganas > 0 ? ` + ventas solo si ganas ${eurShort(presupuesto.ventas_si_ganas)}` : ""}
-              {credit > 0
-                ? ` + crédito ${eurShort(credit)} · deuda planificada −${eurShort(credit)}: vende antes del ${saleDay || "cierre"}`
-                : ` · sobran ${eurShort(presupuesto.holgura)} · sin usar crédito`}
+              Caja {eurShort(presupuesto.caja)}
+              {presupuesto.ventas_hoy > 0 ? ` + ventas ${eurShort(presupuesto.ventas_hoy)}` : ""}
+              {presupuesto.ventas_si_ganas > 0 ? ` + ventas si ganas ${eurShort(presupuesto.ventas_si_ganas)}` : ""}
+              {credit > 0 ? ` + crédito ${eurShort(credit)} · vende antes del ${saleDay || "cierre"}` : ""}
             </span>
           ) : null}
           {!today.length ? (
@@ -486,85 +512,74 @@ export function TodayPlan({
 
       {today.length ? <ol className="ini-divide">{today.map((step, i) => renderRow(step, i, true))}</ol> : null}
 
-      {later.length || radar.length || alternativas.length || comparativa ? (
-        <div className="pb-1">
-          <Disclosure title="Después" count={later.length}>
-            <ol className="ini-divide border-t border-[var(--ini-line)]">{later.map((step, i) => renderRow(step, i, false))}</ol>
-          </Disclosure>
-          {comparativa?.completo && comparativa?.prudente ? (
-            <Disclosure title="Comparar con el plan prudente" count={1}>
-              <div className="grid gap-3 border-t border-[var(--ini-line)] px-4 py-3 sm:grid-cols-2 sm:px-5">
+      <MoreTabs
+        tabs={[
+          {
+            key: "later",
+            label: "Después",
+            count: later.length,
+            body: <ol className="ini-divide">{later.map((step, i) => renderRow(step, i, false))}</ol>,
+          },
+          {
+            key: "alt",
+            label: "Con liquidez",
+            count: alternativas.length,
+            body: (
+              <ul className="ini-divide">
+                {alternativas.map((row, i) => (
+                  <MiniRow
+                    key={`${row.player_id || row.nombre}-alt-${i}`}
+                    row={row}
+                    photos={photos}
+                    sub={`${row.etiqueta === "CLAUSULAR" ? "Clausular" : "Pujar"}${typeof row.mejora_neta === "number" ? ` · ${signedPoints(row.mejora_neta)} pts` : ""}${typeof row.falta_eur === "number" && row.falta_eur > 0 ? ` · faltan ${eurShort(row.falta_eur)}` : ""}`}
+                  />
+                ))}
+              </ul>
+            ),
+          },
+          {
+            key: "radar",
+            label: "Radar",
+            count: radar.length,
+            body: (
+              <ul className="ini-divide">
+                {radar.map((row, i) => (
+                  <MiniRow
+                    key={`${row.player_id || row.nombre}-${i}`}
+                    row={row}
+                    photos={photos}
+                    sub={typeof row.mejora_neta === "number" ? `Mejora ${signedPoints(row.mejora_neta)} pts · no compensa` : "No compensa el peaje"}
+                  />
+                ))}
+              </ul>
+            ),
+          },
+          {
+            key: "cmp",
+            label: "Prudente",
+            count: comparativa?.completo && comparativa?.prudente ? 1 : 0,
+            body: comparativa?.completo && comparativa?.prudente ? (
+              <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
                 {([
                   ["Plan completo", comparativa.completo],
-                  ["Prudente · solo caja y ventas de hoy", comparativa.prudente],
+                  ["Solo caja y ventas de hoy", comparativa.prudente],
                 ] as const).map(([titulo, r]) => (
                   <div key={titulo} className="min-w-0">
                     <p className="text-[12px] font-medium text-white/60">{titulo}</p>
                     <p className="mt-1 text-[13px] tabular-nums text-white/80">
                       {typeof r.mejora_puntos_jornada === "number" ? `${signedPoints(r.mejora_puntos_jornada)} pts` : "—"} · {r.compras?.length ?? 0} compras · {r.ventas?.length ?? 0} ventas
                     </p>
-                    <p className="text-[12px] tabular-nums text-white/40">
+                    <p className="mt-0.5 text-[12px] tabular-nums text-white/40">
                       Gasto {eurShort(r.presupuesto?.gasto_pujas ?? 0)} · sobran {eurShort(r.saldo_al_final ?? 0)}
                     </p>
-                    {r.valido === false ? (
-                      <p className="mt-1.5 text-[12px] text-[var(--ini-amber)]">{r.motivo || "Invalidado: sin once legal si fallan las pujas."}</p>
-                    ) : (
-                    <ul className="mt-1.5 text-[12px] text-white/55">
-                      {(r.compras || []).map((c, i) => (
-                        <li key={`c${i}`} className="truncate">+ {c.nombre} · {eurShort(c.euros ?? 0)}{typeof c.mejora_neta === "number" ? ` · ${signedPoints(c.mejora_neta)} pts` : ""}</li>
-                      ))}
-                      {(r.ventas || []).map((v, i) => (
-                        <li key={`v${i}`} className="truncate text-white/40">− {v.nombre} · {eurShort(v.euros ?? 0)}{v.momento === "condicional" ? " · si ganas" : ""}</li>
-                      ))}
-                    </ul>
-                    )}
+                    {r.valido === false ? <p className="mt-2 text-[12px] text-[var(--ini-amber)]">{r.motivo || "Sin once legal si fallan las pujas."}</p> : null}
                   </div>
                 ))}
               </div>
-            </Disclosure>
-          ) : null}
-          <Disclosure title="Alternativas si consigues liquidez" count={alternativas.length}>
-            <ul className="ini-divide border-t border-[var(--ini-line)]">
-              {alternativas.map((row, i) => {
-                const name = row.nombre || "Jugador";
-                return (
-                  <li key={`${row.player_id || name}-alt-${i}`} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                    <Avatar name={name} imageUrl={photoFor(photos, row.player_id, name)} size={32} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] text-white/80">{name}</span>
-                      <span className="block text-[12px] text-white/40">
-                        {row.etiqueta === "CLAUSULAR" ? "Clausular" : "Pujar"}
-                        {typeof row.mejora_neta === "number" ? ` · ${signedPoints(row.mejora_neta)} pts` : ""}
-                        {typeof row.falta_eur === "number" && row.falta_eur > 0 ? ` · faltan ${eurShort(row.falta_eur)}` : ""}
-                      </span>
-                    </span>
-                    {typeof row.euros === "number" ? <span className="text-[13px] tabular-nums text-white/60">{eurShort(row.euros)}</span> : null}
-                  </li>
-                );
-              })}
-            </ul>
-          </Disclosure>
-          <Disclosure title="En el radar · no pujar hoy" count={radar.length}>
-            <ul className="ini-divide border-t border-[var(--ini-line)]">
-              {radar.map((row, i) => {
-                const name = row.nombre || "Jugador";
-                return (
-                  <li key={`${row.player_id || name}-${i}`} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                    <Avatar name={name} imageUrl={photoFor(photos, row.player_id, name)} size={32} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] text-white/80">{name}</span>
-                      <span className="block text-[12px] text-white/40">
-                        {typeof row.mejora_neta === "number" ? `Mejora ${signedPoints(row.mejora_neta)} pts · no compensa el peaje` : "No compensa el peaje"}
-                      </span>
-                    </span>
-                    {typeof row.euros === "number" ? <span className="text-[13px] tabular-nums text-white/60">{eurShort(row.euros)}</span> : null}
-                  </li>
-                );
-              })}
-            </ul>
-          </Disclosure>
-        </div>
-      ) : null}
+            ) : null,
+          },
+        ]}
+      />
 
       <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center lg:bottom-8">
         <span className="ini-toast rounded-full border border-white/10 bg-[#0b0f14]/95 px-4 py-2 text-[13px] font-medium tabular-nums text-white shadow-2xl backdrop-blur" data-on={toast !== null}>
