@@ -202,6 +202,7 @@ class ClauseTests(unittest.TestCase):
         own_players[10]["player_id"] = "me-DEL-2"
         weak = next(player for player in own_players if player["player_id"] == "me-DEL-2")
         star = _player("star", "DEL", clause=2_000_000, locked=False)
+        star["market_value"] = 1_700_000  # cláusula razonable: 1,18× el valor
         locked = _player("locked", "DEL", clause=1_000_000, locked=True)
         squads = {
             "squads": [
@@ -229,6 +230,22 @@ class ClauseTests(unittest.TestCase):
         self.assertGreater(pagar[0]["points_delta"], 0)
         self.assertTrue(pagar[0]["requires_confirmation"])
         self.assertNotIn("locked", {row["player_id"] for row in doc["offers"]})
+
+    def test_does_not_recommend_clause_at_double_market_value(self) -> None:
+        own_players = _xi("me", 0.2)
+        star = _player("star", "DEL", clause=2_000_000, locked=False)  # 2× su valor de 1 M
+        squads = {
+            "squads": [
+                {"team_id": "me", "is_self": True, "manager_name": "Yo", "cash": 10_000_000, "players": own_players},
+                {"team_id": "rival", "is_self": False, "manager_name": "Rival", "cash": 500_000, "players": [star]},
+            ]
+        }
+        trends = {"players": [_trend(player["player_id"], player["position"], 0.15) for player in own_players]}
+        trends["players"].append(_trend("star", "DEL", 1.4))
+        from toolbox.analyzer import optimize_from_documents
+
+        doc = build_clause_intel(squads, trends, optimize_from_documents(squads, trends), [])
+        self.assertEqual([row for row in doc["offers"] if row["decision"] == "PAGAR"], [])
 
     def test_protects_when_a_rival_can_pay(self) -> None:
         own_players = _xi("me")

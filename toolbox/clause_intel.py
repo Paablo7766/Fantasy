@@ -18,6 +18,7 @@ from toolbox.analyzer import (
     own_squad,
     solve_lineup,
 )
+from toolbox.engine.signing_plan import evaluar_patrimonio_clausula
 from toolbox.normalize import SCHEMA_VERSION
 
 _MAX_SOLVES = 8
@@ -27,6 +28,16 @@ def _int(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
     return value
+
+
+def _trend_pct(trend: Any) -> float | None:
+    if not isinstance(trend, dict):
+        return None
+    for key in ("pct", "prevision_7d_pct"):
+        value = trend.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    return None
 
 
 def _unlocked(player: dict[str, Any]) -> bool:
@@ -146,6 +157,7 @@ def _pay_candidates(
     weights: ObjectiveWeights,
 ) -> list[dict[str, Any]]:
     pending: list[tuple[float, dict[str, Any], Any, str | None, str | None]] = []
+    baseline_void = baseline is None or baseline <= 0 or solve_lineup(roster, cash=cash, weights=weights).get("matchday_void") is True
     for squad in squads.get("squads") or []:
         if not isinstance(squad, dict) or squad.get("is_self") is True or squad.get("error"):
             continue
@@ -170,11 +182,18 @@ def _pay_candidates(
             floor = worst.get(position) if position else None
             if floor is not None and candidate.objective <= floor:
                 continue
+            # Una cláusula muy por encima del valor de mercado es patrimonio quemado:
+            # la misma regla que usa el plan de fichajes.
+            patrimonio = evaluar_patrimonio_clausula(
+                {"euros": clause, "valor": _int(player.get("market_value")), "pct": _trend_pct(trend)}
+            )
+            if patrimonio["descartar"]:
+                continue
             gap = candidate.objective - (floor if floor is not None else 0.0)
             pending.append((gap, player, candidate, manager, team_id))
     pending.sort(key=lambda item: (-item[0], str(item[1].get("player_id") or "")))
     offers: list[dict[str, Any]] = []
-    for _gap, player, candidate, manager, team_id in pending[:_MAX_SOLVES]:
+    for gap, player, candidate, manager, team_id in pending[:_MAX_SOLVES]:
         clause = _int(player.get("buyout_clause"))
         if clause is None:
             continue
@@ -185,6 +204,10 @@ def _pay_candidates(
         delta = None
         if enters and baseline is not None and isinstance(points, (int, float)) and not isinstance(points, bool):
             delta = round(float(points) - baseline, 4)
+            if baseline_void:
+                # Sin once legal hoy el punto de partida es 0 y cualquier fichaje parecería
+                # aportar el once entero. Lo que aporta es lo que mejora a su puesto.
+                delta = round(gap, 4)
         if not enters or delta is None or delta <= 0 or solved.get("matchday_void") is True:
             continue
         lock = player.get("clause_lock") if isinstance(player.get("clause_lock"), dict) else None
