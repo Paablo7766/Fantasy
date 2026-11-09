@@ -2894,3 +2894,32 @@
   right: 0;
   left: auto;
 }
+
+/* Pie del hero: estado que recarga y Laboratorio, mismo estilo, centrados. */
+.ini-dock__sep {
+  width: 3px;
+  height: 3px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.ini-sync--link {
+  text-decoration: none;
+}
+
+.ini-sync--link:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+}
+
+.ini-dock {
+  flex-wrap: nowrap;
+  gap: 0.15rem;
+}
+
+@media (max-width: 420px) {
+  .ini-dock .ini-sync {
+    padding-inline: 0.65rem;
+  }
+}

@@ -13,10 +13,11 @@ import { RadarSimple } from "@/components/laboratorio/RadarSimple";
 import { RivalesSimple } from "@/components/laboratorio/RivalesSimple";
 import { SenalesSimple } from "@/components/laboratorio/SenalesSimple";
 import { DatosSimple } from "@/components/laboratorio/DatosSimple";
+import { CuentaPanel } from "@/components/laboratorio/CuentaPanel";
 import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
-type Tab = "modelo" | "previa" | "radar" | "rivales" | "calibracion" | "senales" | "datos";
+type Tab = "modelo" | "previa" | "radar" | "rivales" | "calibracion" | "senales" | "datos" | "cuenta";
 
 /**
  * Zona de auditoría: cómo se construye cada número. Nada de aquí decide una
@@ -42,6 +43,7 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
   { id: "calibracion", label: "Calibración", hint: "Cuánto acierta el modelo con los puntos, las pujas y los avisos de venta, y el repaso de la última jornada." },
   { id: "senales", label: "Señales", hint: "Lo que dicen fuentes externas: precios de mañana, más puntos, chollos, lesiones y los onces de expertos." },
   { id: "datos", label: "Datos y API", hint: "Si la foto tiene todos los datos, qué fuente ha fallado y cuántas peticiones hace la app." },
+  { id: "cuenta", label: "Cuenta", hint: "La foto guardada, conectar tu cuenta de LaLiga Fantasy y los avisos en este dispositivo." },
 ];
 
 function asTab(value: string | null): Tab {
@@ -128,6 +130,8 @@ function LaboratorioContent() {
           </div>
         ) : tab === "senales" ? (
           <SenalesSimple trends={trends} loading={trendsLoading} photos={photos} />
+        ) : tab === "cuenta" ? (
+          <CuentaPanel />
         ) : (
           <DatosSimple />
         )}
