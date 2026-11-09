@@ -2090,6 +2090,7 @@ body {
   font-weight: 600;
 }
 
+/* Campo: grafito con franjas de césped muy tenues y el halo cobre en la portería rival. */
 .eq-pitch {
   position: relative;
   width: 100%;
@@ -2098,13 +2099,15 @@ body {
   aspect-ratio: 68 / 100;
   container-type: inline-size;
   overflow: hidden;
-  border-radius: 1.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 2rem;
   background:
-    radial-gradient(90% 55% at 50% 0%, rgba(255, 122, 61, 0.22), transparent 70%),
-    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.018) 0 11.1%, transparent 11.1% 22.2%),
-    linear-gradient(180deg, #171009 0%, #0d0907 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 20px 50px rgba(0, 0, 0, 0.45);
+    radial-gradient(85% 36% at 50% 0%, rgba(255, 106, 31, 0.2), transparent 72%),
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.022) 0 8.333%, transparent 8.333% 16.666%),
+    linear-gradient(180deg, #161312 0%, #0e0e0e 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 -70px 90px -50px rgba(0, 0, 0, 0.55),
+    0 20px 50px rgba(0, 0, 0, 0.45);
 }
 
 .eq-pitch > svg {
@@ -2117,7 +2120,7 @@ body {
 .eq-token {
   position: absolute;
   display: flex;
-  width: 17cqw;
+  width: 19cqw;
   flex-direction: column;
   align-items: center;
   transform: translate(-50%, -50%);
@@ -2134,6 +2137,10 @@ body {
   z-index: 2;
 }
 
+.eq-token:focus-visible {
+  outline: none;
+}
+
 .eq-card {
   display: flex;
   width: 100%;
@@ -2141,87 +2148,121 @@ body {
   align-items: center;
 }
 
-/* Jugador en el campo: medallón redondo con anillo del color de su probabilidad de jugar. */
+/* Medallón: el anillo se llena en proporción a la probabilidad de jugar y toma su color. */
 .eq-card__photo {
   position: relative;
-  width: 100%;
+  width: 76%;
   aspect-ratio: 1;
   border-radius: 9999px;
-  background: linear-gradient(160deg, #2b2119 0%, #15100c 100%);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 0 22px -6px color-mix(in srgb, var(--ring, #fff) 55%, transparent),
-    0 12px 22px -10px rgba(0, 0, 0, 0.9);
+  padding: 2.5px;
+  background: conic-gradient(var(--ring, rgba(255, 255, 255, 0.22)) calc(var(--p, 100) * 1%), rgba(255, 255, 255, 0.1) 0);
+  box-shadow: 0 12px 22px -10px rgba(0, 0, 0, 0.9);
   transition: box-shadow 200ms ease-out;
 }
 
-.eq-token[aria-pressed="true"] .eq-card__photo {
+.eq-card__face {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  padding: 2px;
+  background: #121110;
+}
+
+.eq-token[aria-pressed="true"] .eq-card__photo,
+.eq-token:focus-visible .eq-card__photo {
   box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.9),
-    0 0 26px -4px color-mix(in srgb, var(--ring, #fff) 70%, transparent),
+    0 0 0 2px #121110,
+    0 0 0 3.5px rgba(255, 255, 255, 0.92),
     0 14px 26px -10px rgba(0, 0, 0, 0.9);
 }
 
 .eq-card__photo--gap {
   display: grid;
   place-items: center;
+  padding: 0;
   border: 1.5px dashed rgba(252, 115, 77, 0.75);
-  background: rgba(252, 115, 77, 0.06);
+  background: rgba(252, 115, 77, 0.07);
   box-shadow: none;
+  font-size: clamp(18px, 6cqw, 26px);
+  line-height: 1;
+  color: #fc734d;
 }
 
-/* Probabilidad de jugar: píldora centrada sobre el borde inferior del medallón. */
-.eq-card__pct {
+/* Puntos esperados: el dato principal, en píldora sobre el borde inferior del medallón. */
+.eq-card__xp {
   position: absolute;
   left: 50%;
   bottom: 0;
-  transform: translate(-50%, 45%);
-  padding: 3px 8px;
+  transform: translate(-50%, 42%);
+  min-width: 2.4em;
+  padding: 3px 7px;
   border-radius: 9999px;
-  border: 1px solid color-mix(in srgb, var(--ring, #fff) 50%, transparent);
-  background: rgba(14, 10, 8, 0.92);
-  font-size: clamp(10px, 3cqw, 12px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 17, 16, 0.94);
+  font-size: clamp(10.5px, 3.1cqw, 13px);
   font-weight: 700;
   line-height: 1;
+  text-align: center;
   font-variant-numeric: tabular-nums;
-  color: var(--ring, #fff);
+  color: #fff;
+  transition: background-color 200ms ease-out, color 200ms ease-out;
+}
+
+.eq-token[aria-pressed="true"] .eq-card__xp {
+  border-color: transparent;
+  background: #fff;
+  color: #0b0b0b;
 }
 
 .eq-card__name {
-  margin-top: 14px;
+  margin-top: clamp(9px, 2.9cqw, 13px);
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: clamp(11px, 3.3cqw, 13px);
+  font-size: clamp(10.5px, 3.1cqw, 13px);
   font-weight: 600;
   line-height: 1.2;
+  letter-spacing: -0.01em;
   color: #fff;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
 }
 
-.eq-card__xp {
-  margin-top: 2px;
-  font-size: clamp(10px, 2.9cqw, 12px);
-  font-weight: 500;
-  line-height: 1.2;
-  color: rgba(255, 192, 138, 0.9);
-  font-variant-numeric: tabular-nums;
+.eq-card__name--gap {
+  color: #ffa088;
 }
 
+/* Probabilidad de jugar en cifra, del mismo color que el anillo. */
+.eq-card__pct {
+  margin-top: 1px;
+  font-size: clamp(9.5px, 2.7cqw, 11.5px);
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--ring, rgba(255, 255, 255, 0.5));
+}
+
+/* Insignias del medallón: capitán arriba a la derecha, aviso de estado a la izquierda. */
 .eq-badge {
   position: absolute;
-  top: -2px;
-  right: -2px;
+  top: -3px;
+  right: -3px;
+  z-index: 1;
   display: grid;
-  width: 18px;
-  height: 18px;
+  width: clamp(16px, 4.6cqw, 20px);
+  height: clamp(16px, 4.6cqw, 20px);
   place-items: center;
   border-radius: 9999px;
-  border: 2px solid #120c09;
-  font-size: 9.5px;
+  border: 2px solid #121110;
+  font-size: clamp(8.5px, 2.4cqw, 10.5px);
   font-weight: 700;
   line-height: 1;
+}
+
+.eq-badge--flag {
+  right: auto;
+  left: -3px;
 }
 
 .eq-skel {

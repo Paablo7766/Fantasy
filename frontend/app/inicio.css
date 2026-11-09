@@ -1614,14 +1614,10 @@
   border-radius: 1.5rem;
 }
 
-/* Campo: superficie grafito con el halo arriba. */
+/* Campo: el fondo vive en globals.css (.eq-pitch); aquí solo el borde. */
 .eq-stack .eq-pitch {
   border: 0;
   border-radius: 2rem;
-  background:
-    radial-gradient(70% 45% at 50% 0%, rgba(255, 106, 31, 0.28), transparent 70%),
-    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0 11.1%, transparent 11.1% 22.2%),
-    #101010;
 }
 
 .eq-stack select {

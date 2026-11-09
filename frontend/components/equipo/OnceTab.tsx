@@ -5,7 +5,7 @@ import { jornadaEv, playerName, points, projectedLineupPoints, titularShare } fr
 import { REGLAMENTO } from "@/lib/core/reglamento";
 import { signedPoints } from "@/lib/inicio/hoy";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
-import { StatusBadge, statusBadgeLabel } from "@/components/ui/StatusBadge";
+import { statusBadgeLabel } from "@/components/ui/StatusBadge";
 import type { CapitanPick, Gap, OptimizePayload, PlanPayload, Player, SquadsPayload } from "@/lib/types";
 import {
   Disclosure,
@@ -132,15 +132,18 @@ function Pitch({
   return (
     <div className="eq-pitch" role="group" aria-label="Campo con tu once">
       <svg viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
-        <g fill="none" stroke="rgba(255,255,255,0.09)" strokeWidth="0.35">
-          <rect x="2" y="2" width="64" height="96" rx="2" />
-          <line x1="2" y1="50" x2="66" y2="50" />
-          <circle cx="34" cy="50" r="7" />
-          <rect x="16" y="2" width="36" height="12" />
-          <rect x="16" y="86" width="36" height="12" />
-          <rect x="26" y="2" width="16" height="4.5" />
-          <rect x="26" y="93.5" width="16" height="4.5" />
+        <g fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="1">
+          <rect x="3" y="3" width="62" height="94" rx="1.5" vectorEffect="non-scaling-stroke" />
+          <line x1="3" y1="50" x2="65" y2="50" vectorEffect="non-scaling-stroke" />
+          <circle cx="34" cy="50" r="8" vectorEffect="non-scaling-stroke" />
+          <rect x="17" y="3" width="34" height="13" vectorEffect="non-scaling-stroke" />
+          <rect x="26" y="3" width="16" height="5" vectorEffect="non-scaling-stroke" />
+          <path d="M27.07 16A8 8 0 0 0 40.93 16" vectorEffect="non-scaling-stroke" />
+          <rect x="17" y="84" width="34" height="13" vectorEffect="non-scaling-stroke" />
+          <rect x="26" y="92" width="16" height="5" vectorEffect="non-scaling-stroke" />
+          <path d="M27.07 84A8 8 0 0 1 40.93 84" vectorEffect="non-scaling-stroke" />
         </g>
+        <circle cx="34" cy="50" r="0.6" fill="rgba(255,255,255,0.16)" />
       </svg>
       {slots.map((slot, index) => {
         if (slot.gap) {
@@ -155,10 +158,9 @@ function Pitch({
               onClick={() => onSelect(slot.key)}
             >
               <span className="eq-card row-in" style={{ animationDelay: `${index * 30}ms` }}>
-                <span className="eq-card__photo eq-card__photo--gap">
-                  <span className="text-2xl leading-none text-[#FC734D]">+</span>
-                </span>
-                <span className="eq-card__name !text-[#FFA088]">Falta {slot.position}</span>
+                <span className="eq-card__photo eq-card__photo--gap">+</span>
+                <span className="eq-card__name eq-card__name--gap">Falta {slot.position}</span>
+                <span className="eq-card__pct">&nbsp;</span>
               </span>
             </button>
           );
@@ -168,6 +170,7 @@ function Pitch({
         const badge = id && id === safeId ? "C" : id && id === boldId ? "R" : null;
         const share = titularShare(slot.p_titular);
         const flag = statusBadgeLabel(shownStatus(slot));
+        const pctText = share !== null ? `${Math.round(share * 100)}%` : null;
         return (
           <button
             key={slot.key}
@@ -177,17 +180,24 @@ function Pitch({
               left: `${slot.x}%`,
               top: `${slot.y}%`,
               ["--ring" as string]: ringColor(share),
+              ["--p" as string]: share !== null ? Math.round(share * 100) : 100,
             }}
             aria-pressed={selected === slot.key}
-            aria-label={`${name}, ${share !== null ? `${Math.round(share * 100)}% de jugar, ` : ""}${points(jornadaEv(slot))} puntos esperados`}
+            aria-label={`${name}, ${points(jornadaEv(slot))} puntos esperados${pctText ? `, ${pctText} de jugar` : ""}${flag ? `, ${flag}` : ""}${badge ? ", capitán" : ""}`}
             onClick={() => onSelect(slot.key)}
           >
             <span className="eq-card row-in" style={{ animationDelay: `${index * 30}ms` }}>
-              <span className="eq-card__photo relative">
-                <Face name={name} src={slot.image_url || photoFor(photos, slot.player_id, name)} size={0} ring={ringColor(share)} />
+              <span className="eq-card__photo">
+                <span className="eq-card__face">
+                  <Face name={name} src={slot.image_url || photoFor(photos, slot.player_id, name)} size={0} />
+                </span>
                 {flag ? (
-                  <span className="absolute left-0 top-0 z-10">
-                    <StatusBadge status={shownStatus(slot)} />
+                  <span
+                    className="eq-badge eq-badge--flag"
+                    style={{ background: flag === "Duda" ? TONE.amber : TONE.red, color: "#120C09" }}
+                    title={flag}
+                  >
+                    !
                   </span>
                 ) : null}
                 {badge ? (
@@ -195,12 +205,10 @@ function Pitch({
                     {badge}
                   </span>
                 ) : null}
-                <span className="eq-card__pct" aria-label="Probabilidad de jugar">
-                  {share !== null ? `${Math.round(share * 100)}%` : "—"}
-                </span>
+                <span className="eq-card__xp">{points(jornadaEv(slot))}</span>
               </span>
               <span className="eq-card__name">{lastName(name)}</span>
-              <span className="eq-card__xp">{points(jornadaEv(slot))}</span>
+              <span className="eq-card__pct">{pctText ?? "—"}</span>
             </span>
           </button>
         );
@@ -209,15 +217,28 @@ function Pitch({
   );
 }
 
-function PlayerSheet({ player, photos, onClose }: { player: Slot; photos: PhotoIndex; onClose: () => void }) {
+function PlayerSheet({
+  player,
+  photos,
+  onClose,
+  className = "",
+}: {
+  player: Slot;
+  photos: PhotoIndex;
+  onClose: () => void;
+  className?: string;
+}) {
   const name = player.gap ? `Falta un ${player.position}` : playerName(player);
   const share = titularShare(player.p_titular);
   const flag = statusBadgeLabel(shownStatus(player));
   const ev = jornadaEv(player);
   const ifStarts = typeof player.points_if_starts === "number" ? player.points_if_starts : null;
+  const ceiling = typeof player.ceiling_points === "number" ? player.ceiling_points : null;
+  const next4 = typeof player.xp_4_jornadas === "number" ? player.xp_4_jornadas : null;
+  const lost = typeof player.tu_once_pierde_sin_el === "number" && player.tu_once_pierde_sin_el >= 0.05 ? player.tu_once_pierde_sin_el : null;
   const trend = parsePct(player.prevision_7d_pct);
   return (
-    <article className="home-glass row-in p-4" aria-live="polite">
+    <article className={`home-glass row-in p-4 ${className}`} aria-live="polite">
       <div className="flex items-center gap-3">
         {player.gap ? (
           <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-dashed border-[#FC734D] text-xl text-[#FC734D]">+</span>
@@ -244,13 +265,14 @@ function PlayerSheet({ player, photos, onClose }: { player: Slot; photos: PhotoI
       </div>
       {!player.gap ? (
         <>
-          <div className="mt-4 grid grid-cols-3 gap-3">
+          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-3 min-[420px]:grid-cols-4">
             <Fact
               label="xP jornada"
               value={points(ev)}
               tone="#FFC08A"
               hint={ifStarts !== null && ev !== null && Math.abs(ifStarts - ev) >= 0.35 ? `${points(ifStarts)} si juega` : undefined}
             />
+            <Fact label="Techo" value={ceiling !== null ? points(ceiling) : "—"} hint={ceiling !== null ? "en su mejor día" : undefined} />
             <Fact label="Titular" value={share !== null ? `${Math.round(share * 100)}%` : "—"} tone={ringColor(share)} />
             <Fact
               label="Valor"
@@ -258,9 +280,19 @@ function PlayerSheet({ player, photos, onClose }: { player: Slot; photos: PhotoI
               hint={forecastHint(player.market_value, trend)}
             />
           </div>
-          {typeof player.tu_once_pierde_sin_el === "number" && player.tu_once_pierde_sin_el >= 0.05 ? (
-            <p className="mt-3 text-[13px] text-white/50">
-              Sin él tu once pierde <span className="font-medium tabular-nums text-white">{points(player.tu_once_pierde_sin_el)} pts</span>
+          {next4 !== null || lost !== null ? (
+            <p className="mt-3 border-t border-white/[0.06] pt-3 text-[13px] leading-relaxed text-white/50">
+              {next4 !== null ? (
+                <>
+                  Próximas 4 jornadas <span className="font-medium tabular-nums text-white">{points(next4)} xP</span>
+                </>
+              ) : null}
+              {next4 !== null && lost !== null ? " · " : null}
+              {lost !== null ? (
+                <>
+                  Sin él tu once pierde <span className="font-medium tabular-nums text-white">{points(lost)} pts</span>
+                </>
+              ) : null}
             </p>
           ) : null}
         </>
@@ -376,7 +408,16 @@ export function OnceTab({
   const delta = model.recPts !== null && model.savedPts !== null && model.saved.length ? model.recPts - model.savedPts : null;
   const shares = shown.map((row) => titularShare(row.p_titular)).filter((value): value is number => value !== null);
   const avgShare = shares.length ? shares.reduce((sum, value) => sum + value, 0) / shares.length : null;
-  const doubts = shown.filter((row) => statusBadgeLabel(shownStatus(row))).length;
+  // «En riesgo»: con aviso oficial o por debajo del 60 % de jugar.
+  const atRisk = shown.filter((row) => {
+    const share = titularShare(row.p_titular);
+    return Boolean(statusBadgeLabel(shownStatus(row))) || (share !== null && share < 0.6);
+  }).length;
+  // Lo que sumaría el once si todos salieran de inicio: mide cuánto resta la rotación.
+  const ifAllStart = shown.reduce<number | null>(
+    (sum, row) => (sum === null || typeof row.points_if_starts !== "number" ? null : sum + row.points_if_starts),
+    shown.length ? 0 : null,
+  );
   const gapCount = (optimize.gaps || []).reduce((sum, gap) => sum + (Number(gap.missing) || 0), 0);
   const band = redLine(plan, optimize, Boolean(model.saved.length && !model.same));
   const active = slots.find((slot) => slot.key === selected) || null;
@@ -424,9 +465,9 @@ export function OnceTab({
             </p>
           ) : null}
           <div className="relative mt-5 grid grid-cols-3 gap-2.5">
+            <HeroStat value={ifAllStart !== null ? points(ifAllStart) : "—"} label="Si juegan los 11" />
             <HeroStat value={avgShare !== null ? `${Math.round(avgShare * 100)}%` : "—"} label="Titularidad" tone={avgShare !== null ? ringColor(avgShare) : undefined} />
-            <HeroStat value={String(doubts)} label={doubts === 1 ? "Duda" : "Dudas"} tone={doubts ? TONE.amber : undefined} />
-            <HeroStat value={String(gapCount)} label={gapCount === 1 ? "Hueco" : "Huecos"} tone={gapCount ? TONE.red : undefined} />
+            <HeroStat value={String(atRisk)} label="En riesgo" tone={atRisk ? TONE.amber : undefined} />
           </div>
         </section>
 
@@ -463,6 +504,7 @@ export function OnceTab({
           boldId={bold?.player_id ? String(bold.player_id) : null}
         />
         <p className="-mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[12px] text-white/45">
+          <span>Anillo: opción de jugar</span>
           {[
             [TONE.green, "≥ 80%"],
             [TONE.amber, "50–80%"],
@@ -473,13 +515,14 @@ export function OnceTab({
               {label}
             </span>
           ))}
-          <span>de jugar</span>
         </p>
 
-        {active ? <PlayerSheet player={active} photos={photos} onClose={() => setSelected(null)} /> : null}
+        {active ? <PlayerSheet player={active} photos={photos} onClose={() => setSelected(null)} className="min-[1100px]:hidden" /> : null}
       </div>
 
       <div className="flex min-w-0 flex-col gap-4">
+        {/* En escritorio el detalle sale junto al campo, sin tener que bajar. */}
+        {active ? <PlayerSheet player={active} photos={photos} onClose={() => setSelected(null)} className="hidden min-[1100px]:block" /> : null}
         {safe?.nombre ? (
           <div className={bold ? "grid grid-cols-2 gap-3" : "grid"}>
             <CaptainCard title="Capitán seguro" pick={safe} photos={photos} accent="#fff" />

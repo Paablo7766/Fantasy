@@ -12,6 +12,8 @@ export type Player = {
   expected_points?: number | null;
   jornada_ev?: number | null;
   points_if_starts?: number | null;
+  /** Puntos en un buen día (techo del modelo). */
+  ceiling_points?: number | null;
   p_titular?: number | null;
   p_titular_source?: string | null;
   player_status?: string | null;
