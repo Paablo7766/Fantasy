@@ -67,7 +67,7 @@ export function DangerRow({ row, photos, index }: { row: ClausulaEnPeligro; phot
     <AdvisorRow
       index={index}
       name={row.nombre}
-      sub={`${pos(row.posicion)} · ${row.alerta_prioritaria ? `Alerta prioritaria${row.abre_el && row.abre_el !== "abierta" ? ` · se abre el ${row.abre_el}` : ""}` : risk.label}`}
+      sub={`${pos(row.posicion)} · ${risk.label}`}
       imageUrl={photoFor(photos, row.player_id, row.nombre)}
       ring={risk.color}
       verdict={verdict}

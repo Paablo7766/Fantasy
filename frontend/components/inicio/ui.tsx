@@ -164,8 +164,8 @@ export function AdvisorRow({
       </button>
       <Collapse open={open}>
         <div className="px-4 pb-4 pl-[4.25rem] sm:px-5 sm:pl-[4.5rem]">
-          <FactGrid facts={facts} />
-          {reason ? <p className="mt-3 text-[13px] leading-5 text-white/55">{reason}</p> : null}
+          <FactGrid facts={facts.slice(0, 4)} />
+          {reason ? <p className="mt-3 line-clamp-3 text-[12.5px] leading-5 text-white/50">{reason}</p> : null}
           {extra}
         </div>
       </Collapse>

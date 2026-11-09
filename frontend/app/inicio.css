@@ -2203,3 +2203,53 @@
 .ini .ini-switch .ini-collapse > div > div {
   padding-inline: 0 !important;
 }
+
+/* Tu plantilla: resumen con cifra y chips, vacíos centrados. */
+.ini-sum {
+  padding: 1.25rem 1.25rem 0;
+}
+
+.ini-sum__main {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.ini-sum__value {
+  font-size: 2.25rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.ini-sum__label {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ini-sum__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+}
+
+.ini-sum__chips span {
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.25rem 0.7rem;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ini-empty {
+  margin: 0.9rem 0.625rem 0.75rem;
+  border-radius: 1.25rem;
+  background: var(--ini-surface-2);
+  padding: 1.75rem 1.25rem;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.5);
+}

@@ -14,15 +14,15 @@ const VISIBLE = 3;
 
 function Summary({ value, label, detail, tone }: { value: string; label: string; detail: string[]; tone?: string }) {
   return (
-    <div className="px-5 pb-1 pt-5">
-      <p className="flex items-baseline gap-2">
-        <span className="text-[28px] font-semibold leading-none tracking-[-0.03em] tabular-nums" style={{ color: tone || "#fff" }}>
+    <div className="ini-sum">
+      <p className="ini-sum__main">
+        <span className="ini-sum__value tabular-nums" style={{ color: tone || "#fff" }}>
           {value}
         </span>
-        <span className="text-[15px] text-white/60">{label}</span>
+        <span className="ini-sum__label">{label}</span>
       </p>
       {detail.length ? (
-        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[12.5px] tabular-nums text-white/45">
+        <p className="ini-sum__chips">
           {detail.map((bit) => (
             <span key={bit}>{bit}</span>
           ))}
@@ -134,9 +134,9 @@ export function SquadDesk({ plan, photos, loading }: { plan: PlanPayload | null;
       <div key={desk}>
         {head}
         {shown.length ? (
-          <ul className="ini-divide mt-4">{shown}</ul>
+          <ul className="ini-divide mt-3">{shown}</ul>
         ) : (
-          <p className="px-5 pb-5 pt-3 text-[13.5px] text-white/50">{empty}</p>
+          <p className="ini-empty">{empty}</p>
         )}
         {hidden > 0 || expanded ? (
           <button
