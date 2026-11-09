@@ -2923,3 +2923,24 @@
     padding-inline: 0.65rem;
   }
 }
+
+/* Pie del hero simétrico: el estado queda en el centro exacto, con un hueco
+   igual a cada lado y el icono del Laboratorio en el de la derecha. */
+.ini-dock {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, auto) 2.4rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.ini-dock__side {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+@media (max-width: 420px) {
+  .ini-dock {
+    gap: 0.35rem;
+  }
+}
