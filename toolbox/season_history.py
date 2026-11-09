@@ -159,6 +159,70 @@ def leer_almacen(cache: Path | None = None) -> dict[str, Any]:
     return crudo if isinstance(crudo, dict) else {}
 
 
+# --- Copia en Supabase ---------------------------------------------------------
+# Render borra su disco en cada despliegue y `.cache/` no se sube a git: sin copia
+# remota, producción no tendría el histórico. Se reutiliza la tabla
+# `dashboard_snapshots` de ``toolbox.snapshot_remote`` (ver ``history_remote``).
+KIND_REMOTO = "historico_temporadas"
+KEY_REMOTA = "plantillas"
+_CAMPOS_FILA = ("j", "puntos", "minutos", "goles", "asistencias")
+
+
+def compactar(almacen: dict[str, Any]) -> dict[str, Any]:
+    """Almacén reducido a lo que usa el modelo: solo temporadas válidas y cinco campos por jornada."""
+    salida: dict[str, Any] = {}
+    for slug, entrada in almacen.items():
+        temporadas: dict[str, Any] = {}
+        for nombre, temporada in (entrada.get("temporadas") or {}).items():
+            if not temporada_coherente(temporada, nombre):
+                continue
+            temporadas[nombre] = {
+                "total_web": temporada["total_web"],
+                "temporada_pagina": temporada.get("temporada_pagina"),
+                "filas": [{c: f.get(c) for c in _CAMPOS_FILA} for f in temporada["filas"]],
+            }
+        if temporadas:
+            salida[slug] = {
+                "nombre": entrada.get("nombre"),
+                "posicion": entrada.get("posicion"),
+                "equipo": entrada.get("equipo"),
+                "temporadas": temporadas,
+            }
+    return salida
+
+
+def subir_a_supabase(almacen: dict[str, Any]) -> bool:
+    """Sube la copia compacta. ``False`` sin Supabase o si falla (nunca lanza)."""
+    import time
+
+    from toolbox import snapshot_remote
+
+    if not snapshot_remote.enabled():
+        return False
+    return snapshot_remote.save(KIND_REMOTO, KEY_REMOTA, {"saved_unix": time.time(), "value": compactar(almacen)})
+
+
+def traer_de_supabase(cache: Path | None = None) -> bool:
+    """Si no hay fichero local, baja la copia remota y la guarda. Nunca lanza."""
+    from toolbox import snapshot_remote
+
+    if not snapshot_remote.enabled():
+        return False
+    try:
+        sobre = snapshot_remote.load(KIND_REMOTO, KEY_REMOTA)
+        valor = sobre.get("value") if sobre else None
+        if not isinstance(valor, dict) or not valor:
+            return False
+        ruta = ruta_almacen(cache)
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        temporal = ruta.with_suffix(".tmp")
+        temporal.write_text(json.dumps(valor, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        temporal.replace(ruta)
+        return True
+    except Exception:  # noqa: BLE001 — sin histórico el modelo usa el puesto
+        return False
+
+
 # --- Resumen por jugador ---------------------------------------------------
 
 #: Minutos desde los que un partido cuenta como de titular.
@@ -311,6 +375,8 @@ _ESTADO: dict[str, Any] = {"marca": None, "resumenes": {}, "medias": {}, "indice
 
 def _cargar_estado() -> None:
     ruta = ruta_almacen()
+    if not ruta.is_file():
+        traer_de_supabase()
     try:
         marca = (str(ruta), ruta.stat().st_mtime_ns)
     except OSError:

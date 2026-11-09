@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import threading
@@ -33,6 +34,7 @@ from toolbox.season_history import (  # noqa: E402
     leer_almacen,
     parse_plantilla,
     parse_temporada,
+    subir_a_supabase,
     ruta_almacen,
     temporada_coherente,
 )
@@ -45,6 +47,18 @@ EQUIPOS = [
     "sevilla", "valencia", "villarreal",
 ]
 POSICIONES = {"Portero": "PT", "Defensa": "DF", "Centrocampista": "MC", "Delantero": "DL"}
+
+
+def cargar_supabase_del_env() -> None:
+    """Solo las dos claves de Supabase de ``.env`` (sin tocar el resto ni imprimirlas)."""
+    env = ROOT / ".env"
+    if not env.exists():
+        return
+    for linea in env.read_text(encoding="utf-8").splitlines():
+        if "=" in linea and not linea.lstrip().startswith("#"):
+            clave, valor = linea.split("=", 1)
+            if clave.strip() in {"SUPABASE_URL", "SUPABASE_KEY"}:
+                os.environ.setdefault(clave.strip(), valor.strip().strip('"'))
 
 
 def bajar(url: str) -> str | None:
@@ -105,11 +119,19 @@ def main() -> int:
     parser.add_argument("--equipos", nargs="*", default=EQUIPOS)
     parser.add_argument("--pausa", type=float, default=1.0, help="segundos entre peticiones de un mismo hilo")
     parser.add_argument("--hilos", type=int, default=3)
+    parser.add_argument("--subir", action="store_true", help="al terminar, sube la copia a Supabase")
+    parser.add_argument("--solo-subir", action="store_true", help="no descarga: sube lo que haya en el fichero local")
     parser.add_argument("--limite", type=int, default=0, help="máximo de jugadores nuevos (0 = todos)")
     args = parser.parse_args()
+    if args.subir or args.solo_subir:
+        cargar_supabase_del_env()
 
     ruta = ruta_almacen()
     almacen = leer_almacen()
+    if args.solo_subir:
+        ok = subir_a_supabase(almacen)
+        print(f"Subida a Supabase: {'ok' if ok else 'NO (revisa SUPABASE_URL/KEY y la tabla dashboard_snapshots)'}", flush=True)
+        return 0 if ok else 1
     pendientes: list[tuple[str, str]] = []
     for equipo in args.equipos:
         pagina = bajar(f"{BASE}/laliga/equipos/{equipo}")
@@ -143,6 +165,8 @@ def main() -> int:
                     print(f"  {hechos}/{len(pendientes)} (almacén {len(almacen)})", flush=True)
     guardar(ruta, almacen)
     print(f"Listo: {len(almacen)} jugadores en {ruta}", flush=True)
+    if args.subir:
+        print(f"Subida a Supabase: {'ok' if subir_a_supabase(almacen) else 'NO'}", flush=True)
     return 0
 
 

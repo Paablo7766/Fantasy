@@ -210,3 +210,49 @@ def test_xp2_con_historico_bueno_sube_y_con_historico_malo_baja():
     bueno = xp2.prediccion_xp2({**base, "hist_prior": {"n": 40, "suelo": 2.0, "goles": 0.15, "asistencia": 0.5}}, **kwargs)["xp_condicional"]
     malo = xp2.prediccion_xp2({**base, "hist_prior": {"n": 40, "suelo": -2.0, "goles": -0.05, "asistencia": -0.3}}, **kwargs)["xp_condicional"]
     assert malo < sin < bueno
+
+
+# --- Copia en Supabase --------------------------------------------------------
+
+
+def _almacen_remoto():
+    fila = lambda j: {"j": j, "puntos": 6, "minutos": 90.0, "goles": 0, "asistencias": 0, "equipos": ["A", "B"], "estado": None}  # noqa: E731
+    buena = {"total_web": 6 * 20, "temporada_pagina": "laliga-25-26", "coherente": True, "filas": [fila(j) for j in range(1, 21)]}
+    reserva = {"total_web": 6 * 12, "temporada_pagina": "laliga-26-27", "coherente": True, "filas": [fila(j) for j in range(1, 13)]}
+    return {
+        "pedri": {"nombre": "Pedri", "posicion": "MC", "equipo": "barcelona", "temporadas": {"laliga-25-26": buena, "laliga-24-25": reserva}},
+        "fantasma": {"nombre": "F", "posicion": "DL", "equipo": "sevilla", "temporadas": {"laliga-25-26": reserva}},
+    }
+
+
+def test_compactar_deja_solo_temporadas_validas_y_cinco_campos(monkeypatch):
+    monkeypatch.setattr(sh, "MIN_FILAS_TEMPORADA", 15)
+    compacto = sh.compactar(_almacen_remoto())
+    assert list(compacto) == ["pedri"]
+    assert list(compacto["pedri"]["temporadas"]) == ["laliga-25-26"]
+    assert set(compacto["pedri"]["temporadas"]["laliga-25-26"]["filas"][0]) == set(sh._CAMPOS_FILA)
+
+
+def test_ida_y_vuelta_por_supabase_con_disco_vacio(monkeypatch, tmp_path):
+    from toolbox import snapshot_remote
+    from toolbox.cache import LocalSupabase
+
+    monkeypatch.setattr(sh, "MIN_FILAS_TEMPORADA", 15)
+    snapshot_remote._reset_for_tests()
+    snapshot_remote._client_factory = lambda: LocalSupabase(tmp_path / "remoto")
+    try:
+        assert sh.subir_a_supabase(_almacen_remoto())
+        disco = tmp_path / "disco"
+        assert sh.leer_almacen(disco) == {}
+        assert sh.traer_de_supabase(disco)
+        recuperado = sh.leer_almacen(disco)
+        assert list(recuperado) == ["pedri"]
+        assert sh.resumen_historico(recuperado["pedri"]["temporadas"], "MC")["n_titular"] == 20
+    finally:
+        snapshot_remote._reset_for_tests()
+
+
+def test_sin_supabase_no_hace_nada_ni_lanza(tmp_path):
+    assert not sh.subir_a_supabase(_almacen_remoto())
+    assert not sh.traer_de_supabase(tmp_path)
+    assert sh.leer_almacen(tmp_path) == {}
