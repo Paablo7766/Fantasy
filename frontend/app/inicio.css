@@ -2819,3 +2819,50 @@
 .ini-hero > .ini-hero__tools {
   position: absolute;
 }
+
+/* Los botones de la esquina quedaban tapados por el centro del hero: capa propia
+   por encima, y agrupados en una sola cápsula alineada con el radio de la tarjeta. */
+.ini-hero > .ini-hero__tools {
+  position: absolute;
+  z-index: 8;
+  top: 1.15rem;
+  right: 1.25rem;
+  gap: 0;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.28);
+  padding: 3px;
+  backdrop-filter: blur(14px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.ini-hero__tools .ini-tool {
+  position: relative;
+  width: 2.2rem;
+  height: 2.2rem;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  cursor: pointer;
+}
+
+.ini-hero__tools .ini-tool + .ini-tool::before {
+  content: "";
+  position: absolute;
+  left: -0.5px;
+  top: 28%;
+  bottom: 28%;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.ini-hero__tools .ini-tool:hover,
+.ini-hero__tools .ini-tool[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+@media (max-width: 520px) {
+  .ini-hero > .ini-hero__tools {
+    top: 0.9rem;
+    right: 0.9rem;
+  }
+}
