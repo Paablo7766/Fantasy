@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { AvisosBell } from "@/components/AvisosBell";
 
@@ -11,7 +11,7 @@ const HOUR = 3600;
  * El punto pasa de verde (< 1 h) a ámbar (< 6 h) y a rojo cuando conviene
  * descargar. Tocar la hora abre un menú corto con la foto y Conectar cuenta (en móvil no hay barra lateral para llegar a ellos).
  */
-export function RefreshChip() {
+export function RefreshChip({ children }: { children?: ReactNode }) {
   const {
     photoAge,
     photoAgeSeconds,
@@ -100,7 +100,9 @@ export function RefreshChip() {
             <path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.1" strokeLinecap="round" />
             <path d="M16.4 3.6v3.2h-3.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
+          <span>{refreshError ? "Reintentar" : "Actualizar"}</span>
         </button>
+        {children}
       </div>
 
       {open ? (

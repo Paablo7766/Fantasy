@@ -106,8 +106,6 @@ function VsLeader({ you, leader }: { you: number | null; leader: number | null }
   );
 }
 
-const DATE_FMT = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Madrid" });
-
 /**
  * Cabecera de Inicio: hero oscuro con halo naranja (saldo centrado y botón
  * blanco con la cuenta atrás) y cuatro tarjetas «bento» con las cifras clave.
@@ -146,7 +144,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   const onceTarget = [plan?.lineup?.expected_points, fichajes?.puntos_once, plan?.lineup?.saved_points, fichajes?.puntos_once_actual].find(
     (v): v is number => typeof v === "number" && v > 0,
   ) ?? null;
-  const dateText = mounted ? DATE_FMT.format(nowMs) : "";
 
   // Cifra protagonista: rota cada 6 s entre seis datos distintos. Cada uno
   // entra con su propio conteo desde cero y un fundido largo.
@@ -179,10 +176,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
     <div className="ini-top">
       <section className="ini-card ini-hero ini-in" style={{ "--i": 0 } as CSSProperties} aria-label="Tu cuenta" data-ui="home-hero">
         <span className="ini-hero__glow" aria-hidden="true" />
-
-        <div className="ini-hero__bar">
-          <span className="ini-hero__date">{dateText}</span>
-        </div>
 
         <div className="ini-hero__center">
           <p className="ini-swap" aria-live="polite">
@@ -227,14 +220,15 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
         </div>
 
         <div className="ini-hero__foot">
-          <RefreshChip />
-          <Link href={labHref} className="ini-lab" data-ui="home-lab">
-            <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-              <path d="M8 2.8h4M8.8 2.8v4.6L4.4 15a1.4 1.4 0 0 0 1.2 2.1h8.8A1.4 1.4 0 0 0 15.6 15l-4.4-7.6V2.8" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M6.4 12.2h7.2" strokeLinecap="round" />
-            </svg>
-            Laboratorio
-          </Link>
+          <RefreshChip>
+            <Link href={labHref} className="ini-lab" data-ui="home-lab">
+              <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                <path d="M8 2.8h4M8.8 2.8v4.6L4.4 15a1.4 1.4 0 0 0 1.2 2.1h8.8A1.4 1.4 0 0 0 15.6 15l-4.4-7.6V2.8" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M6.4 12.2h7.2" strokeLinecap="round" />
+              </svg>
+              Laboratorio
+            </Link>
+          </RefreshChip>
         </div>
       </section>
 

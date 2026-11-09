@@ -54,6 +54,20 @@ export function parsePct(value: string | number | null | undefined): number | nu
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** Precio al que llega el valor en 7 días: hoy × (1 + %). Sin valor o sin previsión, null. */
+export function projected7d(value: number | null | undefined, pct: number | null | undefined): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  if (typeof pct !== "number" || !Number.isFinite(pct)) return null;
+  return value * (1 + pct / 100);
+}
+
+/** ``→ 5,82 M€ · +10,9%``: el precio primero y el porcentaje como apoyo. Sin valor base cae al % solo. */
+export function forecastHint(value: number | null | undefined, pct: number | null | undefined): string | undefined {
+  if (typeof pct !== "number" || !Number.isFinite(pct)) return undefined;
+  const price = projected7d(value, pct);
+  return price === null ? `${signedPct(pct)} en 7 días` : `→ ${money(price)} · ${signedPct(pct)}`;
+}
+
 export function toneOf(value: number | null | undefined): string {
   if (typeof value !== "number" || Math.abs(value) < 1e-9) return "rgba(255,255,255,0.55)";
   return value > 0 ? TONE.green : TONE.red;

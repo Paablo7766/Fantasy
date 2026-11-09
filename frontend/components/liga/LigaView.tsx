@@ -10,7 +10,7 @@ import { squadHoldings, squadPatrimonio, squadTotals } from "@/lib/liga/squadTot
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { clauseThreats } from "@/lib/liga/threats";
 import type { ActivityEvent, LeagueEdge, LeagueFormPayload, LeagueRacePayload, RivalIntelPayload, RivalPlayer, RivalSquad, SquadsPayload, TrendsPayload } from "@/lib/types";
-import { Chevron, Disclosure, Empty, Face, Fact, HeroStat, Skeleton, TONE, cleanText, compact, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
+import { Chevron, Disclosure, Empty, Face, Fact, HeroStat, Skeleton, TONE, cleanText, compact, forecastHint, money, parsePct, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
 import { ThreatRadar } from "./ThreatRadar";
 import { FormCard } from "./FormCard";
 import { HeadToHeadCard } from "./HeadToHeadCard";
@@ -224,7 +224,7 @@ function SquadPlayer({ player, photos }: { player: RivalPlayer; photos: PhotoInd
           <span className="block text-[14px] font-semibold tabular-nums text-white">{money(player.market_value)}</span>
           {trend !== null ? (
             <span className="block text-[11.5px] tabular-nums" style={{ color: toneOf(trend) }}>
-              {signedPct(trend)} 7d
+              {forecastHint(player.market_value, trend)?.replace("→ ", "")}
             </span>
           ) : null}
         </span>

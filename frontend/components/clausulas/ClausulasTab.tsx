@@ -22,7 +22,7 @@ import type {
   VeredictoClausulazo,
   VeredictoProteger,
 } from "@/lib/types";
-import { Chevron, Disclosure, Empty, Face, Fact, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, money, signedPct } from "@/components/ui/kit";
+import { Chevron, Disclosure, Empty, Face, Fact, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, forecastHint, money, signedPct } from "@/components/ui/kit";
 
 /** «Mías» defiende tu plantilla; «Clausulazos» ataca la de los rivales. */
 export type ClausulasView = "mias" | "clausulazos";
@@ -300,7 +300,7 @@ function DefendCard({
             ) : (
               <Fact label="Recomendada" value="Mantener" hint={keepReason(row)} />
             )}
-            <Fact label="Valor" value={money(row.valor_mercado)} hint={typeof row.prevision_7d_pct === "number" ? `${signedPct(row.prevision_7d_pct)} en 7 días` : undefined} />
+            <Fact label="Valor" value={money(row.valor_mercado)} hint={forecastHint(row.valor_mercado, row.prevision_7d_pct)} />
             <Fact
               label="Tu once sin él"
               value={row.tu_once_pierde_sin_el < 0.05 ? "Igual" : `−${points(row.tu_once_pierde_sin_el)} pts`}
@@ -381,7 +381,7 @@ function AttackCard({ row, photos, index }: { row: ClausulazoSugerido; photos: P
         <div className="row-in border-t border-white/[0.05] px-3.5 pb-4 pt-3">
           <div className="grid grid-cols-3 gap-3">
             <Fact label="Próxima jornada" value={`${points(row.xp_jornada)} pts`} tone="#FFC08A" />
-            <Fact label="Valor justo" value={money(row.valor_justo)} hint={typeof row.prevision_7d_pct === "number" ? `${signedPct(row.prevision_7d_pct)} en 7 días` : undefined} />
+            <Fact label="Valor justo" value={money(row.valor_justo)} hint={forecastHint(row.valor_mercado, row.prevision_7d_pct)} />
             <Fact
               label="Caja después"
               value={money(row.caja_tras)}
@@ -484,7 +484,7 @@ function RestRow({
       {open ? (
         <div className="row-in pb-3">
           <div className="grid grid-cols-3 gap-3">
-            <Fact label="Valor" value={money(player.market_value)} hint={typeof pct === "number" ? `${signedPct(pct)} en 7 días` : player.prevision_7d_pct || undefined} />
+            <Fact label="Valor" value={money(player.market_value)} hint={forecastHint(player.market_value, pct) ?? (player.prevision_7d_pct || undefined)} />
             <Fact label="Próxima jornada" value={typeof player.own_expected_points === "number" ? `${points(player.own_expected_points)} pts` : "—"} tone="#FFC08A" />
             <Fact
               label="Tu once sin él"

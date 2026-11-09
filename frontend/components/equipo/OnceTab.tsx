@@ -252,7 +252,7 @@ function PlayerSheet({ player, photos, onClose }: { player: Slot; photos: PhotoI
             <Fact
               label="Valor"
               value={money(player.market_value)}
-              hint={trend !== null ? `${signedPct(trend)} en 7 días` : undefined}
+              hint={forecastHint(player.market_value, trend)}
             />
           </div>
           {typeof player.tu_once_pierde_sin_el === "number" && player.tu_once_pierde_sin_el >= 0.05 ? (
