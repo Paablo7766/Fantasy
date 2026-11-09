@@ -116,3 +116,13 @@ def test_radar_mira_hasta_el_bloqueo_y_no_solo_3_dias():
     assert auditar_clausulas_plantilla([fila], rivales, ahora=AHORA) == []  # 7 días: fuera de la ventana de 3
     filas = auditar_clausulas_plantilla([fila], rivales, ahora=AHORA, hasta=INICIO_J13)
     assert [f["estado"] for f in filas] == ["RIESGO_ALTO"]
+
+
+def test_sin_recambio_siempre_lleva_clausula_perfecta():
+    """El único de su puesto enseña la cláusula que lo protege, aunque el neto en euros salga a cero."""
+    informe = _informe()
+    for pid in ("radu", "cepeda"):
+        fila = next(f for f in informe["proteger"] if f["player_id"] == pid)
+        assert fila["veredicto_codigo"] == "SIN_RECAMBIO"
+        assert fila["clausula_perfecta"] is not None
+        assert fila["clausula_perfecta"]["clausula_objetivo"] > fila["clausula_actual"]

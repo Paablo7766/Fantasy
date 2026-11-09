@@ -347,7 +347,10 @@ def _proteger(
             if nivel["viable"] and neto > mejor_neto:
                 mejor_neto = neto
                 elegido = nivel
-        perfecta = None if neto_cero else (niveles[0] if niveles else None)
+        # Si te lo clausulan te quedas sin once legal: el cálculo en euros no mide ese daño,
+        # así que en ese caso la cláusula perfecta se ofrece aunque el neto en euros salga a cero.
+        sin_once_legal = bool(capaces) and fragil and deja_sin_once(jugador, propios)
+        perfecta = None if (neto_cero and not sin_once_legal) else (niveles[0] if niveles else None)
         if elegido is not None and restante is not None and not candado:
             restante -= int(elegido["coste_eur"])
 
