@@ -181,6 +181,10 @@ export type ClauseRaise = {
 
 /** Fila del tablero completo: cualquier jugador con cláusula, no solo los de la regla A/B. */
 export type ClauseBoardRow = ClauseRow & {
+  /** Está anunciado en el mercado: se compra por oferta o puja, sin esperar al candado. */
+  on_market?: boolean;
+  market_listing_expires_local_time?: string | null;
+  market_sale_price_eur?: number | null;
   prev_clause_eur?: number | null;
   clause_delta_eur?: number | null;
   clause_delta_pct?: number | null;

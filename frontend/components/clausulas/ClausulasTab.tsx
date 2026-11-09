@@ -73,6 +73,7 @@ const OPEN_MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "se
 
 /** Cuándo se puede pagar: «Abierta ahora» o «Abre 4 nov · 14:08». */
 function opensLabel(row: ClauseBoardRow): string {
+  if (row.on_market) return `En el mercado${row.market_listing_expires_local_time ? ` · hasta ${row.market_listing_expires_local_time}` : ""}`;
   if (!row.is_locked) return "Abierta ahora";
   const lock = row.clause_lock;
   if (!lock?.local_date) return "Con candado";

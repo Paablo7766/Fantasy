@@ -2009,3 +2009,126 @@
   }
   .ini-strike { transition: none; }
 }
+
+/* ══ Pulido del hero y las tarjetas de Inicio ═══════════════════════════════
+   Ritmo vertical único: etiqueta → cifra → dato → indicador → botón, con
+   márgenes proporcionados; barra superior simétrica; tarjetas bien centradas. */
+
+.ini-hero__bar {
+  padding: 1.25rem 1.25rem 0;
+  gap: 1rem;
+}
+
+.ini-hero__bar > :first-child {
+  justify-self: start;
+}
+
+.ini-hero__bar > :last-child {
+  justify-self: end;
+}
+
+.ini-hero__center {
+  padding: 3rem 1.5rem 2.25rem;
+}
+
+@media (min-width: 900px) {
+  .ini-hero__center {
+    padding: 3.75rem 2rem 2.75rem;
+  }
+}
+
+.ini-hero__center .ini-swap {
+  min-height: 1.25rem;
+  align-items: center;
+}
+
+.ini-hero__center .ini-cash {
+  margin-top: 1rem;
+  line-height: 1;
+}
+
+.ini-hero__center .ini-swap.mt-3 {
+  margin-top: 1.1rem;
+  min-height: 1.35rem;
+}
+
+.ini-hero__center .ini-pill {
+  max-width: 100%;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.ini-hero__center .ini-steps {
+  margin-top: 1.5rem;
+  align-items: center;
+}
+
+.ini-hero .ini-cta {
+  margin-top: 2rem;
+  padding: 0.6rem 0.7rem 0.6rem 1rem;
+  gap: 0.75rem;
+}
+
+.ini-hero .ini-cta__time {
+  padding: 0.3rem 0.7rem;
+}
+
+.ini-hero .ini-alert {
+  margin-top: 1.5rem;
+  max-width: 100%;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.ini-top {
+  gap: 1rem;
+}
+
+.ini-bento {
+  gap: 1rem;
+}
+
+.ini .ini-tile {
+  gap: 1rem;
+  padding: 1.75rem 1.25rem 1.5rem;
+}
+
+.ini .ini-tile > div:last-child {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.ini .ini-tile__label {
+  margin-top: 0;
+  line-height: 1.3;
+}
+
+.ini .ini-tile__sub {
+  margin-top: 0;
+  line-height: 1.3;
+}
+
+.ini .ini-tile__value {
+  line-height: 1.05;
+}
+
+@media (max-width: 520px) {
+  .ini-hero__bar {
+    padding: 1rem 1rem 0;
+  }
+  .ini-hero__center {
+    padding: 2.25rem 1rem 1.75rem;
+  }
+  .ini-hero .ini-cta {
+    margin-top: 1.5rem;
+  }
+  .ini-top,
+  .ini-bento {
+    gap: 0.75rem;
+  }
+  .ini .ini-tile {
+    padding: 1.4rem 0.9rem 1.2rem;
+  }
+}

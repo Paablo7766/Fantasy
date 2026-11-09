@@ -131,17 +131,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
 
   const fichajes = plan?.plan_fichajes;
   const cashEnd = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
-  // Fase de la app: en qué momento estamos y, por tanto, en qué se enfoca.
-  // Las alertas largas (deuda, cláusulas) viven en el Plan, no en el hero.
-  const paron = fichajes?.paron?.activo ? fichajes.paron : null;
-  const phase = paron
-    ? { key: "paron", label: "Parón de selecciones", sub: paron.fase_nombre || "Mercado abierto" }
-    : clock.lock
-      ? { key: "prep", label: "Preparando la jornada", sub: "Mercado y once abiertos" }
-      : clock.exhausted
-        ? { key: "live", label: "Jornada en juego", sub: "Once bloqueado" }
-        : null;
-
   const dash = loading ? "…" : "—";
   const negative = typeof cash === "number" && cash < 0;
   const alert = redLine && redLine.status && redLine.status !== "ok" ? redLine : null;
@@ -215,14 +204,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
                 <span key={f.key} data-on={i === slide ? "true" : undefined} />
               ))}
             </span>
-          ) : null}
-
-          {phase ? (
-            <p className="ini-phase" data-phase={phase.key} data-ui="home-phase">
-              <span>{phase.label}</span>
-              <i aria-hidden="true" />
-              <span>{phase.sub}</span>
-            </p>
           ) : null}
 
           {target && timeText ? (
