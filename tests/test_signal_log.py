@@ -76,6 +76,41 @@ class SignalLogTests(unittest.TestCase):
             ],
         )
 
+    def test_guarda_el_parte_oficial_y_deriva_el_cambio_de_precio(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "responses.sqlite"
+            ayer = [
+                {"player_id": "a", "fantasy_price": 10_000_000, "player_status": "ok"},
+                {"player_id": "b", "fantasy_price": 5_000_000},
+                {"player_id": "c", "fantasy_price": 2_000_000},
+            ]
+            hoy = [
+                {"player_id": "a", "fantasy_price": 10_400_000, "player_status": "injured"},
+                {"player_id": "b", "fantasy_price": 4_900_000},
+                {"player_id": "d", "fantasy_price": 1_000_000},
+            ]
+            record_signal_log(ayer, league_id="L", day="2026-11-06", path=path)
+            record_signal_log(hoy, league_id="L", day="2026-11-07", path=path)
+            # Hueco de un día: el 9 no tiene el 8, así que no hay cambio derivado.
+            record_signal_log(hoy, league_id="L", day="2026-11-09", path=path)
+            conn = sqlite3.connect(path)
+            rows = conn.execute(
+                f"select player_id, day, player_status, price_change_derived from {TABLE} "
+                "where day >= '2026-11-07' order by day, player_id"
+            ).fetchall()
+            conn.close()
+        self.assertEqual(
+            rows,
+            [
+                ("a", "2026-11-07", "injured", 400_000),
+                ("b", "2026-11-07", None, -100_000),
+                ("d", "2026-11-07", None, None),
+                ("a", "2026-11-09", "injured", None),
+                ("b", "2026-11-09", None, None),
+                ("d", "2026-11-09", None, None),
+            ],
+        )
+
     def test_no_day_or_no_players_writes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "responses.sqlite"
