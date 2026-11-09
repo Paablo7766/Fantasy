@@ -135,10 +135,8 @@ function TodayStamp() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const {
-    leagueName,
     busy,
     refreshing,
-    photoLine,
     refreshLine,
     refreshPct,
     connecting,
@@ -153,12 +151,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const section = sectionFromPath(pathname);
   const query = searchParams.toString();
   const withQuery = (href: string) => (query ? `${href}?${query}` : href);
-  const labHref = (tab?: string) => {
-    const params = new URLSearchParams(query);
-    if (tab) params.set("tab", tab);
-    const text = params.toString();
-    return text ? `/laboratorio?${text}` : "/laboratorio";
-  };
 
   useEffect(() => {
     markShellReady();
@@ -232,19 +224,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="mt-4 border-t border-[color:var(--sidebar-line)] px-2 pt-4">
-          <p className="truncate text-sm font-medium text-white">{leagueName}</p>
-          <p className="mt-1 font-mono text-[11px] text-[color:var(--sidebar-muted)]">{photoLine}</p>
-          <Link
-            href={labHref()}
-            className={`mt-3 block text-sm no-underline ${pathname.startsWith("/laboratorio") ? "text-white" : "text-[color:var(--sidebar-muted)] hover:text-white"}`}
-          >
-            Laboratorio
-          </Link>
           <button
             type="button"
             onClick={() => void connectAccount()}
             disabled={connecting || busy}
-            className="btn btn-ghost mt-1 w-full justify-start px-0"
+            className="btn btn-ghost w-full justify-start px-0"
           >
             {connecting ? "Elige tu cuenta en Chrome…" : "Conectar cuenta"}
           </button>

@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { AvisosBell } from "@/components/AvisosBell";
@@ -11,8 +9,7 @@ const HOUR = 3600;
 /**
  * Recarga de datos, solo en Inicio y dentro del hero: «hace 2 h» y un icono.
  * El punto pasa de verde (< 1 h) a ámbar (< 6 h) y a rojo cuando conviene
- * descargar. Tocar la hora abre un menú corto con la foto, el Laboratorio y
- * Conectar cuenta (en móvil no hay barra lateral para llegar a ellos).
+ * descargar. Tocar la hora abre un menú corto con la foto y Conectar cuenta (en móvil no hay barra lateral para llegar a ellos).
  */
 export function RefreshChip() {
   const {
@@ -29,7 +26,6 @@ export function RefreshChip() {
     connectAccount,
     trends,
   } = useDashboard();
-  const search = useSearchParams();
   const [open, setOpen] = useState(false);
   const [justDone, setJustDone] = useState(false);
   const [wasRefreshing, setWasRefreshing] = useState(refreshing);
@@ -74,8 +70,6 @@ export function RefreshChip() {
         : justDone
           ? "Al día"
           : photoAge || "Sin datos";
-  const query = search.toString();
-  const labHref = query ? `/laboratorio?${query}` : "/laboratorio";
 
   return (
     <div ref={box} className="relative justify-self-end" data-ui="refresh-chip">
@@ -115,9 +109,6 @@ export function RefreshChip() {
           {refreshError ? <p className="mt-1 text-[11.5px] text-[#ffb3a4]">{refreshError}</p> : null}
           {trends?.partial ? <p className="mt-1 text-[11.5px] text-[#ffd58a]">Lectura parcial</p> : null}
           <div className="mt-2.5 flex flex-col gap-1">
-            <Link role="menuitem" href={labHref} className="ini-refresh__item" onClick={() => setOpen(false)}>
-              Laboratorio · estado del modelo
-            </Link>
             <button
               role="menuitem"
               type="button"
