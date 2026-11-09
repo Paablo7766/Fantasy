@@ -235,6 +235,20 @@ class ClauseBoardTests(unittest.TestCase):
         self.assertEqual(latest["increase_eur"], 1_000_000)
         self.assertEqual(latest["cost_eur"], 500_000)
 
+    def test_listed_player_is_marked_as_on_market_despite_the_lock(self) -> None:
+        squads = _squads(
+            _squad("rival", [
+                _player("p1", clause=9_000_000, lock=_lock("2026-11-09")),
+                _player("p2", clause=5_000_000, lock=_lock("2026-11-09")),
+            ]),
+        )
+        listings = [{"player_id": "p1", "seller_team_id": "rival", "sale_price": 8_300_000,
+                     "listing_expires_at": "2026-11-10T08:29:36+00:00", "listing_expires_local_time": "09:29"}]
+        rows = {r["player_id"]: r for r in build_clause_board(squads, market_listings=listings)["rows"]}
+        self.assertTrue(rows["p1"]["on_market"])
+        self.assertEqual(rows["p1"]["market_listing_expires_local_time"], "09:29")
+        self.assertFalse(rows["p2"]["on_market"])
+
     def test_self_squad_is_excluded_by_default(self) -> None:
         squads = _squads(
             _squad("mine", [_player("own-1", clause=4_000_000, lock=_lock("2026-10-27"))], self_team=True),

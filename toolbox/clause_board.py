@@ -223,6 +223,7 @@ def build_clause_board(
     expenses_path: Path | None = None,
     include_self: bool = False,
     ledgers: Any = None,
+    market_listings: Any = None,
 ) -> dict[str, Any]:
     """Una fila por jugador con cláusula, ordenada por hora de desbloqueo.
 
@@ -245,6 +246,14 @@ def build_clause_board(
     # queda en ``from_day``.
     gap_days = _days_between(from_day, day) if from_day and day else None
     paid_index = _acquisitions(ledgers)
+    # Un jugador anunciado en el mercado se compra por oferta o puja sin esperar
+    # al candado de su cláusula: sin este cruce el tablero decía «abre a las
+    # 14:08» de uno que un rival se llevó por oferta horas antes.
+    listed: dict[tuple[str, str], Mapping[str, Any]] = {}
+    for listing in market_listings if isinstance(market_listings, list) else []:
+        if isinstance(listing, Mapping) and isinstance(listing.get("player_id"), str):
+            listed[(str(listing.get("seller_team_id") or ""), listing["player_id"])] = listing
+            listed.setdefault(("", listing["player_id"]), listing)
 
     rows: list[dict[str, Any]] = []
     for squad in roster:
@@ -302,8 +311,13 @@ def build_clause_board(
                 floor = before if isinstance(before, int) else None
                 auto_raise = 0
                 paid_raise = max(0, clause - floor) if floor is not None else 0
+            listing = listed.get((team_id, player_id)) or listed.get(("", player_id))
             rows.append(
                 {
+                    "on_market": listing is not None,
+                    "market_listing_expires_at": listing.get("listing_expires_at") if listing else None,
+                    "market_listing_expires_local_time": listing.get("listing_expires_local_time") if listing else None,
+                    "market_sale_price_eur": listing.get("sale_price") if listing else None,
                     "team_id": team_id,
                     "manager_name": squad.get("manager_name"),
                     "fantasy_team_name": squad.get("fantasy_team_name"),
