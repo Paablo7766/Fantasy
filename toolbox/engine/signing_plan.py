@@ -390,11 +390,23 @@ def _mejora_neta(row: dict[str, Any], elegibles: list[dict[str, Any]], base: flo
         "position": row.get("position"),
         "jornada": float(row.get("jornada") or 0.0),
     }
-    con = solve_best_xi([*elegibles, fantasma])
-    if not con["ok"]:
+    if base_ok:
+        con = solve_best_xi([*elegibles, fantasma])
+        if not con["ok"]:
+            return 0.0
+        return round(max(0.0, float(con["puntos"]) - base), 4)
+    # Plantilla sin once legal (por ejemplo 10 jugadores): el hueco vale 0 puntos.
+    # Se compara contra el mejor once con un suplente de 0 por puesto, para que
+    # la mejora sea lo que aporta el fichaje y no el once entero.
+    huecos = [
+        {"player_id": f"hueco:{posicion}", "position": posicion, "jornada": 0.0}
+        for posicion in POSITIONS
+    ]
+    antes = solve_best_xi([*elegibles, *huecos])
+    con = solve_best_xi([*elegibles, *huecos, fantasma])
+    if not antes["ok"] or not con["ok"]:
         return 0.0
-    origen = base if base_ok else 0.0
-    return round(max(0.0, float(con["puntos"]) - origen), 4)
+    return round(max(0.0, float(con["puntos"]) - float(antes["puntos"])), 4)
 
 
 def _tiene_oferta(row: dict[str, Any]) -> bool:

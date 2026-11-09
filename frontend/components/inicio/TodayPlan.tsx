@@ -109,6 +109,18 @@ function pctText(value: number): string {
   return `${value >= 0 ? "+" : "−"}${Math.abs(value).toLocaleString("es-ES", { maximumFractionDigits: 0 })}%`;
 }
 
+// La cifra que hay que escribir en la puja: la más alta de las que el plan avala
+// (recomendada, anti-Pizarra, competitiva de liga), sin pasar del techo.
+function bidToPlace(action: PlanFichajeAccion): number | null {
+  const options = [action.euros, action.puja_recomendada, action.puja_anti_pizarra, action.puja_competitiva_liga].filter(
+    (v): v is number => typeof v === "number" && v > 0,
+  );
+  if (!options.length) return null;
+  const best = Math.max(...options);
+  const cap = typeof action.puja_maxima === "number" && action.puja_maxima > 0 ? action.puja_maxima : null;
+  return Math.round(cap !== null && best > cap ? Math.max(cap, action.euros ?? 0) : best);
+}
+
 function stepFrom(action: PlanFichajeAccion, photos: PhotoIndex): Step {
   const tipo = (action.tipo || "PUJA").toUpperCase();
   const kind = kindOf(tipo, action.etiqueta);
@@ -133,7 +145,7 @@ function stepFrom(action: PlanFichajeAccion, photos: PhotoIndex): Step {
     name,
     position,
     imageUrl: kind === "busca" ? null : photoFor(photos, action.player_id, action.nombre),
-    amount: kind === "escaparate" ? null : euros,
+    amount: kind === "escaparate" ? null : kind === "puja" ? bidToPlace(action) ?? euros : euros,
     note,
     later: action.momento === "luego" || conditional,
     action,
@@ -173,12 +185,19 @@ function stepFacts(step: Step, info: ReturnType<typeof factsFor>, fichajes: Plan
     }
   } else if (kind === "puja") {
     if (typeof info?.market_value === "number") rows.push({ label: "Valor de mercado", value: eurShort(info.market_value) });
+    if (amount) rows.push({ label: "Puja a poner", value: eurShort(amount), tone: "var(--ini-mint)" });
+    if (typeof action.puja_maxima === "number" && action.puja_maxima > 0) rows.push({ label: "No pases de", value: eurShort(action.puja_maxima) });
     const rivals = rivalsWithCash(amount);
     if (rivals !== null) rows.push({ label: "Rivales que pueden pujarlo", value: String(rivals) });
   }
   if (typeof action.mejora_neta === "number") rows.push({ label: "Mejora del once", value: `${signedPoints(action.mejora_neta)} pts`, tone: action.mejora_neta >= 0 ? "var(--ini-mint)" : "var(--ini-red)" });
   else if (typeof action.jornada === "number") rows.push({ label: "Puntos esperados", value: `${points(action.jornada)} pts` });
-  if (typeof action.prevision_7d_pct === "number") rows.push({ label: "Previsión 7 días", value: pctText(action.prevision_7d_pct), tone: action.prevision_7d_pct >= 0 ? "var(--ini-mint)" : "var(--ini-red)" });
+  if (typeof action.prevision_7d_pct === "number") {
+    const base = typeof info?.market_value === "number" ? info.market_value : amount;
+    const delta = base ? (base * action.prevision_7d_pct) / 100 : null;
+    const eur = delta !== null && Math.abs(delta) >= 1000 ? ` · ${delta >= 0 ? "+" : "−"}${eurShort(Math.abs(delta))}` : "";
+    rows.push({ label: "Previsión 7 días", value: `${pctText(action.prevision_7d_pct)}${eur}`, tone: action.prevision_7d_pct >= 0 ? "var(--ini-mint)" : "var(--ini-red)" });
+  }
   if ((kind === "puja" || kind === "clausula") && typeof fichajes?.penalizacion_liquidez === "number") {
     rows.push({ label: "Peaje de liquidez", value: `${fichajes.penalizacion_liquidez.toLocaleString("es-ES", { maximumFractionDigits: 2 })} pts/M€` });
   }

@@ -18,6 +18,9 @@ export type PlanFichajeAccion = {
   puja_anti_pizarra?: number | null;
   diferencial_anti_pizarra_eur?: number | null;
   alta_demanda?: boolean;
+  /** Puja recomendada y techo de rentabilidad (no pasar de ahí). */
+  puja_recomendada?: number | null;
+  puja_maxima?: number | null;
   /** Escalón sobre nuestra cifra que cubre lo que suele pagar la liga (sin pasar del techo). */
   puja_competitiva_liga?: number | null;
   /** Sobrepuja media que sostiene ese escalón, en %. */

@@ -1750,6 +1750,8 @@ def _sellar_pujas_plan(
         accion["diferencial_anti_pizarra_eur"] = puja.get("diferencial_anti_pizarra_eur") or 0
         accion["alta_demanda"] = puja.get("alta_demanda") is True
         margen = holgura if isinstance(holgura, int) and not isinstance(holgura, bool) else 0
+        accion["puja_recomendada"] = puja.get("puja_recomendada")
+        accion["puja_maxima"] = puja.get("puja_maxima")
         if accion.get("financia_con_credito") is True:
             tope = presupuesto.get("credito_20pct")
             usado = presupuesto.get("credito_paron")

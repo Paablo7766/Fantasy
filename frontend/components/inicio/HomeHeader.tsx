@@ -126,7 +126,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   const field = typeof squads?.rival_count === "number" ? squads.rival_count + 1 : null;
   const pts = typeof own?.points === "number" ? own.points : (plan?.mode?.own_points ?? null);
   const gap = plan?.mode?.gap_to_leader ?? null;
-  const redLine = plan?.red_line;
 
   const fichajes = plan?.plan_fichajes;
   const cashEnd = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
@@ -135,7 +134,6 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   const labHref = labQuery ? `/laboratorio?${labQuery}` : "/laboratorio";
   const dash = loading ? "…" : "—";
   const negative = typeof cash === "number" && cash < 0;
-  const alert = redLine && redLine.status && redLine.status !== "ok" ? redLine : null;
   const rankRatio = rank !== null && field && field > 1 ? (field - rank) / (field - 1) : null;
   const leaderPts = typeof pts === "number" && typeof gap === "number" ? pts - gap : null;
   const urgent = parts ? parts.totalMs < 3 * 3600 * 1000 : false;
@@ -207,14 +205,10 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
             </p>
           ) : null}
 
-          {negative || alert ? (
-            <p
-              className="ini-alert"
-              style={{ color: negative || alert?.status === "fail" ? "#ffb3a4" : "#ffd58a" }}
-              role="alert"
-            >
+          {negative ? (
+            <p className="ini-alert" style={{ color: "#ffb3a4" }} role="alert">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
-              {negative ? "Saldo negativo: puntúas 0 hasta volver a positivo." : alert?.headline || "Revisa tu línea roja"}
+              Saldo negativo: puntúas 0 hasta volver a positivo.
             </p>
           ) : null}
         </div>
