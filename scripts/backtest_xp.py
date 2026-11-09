@@ -514,6 +514,14 @@ def main() -> int:
     args = parser.parse_args()
 
     players, understat = load_history(args.bodies)
+    if understat is None:
+        # Understat ya no sirve JSON: mismo respaldo que producción (xG de football-data).
+        csv_path = args.cache / "football_data_raw_2627" / "SP1_2627.csv"
+        if csv_path.exists():
+            from toolbox.stats_fallback import build_backup_payload
+
+            understat = build_backup_payload(None, {}, csv_path.read_text(encoding="utf-8"))
+            print(f"Understat no está en la caché: xG de football-data ({csv_path.name}).")
     _cargar_precios(players, args.cache)
     coverage: dict[int, int] = defaultdict(int)
     for entry in players.values():

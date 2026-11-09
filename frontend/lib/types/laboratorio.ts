@@ -68,7 +68,7 @@ export type CalibrationPayload = ApiError & PhotoMeta & {
   database?: string | null;
 };
 
-export type DataHealthStatus = "ok" | "caducada" | "error" | "no_leida";
+export type DataHealthStatus = "ok" | "caducada" | "error" | "no_leida" | "respaldo";
 
 export type DataHealthField = {
   id: string;

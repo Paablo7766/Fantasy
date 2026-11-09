@@ -160,6 +160,14 @@ def _ttl_for(key: str) -> float | None:
     return float(getattr(clocks, key, 0.0)) or None
 
 
+def _is_backup(report: dict[str, Any] | None) -> bool:
+    """Fuente que respondió con su respaldo (``source`` distinto del propio nombre)."""
+    if not isinstance(report, dict):
+        return False
+    source = report.get("source")
+    return isinstance(source, str) and bool(source) and source != "understat"
+
+
 def _cache_hit(root: Path, url: str | None) -> dict[str, Any]:
     """Huella de la última lectura en caché local. Sin red.
 
@@ -238,6 +246,9 @@ def build_field_health(
             status = "error"
         elif remaining is not None and remaining <= 0:
             status = "caducada"
+        elif _is_backup(report):
+            # La fuente principal cayó y manda el respaldo: hay dato, pero no es el de siempre.
+            status = "respaldo"
         else:
             status = "ok"
         fields.append(
@@ -258,7 +269,7 @@ def build_field_health(
                 "expires_label": _expiry_label(remaining),
             }
         )
-    broken = [row for row in fields if row["status"] in {"error", "caducada"}]
+    broken = [row for row in fields if row["status"] in {"error", "caducada", "respaldo"}]
     missing = [row for row in fields if row["status"] == "no_leida"]
     # Caducada no es ceguera: el dato existe, solo pide refresco. Lo que anula
     # la confianza es un crítico con error o sin lectura.

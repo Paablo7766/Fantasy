@@ -88,6 +88,17 @@ class FieldHealthTests(unittest.TestCase):
         self.assertEqual(by_id["futbolfantasy_market"]["status"], "caducada")
         self.assertEqual(by_id["futbolfantasy_market"]["expires_label"], "caducada")
 
+    def test_backup_source_is_flagged_not_ok(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            document = build_field_health(
+                _sources(understat={"ok": True, "count": 489, "source": "fotmob+football-data"}),
+                root=Path(tmp),
+            )
+        by_id = {row["id"]: row for row in document["fields"]}
+        self.assertEqual(by_id["understat"]["status"], "respaldo")
+        self.assertIn("understat", document["broken"])
+        self.assertEqual(document["critical_broken"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

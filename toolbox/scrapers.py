@@ -2261,6 +2261,7 @@ def _cross(
             "error": understat_status.get("error"),
             "from_cache": bool(understat_status.get("from_cache")),
             "fixtures": understat_status.get("fixtures"),
+            "source": understat_status.get("source"),
         },
         "jornadaperfecta": {
             "ok": bool(jp_status.get("ok")),
