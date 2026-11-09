@@ -55,6 +55,7 @@ const CLAUSULAZO: Record<VeredictoClausulazo, { label: string; color: string }> 
   SIN_CAJA: { label: "Te falta caja", color: TONE.red },
   OPORTUNIDAD: { label: "Oportunidad", color: TONE.amber },
   GOLPE_RIVAL: { label: "Golpe al rival", color: TONE.copper },
+  REVENDER: { label: "Para revender", color: TONE.green },
 };
 
 const RULES = [
@@ -345,7 +346,8 @@ function DefendCard({
 function AttackCard({ row, photos, index }: { row: ClausulazoSugerido; photos: PhotoIndex; index: number }) {
   const [open, setOpen] = useState(false);
   const verdict = CLAUSULAZO[row.veredicto_codigo] ?? CLAUSULAZO.OPORTUNIDAD;
-  const margin = row.margen_valor_justo_pct;
+  // El margen que se enseña es contra el valor de mercado (dinero real), no contra el valor justo por puntos.
+  const margin = row.margen_reventa_pct;
   return (
     <li className="row-in" style={{ animationDelay: `${index * 35}ms` }}>
       <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="block w-full px-3.5 py-3.5 text-left">
@@ -361,7 +363,7 @@ function AttackCard({ row, photos, index }: { row: ClausulazoSugerido; photos: P
             <span className="block text-[15px] font-semibold tabular-nums text-white">{money(row.clausula_eur)}</span>
             {typeof margin === "number" ? (
               <span className="block text-[12px] font-medium tabular-nums" style={{ color: margin >= 0 ? TONE.green : TONE.red }}>
-                {margin >= 0 ? `${Math.round(margin)}% bajo su valor` : `${Math.abs(Math.round(margin))}% sobre su valor`}
+                {margin >= 0 ? `${Math.round(margin)}% bajo el mercado` : `${Math.abs(Math.round(margin))}% sobre el mercado`}
               </span>
             ) : null}
           </span>
@@ -381,7 +383,12 @@ function AttackCard({ row, photos, index }: { row: ClausulazoSugerido; photos: P
         <div className="row-in border-t border-white/[0.05] px-3.5 pb-4 pt-3">
           <div className="grid grid-cols-3 gap-3">
             <Fact label="Próxima jornada" value={`${points(row.xp_jornada)} pts`} tone="#FFC08A" />
-            <Fact label="Valor justo" value={money(row.valor_justo)} hint={forecastHint(row.valor_mercado, row.prevision_7d_pct)} />
+            <Fact
+              label={row.es_reventa ? "Ganas al revender" : "Valor de mercado"}
+              value={row.es_reventa ? money(row.beneficio_reventa_eur) : money(row.valor_mercado)}
+              tone={row.es_reventa ? TONE.green : undefined}
+              hint={forecastHint(row.valor_mercado, row.prevision_7d_pct)}
+            />
             <Fact
               label="Caja después"
               value={money(row.caja_tras)}
@@ -629,6 +636,7 @@ export function ClausulasTab({
   const resumen = advisor?.resumen;
   const proteger = advisor?.proteger || [];
   const clausulazos = advisor?.clausulazos || [];
+  const reventa = advisor?.reventa || [];
   // Atacar enseña lo que recomienda el asesor y, si son pocas, las siguientes mejores hasta MIN_SHOWN.
   const abiertas = topPicks(catalog.abiertas, plan?.cash_eur);
   const cerradas = topPicks(catalog.candado, plan?.cash_eur);
@@ -786,6 +794,16 @@ export function ClausulasTab({
           </section>
         </div>
         <div className="flex min-w-0 flex-col gap-4">
+          {reventa.length ? (
+            <section aria-label="Para revender" className="flex flex-col gap-3">
+              <SectionHead title="Para revender" meta="cláusula bajo el valor de mercado" />
+              <ul className="home-glass overflow-hidden">
+                {reventa.map((row, index) => (
+                  <AttackCard key={row.player_id} row={row} photos={photos} index={index} />
+                ))}
+              </ul>
+            </section>
+          ) : null}
           {timeline.length ? (
             <section aria-label="Próximas aperturas" className="flex flex-col gap-3">
               <SectionHead title="Próximas aperturas" meta="candados de rivales" />

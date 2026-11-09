@@ -459,6 +459,24 @@ class ClausulazosTests(unittest.TestCase):
         resultado = _evaluar(_once(), [], [ajeno])
         self.assertEqual(_fila(resultado, "clausulazos", "rival-mc")["veredicto_codigo"], "OPORTUNIDAD")
 
+    def test_reventa_usa_valor_de_mercado_y_no_el_valor_justo(self) -> None:
+        # Mercado 5 M, cláusula 2 M: ganas 3 M. Su valor justo inflado (13 M) no cuenta como «valor».
+        barato = _ajeno("barato", "MC", 1.0, 2_000_000, valor=5_000_000, valor_justo=13_000_000)
+        # Cláusula igual al mercado: nada que revender, y el justo inflado no lo salva.
+        humo = _ajeno("humo", "MC", 1.0, 4_000_000, valor=4_000_000, valor_justo=30_000_000)
+        resultado = _evaluar(_once(), [], [barato, humo])
+        reventa = {fila["player_id"]: fila for fila in resultado["reventa"]}
+        self.assertEqual(set(reventa), {"barato"})
+        fila = reventa["barato"]
+        self.assertEqual(fila["beneficio_reventa_eur"], 3_000_000)
+        self.assertEqual(fila["margen_reventa_pct"], 150.0)
+        self.assertTrue(fila["valor_justo_inflado"])
+        self.assertEqual(fila["veredicto_codigo"], "REVENDER")
+        self.assertNotIn("valor justo", fila["motivo_detallado"])
+        ids = [f["player_id"] for f in resultado["clausulazos"]]
+        self.assertNotIn("barato", ids)
+        self.assertNotIn("humo", ids)
+
     def test_ni_mejora_ni_valor_se_descarta_y_el_orden_prefiere_lo_asequible(self) -> None:
         malo = _ajeno("malo", "MC", 1.0, 9_000_000, valor_justo=9_000_000)
         caro = _ajeno("caro", "DEL", 9.0, 13_000_000)

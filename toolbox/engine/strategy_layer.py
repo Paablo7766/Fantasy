@@ -1179,6 +1179,7 @@ def _clausulas_vacias() -> dict[str, Any]:
         },
         "proteger": [],
         "clausulazos": [],
+        "reventa": [],
         "radar_anti_robo": [],
         "alertas_clausulas": [],
     }

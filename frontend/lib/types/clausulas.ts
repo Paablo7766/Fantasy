@@ -22,7 +22,7 @@ export type VeredictoProteger =
   /** Único jugador posible en su puesto: si te lo roban no hay once legal. */
   | "SIN_RECAMBIO";
 
-export type VeredictoClausulazo = "CLAUSULAR_YA" | "PROGRAMAR" | "SIN_CAJA" | "OPORTUNIDAD" | "GOLPE_RIVAL";
+export type VeredictoClausulazo = "CLAUSULAR_YA" | "PROGRAMAR" | "SIN_CAJA" | "OPORTUNIDAD" | "GOLPE_RIVAL" | "REVENDER";
 
 export type BonoRoscoRival = {
   activo: boolean;
@@ -102,6 +102,13 @@ export type ClausulazoSugerido = {
   valor_mercado?: number | null;
   valor_justo?: number | null;
   margen_valor_justo_pct?: number | null;
+  /** El valor justo (xP × €/punto) pasa de 2,5× el valor de mercado: estimación inflada, no es dinero. */
+  valor_justo_inflado?: boolean;
+  /** Pagar la cláusula y vender a valor de mercado deja beneficio. */
+  es_reventa?: boolean;
+  /** Valor de mercado − cláusula, en euros. */
+  beneficio_reventa_eur?: number | null;
+  margen_reventa_pct?: number | null;
   multiplo_clausula?: number | null;
   xp_jornada: number;
   mejora_once: number;
@@ -168,6 +175,8 @@ export type AsesorClausulas = {
   proteger: ClausulaEnPeligro[];
   preparar?: ClausulaEnPeligro[];
   clausulazos: ClausulazoSugerido[];
+  /** Parón: cláusulas por debajo del valor de mercado, ordenadas por beneficio por millón. */
+  reventa?: ClausulazoSugerido[];
   radar_anti_robo?: RadarAntiRobo[];
   /** Escudo (te la pueden robar) y francotirador (cláusula barata de un rival en rojo). */
   alertas_clausulas?: AlertaClausula[];

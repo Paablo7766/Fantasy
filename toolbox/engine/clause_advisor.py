@@ -51,6 +51,11 @@ MEJORA_MINIMA = 0.5
 #: Ventaja de valor justo sobre la cláusula para considerarlo jugada de valor.
 MARGEN_VALOR_PCT = 25.0
 MAX_CLAUSULAZOS = 10
+#: Reventa (parón): pagas la cláusula y vendes a LaLiga a valor de mercado. Solo cuenta
+#: si ganas al menos esto en euros y este porcentaje sobre lo pagado.
+BENEFICIO_REVENTA_MIN_EUR = 500_000
+MARGEN_REVENTA_MIN_PCT = 10.0
+MAX_REVENTA = 10
 #: Jueves y viernes: cuando queda un día o menos, el rival ya no puede rehacer su once.
 DIAS_GOLPE_RIVAL = 1.0
 #: Solo duele a quien pelea contigo por la liga.
@@ -80,6 +85,7 @@ TITULOS_CLAUSULAZO = {
     "SIN_CAJA": "TE FALTA CAJA",
     "OPORTUNIDAD": "OPORTUNIDAD DE VALOR",
     "GOLPE_RIVAL": "GOLPE AL RIVAL",
+    "REVENDER": "PARA REVENDER",
 }
 
 
@@ -630,7 +636,7 @@ def _clausulazos(
     ahora: datetime,
     cierre: datetime | None,
     dias_al_cierre: float | None = None,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     base = solve_best_xi(elegibles)
     base_puntos = float(base["puntos"]) if base["ok"] else 0.0
     ventana_abierta = cierre is None or ahora < cierre
@@ -659,10 +665,22 @@ def _clausulazos(
         mejora = round(max(0.0, float(con["puntos"]) - base_puntos), 2) if con["ok"] else 0.0
         justo = _int(jugador.get("valor_justo"))
         margen_justo = (justo / clausula - 1) * 100.0 if justo else None
-        es_valor = margen_justo is not None and margen_justo >= MARGEN_VALOR_PCT
+        # El valor justo es xP × €/punto, no dinero: si pasa de 2,5× el valor de mercado es
+        # una estimación inflada y no justifica una «oportunidad».
+        justo_inflado = bool(justo and valor and justo > valor * MULTIPLO_CREIBLE)
+        es_valor = margen_justo is not None and margen_justo >= MARGEN_VALOR_PCT and not justo_inflado
+        # Reventa: lo que de verdad se gana en caja es valor de mercado − cláusula.
+        beneficio_reventa = (valor - clausula) if valor else None
+        margen_reventa = (valor / clausula - 1) * 100.0 if valor else None
+        es_reventa = (
+            beneficio_reventa is not None
+            and margen_reventa is not None
+            and beneficio_reventa >= BENEFICIO_REVENTA_MIN_EUR
+            and margen_reventa >= MARGEN_REVENTA_MIN_PCT
+        )
         rival_dueno = next((rival for rival in rivales if rival.get("team_id") == jugador.get("team_id")), None)
         golpe = bono_rosco_rival(jugador, rival_dueno, dias_al_cierre=dias_al_cierre)
-        if mejora < MEJORA_MINIMA and not es_valor and golpe is None:
+        if mejora < MEJORA_MINIMA and not es_valor and golpe is None and not es_reventa:
             continue
         dueno = jugador.get("manager")
         competencia = [
@@ -682,6 +700,8 @@ def _clausulazos(
             codigo = "CLAUSULAR_YA"
         elif golpe is not None:
             codigo = "GOLPE_RIVAL"
+        elif es_reventa and not es_valor:
+            codigo = "REVENDER"
         else:
             codigo = "OPORTUNIDAD"
         cuando = "ahora" if not bloqueada else _cuando(desbloqueo, ahora)
@@ -697,6 +717,10 @@ def _clausulazos(
                 "valor_mercado": valor,
                 "valor_justo": justo,
                 "margen_valor_justo_pct": round(margen_justo, 1) if margen_justo is not None else None,
+                "valor_justo_inflado": justo_inflado,
+                "es_reventa": es_reventa,
+                "beneficio_reventa_eur": int(beneficio_reventa) if beneficio_reventa is not None else None,
+                "margen_reventa_pct": round(margen_reventa, 1) if margen_reventa is not None else None,
                 "multiplo_clausula": round(clausula / valor, 2) if valor else None,
                 "xp_jornada": round(xp, 2),
                 "mejora_once": mejora,
@@ -721,7 +745,9 @@ def _clausulazos(
                     dueno=dueno,
                     clausula=clausula,
                     mejora=mejora,
-                    margen=margen_justo,
+                    margen=margen_justo if es_valor else None,
+                    beneficio=beneficio_reventa if es_reventa else None,
+                    valor=valor,
                     cuando=cuando,
                     hasta=hasta,
                     competencia=len(competencia),
@@ -739,7 +765,17 @@ def _clausulazos(
             fila["clausula_eur"],
         )
     )
-    return filas[:MAX_CLAUSULAZOS]
+    # Reventa: ordenada por euros ganados por millón inmovilizado, no por puntos.
+    reventa = sorted(
+        (fila for fila in filas if fila["es_reventa"]),
+        key=lambda fila: (
+            0 if fila["asequible"] else 1,
+            -((fila["beneficio_reventa_eur"] or 0) / fila["clausula_eur"]),
+            -(fila["beneficio_reventa_eur"] or 0),
+        ),
+    )[:MAX_REVENTA]
+    deportivos = [fila for fila in filas if fila["veredicto_codigo"] != "REVENDER"]
+    return deportivos[:MAX_CLAUSULAZOS], reventa
 
 
 def _motivo_clausulazo(
@@ -756,13 +792,17 @@ def _motivo_clausulazo(
     falta: int,
     pct: float | None,
     golpe: dict[str, Any] | None = None,
+    beneficio: float | None = None,
+    valor: int | None = None,
 ) -> str:
     de = f" a {dueno}" if dueno else ""
     partes = [f"Pagar {_m(clausula)}{de}"]
     if mejora >= MEJORA_MINIMA:
         partes[0] += f" sube tu once +{_pts(mejora)} pts"
+    if beneficio is not None and valor:
+        partes.append(f"vale {_m(valor)} en el mercado: revendido ganas {_m(beneficio)}")
     if margen is not None and margen > 0:
-        partes.append(f"está un {margen:.0f}% por debajo de su valor justo".replace(".", ","))
+        partes.append("rinde en puntos bastante más de lo que cuesta su cláusula")
     if pct is not None and pct > 3:
         partes.append(f"sube {pct:+.1f}% a 7d: cuanto antes, más barato".replace(".", ","))
     texto = ", ".join(partes) + "."
@@ -772,8 +812,10 @@ def _motivo_clausulazo(
         texto += f" Se desbloquea {cuando}: tenlo listo."
     elif codigo == "SIN_CAJA":
         texto += f" Te faltan {_m(falta)} de caja: tendrías que vender a alguien que no está en el once."
+    elif codigo == "REVENDER":
+        texto += " Operación de caja: pagas la cláusula y lo vendes a LaLiga a valor de mercado."
     else:
-        texto += " No mejora el once, pero compras por debajo de su valor."
+        texto += " No mejora el once, pero su cláusula está por debajo de lo que rinde."
     if competencia:
         texto += f" {competencia} {'rival' if competencia == 1 else 'rivales'} más pueden pagarla: se te puede escapar."
     if golpe is not None:
@@ -829,7 +871,7 @@ def evaluar_clausulas(
     )
     if dias_al_cierre is None and cierre is not None:
         dias_al_cierre = (cierre - ahora).total_seconds() / 86400.0
-    clausulazos = _clausulazos(
+    clausulazos, reventa = _clausulazos(
         ajenos,
         elegibles,
         rivales,
@@ -856,6 +898,7 @@ def evaluar_clausulas(
         "clausulazos_listos": sum(1 for fila in clausulazos if fila["veredicto_codigo"] == "CLAUSULAR_YA"),
         "golpes_al_rival": sum(1 for fila in clausulazos if fila.get("bono_rosco_rival")),
         "clausulazos": len(clausulazos),
+        "reventa": len(reventa),
         "ventana_cierra": _cuando(cierre, ahora) if cierre is not None else None,
         "ventana_abierta": cierre is None or ahora < cierre,
         "inicio_jornada": _cuando(inicio_jornada, ahora) if inicio_jornada is not None else None,
@@ -875,7 +918,7 @@ def evaluar_clausulas(
             if fila.get("alerta_prioritaria")
         ],
     }
-    return {"resumen": resumen, "proteger": proteger, "preparar": preparar, "clausulazos": clausulazos}
+    return {"resumen": resumen, "proteger": proteger, "preparar": preparar, "clausulazos": clausulazos, "reventa": reventa}
 
 
 # Por debajo de 1,15× el valor, la cláusula es un chollo. Desde 1,30×, robarlo nos beneficia.

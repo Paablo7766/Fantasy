@@ -28,6 +28,7 @@ const CLAUSULAZO: Record<VeredictoClausulazo, { label: string; color: string }> 
   SIN_CAJA: { label: "Te falta caja", color: "var(--ini-red)" },
   OPORTUNIDAD: { label: "Oportunidad", color: "var(--ini-amber)" },
   GOLPE_RIVAL: { label: "Golpe al rival", color: "var(--ini-violet)" },
+  REVENDER: { label: "Para revender", color: "var(--ini-mint)" },
 };
 
 export function money(value: number): string {
@@ -100,20 +101,21 @@ export function DangerRow({ row, photos, index }: { row: ClausulaEnPeligro; phot
   );
 }
 
-/** Clausulazo sugerido: precio frente a su valor justo. */
+/** Clausulazo sugerido: precio frente a su valor de mercado (el dinero real al revender). */
 export function RaidRow({ row, photos, index }: { row: ClausulazoSugerido; photos: PhotoIndex; index: number }) {
   const verdict = CLAUSULAZO[row.veredicto_codigo] ?? CLAUSULAZO.OPORTUNIDAD;
-  const margin = row.margen_valor_justo_pct;
+  const margin = row.margen_reventa_pct;
   const pct = row.prevision_7d_pct;
   const facts: Fact[] = [];
-  if (row.valor_justo) facts.push({ label: "Valor justo", value: money(row.valor_justo) });
+  if (row.valor_mercado) facts.push({ label: "Valor de mercado", value: money(row.valor_mercado) });
   if (typeof margin === "number") {
     facts.push({
-      label: margin >= 0 ? "Bajo su justo" : "Sobre su justo",
+      label: margin >= 0 ? "Bajo el mercado" : "Sobre el mercado",
       value: `${Math.abs(Math.round(margin))}%`,
       tone: margin >= 0 ? "var(--ini-mint)" : "var(--ini-red)",
     });
   }
+  if (row.es_reventa && row.beneficio_reventa_eur) facts.push({ label: "Ganas al revender", value: money(row.beneficio_reventa_eur), tone: "var(--ini-mint)" });
   if (row.mejora_once > 0) facts.push({ label: "Mejora del once", value: `+${points(row.mejora_once)} pts`, tone: "var(--ini-mint)" });
   facts.push({ label: "Puntos esperados", value: `${points(row.xp_jornada)} pts` });
   if (typeof pct === "number") facts.push({ label: "Valor en 7 días", value: projected7d(row.valor_mercado, pct) !== null ? money(projected7d(row.valor_mercado, pct) as number) : signedPct(pct), tone: pct >= 0 ? "var(--ini-mint)" : "var(--ini-red)" });
@@ -128,7 +130,7 @@ export function RaidRow({ row, photos, index }: { row: ClausulazoSugerido; photo
       ring={verdict.color}
       verdict={verdict}
       value={money(row.clausula_eur)}
-      meter={row.valor_justo ? <Meter value={row.clausula_eur} reference={row.valor_justo} good={row.clausula_eur <= row.valor_justo} /> : null}
+      meter={row.valor_mercado ? <Meter value={row.clausula_eur} reference={row.valor_mercado} good={row.clausula_eur <= row.valor_mercado} /> : null}
       facts={facts}
       reason={row.motivo_detallado}
     />
