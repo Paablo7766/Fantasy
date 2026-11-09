@@ -1787,6 +1787,22 @@ def _rank_key(player: dict[str, Any]) -> int | None:
     return None
 
 
+#: Edad máxima de la copia del catálogo para archivar sus precios como los de hoy.
+CATALOG_MAX_AGE_SECONDS = 24 * 3600
+
+
+def _catalog_age_seconds() -> float | None:
+    """Edad de la copia local del catálogo, sin red. ``None`` si no hay copia."""
+    from toolbox.net import LaligaClient, no_network
+
+    with no_network():
+        client = LaligaClient()
+        try:
+            return client.players_age_seconds()
+        finally:
+            client.close()
+
+
 def build_trends(
     *,
     league: str | None,
@@ -1874,6 +1890,10 @@ def build_trends(
                 from toolbox.quant_valuation import cached_catalog
 
                 catalog_rows = normalize_catalog(cached_catalog())
+                # Una copia vieja pondría precios de hace días con la fecha de hoy.
+                edad = _catalog_age_seconds()
+                if edad is None or edad > CATALOG_MAX_AGE_SECONDS:
+                    catalog_rows = []
             except Exception:  # noqa: BLE001 — sin catálogo solo se archivan plantillas y mercado
                 catalog_rows = []
             own_summary = persist_and_apply_own_intel(
