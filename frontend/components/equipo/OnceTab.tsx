@@ -122,7 +122,7 @@ function lineupSwaps(saved: Player[], recommended: Player[]): Swap[] {
   return swaps;
 }
 
-function redLine(plan: PlanPayload | null, optimize: OptimizePayload, differs: boolean): { tone: "fail" | "warn"; items: string[] } {
+function redLine(plan: PlanPayload | null, optimize: OptimizePayload): { tone: "fail" | "warn"; items: string[] } {
   const items: string[] = [];
   let fail = false;
   const checks = plan?.red_line?.checks;
@@ -130,7 +130,6 @@ function redLine(plan: PlanPayload | null, optimize: OptimizePayload, differs: b
     for (const check of checks) {
       if (check.key === "cash" && check.status === "fail") items.push("Caja negativa");
       if (check.key === "xi" && check.status === "fail") items.push("XI incompleto");
-      if (check.key === "lineup" && check.status === "warn") items.push("Once sin guardar");
       if (check.status === "fail") fail = true;
     }
   } else {
@@ -138,7 +137,6 @@ function redLine(plan: PlanPayload | null, optimize: OptimizePayload, differs: b
     if (reasons.includes("negative_cash")) items.push("Caja negativa");
     if (reasons.includes("empty_slot")) items.push("XI incompleto");
     if (reasons.length) fail = true;
-    if (differs) items.push("Once sin guardar");
   }
   if (items.length) items[items.length - 1] += fail ? ": la jornada vale 0" : "";
   return { tone: fail ? "fail" : "warn", items };
@@ -474,7 +472,7 @@ export function OnceTab({
     shown.length ? 0 : null,
   );
   const gapCount = (optimize.gaps || []).reduce((sum, gap) => sum + (Number(gap.missing) || 0), 0);
-  const band = redLine(plan, optimize, Boolean(model.saved.length && !model.same));
+  const band = redLine(plan, optimize);
   const active = slots.find((slot) => slot.key === selected) || null;
 
   const safe = REGLAMENTO.capitan ? plan?.capitan_seguro || optimize.capitan_seguro || null : null;
