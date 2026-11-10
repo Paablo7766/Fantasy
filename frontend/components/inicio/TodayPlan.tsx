@@ -8,7 +8,6 @@ import { eur, eurShort, points, titularShare } from "@/lib/core/format";
 import { signedPoints } from "@/lib/inicio/hoy";
 import { factsFor, photoFor, type PhotoIndex, type PlayerIndex } from "@/lib/core/photoIndex";
 import { Avatar, Chevron, Collapse, FactGrid, Tag, type Fact } from "@/components/inicio/ui";
-import { UnlockWindow } from "@/components/clausulas/UnlockWindow";
 import type { PlanFichajeAccion, PlanFichajes, PlanPayload, SquadsPayload } from "@/lib/types";
 
 // ── Casillas hechas: se guardan por día de mercado (hora de Madrid) ──────────
@@ -531,9 +530,6 @@ export function TodayPlan({
           </div>
         ) : null}
       </header>
-      <div className="px-5 pb-2">
-        <UnlockWindow rows={plan?.clause_unlocks_24h} />
-      </div>
 
       {today.length ? <ol className="ini-divide">{today.map((step, i) => renderRow(step, i, true))}</ol> : null}
 
