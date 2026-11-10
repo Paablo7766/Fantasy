@@ -1,21 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { playerName, points, titularShare } from "@/lib/core/format";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { statusBadgeLabel } from "@/components/ui/StatusBadge";
 import type { ActivityProfile, AuditoriaVenta, PlanPayload, RivalPlayer, SquadsPayload, VeredictoVenta } from "@/lib/types";
 import {
+  AllocationDonut,
+  ForecastBars,
+  SeasonWaterfall,
+  ValueChart,
+  type ForecastRow,
+  type Slice,
+  type ValuePoint,
+  type WaterfallStep,
+} from "@/components/equipo/CarteraCharts";
+import {
   Chevron,
   Empty,
   Face,
   Fact,
-  HeroStat,
   SectionHead,
   Skeleton,
-  Sparkline,
   TONE,
-  compact,
   forecastHint,
   money,
   projected7d,
@@ -312,64 +319,92 @@ function OffersCard({ sales, photos }: { sales: AuditoriaVenta[]; photos: PhotoI
   );
 }
 
-/* ── Balance ────────────────────────────────────────────────────────────── */
+/* ── Tarjetas de análisis ───────────────────────────────────────────────── */
 
-/**
- * Lo que has generado como mánager: plusvalía de los que tienes, lo ganado al
- * vender y los premios de jornada. Sustituye a la lista de movimientos.
- */
-function BalanceCard({
-  profile,
-  unrealized,
-  rate,
+/** Tarjeta de análisis: qué se mide, la cifra que lo resume y el gráfico debajo. */
+function Panel({
+  title,
+  caption,
+  figure,
+  figureTone,
+  figureHint,
+  children,
 }: {
-  profile: ActivityProfile;
-  unrealized: number | null | undefined;
-  rate: number | null;
+  title: string;
+  caption?: string;
+  figure?: string;
+  figureTone?: string;
+  figureHint?: string;
+  children: ReactNode;
 }) {
-  const realized = typeof profile.realized_gain_eur === "number" ? profile.realized_gain_eur : null;
-  const premiums = typeof profile.premiums_eur === "number" && profile.premiums_eur > 0 ? profile.premiums_eur : null;
-  const latent = typeof unrealized === "number" ? unrealized : null;
-  const parts = [
-    { label: "Plantilla actual", value: latent, hint: "lo que vale más que lo que pagaste" },
-    { label: "Ventas", value: realized, hint: profile.priced_sales ? `en ${profile.priced_sales} ${profile.priced_sales === 1 ? "venta" : "ventas"}` : "sin ventas con precio de compra" },
-    { label: "Premios de jornada", value: premiums, hint: rate ? `${money(rate)} por punto` : undefined },
-  ].filter((part) => part.value !== null) as { label: string; value: number; hint?: string }[];
-  if (!parts.length) return null;
-  const total = parts.reduce((sum, part) => sum + part.value, 0);
-  const scale = Math.max(...parts.map((part) => Math.abs(part.value)), 1);
   return (
-    <section className="home-glass p-4" aria-label="Lo que has generado esta temporada">
-      <p className="text-[12.5px] text-white/45">Has generado esta temporada</p>
-      <p className="mt-1 text-[1.9rem] font-semibold leading-none tracking-[-0.03em] tabular-nums" style={{ color: toneOf(total) }}>
-        {signedMoney(total)}
-      </p>
-      <ul className="mt-4 flex flex-col gap-3">
-        {parts.map((part) => {
-          const color = part.value >= 0 ? TONE.green : TONE.red;
-          return (
-            <li key={part.label}>
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0">
-                  <span className="block truncate text-[13.5px] text-white">{part.label}</span>
-                  {part.hint ? <span className="block truncate text-[11.5px] text-white/40">{part.hint}</span> : null}
-                </span>
-                <span className="shrink-0 text-[14px] font-semibold tabular-nums" style={{ color }}>
-                  {signedMoney(part.value)}
-                </span>
-              </div>
-              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.06]">
-                <span
-                  className="block h-full rounded-full transition-[width] duration-700 ease-out"
-                  style={{ width: `${(Math.abs(part.value) / scale) * 100}%`, background: color }}
-                />
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+    <section className="home-glass flex h-full min-w-0 flex-col p-5" aria-label={title}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-semibold text-white">{title}</h3>
+          {caption ? <p className="mt-0.5 text-[12.5px] leading-snug text-white/45">{caption}</p> : null}
+        </div>
+        {figure ? (
+          <div className="shrink-0 text-right">
+            <p className="text-[1.15rem] font-semibold leading-none tracking-[-0.02em] tabular-nums" style={{ color: figureTone || "#fff" }}>
+              {figure}
+            </p>
+            {figureHint ? <p className="mt-1 text-[11.5px] tabular-nums text-white/45">{figureHint}</p> : null}
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-4 flex flex-1 flex-col justify-center">{children}</div>
     </section>
   );
+}
+
+/**
+ * Lo que has generado como mánager: premios de jornada, lo ganado al vender y
+ * la plusvalía de los que tienes, encadenados hasta el total.
+ */
+function seasonSteps(profile: ActivityProfile | null | undefined, unrealized: number | null | undefined, rate: number | null): WaterfallStep[] {
+  if (!profile) return [];
+  const steps: WaterfallStep[] = [];
+  if (typeof profile.premiums_eur === "number" && profile.premiums_eur > 0) {
+    steps.push({ label: "Premios de jornada", value: profile.premiums_eur, hint: rate ? `${money(rate)} por punto` : undefined });
+  }
+  if (typeof profile.realized_gain_eur === "number") {
+    steps.push({
+      label: "Ventas",
+      value: profile.realized_gain_eur,
+      hint: profile.priced_sales ? `en ${profile.priced_sales} ${profile.priced_sales === 1 ? "venta" : "ventas"}` : "sin ventas con precio de compra",
+    });
+  }
+  if (typeof unrealized === "number") {
+    steps.push({ label: "Plantilla actual", value: unrealized, hint: "valor de hoy frente a lo que pagaste" });
+  }
+  return steps;
+}
+
+/** Casilla del resumen: etiqueta arriba, cifra debajo. */
+function Tile({ label, value, tone, hint }: { label: string; value: string; tone?: string; hint?: string }) {
+  return (
+    <div className="min-w-0 rounded-[1.1rem] bg-black/40 px-3.5 py-3 backdrop-blur-md">
+      <p className="truncate text-[11.5px] text-white/50">{label}</p>
+      <p className="mt-1.5 truncate text-[1.1rem] font-semibold leading-none tabular-nums" style={{ color: tone || "#fff" }}>
+        {value}
+      </p>
+      {hint ? <p className="mt-1.5 truncate text-[11px] tabular-nums text-white/40">{hint}</p> : null}
+    </div>
+  );
+}
+
+const POSITION_LABEL: Record<string, string> = { POR: "Porteros", DEF: "Defensas", MC: "Medios", DEL: "Delanteros" };
+
+function dayNumber(day: string): number | null {
+  const at = Date.parse(`${day.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(at) ? null : Math.round(at / DAY_MS);
+}
+
+function madridDay(iso: string | null | undefined): string {
+  const date = iso ? new Date(iso) : new Date();
+  const safe = Number.isNaN(date.getTime()) ? new Date() : date;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid" }).format(safe);
 }
 
 /* ── Jugadores ──────────────────────────────────────────────────────────── */
@@ -639,149 +674,259 @@ export function CarteraTab({
   }
 
   const summary = squads.portfolio?.summary;
-  const history = (squads.value_history || []).filter((row) => typeof row.value_eur === "number");
   const total =
     own.market_value_total ?? summary?.market_value_eur ?? players.reduce((sum, player) => sum + (player.market_value ?? 0), 0);
-  const first = history.length >= 2 ? history[0].value_eur : null;
-  const change = first !== null ? history.at(-1)!.value_eur - first : (own.price_delta_day ?? null);
-  const changePct = first ? ((history.at(-1)!.value_eur - first) / first) * 100 : null;
   const cash = typeof plan?.cash_eur === "number" ? plan.cash_eur : (own.cash_eur ?? null);
-  const pricedRows = players.filter((player) => player.recovered_pct !== null);
-  const priced = pricedRows.length;
-  const amortized = priced ? pricedRows.filter((player) => (player.recovered_pct ?? 0) >= 1).length : null;
+
+  // Serie de valor: solo el tramo con la misma cobertura de precios que el último día.
+  // Mezclar días con media plantilla sin precio pintaba un salto que no existió.
+  const rawHistory = (squads.value_history || []).filter((row) => typeof row.value_eur === "number" && dayNumber(row.day) !== null);
+  const lastCoverage = rawHistory.at(-1)?.coverage ?? 1;
+  let from = rawHistory.length;
+  while (from > 0 && (rawHistory[from - 1].coverage ?? 1) >= lastCoverage - 0.01) from -= 1;
+  const history = rawHistory.slice(from);
+  const series: ValuePoint[] = history.map((row) => ({ t: dayNumber(row.day)!, value: row.value_eur, label: shortDate(`${row.day}T12:00:00Z`) }));
+  const todayT = dayNumber(madridDay(squads.dashboard_at))!;
+  if (series.length && series.at(-1)!.t < todayT) series.push({ t: todayT, value: total, label: "Hoy" });
+  else if (series.length) series[series.length - 1] = { ...series.at(-1)!, value: total, label: "Hoy" };
+
+  // Previsión a 7 días, jugador a jugador.
+  const forecastRows: ForecastRow[] = players
+    .map((player) => {
+      const today = player.market_value ?? 0;
+      const pct = parsePct(player.prevision_7d_pct);
+      const next = typeof player.valor_en_7d === "number" ? player.valor_en_7d : projected7d(today, pct);
+      if (next === null || today <= 0) return null;
+      return { id: String(player.player_id), name: playerName(player), delta: next - today, pct, today, next };
+    })
+    .filter((row): row is ForecastRow => row !== null)
+    .sort((a, b) => b.delta - a.delta);
+  const forecastDelta = forecastRows.length ? forecastRows.reduce((sum, row) => sum + row.delta, 0) : null;
+  const chart: ValuePoint[] =
+    series.length >= 2 && forecastDelta !== null
+      ? [...series, { t: series.at(-1)!.t + 7, value: total + forecastDelta, label: "en 7 días", forecast: true }]
+      : series;
+
+  const first = series.length >= 2 ? series[0] : null;
+  const change = first ? total - first.value : (own.price_delta_day ?? null);
+  const changePct = first && first.value ? ((total - first.value) / first.value) * 100 : null;
+  const dayDelta = typeof own.price_delta_day === "number" ? own.price_delta_day : null;
+
+  // Puesto por valor de plantilla dentro de la liga.
+  const rivalValues = (squads.rivals || []).map((rival) => rival.market_value_total).filter((value): value is number => typeof value === "number");
+  const valueRank = rivalValues.length ? 1 + rivalValues.filter((value) => value > total).length : null;
+
+  // Reparto por posición.
+  const slices: Slice[] = ["POR", "DEF", "MC", "DEL"]
+    .map((id) => {
+      const rows = players.filter((player) => (player.position || "").toUpperCase() === id);
+      return { id, label: POSITION_LABEL[id], value: rows.reduce((sum, player) => sum + (player.market_value ?? 0), 0), count: rows.length };
+    })
+    .filter((slice) => slice.count > 0);
+  const heaviest = players.slice().sort((a, b) => (b.market_value ?? 0) - (a.market_value ?? 0))[0];
+  const heaviestShare = heaviest && total > 0 ? ((heaviest.market_value ?? 0) / total) * 100 : null;
+
+  const steps = seasonSteps(own.activity_profile, summary?.gain_eur, rate);
+  const seasonTotal = steps.reduce((sum, step) => sum + step.value, 0);
 
   const sales = (plan?.auditoria_ventas || []).slice().sort((a, b) => a.prioridad - b.prioridad);
 
   return (
-    <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] min-[1100px]:items-start">
-      <div className="flex min-w-0 flex-col gap-4">
-        <section className="home-feature" aria-label="Resumen de tu cartera">
-          <div className="relative flex items-center justify-between gap-3">
-            <p className="text-[13px] font-medium text-white/60">Valor de tu plantilla</p>
-            <p className="text-[12px] tabular-nums text-white/45">
-              {players.length} jugadores
-            </p>
+    <div className="flex min-w-0 flex-col gap-4">
+      <section className="home-feature" aria-label="Resumen de tu cartera">
+        <div className="grid gap-6 min-[1100px]:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] min-[1100px]:items-end">
+          <div className="min-w-0">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[13px] font-medium text-white/65">Valor de tu plantilla</p>
+              {valueRank !== null ? (
+                <p className="rounded-full bg-black/35 px-2.5 py-1 text-[11.5px] font-medium tabular-nums text-white/75 backdrop-blur-md">
+                  {valueRank}.º de {rivalValues.length + 1} en la liga
+                </p>
+              ) : null}
+            </div>
+            <p className="mt-2.5 text-[3.1rem] font-semibold leading-none tracking-[-0.045em] tabular-nums text-white">{money(total, 1)}</p>
+            {change !== null ? (
+              <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] tabular-nums text-white/60">
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-black/40 px-2.5 py-1 font-semibold backdrop-blur-md"
+                  style={{ color: toneOf(change) }}
+                >
+                  {change > 0 ? "▲" : change < 0 ? "▼" : ""} {signedMoney(change)}
+                  {changePct !== null ? ` · ${signedPct(changePct)}` : ""}
+                </span>
+                <span>{first ? `desde el ${first.label}` : "hoy"}</span>
+              </p>
+            ) : null}
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <Tile label="Caja" value={money(cash, 1)} tone={cash !== null && cash < 0 ? TONE.red : undefined} />
+              <Tile label="Patrimonio" value={cash !== null ? money(total + cash, 1) : "—"} hint="plantilla + caja" />
+              <Tile label="Hoy" value={dayDelta !== null ? signedMoney(dayDelta) : "—"} tone={dayDelta !== null ? toneOf(dayDelta) : undefined} hint="cambio de valor" />
+              <Tile
+                label="Próximos 7 días"
+                value={forecastDelta !== null ? signedMoney(forecastDelta) : "—"}
+                tone={forecastDelta !== null ? toneOf(forecastDelta) : undefined}
+                hint="previsión del modelo"
+              />
+            </div>
           </div>
-          <p className="relative mt-2 text-[2.9rem] font-semibold leading-none tracking-[-0.045em] tabular-nums text-white">
-            {money(total, 1)}
-          </p>
-          {change !== null ? (
-            <p className="relative mt-2 text-[13.5px] tabular-nums text-white/55">
-              <span className="font-semibold" style={{ color: toneOf(change) }}>
-                {signedMoney(change)}
-                {changePct !== null ? ` · ${signedPct(changePct)}` : ""}
-              </span>{" "}
-              {first !== null ? `en ${history.length} días` : "hoy"}
-            </p>
-          ) : null}
-          {history.length >= 2 ? (
-            <div className="relative mt-4">
-              <Sparkline values={history.map((row) => row.value_eur)} label={`Evolución del valor de tu plantilla en ${history.length} días`} />
+
+          {chart.length >= 2 ? (
+            <div className="min-w-0">
+              <ValueChart
+                points={chart}
+                summary={`Valor de tu plantilla actual: ${money(first?.value)} el ${first?.label}, ${money(total)} hoy${
+                  forecastDelta !== null ? ` y ${money(total + forecastDelta)} previstos en 7 días` : ""
+                }`}
+              />
+              <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-white/45">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-0.5 w-4 rounded-full bg-[#FFB27A]" aria-hidden="true" />
+                  Tu plantilla actual
+                </span>
+                {forecastDelta !== null ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-4 border-t-2 border-dotted border-white/60" aria-hidden="true" />
+                    Previsión
+                  </span>
+                ) : null}
+                {from > 0 ? <span>Antes del {series[0].label} faltaban precios de parte de la plantilla</span> : null}
+              </p>
             </div>
           ) : null}
-          <div className="relative mt-5 grid grid-cols-3 gap-2.5">
-            <HeroStat value={compact(cash)} label="Caja" tone={cash !== null && cash < 0 ? TONE.red : undefined} />
-            <HeroStat value={compact(summary?.gain_eur, true)} label="Ganancia" tone={toneOf(summary?.gain_eur)} />
-            <HeroStat
-              value={amortized !== null && priced ? `${amortized}/${priced}` : "—"}
-              label="Amortizados"
-              tone={amortized !== null && priced && amortized === priced ? TONE.green : undefined}
-            />
-          </div>
-        </section>
+        </div>
+      </section>
 
-        <OffersCard sales={sales} photos={photos} />
-
-        {own.activity_profile ? <BalanceCard profile={own.activity_profile} unrealized={summary?.gain_eur} rate={rate} /> : null}
-      </div>
-
-      <section aria-label="Jugadores de tu plantilla" className="flex min-w-0 flex-col gap-3">
-        <SectionHead
-          title="Jugadores"
-          meta={
-            <label className="inline-flex items-center gap-1.5">
-              <span className="sr-only">Ordenar por</span>
-              <select
-                value={sort}
-                onChange={(event) => setSort(event.target.value as Sort)}
-                className="h-10 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 text-[13px] text-white outline-none"
-              >
-                {SORTS.map((item) => (
-                  <option key={item.id} value={item.id} className="bg-[#120C09]">
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          }
-        />
-
-        {highlights.best || highlights.scorer ? (
-          <div className="grid grid-cols-2 gap-2.5">
-            {highlights.best ? (
-              <Highlight
-                title="Mejor fichaje"
-                player={highlights.best}
-                photos={photos}
-                value={signedPct((highlights.best.roi ?? 0) * 100, 0)}
-                tone={toneOf(highlights.best.roi)}
-              />
-            ) : null}
-            {highlights.worst ? (
-              <Highlight
-                title="Pierde valor"
-                player={highlights.worst}
-                photos={photos}
-                value={signedPct((highlights.worst.roi ?? 0) * 100, 0)}
-                tone={TONE.red}
-              />
-            ) : highlights.scorer ? (
-              <Highlight
-                title="Más puntos contigo"
-                player={highlights.scorer}
-                photos={photos}
-                value={`${points(highlights.scorer.points_owned)} pts`}
-                tone="#FFC08A"
-              />
-            ) : null}
-          </div>
+      <div className="grid gap-4 min-[768px]:grid-cols-2 min-[1100px]:grid-cols-3">
+        {slices.length ? (
+          <Panel
+            title="Dónde está tu dinero"
+            caption={
+              heaviest && heaviestShare !== null && heaviestShare >= 20
+                ? `${playerName(heaviest)} pesa el ${Math.round(heaviestShare)} % de tu plantilla`
+                : "Valor repartido por posición"
+            }
+          >
+            <AllocationDonut slices={slices} total={slices.reduce((sum, slice) => sum + slice.value, 0)} />
+          </Panel>
         ) : null}
 
-        <div className="eq-scroll -mx-1 px-1" role="toolbar" aria-label="Filtrar por posición">
-          {POSITIONS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              aria-pressed={position === item.id}
-              onClick={() => setPosition(item.id)}
-              className={position === item.id ? "eq-chip eq-chip--on" : "eq-chip"}
-            >
-              {item.label}
-              {item.id === "all" ? <span className="tabular-nums opacity-60">{players.length}</span> : null}
-            </button>
-          ))}
-        </div>
+        {forecastRows.length && forecastDelta !== null ? (
+          <Panel
+            title="Próximos 7 días"
+            caption="Quién sube y quién baja de valor"
+            figure={signedMoney(forecastDelta)}
+            figureTone={toneOf(forecastDelta)}
+            figureHint={total > 0 ? `${signedPct((forecastDelta / total) * 100)} · ${money(total + forecastDelta, 1)}` : undefined}
+          >
+            <ForecastBars rows={forecastRows} />
+          </Panel>
+        ) : null}
 
-        {visible.length ? (
-          <ul className="home-glass overflow-hidden">
-            {visible.map((player, index) => (
-              <PlayerCard
-                key={String(player.player_id)}
-                player={player}
-                photos={photos}
-                audit={audit.get(String(player.player_id))}
-                danger={danger.has(String(player.player_id))}
-                rate={rate}
-                index={index}
-              />
+        {steps.length ? (
+          <div className="min-w-0 min-[768px]:col-span-2 min-[1100px]:col-span-1">
+            <Panel
+              title="Tu temporada como mánager"
+              caption="Lo que has generado y de dónde sale"
+              figure={signedMoney(seasonTotal)}
+              figureTone={toneOf(seasonTotal)}
+            >
+              <SeasonWaterfall steps={steps} />
+            </Panel>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="grid gap-4 min-[1100px]:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] min-[1100px]:items-start">
+        <OffersCard sales={sales} photos={photos} />
+
+        <section aria-label="Jugadores de tu plantilla" className="flex min-w-0 flex-col gap-3">
+          <SectionHead
+            title="Jugadores"
+            meta={
+              <label className="inline-flex items-center gap-1.5">
+                <span className="sr-only">Ordenar por</span>
+                <select
+                  value={sort}
+                  onChange={(event) => setSort(event.target.value as Sort)}
+                  className="h-10 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 text-[13px] text-white outline-none"
+                >
+                  {SORTS.map((item) => (
+                    <option key={item.id} value={item.id} className="bg-[#120C09]">
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            }
+          />
+
+          {highlights.best || highlights.scorer ? (
+            <div className="grid grid-cols-2 gap-2.5">
+              {highlights.best ? (
+                <Highlight
+                  title="Mejor fichaje"
+                  player={highlights.best}
+                  photos={photos}
+                  value={signedPct((highlights.best.roi ?? 0) * 100, 0)}
+                  tone={toneOf(highlights.best.roi)}
+                />
+              ) : null}
+              {highlights.worst ? (
+                <Highlight
+                  title="Pierde valor"
+                  player={highlights.worst}
+                  photos={photos}
+                  value={signedPct((highlights.worst.roi ?? 0) * 100, 0)}
+                  tone={TONE.red}
+                />
+              ) : highlights.scorer ? (
+                <Highlight
+                  title="Más puntos contigo"
+                  player={highlights.scorer}
+                  photos={photos}
+                  value={`${points(highlights.scorer.points_owned)} pts`}
+                  tone="#FFC08A"
+                />
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="eq-scroll -mx-1 px-1" role="toolbar" aria-label="Filtrar por posición">
+            {POSITIONS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={position === item.id}
+                onClick={() => setPosition(item.id)}
+                className={position === item.id ? "eq-chip eq-chip--on" : "eq-chip"}
+              >
+                {item.label}
+                {item.id === "all" ? <span className="tabular-nums opacity-60">{players.length}</span> : null}
+              </button>
             ))}
-          </ul>
-        ) : (
-          <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">
-            {players.length ? "Nadie juega en esa posición." : "Tu plantilla no trae jugadores."}
-          </p>
-        )}
-      </section>
+          </div>
+
+          {visible.length ? (
+            <ul className="home-glass overflow-hidden">
+              {visible.map((player, index) => (
+                <PlayerCard
+                  key={String(player.player_id)}
+                  player={player}
+                  photos={photos}
+                  audit={audit.get(String(player.player_id))}
+                  danger={danger.has(String(player.player_id))}
+                  rate={rate}
+                  index={index}
+                />
+              ))}
+            </ul>
+          ) : (
+            <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">
+              {players.length ? "Nadie juega en esa posición." : "Tu plantilla no trae jugadores."}
+            </p>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
