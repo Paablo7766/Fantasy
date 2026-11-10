@@ -718,13 +718,15 @@ def recommendation_pct(win: float, draw: float, expected_diff: float) -> int:
 
 
 def difficulty_label(rec: int) -> str:
-    if rec >= 86:
+    # Un partido igualado (1-1 previsto) da ~45-53: es "media", no "difícil".
+    # Los cortes antiguos (72/54/38) dejaban casi todo el calendario en difícil.
+    if rec >= 80:
         return "muy_facil"
-    if rec >= 72:
+    if rec >= 62:
         return "facil"
-    if rec >= 54:
+    if rec >= 42:
         return "media"
-    if rec >= 38:
+    if rec >= 28:
         return "dificil"
     return "muy_dificil"
 
