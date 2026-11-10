@@ -1,25 +1,13 @@
 "use client";
 
 import { useId, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { TONE, money, signedMoney, signedPct } from "@/components/ui/kit";
+import { TONE, money, signedMoney } from "@/components/ui/kit";
 
 /* Gráficos de la Cartera. Todo SVG/HTML propio: sin librerías, como el resto de la app. */
 
 const INK = "rgba(255,255,255,0.92)";
 const MUTED = "rgba(255,255,255,0.45)";
 const GRID = "rgba(255,255,255,0.07)";
-
-/**
- * Color por posición. Orden fijo y validado sobre #141414 (banda de luminosidad,
- * separación para daltonismo y contraste): no reordenar ni reciclar.
- */
-export const POSITION_COLOR: Record<string, string> = {
-  POR: "#E06A24",
-  DEF: "#3A8DDE",
-  MC: "#B58C1C",
-  DEL: "#9B72E3",
-};
-const OTHER_COLOR = "#6B7280";
 
 /* ── Evolución del valor ────────────────────────────────────────────────── */
 
@@ -239,125 +227,43 @@ export function ValueChart({ points, summary }: { points: ValuePoint[]; summary:
   );
 }
 
-/* ── Composición por posición ───────────────────────────────────────────── */
+/* ── Movimiento por jugador ─────────────────────────────────────────────── */
 
-export type Slice = { id: string; label: string; value: number; count: number };
-
-export function AllocationDonut({ slices, total }: { slices: Slice[]; total: number }) {
-  const [active, setActive] = useState<string | null>(null);
-  const radius = 44;
-  const circumference = 2 * Math.PI * radius;
-  const gap = slices.length > 1 ? 2.4 : 0;
-  const arcs = slices.map((slice, index) => {
-    const before = slices.slice(0, index).reduce((sum, item) => sum + item.value, 0);
-    const length = total > 0 ? (slice.value / total) * circumference : 0;
-    const offset = total > 0 ? (before / total) * circumference : 0;
-    return { slice, length, offset, color: POSITION_COLOR[slice.id] || OTHER_COLOR };
-  });
-  const focus = arcs.find((arc) => arc.slice.id === active) || null;
-
-  return (
-    <div className="flex items-center gap-5">
-      <div className="relative h-[132px] w-[132px] shrink-0">
-        <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90" role="img" aria-label="Reparto del valor de tu plantilla por posición">
-          <circle cx="60" cy="60" r={radius} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="13" />
-          {arcs.map((arc) => (
-            <circle
-              key={arc.slice.id}
-              cx="60"
-              cy="60"
-              r={radius}
-              fill="none"
-              stroke={arc.color}
-              strokeWidth={active === arc.slice.id ? 16 : 13}
-              strokeDasharray={`${Math.max(0.5, arc.length - gap)} ${circumference}`}
-              strokeDashoffset={-arc.offset}
-              opacity={active && active !== arc.slice.id ? 0.3 : 1}
-              className="cursor-pointer transition-[opacity,stroke-width] duration-200 ease-out"
-              onPointerEnter={() => setActive(arc.slice.id)}
-              onPointerLeave={() => setActive(null)}
-            />
-          ))}
-        </svg>
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-[1.35rem] font-semibold leading-none tabular-nums text-white">
-            {focus ? `${Math.round((focus.slice.value / total) * 100)}%` : slices.reduce((sum, slice) => sum + slice.count, 0)}
-          </span>
-          <span className="mt-1 text-[11px]" style={{ color: MUTED }}>
-            {focus ? focus.slice.label : "jugadores"}
-          </span>
-        </div>
-      </div>
-
-      <ul className="flex min-w-0 flex-1 flex-col gap-1">
-        {arcs.map((arc) => {
-          const share = total > 0 ? (arc.slice.value / total) * 100 : 0;
-          return (
-            <li
-              key={arc.slice.id}
-              className="flex items-center gap-2.5 rounded-lg px-1.5 py-1 transition-colors duration-200"
-              style={{ background: active === arc.slice.id ? "rgba(255,255,255,0.05)" : undefined, opacity: active && active !== arc.slice.id ? 0.5 : 1 }}
-              onPointerEnter={() => setActive(arc.slice.id)}
-              onPointerLeave={() => setActive(null)}
-            >
-              <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: arc.color }} aria-hidden="true" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] text-white">{arc.slice.label}</span>
-                <span className="block text-[11px] tabular-nums" style={{ color: MUTED }}>
-                  {arc.slice.count} · {money(arc.slice.value, 1)}
-                </span>
-              </span>
-              <span className="shrink-0 text-[13.5px] font-semibold tabular-nums" style={{ color: INK }}>
-                {Math.round(share)}%
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-/* ── Previsión por jugador ──────────────────────────────────────────────── */
-
-export type ForecastRow = { id: string; name: string; delta: number; pct: number | null; today: number; next: number };
+export type MoveRow = { id: string; name: string; delta: number; hint: string };
 
 /** Barras divergentes: a la derecha del eje los que suben de valor, a la izquierda los que bajan. */
-export function ForecastBars({ rows }: { rows: ForecastRow[] }) {
+export function MoveBars({ rows }: { rows: MoveRow[] }) {
   const up = Math.max(0, ...rows.map((row) => row.delta));
   const down = Math.max(0, ...rows.map((row) => -row.delta));
   const span = up + down || 1;
   const zero = (down / span) * 100;
   return (
     <ul className="flex flex-col gap-[7px]">
-      {rows.map((row) => {
+      {rows.map((row, index) => {
         const width = Math.max(0.8, (Math.abs(row.delta) / span) * 100);
         const positive = row.delta >= 0;
         const flat = Math.abs(row.delta) < 1;
         return (
-          <li
-            key={row.id}
-            className="grid grid-cols-[minmax(0,5.75rem)_minmax(0,1fr)_4.6rem] items-center gap-2.5"
-            title={`${row.name}: ${money(row.today)} hoy → ${money(row.next)} en 7 días`}
-          >
+          <li key={row.id} className="grid grid-cols-[minmax(0,5.75rem)_minmax(0,1fr)_4.6rem] items-center gap-2.5" title={`${row.name}: ${row.hint}`}>
             <span className="truncate text-[12.5px] text-white/80">{row.name}</span>
             <span className="relative block h-3.5">
               <span className="absolute inset-y-[-3px] w-px bg-white/15" style={{ left: `${zero}%` }} aria-hidden="true" />
               {flat ? null : (
                 <span
-                  className="absolute inset-y-[3px] transition-[width] duration-700 ease-out"
+                  className="bar-grow absolute inset-y-[3px]"
                   style={{
                     left: positive ? `calc(${zero}% + 1px)` : `calc(${zero - width}% - 1px)`,
                     width: `${width}%`,
                     background: positive ? TONE.green : TONE.red,
                     borderRadius: positive ? "0 4px 4px 0" : "4px 0 0 4px",
+                    transformOrigin: positive ? "left" : "right",
+                    animationDelay: `${index * 35}ms`,
                   }}
                 />
               )}
             </span>
             <span className="text-right text-[12px] font-medium tabular-nums" style={{ color: flat ? MUTED : INK }}>
               {flat ? "=" : `${positive ? "▲" : "▼"} ${money(Math.abs(row.delta))}`}
-              {row.pct !== null && !flat ? <span className="sr-only"> ({signedPct(row.pct)})</span> : null}
             </span>
           </li>
         );
@@ -370,52 +276,66 @@ export function ForecastBars({ rows }: { rows: ForecastRow[] }) {
 
 export type WaterfallStep = { label: string; value: number; hint?: string };
 
-/** Cascada: cada barra arranca donde acabó la anterior; la última es el total. */
+/**
+ * Cascada en columnas: cada una arranca a la altura donde acabó la anterior
+ * (la línea de puntos lo une) y la última, apoyada en cero, es el total.
+ */
 export function SeasonWaterfall({ steps }: { steps: WaterfallStep[] }) {
   const bars = steps.map((step, index) => {
     const start = steps.slice(0, index).reduce((sum, item) => sum + item.value, 0);
-    return { ...step, start, end: start + step.value };
+    return { ...step, start, end: start + step.value, isTotal: false };
   });
   const total = steps.reduce((sum, step) => sum + step.value, 0);
-  const lo = Math.min(0, ...bars.map((bar) => Math.min(bar.start, bar.end)));
-  const hi = Math.max(0, ...bars.map((bar) => Math.max(bar.start, bar.end)));
+  const columns = [...bars, { label: "Total", value: total, hint: undefined as string | undefined, start: 0, end: total, isTotal: true }];
+  const lo = Math.min(0, ...columns.map((bar) => Math.min(bar.start, bar.end)));
+  const hi = Math.max(0, ...columns.map((bar) => Math.max(bar.start, bar.end)));
   const span = hi - lo || 1;
-  const at = (value: number) => ((value - lo) / span) * 100;
-  const rows = [
-    ...bars.map((bar) => ({ ...bar, isTotal: false })),
-    { label: "Total", value: total, hint: undefined as string | undefined, start: 0, end: total, isTotal: true },
-  ];
+  // Deja aire arriba para la cifra de la columna más alta.
+  const at = (value: number) => ((value - lo) / span) * 80;
+  const template = { gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` };
   return (
-    <ul className="flex flex-col gap-3">
-      {rows.map((row) => {
-        const left = at(Math.min(row.start, row.end));
-        const width = Math.max(0.8, (Math.abs(row.value) / span) * 100);
-        const color = row.isTotal ? "rgba(255,255,255,0.85)" : row.value >= 0 ? TONE.green : TONE.red;
-        return (
-          <li key={row.label} className={row.isTotal ? "border-t border-white/[0.07] pt-3" : undefined}>
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="min-w-0">
-                <span className={`block truncate text-[13px] ${row.isTotal ? "font-semibold text-white" : "text-white/85"}`}>{row.label}</span>
-                {row.hint ? (
-                  <span className="block truncate text-[11px]" style={{ color: MUTED }}>
-                    {row.hint}
-                  </span>
-                ) : null}
-              </span>
-              <span className={`shrink-0 tabular-nums text-white ${row.isTotal ? "text-[15px] font-semibold" : "text-[13.5px] font-medium"}`}>
-                {signedMoney(row.value)}
-              </span>
-            </div>
-            <div className="relative mt-1.5 h-2">
-              <span className="absolute inset-y-[-2px] w-px bg-white/15" style={{ left: `${at(0)}%` }} aria-hidden="true" />
+    <div role="img" aria-label={`${columns.map((bar) => `${bar.label} ${signedMoney(bar.value)}`).join(", ")}`}>
+      <div className="relative grid h-[150px]" style={template}>
+        <span className="absolute inset-x-0 h-px bg-white/15" style={{ bottom: `${at(0)}%` }} aria-hidden="true" />
+        {columns.map((bar, index) => {
+          const bottom = at(Math.min(bar.start, bar.end));
+          const height = Math.max(1.5, (Math.abs(bar.value) / span) * 80);
+          const color = bar.isTotal ? "rgba(255,255,255,0.88)" : bar.value >= 0 ? TONE.green : TONE.red;
+          return (
+            <div key={bar.label} className="relative">
+              {index < columns.length - 1 ? (
+                <span
+                  className="absolute left-1/2 w-full border-t border-dashed border-white/25"
+                  style={{ bottom: `${at(bar.end)}%` }}
+                  aria-hidden="true"
+                />
+              ) : null}
               <span
-                className="absolute inset-y-0 rounded-[4px] transition-[width,left] duration-700 ease-out"
-                style={{ left: `${left}%`, width: `${width}%`, background: color }}
+                className="bar-rise absolute left-1/2 w-[46%] max-w-[52px] -translate-x-1/2 rounded-[4px]"
+                style={{ bottom: `${bottom}%`, height: `${height}%`, background: color, animationDelay: `${index * 90}ms` }}
               />
+              <span
+                className="absolute inset-x-0 text-center text-[12px] font-semibold tabular-nums text-white"
+                style={{ bottom: `calc(${bottom + height}% + 5px)` }}
+              >
+                {signedMoney(bar.value)}
+              </span>
             </div>
-          </li>
-        );
-      })}
-    </ul>
+          );
+        })}
+      </div>
+      <div className="mt-2.5 grid" style={template} aria-hidden="true">
+        {columns.map((bar) => (
+          <div key={bar.label} className="min-w-0 px-1 text-center">
+            <p className={`truncate text-[12px] ${bar.isTotal ? "font-semibold text-white" : "text-white/80"}`}>{bar.label}</p>
+            {bar.hint ? (
+              <p className="mt-0.5 text-[10.5px] leading-tight" style={{ color: MUTED }}>
+                {bar.hint}
+              </p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

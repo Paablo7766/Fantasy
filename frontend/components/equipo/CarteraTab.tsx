@@ -5,25 +5,15 @@ import { playerName, points, titularShare } from "@/lib/core/format";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { statusBadgeLabel } from "@/components/ui/StatusBadge";
 import type { ActivityProfile, AuditoriaVenta, PlanPayload, RivalPlayer, SquadsPayload, VeredictoVenta } from "@/lib/types";
-import {
-  AllocationDonut,
-  ForecastBars,
-  SeasonWaterfall,
-  ValueChart,
-  type ForecastRow,
-  type Slice,
-  type ValuePoint,
-  type WaterfallStep,
-} from "@/components/equipo/CarteraCharts";
+import { MoveBars, SeasonWaterfall, ValueChart, type MoveRow, type ValuePoint, type WaterfallStep } from "@/components/equipo/CarteraCharts";
+import { Crest } from "@/components/ui/Crest";
 import {
   Chevron,
   Empty,
   Face,
   Fact,
-  SectionHead,
   Skeleton,
   TONE,
-  forecastHint,
   money,
   projected7d,
   parsePct,
@@ -45,7 +35,7 @@ const ACTION: Record<VeredictoVenta, { label: string; color: string }> = {
 };
 
 type Position = "all" | "POR" | "DEF" | "MC" | "DEL";
-type Sort = "value" | "gain" | "points" | "payback" | "trend";
+type Sort = "value" | "day" | "trend" | "gain" | "points" | "xp";
 
 const POSITIONS: { id: Position; label: string }[] = [
   { id: "all", label: "Todos" },
@@ -57,10 +47,11 @@ const POSITIONS: { id: Position; label: string }[] = [
 
 const SORTS: { id: Sort; label: string }[] = [
   { id: "value", label: "Valor" },
-  { id: "gain", label: "Revalorización" },
-  { id: "payback", label: "Amortización" },
+  { id: "day", label: "Último día" },
+  { id: "trend", label: "7 días" },
+  { id: "gain", label: "Rentabilidad" },
   { id: "points", label: "Puntos" },
-  { id: "trend", label: "Previsión 7 días" },
+  { id: "xp", label: "xP" },
 ];
 
 const DAY_MS = 86_400_000;
@@ -70,14 +61,6 @@ function daysSince(iso: string | null | undefined): number | null {
   const at = new Date(iso).getTime();
   if (Number.isNaN(at)) return null;
   return Math.max(0, Math.floor((Date.now() - at) / DAY_MS));
-}
-
-function ownedFor(days: number | null): string {
-  if (days === null) return "";
-  if (days === 0) return "hoy";
-  if (days === 1) return "hace 1 día";
-  if (days < 60) return `hace ${days} días`;
-  return `hace ${Math.round(days / 30)} meses`;
 }
 
 function shortDate(iso: string | null | undefined): string {
@@ -137,7 +120,7 @@ function PaybackBar({ player }: { player: Holding }) {
   const valueWidth = Math.min(1, value) * 100;
   const earnedWidth = Math.max(0, Math.min(1, value + earned) * 100 - valueWidth);
   return (
-    <div className="mt-2.5">
+    <div>
       <div className="flex items-center justify-between gap-2 text-[11.5px]">
         <span className="font-medium" style={{ color: done ? TONE.green : "rgba(255,255,255,0.55)" }}>
           {done ? "Amortizado" : `Recuperado ${Math.round(recovered * 100)}%`}
@@ -155,20 +138,6 @@ function PaybackBar({ player }: { player: Holding }) {
         <span className="h-full transition-[width] duration-700 ease-out" style={{ width: `${earnedWidth}%`, background: done ? "#5EEAB4" : "#FF9A5A" }} />
       </div>
     </div>
-  );
-}
-
-/** Pastilla de revalorización desde la compra. */
-function GainPill({ value }: { value: number | null }) {
-  if (value === null) return null;
-  const color = toneOf(value);
-  return (
-    <span
-      className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[12px] font-semibold tabular-nums"
-      style={{ color, background: Math.abs(value) < 1e-9 ? "rgba(255,255,255,0.06)" : `${color}1f` }}
-    >
-      {value > 0 ? "▲" : value < 0 ? "▼" : ""} {signedPct(value, Math.abs(value) >= 10 ? 0 : 1).replace(/^[+−]/, "")}
-    </span>
   );
 }
 
@@ -268,7 +237,7 @@ function OffersCard({ sales, photos }: { sales: AuditoriaVenta[]; photos: PhotoI
   const toSell = sales.filter((row) => !row.oferta_activa?.comprador && row.veredicto_codigo === "PONER_ESCAPARATE");
   const accept = offers.filter((row) => row.veredicto_codigo === "ACEPTAR_YA").length;
   return (
-    <section className="home-glass overflow-hidden" aria-label="Ofertas recibidas">
+    <section className="home-glass h-full overflow-hidden" aria-label="Ofertas recibidas">
       <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-4">
         <div className="min-w-0">
           <h3 className="text-[15px] font-semibold text-white">Ofertas</h3>
@@ -366,17 +335,17 @@ function seasonSteps(profile: ActivityProfile | null | undefined, unrealized: nu
   if (!profile) return [];
   const steps: WaterfallStep[] = [];
   if (typeof profile.premiums_eur === "number" && profile.premiums_eur > 0) {
-    steps.push({ label: "Premios de jornada", value: profile.premiums_eur, hint: rate ? `${money(rate)} por punto` : undefined });
+    steps.push({ label: "Premios", value: profile.premiums_eur, hint: rate ? `${money(rate)} por punto` : "de jornada" });
   }
   if (typeof profile.realized_gain_eur === "number") {
     steps.push({
       label: "Ventas",
       value: profile.realized_gain_eur,
-      hint: profile.priced_sales ? `en ${profile.priced_sales} ${profile.priced_sales === 1 ? "venta" : "ventas"}` : "sin ventas con precio de compra",
+      hint: profile.priced_sales ? `${profile.priced_sales} ${profile.priced_sales === 1 ? "venta" : "ventas"}` : "sin precio de compra",
     });
   }
   if (typeof unrealized === "number") {
-    steps.push({ label: "Plantilla actual", value: unrealized, hint: "valor de hoy frente a lo que pagaste" });
+    steps.push({ label: "Plantilla", value: unrealized, hint: "valor − coste" });
   }
   return steps;
 }
@@ -394,8 +363,6 @@ function Tile({ label, value, tone, hint }: { label: string; value: string; tone
   );
 }
 
-const POSITION_LABEL: Record<string, string> = { POR: "Porteros", DEF: "Defensas", MC: "Medios", DEL: "Delanteros" };
-
 function dayNumber(day: string): number | null {
   const at = Date.parse(`${day.slice(0, 10)}T00:00:00Z`);
   return Number.isNaN(at) ? null : Math.round(at / DAY_MS);
@@ -407,7 +374,90 @@ function madridDay(iso: string | null | undefined): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid" }).format(safe);
 }
 
+/* ── Movimiento de valor ────────────────────────────────────────────────── */
+
+type MoveMode = "day" | "week";
+
+type MoveView = { rows: MoveRow[]; total: number; hint: string; caption: string };
+
+/** Un mismo gráfico con dos lecturas: lo que ya pasó en el último día y lo que el modelo prevé a 7. */
+function MovesCard({ views }: { views: Partial<Record<MoveMode, MoveView>> }) {
+  const modes = (["day", "week"] as MoveMode[]).filter((mode) => views[mode]);
+  const [mode, setMode] = useState<MoveMode>("week");
+  const current = views[mode] ? mode : modes[0];
+  const view = views[current];
+  if (!view) return null;
+  return (
+    <section className="home-glass flex h-full min-w-0 flex-col p-5" aria-label="Movimiento de valor de tus jugadores">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-semibold text-white">Movimiento de valor</h3>
+          <p key={current} className="row-in mt-0.5 text-[12.5px] leading-snug text-white/45">
+            {view.caption}
+          </p>
+        </div>
+        {modes.length > 1 ? (
+          <div className="relative grid shrink-0 grid-cols-2 rounded-full bg-white/[0.06] p-[3px]" role="tablist" aria-label="Periodo">
+            <span
+              className="absolute inset-y-[3px] left-[3px] w-[calc(50%-3px)] rounded-full bg-white transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]"
+              style={{ transform: `translateX(${current === "week" ? "100%" : "0"})` }}
+              aria-hidden="true"
+            />
+            {modes.map((item) => (
+              <button
+                key={item}
+                type="button"
+                role="tab"
+                aria-selected={current === item}
+                onClick={() => setMode(item)}
+                className={`relative z-10 min-h-[2rem] whitespace-nowrap rounded-full px-3 text-[12px] font-semibold transition-colors duration-300 ${
+                  current === item ? "text-[#0b0b0b]" : "text-white/55 hover:text-white"
+                }`}
+              >
+                {item === "day" ? "Último día" : "7 días"}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <p key={`figure-${current}`} className="row-in mt-4 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        <span className="text-[1.6rem] font-semibold leading-none tracking-[-0.03em] tabular-nums" style={{ color: toneOf(view.total) }}>
+          {signedMoney(view.total)}
+        </span>
+        <span className="text-[12px] tabular-nums text-white/45">{view.hint}</span>
+      </p>
+      <div className="mt-4 flex flex-1 flex-col justify-center">
+        <MoveBars key={current} rows={view.rows} />
+      </div>
+    </section>
+  );
+}
+
 /* ── Jugadores ──────────────────────────────────────────────────────────── */
+
+/** Columnas de la tabla en escritorio; en móvil solo quedan jugador y valor. */
+const ROW_GRID =
+  "grid grid-cols-[minmax(0,1fr)_auto_1rem] items-center gap-x-3 min-[900px]:grid-cols-[minmax(0,3fr)_repeat(6,minmax(0,1fr))_1rem] min-[900px]:gap-x-4";
+
+/** Lo que el modelo espera que cambie su valor en 7 días, en euros. */
+function weekDelta(player: RivalPlayer): number | null {
+  const today = player.market_value;
+  if (typeof today !== "number" || today <= 0) return null;
+  const next = typeof player.valor_en_7d === "number" ? player.valor_en_7d : projected7d(today, parsePct(player.prevision_7d_pct));
+  return next === null ? null : next - today;
+}
+
+/** Celda numérica: cifra arriba y un apoyo gris debajo. Solo la cifra lleva color, y solo si es un cambio. */
+function Cell({ value, sub, tone, className = "" }: { value: string; sub?: string; tone?: string; className?: string }) {
+  return (
+    <span className={`min-w-0 text-right ${className}`}>
+      <span className="block truncate text-[14px] font-medium tabular-nums" style={{ color: tone || "#fff" }}>
+        {value}
+      </span>
+      {sub ? <span className="mt-0.5 block truncate text-[11.5px] tabular-nums text-white/40">{sub}</span> : null}
+    </span>
+  );
+}
 
 function PlayerCard({
   player,
@@ -415,14 +465,14 @@ function PlayerCard({
   audit,
   danger,
   rate,
-  index,
+  total,
 }: {
   player: Holding;
   photos: PhotoIndex;
   audit: AuditoriaVenta | undefined;
   danger: boolean;
   rate: number | null;
-  index: number;
+  total: number;
 }) {
   const [open, setOpen] = useState(false);
   const name = playerName(player);
@@ -431,82 +481,87 @@ function PlayerCard({
   const share = titularShare(player.p_titular);
   const days = daysSince(player.acquired_at);
   const owned = player.points_owned;
+  const value = player.market_value ?? 0;
   const hasCost = typeof player.cost_eur === "number" && player.cost_eur > 0;
   const perPoint = hasCost && typeof owned === "number" && owned > 0 ? player.cost_eur! / owned : null;
-  const tags: { label: string; color: string }[] = [];
-  if (audit?.oferta_activa?.comprador) tags.push({ label: "Con oferta", color: TONE.green });
-  else if (audit?.en_mercado) tags.push({ label: "En venta", color: TONE.blue });
-  if (danger) tags.push({ label: "Cláusula en peligro", color: TONE.red });
+  const dayMove = typeof player.price_delta === "number" ? player.price_delta : null;
+  const dayPct = dayMove !== null && value - dayMove > 0 ? (dayMove / (value - dayMove)) * 100 : null;
+  const week = weekDelta(player);
+  const weight = total > 0 ? (value / total) * 100 : null;
+  const flags: { label: string; color: string }[] = [];
+  if (audit?.oferta_activa?.comprador) flags.push({ label: "Con oferta", color: TONE.green });
+  else if (audit?.en_mercado) flags.push({ label: "En venta", color: TONE.blue });
   const estado = statusBadgeLabel(player.official_status || player.player_status);
-  if (estado) tags.push({ label: estado, color: estado === "Duda" ? TONE.amber : TONE.red });
-  const caption = hasCost
-    ? days !== null
-      ? `${days === 0 ? "Llegó hoy" : `${days} ${days === 1 ? "día" : "días"} contigo`}`
-      : "Fichado"
-    : player.acquired_at
-      ? ownedFor(days)
-      : "Plantilla inicial";
+  if (estado) flags.push({ label: estado, color: estado === "Duda" ? TONE.amber : TONE.red });
+  if (danger) flags.push({ label: "Cláusula en peligro", color: TONE.red });
 
   return (
-    <li className="row-in" style={{ animationDelay: `${Math.min(index, 12) * 30}ms` }}>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="block w-full px-3.5 py-3 text-left"
-      >
-        <span className="flex items-center gap-3">
-          <Face name={name} src={player.image_url || photoFor(photos, player.player_id, name)} size={44} />
-          <span className="min-w-0 flex-1">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-[15px] font-medium leading-tight text-white">{name}</span>
-              <span className="shrink-0 rounded-md bg-white/[0.07] px-1.5 py-px text-[10.5px] font-semibold text-white/55">
-                {player.position || "—"}
-              </span>
-            </span>
-            <span className="mt-0.5 block truncate text-[12.5px] text-white/45">
-              {caption}
-              {typeof owned === "number" ? (
-                <>
-                  {" · "}
-                  <span className="tabular-nums text-[#FFC08A]">{points(owned)} pts</span>
-                </>
-              ) : null}
-            </span>
-          </span>
-          <span className="shrink-0 text-right">
-            <span className="block text-[15px] font-semibold tabular-nums text-white">{money(player.market_value)}</span>
-            <span className="mt-0.5 flex justify-end">
-              {gain !== null ? (
-                <GainPill value={gain} />
-              ) : (
-                <span className="text-[12px] tabular-nums" style={{ color: toneOf(trend) }}>
-                  {forecastHint(player.market_value, trend)?.replace("→ ", "") ?? ""}
+    <li className="transition-colors duration-300 hover:bg-white/[0.025]" style={open ? { background: "rgba(255,255,255,0.03)" } : undefined}>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((state) => !state)} className={`${ROW_GRID} w-full px-4 py-3 text-left min-[900px]:px-5`}>
+        <span className="flex min-w-0 items-center gap-3">
+          <Face name={name} src={player.image_url || photoFor(photos, player.player_id, name)} size={40} />
+          <span className="min-w-0">
+            <span className="block truncate text-[14.5px] font-medium leading-tight text-white">{name}</span>
+            <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px] text-white/45">
+              <Crest club={player.club} size={14} />
+              <span className="shrink-0">{player.position || "—"}</span>
+              {flags.slice(0, 2).map((flag, index) => (
+                <span key={flag.label} className={`min-w-0 items-center gap-1.5 ${index ? "hidden min-[900px]:inline-flex" : "inline-flex"}`}>
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: flag.color }} aria-hidden="true" />
+                  <span className="truncate text-white/60">{flag.label}</span>
                 </span>
-              )}
+              ))}
             </span>
           </span>
-          <Chevron open={open} />
         </span>
-        {tags.length ? (
-          <span className="mt-2 flex flex-wrap gap-1.5 pl-[3.5rem]">
-            {tags.map((tag) => (
-              <span
-                key={tag.label}
-                className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                style={{ color: tag.color, background: `${tag.color}1a` }}
-              >
-                {tag.label}
-              </span>
-            ))}
+
+        {/* Valor: en móvil lleva debajo el cambio del día; en escritorio, su peso en la plantilla. */}
+        <span className="min-w-0 text-right">
+          <span className="block text-[14.5px] font-semibold tabular-nums text-white">{money(player.market_value)}</span>
+          <span className="mt-0.5 block text-[11.5px] tabular-nums min-[900px]:hidden" style={{ color: toneOf(dayMove) }}>
+            {dayMove !== null ? signedMoney(dayMove) : ""}
           </span>
-        ) : null}
-        <span className="block pl-[3.5rem]">
-          <PaybackBar player={player} />
+          <span className="mt-0.5 hidden text-[11.5px] tabular-nums text-white/40 min-[900px]:block">
+            {weight !== null ? `${Math.round(weight)} % del total` : ""}
+          </span>
         </span>
+        <Cell
+          className="hidden min-[900px]:block"
+          value={dayMove !== null ? signedMoney(dayMove) : "—"}
+          tone={dayMove !== null ? toneOf(dayMove) : undefined}
+          sub={dayPct !== null ? signedPct(dayPct) : undefined}
+        />
+        <Cell
+          className="hidden min-[900px]:block"
+          value={week !== null ? signedMoney(week) : "—"}
+          tone={week !== null ? toneOf(week) : undefined}
+          sub={trend !== null ? signedPct(trend) : undefined}
+        />
+        <Cell
+          className="hidden min-[900px]:block"
+          value={hasCost ? signedMoney(player.gain_eur) : "—"}
+          tone={hasCost ? toneOf(player.gain_eur) : undefined}
+          sub={hasCost ? (gain !== null ? signedPct(gain, Math.abs(gain) >= 10 ? 0 : 1) : undefined) : "Plantilla inicial"}
+        />
+        <Cell
+          className="hidden min-[900px]:block"
+          value={typeof owned === "number" ? points(owned) : "—"}
+          sub={typeof player.average_points === "number" ? `media ${points(player.average_points)}` : undefined}
+        />
+        <Cell
+          className="hidden min-[900px]:block"
+          value={typeof player.own_expected_points === "number" ? points(player.own_expected_points) : "—"}
+          sub={share !== null ? `titular ${Math.round(share * 100)} %` : undefined}
+        />
+        <Chevron open={open} />
       </button>
       {open ? (
-        <div className="row-in border-t border-white/[0.05] px-3.5 pb-4 pt-3">
+        <div className="row-in px-4 pb-5 pt-1 min-[900px]:px-5 min-[900px]:pl-[4.5rem]">
+          {player.recovered_pct !== null ? (
+            <div className="mb-3.5">
+              <PaybackBar player={player} />
+            </div>
+          ) : null}
           {hasCost ? (
             <div className="flex items-center gap-2 rounded-2xl bg-black/25 px-3 py-2.5 text-[13px] tabular-nums">
               <span className="min-w-0 flex-1">
@@ -527,7 +582,7 @@ function PlayerCard({
               </span>
             </div>
           ) : null}
-          <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+          <div className="mt-3.5 grid grid-cols-2 gap-x-4 gap-y-3.5 sm:grid-cols-4">
             {hasCost ? (
               <Fact
                 label="Fichado"
@@ -583,36 +638,6 @@ function PlayerCard({
   );
 }
 
-function Highlight({
-  title,
-  player,
-  photos,
-  value,
-  tone,
-}: {
-  title: string;
-  player: RivalPlayer;
-  photos: PhotoIndex;
-  value: string;
-  tone: string;
-}) {
-  const name = playerName(player);
-  return (
-    <article className="home-glass min-w-0 p-3.5">
-      <p className="truncate text-[11.5px] text-white/45">{title}</p>
-      <div className="mt-2 flex items-center gap-2.5">
-        <Face name={name} src={player.image_url || photoFor(photos, player.player_id, name)} size={34} />
-        <span className="min-w-0">
-          <span className="block truncate text-[13.5px] font-medium text-white">{name}</span>
-          <span className="block truncate text-[13px] font-semibold tabular-nums" style={{ color: tone }}>
-            {value}
-          </span>
-        </span>
-      </div>
-    </article>
-  );
-}
-
 /* ── Pestaña ────────────────────────────────────────────────────────────── */
 
 export function CarteraTab({
@@ -628,6 +653,7 @@ export function CarteraTab({
 }) {
   const [position, setPosition] = useState<Position>("all");
   const [sort, setSort] = useState<Sort>("value");
+  const [ascending, setAscending] = useState(false);
 
   const own = squads?.self || null;
   const rate = eurPerPoint(own?.activity_profile?.premiums_eur, own?.points);
@@ -648,25 +674,22 @@ export function CarteraTab({
 
   const visible = useMemo(() => {
     const rows = players.filter((player) => position === "all" || (player.position || "").toUpperCase() === position);
-    const key = (player: Holding): number => {
-      if (sort === "gain") return gainPct(player) ?? -Infinity;
-      if (sort === "payback") return player.recovered_pct ?? -Infinity;
-      if (sort === "points") return player.points_owned ?? -Infinity;
-      if (sort === "trend") return parsePct(player.prevision_7d_pct) ?? -Infinity;
-      return player.market_value ?? -Infinity;
+    const key = (player: Holding): number | null => {
+      if (sort === "day") return player.price_delta ?? null;
+      if (sort === "trend") return weekDelta(player);
+      if (sort === "gain") return player.gain_eur ?? null;
+      if (sort === "points") return player.points_owned ?? null;
+      if (sort === "xp") return player.own_expected_points ?? null;
+      return player.market_value ?? null;
     };
-    return rows.slice().sort((a, b) => key(b) - key(a));
-  }, [players, position, sort]);
-
-  const highlights = useMemo(() => {
-    const priced = players.filter((player) => typeof player.roi === "number");
-    const best = priced.slice().sort((a, b) => (b.roi ?? 0) - (a.roi ?? 0))[0];
-    const worst = priced.slice().sort((a, b) => (a.roi ?? 0) - (b.roi ?? 0))[0];
-    const scorer = players
-      .filter((player) => typeof player.points_owned === "number")
-      .sort((a, b) => (b.points_owned ?? 0) - (a.points_owned ?? 0))[0];
-    return { best, worst: worst && worst !== best && (worst.roi ?? 0) < 0 ? worst : undefined, scorer };
-  }, [players]);
+    // Sin dato, siempre al final, se ordene hacia donde se ordene.
+    return rows.slice().sort((a, b) => {
+      const left = key(a);
+      const right = key(b);
+      if (left === null || right === null) return left === right ? 0 : left === null ? 1 : -1;
+      return ascending ? left - right : right - left;
+    });
+  }, [players, position, sort, ascending]);
 
   if (loading && !own) return <Skeleton />;
   if (!squads || squads.ok === false || !own) {
@@ -690,18 +713,26 @@ export function CarteraTab({
   if (series.length && series.at(-1)!.t < todayT) series.push({ t: todayT, value: total, label: "Hoy" });
   else if (series.length) series[series.length - 1] = { ...series.at(-1)!, value: total, label: "Hoy" };
 
-  // Previsión a 7 días, jugador a jugador.
-  const forecastRows: ForecastRow[] = players
+  // Movimiento de valor jugador a jugador: lo previsto a 7 días y lo ya ocurrido en el último día.
+  const weekRows: MoveRow[] = players
     .map((player) => {
+      const delta = weekDelta(player);
+      if (delta === null) return null;
       const today = player.market_value ?? 0;
-      const pct = parsePct(player.prevision_7d_pct);
-      const next = typeof player.valor_en_7d === "number" ? player.valor_en_7d : projected7d(today, pct);
-      if (next === null || today <= 0) return null;
-      return { id: String(player.player_id), name: playerName(player), delta: next - today, pct, today, next };
+      return { id: String(player.player_id), name: playerName(player), delta, hint: `${money(today)} hoy → ${money(today + delta)} en 7 días` };
     })
-    .filter((row): row is ForecastRow => row !== null)
+    .filter((row): row is MoveRow => row !== null)
     .sort((a, b) => b.delta - a.delta);
-  const forecastDelta = forecastRows.length ? forecastRows.reduce((sum, row) => sum + row.delta, 0) : null;
+  const forecastDelta = weekRows.length ? weekRows.reduce((sum, row) => sum + row.delta, 0) : null;
+  const dayRows: MoveRow[] = players
+    .filter((player) => typeof player.price_delta === "number" && typeof player.market_value === "number")
+    .map((player) => ({
+      id: String(player.player_id),
+      name: playerName(player),
+      delta: player.price_delta!,
+      hint: `${money(player.market_value! - player.price_delta!)} ayer → ${money(player.market_value)} hoy`,
+    }))
+    .sort((a, b) => b.delta - a.delta);
   const chart: ValuePoint[] =
     series.length >= 2 && forecastDelta !== null
       ? [...series, { t: series.at(-1)!.t + 7, value: total + forecastDelta, label: "en 7 días", forecast: true }]
@@ -716,15 +747,24 @@ export function CarteraTab({
   const rivalValues = (squads.rivals || []).map((rival) => rival.market_value_total).filter((value): value is number => typeof value === "number");
   const valueRank = rivalValues.length ? 1 + rivalValues.filter((value) => value > total).length : null;
 
-  // Reparto por posición.
-  const slices: Slice[] = ["POR", "DEF", "MC", "DEL"]
-    .map((id) => {
-      const rows = players.filter((player) => (player.position || "").toUpperCase() === id);
-      return { id, label: POSITION_LABEL[id], value: rows.reduce((sum, player) => sum + (player.market_value ?? 0), 0), count: rows.length };
-    })
-    .filter((slice) => slice.count > 0);
-  const heaviest = players.slice().sort((a, b) => (b.market_value ?? 0) - (a.market_value ?? 0))[0];
-  const heaviestShare = heaviest && total > 0 ? ((heaviest.market_value ?? 0) / total) * 100 : null;
+  const dayTotal = dayRows.reduce((sum, row) => sum + row.delta, 0);
+  const moves: Partial<Record<MoveMode, MoveView>> = {};
+  if (dayRows.length) {
+    moves.day = {
+      rows: dayRows,
+      total: dayTotal,
+      caption: "Lo que cambió cada jugador en el último día",
+      hint: total - dayTotal > 0 ? `${signedPct((dayTotal / (total - dayTotal)) * 100)} · ayer ${money(total - dayTotal, 1)}` : "",
+    };
+  }
+  if (weekRows.length && forecastDelta !== null) {
+    moves.week = {
+      rows: weekRows,
+      total: forecastDelta,
+      caption: "Lo que prevé el modelo para cada jugador",
+      hint: total > 0 ? `${signedPct((forecastDelta / total) * 100)} · llegaría a ${money(total + forecastDelta, 1)}` : "",
+    };
+  }
 
   const steps = seasonSteps(own.activity_profile, summary?.gain_eur, rate);
   const seasonTotal = steps.reduce((sum, step) => sum + step.value, 0);
@@ -797,136 +837,110 @@ export function CarteraTab({
       </section>
 
       <div className="grid gap-4 min-[768px]:grid-cols-2 min-[1100px]:grid-cols-3">
-        {slices.length ? (
-          <Panel
-            title="Dónde está tu dinero"
-            caption={
-              heaviest && heaviestShare !== null && heaviestShare >= 20
-                ? `${playerName(heaviest)} pesa el ${Math.round(heaviestShare)} % de tu plantilla`
-                : "Valor repartido por posición"
-            }
-          >
-            <AllocationDonut slices={slices} total={slices.reduce((sum, slice) => sum + slice.value, 0)} />
-          </Panel>
-        ) : null}
-
-        {forecastRows.length && forecastDelta !== null ? (
-          <Panel
-            title="Próximos 7 días"
-            caption="Quién sube y quién baja de valor"
-            figure={signedMoney(forecastDelta)}
-            figureTone={toneOf(forecastDelta)}
-            figureHint={total > 0 ? `${signedPct((forecastDelta / total) * 100)} · ${money(total + forecastDelta, 1)}` : undefined}
-          >
-            <ForecastBars rows={forecastRows} />
-          </Panel>
-        ) : null}
+        {moves.day || moves.week ? <MovesCard views={moves} /> : null}
 
         {steps.length ? (
-          <div className="min-w-0 min-[768px]:col-span-2 min-[1100px]:col-span-1">
-            <Panel
-              title="Tu temporada como mánager"
-              caption="Lo que has generado y de dónde sale"
-              figure={signedMoney(seasonTotal)}
-              figureTone={toneOf(seasonTotal)}
-            >
-              <SeasonWaterfall steps={steps} />
-            </Panel>
-          </div>
+          <Panel title="Tu temporada como mánager" caption="De dónde sale lo que has generado" figure={signedMoney(seasonTotal)} figureTone={toneOf(seasonTotal)}>
+            <SeasonWaterfall steps={steps} />
+          </Panel>
         ) : null}
+
+        <div className="min-w-0 min-[768px]:col-span-2 min-[1100px]:col-span-1">
+          <OffersCard sales={sales} photos={photos} />
+        </div>
       </div>
 
-      <div className="grid gap-4 min-[1100px]:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] min-[1100px]:items-start">
-        <OffersCard sales={sales} photos={photos} />
-
-        <section aria-label="Jugadores de tu plantilla" className="flex min-w-0 flex-col gap-3">
-          <SectionHead
-            title="Jugadores"
-            meta={
-              <label className="inline-flex items-center gap-1.5">
-                <span className="sr-only">Ordenar por</span>
-                <select
-                  value={sort}
-                  onChange={(event) => setSort(event.target.value as Sort)}
-                  className="h-10 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 text-[13px] text-white outline-none"
+      <section aria-label="Jugadores de tu plantilla" className="home-glass min-w-0 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 pb-3 pt-4 min-[900px]:px-5">
+          <h3 className="text-[15px] font-semibold text-white">
+            Jugadores <span className="ml-1 font-normal tabular-nums text-white/40">{visible.length}</span>
+          </h3>
+          <div className="flex w-full min-w-0 items-center justify-between gap-2 min-[900px]:w-auto">
+            <div className="eq-scroll min-w-0 !gap-0.5" role="toolbar" aria-label="Filtrar por posición">
+              {POSITIONS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={position === item.id}
+                  onClick={() => setPosition(item.id)}
+                  className={`min-h-[2rem] shrink-0 rounded-full px-3 text-[12.5px] font-medium transition-colors duration-300 ${
+                    position === item.id ? "bg-white text-[#0b0b0b]" : "text-white/55 hover:text-white"
+                  }`}
                 >
-                  {SORTS.map((item) => (
-                    <option key={item.id} value={item.id} className="bg-[#120C09]">
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            }
-          />
-
-          {highlights.best || highlights.scorer ? (
-            <div className="grid grid-cols-2 gap-2.5">
-              {highlights.best ? (
-                <Highlight
-                  title="Mejor fichaje"
-                  player={highlights.best}
-                  photos={photos}
-                  value={signedPct((highlights.best.roi ?? 0) * 100, 0)}
-                  tone={toneOf(highlights.best.roi)}
-                />
-              ) : null}
-              {highlights.worst ? (
-                <Highlight
-                  title="Pierde valor"
-                  player={highlights.worst}
-                  photos={photos}
-                  value={signedPct((highlights.worst.roi ?? 0) * 100, 0)}
-                  tone={TONE.red}
-                />
-              ) : highlights.scorer ? (
-                <Highlight
-                  title="Más puntos contigo"
-                  player={highlights.scorer}
-                  photos={photos}
-                  value={`${points(highlights.scorer.points_owned)} pts`}
-                  tone="#FFC08A"
-                />
-              ) : null}
+                  {item.label}
+                </button>
+              ))}
             </div>
-          ) : null}
+            <label className="shrink-0 min-[900px]:hidden">
+              <span className="sr-only">Ordenar por</span>
+              <select
+                value={sort}
+                onChange={(event) => {
+                  setSort(event.target.value as Sort);
+                  setAscending(false);
+                }}
+                className="h-8 rounded-full bg-white/[0.06] px-2.5 text-[12.5px] text-white outline-none"
+              >
+                {SORTS.map((item) => (
+                  <option key={item.id} value={item.id} className="bg-[#141414]">
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
 
-          <div className="eq-scroll -mx-1 px-1" role="toolbar" aria-label="Filtrar por posición">
-            {POSITIONS.map((item) => (
+        {/* Cabecera de la tabla: cada columna ordena, y repetir el clic invierte el sentido. */}
+        <div className={`${ROW_GRID} hidden border-y border-white/[0.06] px-5 py-2 min-[900px]:grid`}>
+          <span className="text-[11.5px] text-white/40">Jugador</span>
+          {SORTS.map((item) => {
+            const on = sort === item.id;
+            return (
               <button
                 key={item.id}
                 type="button"
-                aria-pressed={position === item.id}
-                onClick={() => setPosition(item.id)}
-                className={position === item.id ? "eq-chip eq-chip--on" : "eq-chip"}
+                aria-pressed={on}
+                aria-label={`Ordenar por ${item.label}${on ? (ascending ? ", de menor a mayor" : ", de mayor a menor") : ""}`}
+                onClick={() => {
+                  if (on) setAscending((state) => !state);
+                  else {
+                    setSort(item.id);
+                    setAscending(false);
+                  }
+                }}
+                className={`inline-flex items-center justify-end gap-1 text-right text-[11.5px] transition-colors duration-200 ${on ? "font-semibold text-white" : "text-white/40 hover:text-white/75"}`}
               >
                 {item.label}
-                {item.id === "all" ? <span className="tabular-nums opacity-60">{players.length}</span> : null}
+                <svg viewBox="0 0 8 8" className={`h-2 w-2 transition-transform duration-300 ${on ? "opacity-100" : "opacity-0"} ${ascending ? "rotate-180" : ""}`} aria-hidden="true">
+                  <path d="M1 2.5 4 6l3-3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </button>
-            ))}
-          </div>
+            );
+          })}
+          <span aria-hidden="true" />
+        </div>
 
-          {visible.length ? (
-            <ul className="home-glass overflow-hidden">
-              {visible.map((player, index) => (
-                <PlayerCard
-                  key={String(player.player_id)}
-                  player={player}
-                  photos={photos}
-                  audit={audit.get(String(player.player_id))}
-                  danger={danger.has(String(player.player_id))}
-                  rate={rate}
-                  index={index}
-                />
-              ))}
-            </ul>
-          ) : (
-            <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">
-              {players.length ? "Nadie juega en esa posición." : "Tu plantilla no trae jugadores."}
-            </p>
-          )}
-        </section>
-      </div>
+        {visible.length ? (
+          <ul className="divide-y divide-white/[0.05] border-t border-white/[0.06] min-[900px]:border-t-0">
+            {visible.map((player) => (
+              <PlayerCard
+                key={String(player.player_id)}
+                player={player}
+                photos={photos}
+                audit={audit.get(String(player.player_id))}
+                danger={danger.has(String(player.player_id))}
+                rate={rate}
+                total={total}
+              />
+            ))}
+          </ul>
+        ) : (
+          <p className="border-t border-white/[0.06] px-4 py-8 text-center text-[13.5px] text-white/50">
+            {players.length ? "Nadie juega en esa posición." : "Tu plantilla no trae jugadores."}
+          </p>
+        )}
+      </section>
     </div>
   );
 }
