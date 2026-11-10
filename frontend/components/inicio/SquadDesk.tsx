@@ -51,12 +51,6 @@ export function SquadDesk({ plan, photos, loading }: { plan: PlanPayload | null;
   if (loading && !plan) return <div className="ini-skel h-64" aria-hidden="true" />;
   if (!clauses && !sales.length) return null;
 
-  const windowLabel = clauses?.resumen.ventana_abierta
-    ? clauses.resumen.ventana_cierra
-      ? `Ventana abierta hasta ${clauses.resumen.ventana_cierra}`
-      : "Ventana abierta"
-    : "Ventana de cláusulas cerrada";
-
   let head;
   let rows: React.ReactNode[] = [];
   let empty = "";
@@ -69,21 +63,18 @@ export function SquadDesk({ plan, photos, loading }: { plan: PlanPayload | null;
         label={r?.en_peligro === 1 ? "jugador en peligro" : "jugadores en peligro"}
         tone={r?.riesgo_alto ? "var(--ini-red)" : undefined}
         detail={[
-          r?.riesgo_alto ? `${r.riesgo_alto} de riesgo alto` : "",
           r && r.coste_proteger_eur > 0 ? `Blindar todo: ${money(r.coste_proteger_eur)}` : "",
-          windowLabel,
         ].filter(Boolean)}
       />
     );
     rows = proteger.map((row, i) => <DangerRow key={row.player_id} row={row} photos={photos} index={i} />);
     empty = "Ningún rival puede pagar hoy la cláusula de tus jugadores.";
   } else if (desk === "clausulazos") {
-    const open = raids.filter((row) => row.abierta_ahora).length;
     head = (
       <Summary
         value={String(raids.length)}
         label={raids.length === 1 ? "clausulazo que compensa" : "clausulazos que compensan"}
-        detail={[raids.length ? `${open} ${open === 1 ? "abierto" : "abiertos"} ahora` : "", windowLabel].filter(Boolean)}
+        detail={[]}
       />
     );
     rows = raids.map((row, i) => <RaidRow key={row.player_id} row={row} photos={photos} index={i} />);
