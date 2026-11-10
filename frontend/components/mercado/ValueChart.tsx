@@ -196,14 +196,8 @@ export function ValueChart({
             />
             {!active ? (
               <span
-                className="pointer-events-none absolute -translate-x-full whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-semibold tabular-nums backdrop-blur-md"
-                style={{
-                  left: pctX(fx - 8),
-                  top: pctY(fy < 40 ? fy + 12 : fy - 34),
-                  color: futureColor,
-                  background: "rgba(11,11,11,0.7)",
-                  boxShadow: `inset 0 0 0 1px ${futureColor}44`,
-                }}
+                className="pointer-events-none absolute -translate-x-full whitespace-nowrap text-[12px] font-semibold tabular-nums"
+                style={{ left: pctX(fx - 10), top: pctY(fy < 40 ? fy + 12 : fy - 30), color: futureColor }}
               >
                 {money(future.value)}
               </span>

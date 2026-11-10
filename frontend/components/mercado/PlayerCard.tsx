@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { gradeColor } from "@/components/mercado/MarketGrade";
 import { ValueChart } from "@/components/mercado/ValueChart";
 import { CompararConSugerido } from "@/components/comparador/ComparadorReal";
 import { Face, TONE, cleanText, money, parsePct, signedPct } from "@/components/ui/kit";
@@ -9,7 +8,7 @@ import { ACTION_VERDICT, auctionLabel, winShare } from "@/components/mercado/sha
 import { bidStory } from "@/lib/mercado/bidStory";
 import { playerName } from "@/lib/core/format";
 import { actionReason, executableBid, isVetoed, marketAction } from "@/lib/mercado/marketAction";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import { statusBadgeLabel } from "@/components/ui/StatusBadge";
 import { Crest } from "@/components/ui/Crest";
 import type { MarketDecision } from "@/lib/types";
 
@@ -18,12 +17,12 @@ type Match = { opponent: string; home: boolean | null; difficulty: string | null
 const DIFF: Record<string, { label: string; color: string }> = {
   muy_facil: { label: "Muy fácil", color: TONE.green },
   very_easy: { label: "Muy fácil", color: TONE.green },
-  facil: { label: "Fácil", color: "#4FD1A5" },
-  easy: { label: "Fácil", color: "#4FD1A5" },
-  media: { label: "Media", color: TONE.amber },
-  medium: { label: "Media", color: TONE.amber },
-  dificil: { label: "Difícil", color: "#FF9A5A" },
-  hard: { label: "Difícil", color: "#FF9A5A" },
+  facil: { label: "Fácil", color: TONE.green },
+  easy: { label: "Fácil", color: TONE.green },
+  media: { label: "Media", color: TONE.gray },
+  medium: { label: "Media", color: TONE.gray },
+  dificil: { label: "Difícil", color: TONE.red },
+  hard: { label: "Difícil", color: TONE.red },
   muy_dificil: { label: "Muy difícil", color: TONE.red },
   very_hard: { label: "Muy difícil", color: TONE.red },
 };
@@ -74,11 +73,6 @@ function ifYouSell(player: MarketDecision, cash: number | null): { ideal: number
   return { ideal, max: max !== null && max > ideal ? max : null, missing: cash !== null && ideal > cash ? ideal - cash : null };
 }
 
-function titularColor(share: number | null): string | undefined {
-  if (share === null) return undefined;
-  return share >= 0.8 ? TONE.green : share >= 0.5 ? TONE.amber : TONE.red;
-}
-
 function closesIn(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const at = new Date(iso);
@@ -90,90 +84,81 @@ function closesIn(iso: string | null | undefined): string | null {
   return `Cierra ${at.toLocaleString("es-ES", { weekday: "short", hour: "2-digit", minute: "2-digit" })}`;
 }
 
-function Pill({ color, children }: { color: string; children: ReactNode }) {
+/** Sección de la ficha: una sola superficie, separada por una línea fina. */
+function Section({ title, aside, children }: { title?: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold" style={{ color, background: `${color}1f` }}>
-      {children}
-    </span>
-  );
-}
-
-function Block({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="rounded-[1.5rem] bg-[#141414] p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h3 className="text-[13px] font-semibold text-white/80">{title}</h3>
-        {aside ? <span className="text-[12px] tabular-nums text-white/45">{aside}</span> : null}
-      </div>
+    <section className="border-t border-white/[0.07] px-5 py-5 sm:px-7">
+      {title ? (
+        <div className="mb-4 flex items-baseline justify-between gap-3">
+          <h3 className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/40">{title}</h3>
+          {aside ? <span className="text-[12.5px] tabular-nums text-white/50">{aside}</span> : null}
+        </div>
+      ) : null}
       {children}
     </section>
   );
 }
 
-function Stat({ label, value, tone, sub }: { label: string; value: string; tone?: string; sub?: string }) {
+/** Cifra clave sin caja: etiqueta gris, número blanco y una línea de apoyo. */
+function Figure({ label, value, tone, sub }: { label: string; value: string; tone?: string; sub?: string }) {
   return (
-    <div className="min-w-0 rounded-2xl bg-white/[0.04] px-3 py-3">
-      <p className="truncate text-[11px] text-white/45">{label}</p>
-      <p className="mt-1 truncate text-[1.2rem] font-semibold leading-none tabular-nums" style={{ color: tone || "#fff" }}>
+    <div className="min-w-0">
+      <p className="truncate text-[11.5px] text-white/40">{label}</p>
+      <p className="mt-1.5 truncate text-[1.3rem] font-semibold leading-none tracking-[-0.02em] tabular-nums" style={{ color: tone || "#fff" }}>
         {value}
       </p>
-      {sub ? <p className="mt-1 truncate text-[11px] text-white/40">{sub}</p> : null}
+      {sub ? <p className="mt-1.5 truncate text-[11.5px] text-white/40">{sub}</p> : null}
     </div>
   );
 }
 
-/** Probabilidad de ganar la puja como anillo pequeño. */
-function WinRing({ share }: { share: number | null }) {
-  const size = 64;
-  const r = 26;
-  const c = 2 * Math.PI * r;
-  const color = share === null ? TONE.gray : share >= 0.7 ? TONE.green : share >= 0.4 ? TONE.amber : TONE.red;
+/** Aviso de una línea: punto de color y texto gris. */
+function Note({ color, children }: { color: string; children: ReactNode }) {
   return (
-    <span className="relative inline-grid shrink-0 place-items-center" style={{ width: size, height: size }}>
-      <svg viewBox={`0 0 ${size} ${size}`} className="absolute inset-0 -rotate-90" aria-hidden="true">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="5" />
-        {share !== null ? (
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth="5"
-            strokeLinecap="round"
-            strokeDasharray={`${c * share} ${c}`}
-            className="transition-[stroke-dasharray] duration-700 ease-out"
-          />
-        ) : null}
-      </svg>
-      <span className="text-center">
-        <span className="block text-[15px] font-semibold leading-none tabular-nums" style={{ color: share === null ? "rgba(255,255,255,0.5)" : "#fff" }}>
-          {share === null ? "—" : `${Math.round(share * 100)}%`}
-        </span>
-        <span className="mt-0.5 block text-[9px] font-medium uppercase tracking-[0.12em] text-white/40">ganar</span>
-      </span>
-    </span>
+    <p className="flex items-start gap-2.5 text-[13px] leading-snug text-white/60">
+      <span className="mt-[0.45em] h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} aria-hidden="true" />
+      <span>{children}</span>
+    </p>
   );
 }
 
-/** Puntos por jornada en barras redondeadas. */
-function FormBars({ weeks }: { weeks: number[] }) {
+/** Probabilidad de ganar la puja: cifra y barra fina. */
+function WinMeter({ share }: { share: number | null }) {
+  return (
+    <div className="w-[7.5rem] shrink-0 text-right">
+      <p className="text-[11.5px] text-white/40">Opciones de ganar</p>
+      <p className="mt-1.5 text-[1.3rem] font-semibold leading-none tracking-[-0.02em] tabular-nums text-white">
+        {share === null ? "—" : `${Math.round(share * 100)} %`}
+      </p>
+      <span className="mt-2.5 block h-[3px] overflow-hidden rounded-full bg-white/[0.08]" aria-hidden="true">
+        <span
+          className="block h-full rounded-full bg-white/80 transition-[width] duration-700 ease-out"
+          style={{ width: `${Math.round((share ?? 0) * 100)}%` }}
+        />
+      </span>
+    </div>
+  );
+}
+
+/** Puntos por jornada: barras neutras, las que superan la media en blanco. */
+function FormBars({ weeks, average }: { weeks: number[]; average: number | null }) {
   const shown = weeks.slice(-8);
   if (!shown.length) return <p className="text-[13px] text-white/45">Sin puntos de jornada guardados.</p>;
   const top = Math.max(10, ...shown);
   const first = weeks.length - shown.length + 1;
+  const mean = average ?? shown.reduce((sum, value) => sum + value, 0) / shown.length;
   return (
-    <div className="flex h-28 items-end gap-1.5">
+    <div className="flex h-28 items-end gap-2">
       {shown.map((value, index) => {
-        const color = value >= 10 ? TONE.green : value >= 5 ? "#FF9A5A" : value > 0 ? TONE.amber : TONE.red;
+        const good = value >= mean && value > 0;
         return (
-          <span key={index} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
-            <span className="text-[11px] font-semibold tabular-nums text-white/80">{dec(value, 0)}</span>
+          <span key={index} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1.5">
+            <span className={`text-[11.5px] font-medium tabular-nums ${good ? "text-white" : "text-white/45"}`}>{dec(value, 0)}</span>
             <span
-              className="w-full max-w-[1.5rem] rounded-t-[0.6rem] rounded-b-[0.3rem]"
-              style={{ height: `${Math.max(4, (Math.max(0, value) / top) * 78)}%`, background: `linear-gradient(180deg, ${color}, ${color}88)` }}
+              className="w-full max-w-[1.75rem] rounded-[0.3rem]"
+              style={{ height: `${Math.max(3, (Math.max(0, value) / top) * 72)}%`, background: good ? "rgba(255,255,255,0.82)" : "rgba(255,255,255,0.16)" }}
             />
-            <span className="text-[10px] tabular-nums text-white/35">J{first + index}</span>
+            <span className="text-[10.5px] tabular-nums text-white/30">J{first + index}</span>
           </span>
         );
       })}
@@ -240,7 +225,6 @@ export function PlayerCard({
     const average = num(player.average_points);
     const history = Array.isArray(player.value_history) ? player.value_history : [];
     const matches = upcoming(player);
-    const accent = note === null ? TONE.gray : gradeColor(note);
     const heat = auctionLabel(player);
     // Si es objetivo del plan de Inicio, manda su frase («viable vendiendo a X»).
     const reason = cleanText(
@@ -263,214 +247,171 @@ export function PlayerCard({
     // «Caja después» con la cifra grande de la ficha, no con `bid_eur`.
     const shownBid = ideal ?? sell?.ideal ?? null;
     const cashAfter = cash !== null && shownBid !== null ? cash - shownBid : num(player.cash_after_eur);
-    const bidLabel = sell ? "Puja ideal si vendes a alguien" : ideal === null ? "Valor de mercado" : action === "PUJAR" ? "Puja recomendada" : "Si decides pujar";
-    const howTo =
-      ideal === null
-        ? null
-        : action === "PUJAR"
-          ? `Ofrece ${money(ideal)}${max !== null && max > ideal ? ` y, si te superan, no pases de ${money(max)}` : ""}.`
-          : action === "ESPERAR"
-            ? "Hoy no compensa pujar: espera a que baje o a que cambie tu once."
-            : null;
+    const bidLabel = sell ? "Puja ideal si vendes a alguien" : action === "PUJAR" ? "Puja recomendada" : "Si decides pujar";
+    const status = statusBadgeLabel(player.official_status || player.player_status);
+    const overbidStatus = player.bid_plan?.overbid?.status;
+    const improves = delta !== null && delta > 0 && Boolean(player.replaces?.name);
+    const cap = ideal !== null && max !== null && max > ideal ? max : sell?.max ?? null;
+    const leading = typeof player.leading_bid === "number" ? money(player.leading_bid) : heat || "Ninguna";
 
     return (
-      <article className="flex flex-col gap-2.5 p-2.5 sm:p-3">
-        <span className="mx-auto mt-0.5 h-1 w-10 rounded-full bg-white/20 sm:hidden" aria-hidden="true" />
+      <article className="flex flex-col">
+        <span className="mx-auto mt-2 h-1 w-10 rounded-full bg-white/15 sm:hidden" aria-hidden="true" />
 
-        <header
-          className="relative overflow-hidden rounded-[1.75rem] px-4 pb-4 pt-5"
-          style={{
-            background: `radial-gradient(ellipse 120% 90% at 50% 0%, ${verdict.color}40 0%, ${verdict.color}14 45%, transparent 75%), #111`,
-          }}
-        >
+        <header className="relative px-5 pb-5 pt-5 sm:px-7 sm:pt-7">
           <button
             type="button"
             onClick={onClose}
             aria-label="Cerrar"
-            className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-black/30 text-white/70 outline-none backdrop-blur-md transition-colors hover:bg-black/50 hover:text-white focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.4)]"
+            className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-white/45 outline-none transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.4)] sm:right-5 sm:top-5"
           >
-            <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
               <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
             </svg>
           </button>
-          <div className="flex items-center gap-3.5 pr-10">
-            <Face name={name} src={player.image_url || photo} size={64} ring={verdict.color} />
+          <div className="flex items-center gap-4 pr-10">
+            <Face name={name} src={player.image_url || photo} size={60} />
             <div className="min-w-0 flex-1">
-              <h2 className="truncate text-[1.35rem] font-semibold leading-tight tracking-tight text-white">{name}</h2>
-              <p className="mt-0.5 truncate text-[13px] text-white/55">{[player.position, player.club].filter(Boolean).join(" · ")}</p>
-              <p className="mt-0.5 truncate text-[12px] text-white/40">{[seller, closing].filter(Boolean).join(" · ")}</p>
+              <h2 className="truncate text-[1.4rem] font-semibold leading-tight tracking-[-0.02em] text-white">{name}</h2>
+              <p className="mt-1 flex items-center gap-1.5 text-[13px] text-white/55">
+                <Crest club={player.club} size={16} />
+                <span className="truncate">{[player.club, player.position].filter(Boolean).join(" · ")}</span>
+              </p>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap items-center gap-1.5">
-            <Pill color={verdict.color}>
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: verdict.color }} aria-hidden="true" />
-              {verdict.label}
-            </Pill>
-            {note !== null ? <Pill color={accent}>Nota {dec(note)}</Pill> : null}
-            {heat ? <Pill color={TONE.amber}>{heat}</Pill> : null}
-            <StatusBadge status={player.official_status || player.player_status} />
-          </div>
-          <p className="mt-3 line-clamp-3 text-[14px] leading-snug text-white/80">{reason}</p>
+          <p className="mt-4 text-[12.5px] text-white/40">
+            {[seller, closing].filter(Boolean).join(" · ")}
+            {status ? (
+              <>
+                {" · "}
+                <span style={{ color: status === "Duda" ? TONE.amber : TONE.red }}>{status}</span>
+              </>
+            ) : null}
+          </p>
         </header>
 
-        <section className="rounded-[1.5rem] bg-[#141414] p-4" aria-label="Tu puja">
-          <div className="flex items-center gap-4">
-            <div className="min-w-0 flex-1">
-              <p className="text-[12px] text-white/45">{bidLabel}</p>
-              <p className="mt-1 text-[2.1rem] font-semibold leading-none tracking-[-0.03em] tabular-nums text-white">
-                {money(ideal ?? sell?.ideal ?? value)}
-              </p>
-              {ideal !== null && max !== null && max > ideal ? (
-                <p className="mt-1.5 text-[12.5px] tabular-nums text-white/50">
-                  Hasta <span className="font-semibold text-[#FFC08A]">{money(max)}</span> {maxIsCash ? "como máximo: es toda tu caja" : "como máximo"}
-                </p>
-              ) : null}
-              {sell ? (
-                <p className="mt-1.5 text-[12.5px] tabular-nums text-white/50">
-                  {sell.max !== null ? (
-                    <>
-                      Hasta <span className="font-semibold text-[#FFC08A]">{money(sell.max)}</span> como máximo
-                    </>
-                  ) : null}
-                  {sell.max !== null && sell.missing !== null ? " · " : null}
-                  {sell.missing !== null ? <>te faltan <span className="font-semibold text-[#FF8A7A]">{money(sell.missing)}</span> de caja</> : null}
-                </p>
-              ) : null}
-            </div>
-            {ideal !== null ? <WinRing share={win} /> : null}
-          </div>
-          {overbid ? (
-            <p
-              className="mt-3 flex items-center gap-2 text-[12.5px] font-medium"
-              style={{ color: player.bid_plan?.overbid?.status === "guerra" ? TONE.red : player.bid_plan?.overbid?.status === "high" ? TONE.copper : TONE.green }}
-            >
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
-              {overbid}
-            </p>
-          ) : null}
-          <div className="mt-4 grid grid-cols-3 gap-2 border-t border-white/[0.06] pt-3 text-[12px]">
-            <div className="min-w-0">
-              <p className="text-white/40">Valor</p>
-              <p className="mt-0.5 truncate font-semibold tabular-nums text-white">{money(value)}</p>
-            </div>
-            <div className="min-w-0">
-              <p className="text-white/40">Puja más alta</p>
-              <p className="mt-0.5 truncate font-semibold tabular-nums text-white">
-                {typeof player.leading_bid === "number" ? money(player.leading_bid) : heat ? "Oculta" : "Ninguna"}
-              </p>
-            </div>
-            <div className="min-w-0 text-right">
-              <p className="text-white/40">{cash !== null && shownBid !== null ? "Caja si pujas esta" : "Caja después"}</p>
-              <p
-                className="mt-0.5 truncate font-semibold tabular-nums"
-                style={{ color: cashAfter !== null && cashAfter < 0 ? TONE.red : "#fff" }}
-              >
-                {money(cashAfter)}
-              </p>
-            </div>
-          </div>
-          {howTo ? (
-            <p className="mt-3 flex gap-2 rounded-2xl bg-white/[0.04] px-3 py-2.5 text-[13px] leading-snug text-white/75">
-              <span className="font-semibold text-[#FF9A5A]" aria-hidden="true">
-                →
-              </span>
-              <span>{howTo}</span>
-            </p>
-          ) : null}
-          {risk ? (
-            <p className="mt-2 flex gap-2 rounded-2xl px-3 py-2.5 text-[13px] leading-snug" style={{ color: TONE.amber, background: `${TONE.amber}14` }}>
-              <span className="font-semibold" aria-hidden="true">
-                !
-              </span>
-              <span>{risk}</span>
-            </p>
-          ) : null}
-        </section>
+        <Section>
+          <p className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-white/40">
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: verdict.color }} aria-hidden="true" />
+            Recomendación
+          </p>
+          <p className="mt-2 text-[1.15rem] font-semibold leading-tight tracking-[-0.01em] text-white">
+            {action === "NO" ? "No pujar" : verdict.label}
+          </p>
+          <p className="mt-1.5 text-[14px] leading-relaxed text-white/60">{reason}</p>
 
-        <Block
-          title="Valor y previsión"
-          aside={
-            trend !== null ? (
-              <span className="font-semibold" style={{ color: trendColor }}>
-                {trend > 0 ? "▲" : trend < 0 ? "▼" : "•"} {signedPct(trend)} en 7 días
-              </span>
-            ) : (
-              "sin previsión"
-            )
-          }
-        >
-          <div className="mb-3 flex items-end justify-between gap-3">
-            <p className="text-[1.7rem] font-semibold leading-none tracking-[-0.02em] tabular-nums text-white">{money(value)}</p>
-            {gain7 !== null ? (
-              <p className="text-right text-[12px] text-white/45">
-                En 7 días
-                <span className="block text-[14px] font-semibold tabular-nums" style={{ color: trendColor }}>
-                  {gain7 > 0 ? "+" : ""}
-                  {money(gain7)}
-                </span>
+          {shownBid !== null ? (
+            <div className="mt-6 flex items-end justify-between gap-5">
+              <div className="min-w-0">
+                <p className="text-[11.5px] text-white/40">{bidLabel}</p>
+                <p className="mt-1.5 text-[2.4rem] font-semibold leading-none tracking-[-0.035em] tabular-nums text-white">{money(shownBid)}</p>
+              </div>
+              {ideal !== null ? <WinMeter share={win} /> : null}
+            </div>
+          ) : null}
+
+          <dl className={`mt-6 grid gap-4 border-t border-white/[0.07] pt-4 ${cap !== null ? "grid-cols-3" : "grid-cols-2"}`}>
+            {cap !== null ? (
+              <div className="min-w-0">
+                <dt className="truncate text-[11.5px] text-white/40">{maxIsCash ? "Tope: toda tu caja" : "No pases de"}</dt>
+                <dd className="mt-1 truncate text-[14px] font-semibold tabular-nums text-white">{money(cap)}</dd>
+              </div>
+            ) : null}
+            <div className="min-w-0">
+              <dt className="truncate text-[11.5px] text-white/40">{typeof player.leading_bid === "number" ? "Puja más alta" : "Pujas de rivales"}</dt>
+              <dd className="mt-1 truncate text-[14px] font-semibold tabular-nums text-white">{leading}</dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="truncate text-[11.5px] text-white/40">{cash !== null && shownBid !== null ? "Tu caja si pujas" : "Caja después"}</dt>
+              <dd className="mt-1 truncate text-[14px] font-semibold tabular-nums" style={{ color: cashAfter !== null && cashAfter < 0 ? TONE.red : "#fff" }}>
+                {money(cashAfter)}
+              </dd>
+            </div>
+          </dl>
+
+          {sell?.missing != null || overbid || risk ? (
+            <div className="mt-4 flex flex-col gap-2">
+              {sell?.missing != null ? <Note color={TONE.red}>Te faltan {money(sell.missing)} de caja: solo es viable si vendes a alguien.</Note> : null}
+              {overbid ? (
+                <Note color={overbidStatus === "guerra" ? TONE.red : overbidStatus === "high" ? TONE.amber : TONE.green}>{overbid}</Note>
+              ) : null}
+              {risk ? <Note color={TONE.amber}>{risk}</Note> : null}
+            </div>
+          ) : null}
+        </Section>
+
+        <Section title="Qué te aporta">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-4">
+            <Figure label="Nota de mercado" value={dec(note)} sub="sobre 10" />
+            <Figure label="Próxima jornada" value={`${dec(xp)} pts`} sub={xp4 !== null ? `${dec(xp4)} en 4 jornadas` : "esperados"} />
+            <Figure label="Titular" value={titular === null ? "—" : `${Math.round(titular * 100)} %`} sub="probabilidad" />
+            <Figure
+              label="En tu once"
+              value={improves ? `+${dec(delta)} pts` : "No mejora"}
+              tone={improves ? TONE.green : "rgba(255,255,255,0.55)"}
+              sub={
+                player.replaces?.name
+                  ? player.replaces.formation && player.replaces.formation !== player.replaces.formation_from
+                    ? `por ${player.replaces.name} · ${player.replaces.formation}`
+                    : `por ${player.replaces.name}`
+                  : "frente a tu titular"
+              }
+            />
+          </div>
+        </Section>
+
+        <Section title="Valor de mercado" aside={trend === null ? "sin previsión" : "previsión a 7 días"}>
+          <div className="mb-4 flex items-end justify-between gap-3">
+            <p className="text-[1.6rem] font-semibold leading-none tracking-[-0.025em] tabular-nums text-white">{money(value)}</p>
+            {trend !== null ? (
+              <p className="text-[14px] font-semibold tabular-nums" style={{ color: trendColor }}>
+                {gain7 !== null ? `${gain7 > 0 ? "+" : ""}${money(gain7)} · ` : ""}
+                {signedPct(trend)}
               </p>
             ) : null}
           </div>
           <ValueChart history={history} today={value} forecast={forecast} trendPct={trend} />
-        </Block>
+        </Section>
 
-        <div className="grid grid-cols-2 gap-2.5">
-          <Stat label="Próxima jornada" value={`${dec(xp)} pts`} tone="#FFC08A" sub={xp4 !== null ? `${dec(xp4)} en 4 jornadas` : undefined} />
-          <Stat label="Titular" value={titular === null ? "—" : `${Math.round(titular * 100)}%`} tone={titularColor(titular)} sub="probabilidad" />
-          <Stat
-            label="Tu once"
-            value={delta === null || !player.replaces?.name ? "No mejora" : `${delta > 0 ? "+" : ""}${dec(delta)} pts`}
-            tone={delta !== null && delta > 0 && player.replaces?.name ? TONE.green : "rgba(255,255,255,0.6)"}
-            sub={
-              player.replaces?.name
-                ? player.replaces.formation && player.replaces.formation !== player.replaces.formation_from
-                  ? `por ${player.replaces.name} · ${player.replaces.formation}`
-                  : `por ${player.replaces.name}`
-                : undefined
-            }
-          />
-          <Stat label="Media" value={average !== null ? `${dec(average)} pts` : "—"} sub="por jornada" />
-        </div>
-
-        <Block title="Últimas jornadas" aside={average !== null ? `media ${dec(average)} pts` : undefined}>
-          <FormBars weeks={weeks} />
-        </Block>
+        <Section title="Últimas jornadas" aside={average !== null ? `media ${dec(average)} pts` : undefined}>
+          <FormBars weeks={weeks} average={average} />
+        </Section>
 
         {matches.length ? (
-          <Block title="Próximos rivales">
-            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Section title="Próximos rivales">
+            <ul className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-4">
               {matches.map((match, index) => {
-                const diff = (match.difficulty && DIFF[match.difficulty]) || { label: "s/d", color: TONE.gray };
+                const diff = (match.difficulty && DIFF[match.difficulty]) || { label: "Sin dato", color: TONE.gray };
                 return (
-                  <li key={`${match.opponent}-${index}`} className="relative overflow-hidden rounded-2xl bg-white/[0.04] px-3 py-2.5">
-                    <span className="absolute inset-y-0 left-0 w-1" style={{ background: diff.color }} aria-hidden="true" />
-                    <p className="text-[10.5px] text-white/40">
-                      {index === 0 ? "Próximo" : `En ${index + 1}`} · {match.home === true ? "casa" : match.home === false ? "fuera" : "—"}
-                    </p>
-                    <p className="mt-0.5 flex items-center gap-1.5 text-[14px] font-semibold text-white">
-                      <Crest club={match.opponent} size={20} />
-                      <span className="truncate">{match.opponent}</span>
-                    </p>
-                    <p className="mt-0.5 text-[11.5px] font-medium" style={{ color: diff.color }}>
-                      {diff.label}
-                    </p>
+                  <li key={`${match.opponent}-${index}`} className="flex min-w-0 items-center gap-2.5">
+                    <Crest club={match.opponent} size={26} />
+                    <div className="min-w-0">
+                      <p className="truncate text-[13.5px] font-medium text-white">{match.opponent}</p>
+                      <p className="mt-0.5 flex items-center gap-1.5 truncate text-[11.5px] text-white/45">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: diff.color }} aria-hidden="true" />
+                        {diff.label}
+                        {match.home === null ? "" : match.home ? " · casa" : " · fuera"}
+                      </p>
+                    </div>
                   </li>
                 );
               })}
             </ul>
-          </Block>
+          </Section>
         ) : null}
 
-        <button
-          type="button"
-          onClick={() => {
-            if (player.player_id) setComparing({ id: String(player.player_id), position: player.position });
-            onClose();
-          }}
-          className="mb-1 h-12 w-full rounded-full bg-white text-[14px] font-semibold text-[#0b0b0b] transition-transform duration-200 ease-out active:scale-[0.98]"
-        >
-          Comparar con otro jugador
-        </button>
+        <div className="border-t border-white/[0.07] px-5 py-4 sm:px-7 sm:py-5">
+          <button
+            type="button"
+            onClick={() => {
+              if (player.player_id) setComparing({ id: String(player.player_id), position: player.position });
+              onClose();
+            }}
+            className="h-12 w-full rounded-full bg-white text-[14px] font-semibold text-[#0b0b0b] transition-transform duration-200 ease-out active:scale-[0.98]"
+          >
+            Comparar con otro jugador
+          </button>
+        </div>
       </article>
     );
   })();
