@@ -129,6 +129,7 @@ def _project_roster(roster: list[Candidate]) -> dict[str, Any]:
             "xi": [],
         }
     best: tuple[float, str, list[Candidate], list[str]] | None = None
+    partial: tuple[float, str, list[Candidate], list[str]] | None = None
     for name, slots in FORMATIONS.items():
         placed: list[Candidate] = []
         gaps: list[str] = []
@@ -142,11 +143,20 @@ def _project_roster(roster: list[Candidate]) -> dict[str, Any]:
             placed.extend(pool[:need])
             if len(pool) < need:
                 gaps.append(position)
-        if len(placed) != XI_SIZE:
-            continue
         total = round(sum(candidate.jornada_ev for candidate in placed), 4)
+        if len(placed) != XI_SIZE:
+            # Plantilla corta: se guarda el once incompleto que más jugadores
+            # coloca (y, a igualdad, más puntos) por si ninguno llega a 11.
+            if partial is None or (len(placed), total) > (len(partial[2]), partial[0]):
+                partial = (total, name, placed, gaps)
+            continue
         if best is None or total > best[0]:
             best = (total, name, placed, gaps)
+    # Sin once completo se proyecta el incompleto: los huecos puntúan 0, pero
+    # los que sí juegan suman, y sin esto no hay ni proyección ni cara a cara.
+    is_partial = best is None
+    if best is None:
+        best = partial
     if best is None:
         return {
             "expected_points": None,
@@ -168,6 +178,7 @@ def _project_roster(roster: list[Candidate]) -> dict[str, Any]:
         "formation": formation,
         "players_available": len(eligible),
         "gaps": gaps,
+        "partial": is_partial,
         "xi": [_xi_row(candidate) for candidate in placed],
     }
 

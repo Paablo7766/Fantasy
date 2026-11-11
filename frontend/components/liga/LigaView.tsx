@@ -7,7 +7,7 @@ import { points } from "@/lib/core/format";
 import { applyLiquidity, financialIndex, liquidityRead } from "@/lib/liga/liquidity";
 import { SEASON_ROUNDS, paceLines } from "@/lib/liga/pace";
 import { enrichSquadsPayload } from "@/lib/liga/squadEnrich";
-import { squadPatrimonio, squadTotals } from "@/lib/liga/squadTotals";
+import { squadTotals } from "@/lib/liga/squadTotals";
 import type { PhotoIndex } from "@/lib/core/photoIndex";
 import { clauseThreats } from "@/lib/liga/threats";
 import type { LeagueEdge, LeagueFormPayload, LeagueFormRow, LeagueProjection, LeagueRacePayload, RivalIntelPayload, RivalSquad, SquadsPayload, TrendsPayload } from "@/lib/types";
@@ -172,6 +172,8 @@ export function LigaView({
       const self = ownId !== null && id === ownId;
       const name = rivalLabel(squad);
       const projection = self ? mine : projections.get(id);
+      const totals = squadTotals(squad);
+      const read = liquidityRead(squad);
       return {
         id,
         self,
@@ -183,9 +185,10 @@ export function LigaView({
         form: formById.get(id) ?? (self ? (formRows.find((row) => row.is_self) ?? null) : null),
         projection: typeof projection?.expected_points === "number" ? projection.expected_points : null,
         ceiling: typeof projection?.ceiling_points === "number" ? projection.ceiling_points : null,
-        cash: cashOf(squad),
-        value: squadPatrimonio(squad),
-        delta: squadTotals(squad).price_delta_day ?? null,
+        cash: read.calibratedCash ?? read.cash ?? squad.cash_eur ?? null,
+        bidLimit: read.bidLimit,
+        teamValue: totals.market_value_total,
+        delta: totals.price_delta_day ?? null,
       };
     });
   }, [all, formRows, raceOk, mine, ownId, ownPoints]);
@@ -227,7 +230,7 @@ export function LigaView({
   const posture = mode ? MODE[mode.name] : null;
   const leagueAvg = typeof raceOk?.league_projection === "number" ? raceOk.league_projection : null;
   const thin = (raceOk?.rivals || []).filter((row) => (row.thin_positions || []).length).sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
-  const denial = (raceOk?.denial || []).slice(0, 6);
+  const denial = raceOk?.denial || [];
   const threats = clauseThreats(all.own, all.rows);
   const selectedSquad = selected ? all.rows.find((row) => String(row.team_id) === selected) || null : null;
   const myForm = formRows.find((row) => row.is_self) || null;
@@ -336,7 +339,7 @@ export function LigaView({
           )
         ) : null}
 
-        {tab === "alertas" ? <AlertsPanel threats={threats} thin={thin} denial={denial} photos={photos} /> : null}
+        {tab === "alertas" ? <AlertsPanel threats={threats} thin={thin} denial={denial} rivalCount={Math.max(0, all.rows.length - (all.own ? 1 : 0))} photos={photos} /> : null}
       </div>
 
       <RivalDialog

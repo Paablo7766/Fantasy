@@ -3,8 +3,8 @@
 import { useMemo, useState } from "react";
 import { points } from "@/lib/core/format";
 import type { LeagueFormRow } from "@/lib/types";
-import { TONE, money, signedMoney, toneOf } from "@/components/ui/kit";
-import { CardHead, Cell } from "./parts";
+import { TONE, money, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
+import { CardHead } from "./parts";
 
 export type StandingRow = {
   id: string;
@@ -20,63 +20,101 @@ export type StandingRow = {
   projection: number | null;
   ceiling: number | null;
   cash: number | null;
-  value: number | null;
+  bidLimit: number | null;
+  /** Valor de mercado de la plantilla, sin la caja. */
+  teamValue: number | null;
+  /** Lo que ha cambiado hoy el valor de la plantilla. */
   delta: number | null;
 };
 
-type Sort = "points" | "form" | "projection" | "cash" | "value";
+type Metric = "points" | "form" | "projection" | "cash" | "value" | "delta";
 
-const SORTS: { id: Sort; label: string }[] = [
+const METRICS: { id: Metric; label: string }[] = [
   { id: "points", label: "Puntos" },
-  { id: "form", label: "Forma" },
-  { id: "projection", label: "Próx. jornada" },
+  { id: "delta", label: "Subida de hoy" },
+  { id: "value", label: "Valor del equipo" },
   { id: "cash", label: "Caja" },
-  { id: "value", label: "Patrimonio" },
+  { id: "form", label: "Forma" },
+  { id: "projection", label: "Próxima jornada" },
 ];
 
-/** En móvil, puesto, mánager y puntos; en escritorio, todas las columnas. */
-const GRID =
-  "grid grid-cols-[1.5rem_minmax(0,1fr)_auto_1rem] items-center gap-x-3 min-[900px]:grid-cols-[1.5rem_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)_1rem] min-[900px]:gap-x-5";
-
-function sortValue(row: StandingRow, sort: Sort): number | null {
-  if (sort === "form") return row.form?.recent_avg ?? null;
-  if (sort === "projection") return row.projection;
-  if (sort === "cash") return row.cash;
-  if (sort === "value") return row.value;
+function metricValue(row: StandingRow, metric: Metric): number | null {
+  if (metric === "form") return row.form?.recent_avg ?? null;
+  if (metric === "projection") return row.projection;
+  if (metric === "cash") return row.cash;
+  if (metric === "value") return row.teamValue;
+  if (metric === "delta") return row.delta;
   return row.points;
 }
 
-/** Puntos de las últimas jornadas, a la misma escala para toda la liga; la última, a pleno color. */
-function FormBars({ row, top, window, self }: { row: LeagueFormRow; top: number; window: number; self: boolean }) {
-  const shown = row.rounds.slice(-window);
-  return (
-    <span className="flex h-6 shrink-0 items-end gap-[3px]" aria-hidden="true">
-      {shown.map((item, index) => (
+/** Qué mide cada vista, en una frase: se enseña bajo el selector. */
+function helpText(metric: Metric, window: number): string {
+  if (metric === "delta") return "Cuánto ha subido o bajado hoy el valor de mercado de cada plantilla.";
+  if (metric === "value") return "Lo que vale en el mercado la plantilla de cada mánager, sin contar su caja.";
+  if (metric === "cash") return "Dinero que tiene cada uno para fichar. La de los rivales es una estimación a partir de sus movimientos.";
+  if (metric === "form") return `Quién viene en racha: media de puntos por jornada en las últimas ${window}, no en toda la temporada.`;
+  if (metric === "projection") return "Puntos que se esperan del mejor once de cada mánager en la próxima jornada. El techo es lo que haría si todo le sale bien.";
+  return "La clasificación de la liga: puntos acumulados y a cuánto está cada uno de ti.";
+}
+
+function mainText(row: StandingRow, metric: Metric): string {
+  const value = metricValue(row, metric);
+  if (value === null) return "—";
+  if (metric === "points") return String(value);
+  if (metric === "form" || metric === "projection") return points(value);
+  if (metric === "delta") return signedMoney(value);
+  return money(value);
+}
+
+function subText(row: StandingRow, metric: Metric, leaderGap: number | null, window: number): string | null {
+  if (metric === "points") {
+    if (row.self) return leaderGap === null ? null : leaderGap === 0 ? "líder" : `a ${leaderGap} del líder`;
+    if (row.gap === null) return null;
+    return row.gap === 0 ? "empatado contigo" : `${Math.abs(row.gap)} ${row.gap > 0 ? "más" : "menos"} que tú`;
+  }
+  if (metric === "form") {
+    const last = (row.form?.rounds || []).slice(-window);
+    return last.length ? `últimas: ${last.map((item) => item.points).join(" · ")}` : "sin jornadas";
+  }
+  if (metric === "projection") return row.projection === null ? "sin once" : row.ceiling !== null ? `techo ${points(row.ceiling)}` : "pts esperados";
+  if (metric === "cash") return row.bidLimit !== null ? `puja hasta ${money(row.bidLimit)}` : null;
+  if (metric === "value") return typeof row.delta === "number" && Math.abs(row.delta) >= 1 ? `${signedMoney(row.delta)} hoy` : "sin cambio hoy";
+  if (row.delta !== null && row.teamValue) return `${signedPct((row.delta / (row.teamValue - row.delta)) * 100, 2)} de su valor`;
+  return null;
+}
+
+/** Barra de la fila: de 0 al máximo de la liga; la subida de hoy crece desde el centro, verde o roja. */
+function Bar({ value, top, metric, self, className = "" }: { value: number | null; top: number; metric: Metric; self: boolean; className?: string }) {
+  const share = value === null || top <= 0 ? 0 : Math.min(1, Math.abs(value) / top);
+  if (metric === "delta") {
+    const up = (value ?? 0) >= 0;
+    return (
+      <span className={`relative block h-1.5 overflow-hidden rounded-full bg-white/[0.06] ${className}`} aria-hidden="true">
+        <span className="absolute inset-y-0 left-1/2 w-px bg-white/25" />
         <span
-          key={item.round}
-          title={`J${item.round}: ${item.points} pts`}
-          className="w-[5px] rounded-[2px]"
-          style={{
-            height: `${Math.max(12, (item.points / top) * 100)}%`,
-            background: self ? "#FFC08A" : "#fff",
-            opacity: index === shown.length - 1 ? (self ? 1 : 0.75) : self ? 0.45 : 0.25,
-          }}
+          className="absolute inset-y-0 rounded-full transition-[width] duration-500 ease-out"
+          style={{ width: `${share * 50}%`, background: up ? TONE.green : TONE.red, ...(up ? { left: "50%" } : { right: "50%" }) }}
         />
-      ))}
+      </span>
+    );
+  }
+  return (
+    <span className={`block h-1.5 overflow-hidden rounded-full bg-white/[0.06] ${className}`} aria-hidden="true">
+      <span
+        className="block h-full rounded-full transition-[width] duration-500 ease-out"
+        style={{ width: `${value !== null && value > 0 ? Math.max(2, share * 100) : 0}%`, background: self ? "#FFC08A" : "rgba(255,255,255,0.5)" }}
+      />
     </span>
   );
 }
 
-function gapText(row: StandingRow, leaderGap: number | null): string | null {
-  if (row.self) return leaderGap === null ? null : leaderGap === 0 ? "líder" : `a ${Math.abs(leaderGap)} del líder`;
-  if (row.gap === null) return null;
-  if (row.gap === 0) return "empatado contigo";
-  return `${Math.abs(row.gap)} ${row.gap > 0 ? "más" : "menos"} que tú`;
-}
+const GRID =
+  "grid grid-cols-[1.5rem_minmax(0,1fr)_auto_1rem] items-center gap-x-3 min-[900px]:grid-cols-[1.5rem_minmax(0,14rem)_minmax(0,1fr)_minmax(7.5rem,auto)_1rem] min-[900px]:gap-x-6";
 
 /**
- * La clasificación como una sola tabla: puntos, forma reciente, lo que se
- * espera de cada once y el dinero de cada mánager. Cada columna ordena.
+ * La liga ordenada por lo que elijas: puntos, subida de hoy, valor, caja, forma
+ * o lo que se espera la próxima jornada. La cifra elegida es la grande de cada
+ * fila y la barra la compara con el resto de un vistazo.
  */
 export function StandingsTable({
   rows,
@@ -90,137 +128,79 @@ export function StandingsTable({
   leaderGap: number | null;
   onOpen: (id: string) => void;
 }) {
-  const [sort, setSort] = useState<Sort>("points");
-  const [ascending, setAscending] = useState(false);
+  const [metric, setMetric] = useState<Metric>("points");
 
   const sorted = useMemo(() => {
     return rows.slice().sort((a, b) => {
-      const left = sortValue(a, sort);
-      const right = sortValue(b, sort);
+      const left = metricValue(a, metric);
+      const right = metricValue(b, metric);
       if (left === null && right === null) return (a.rank ?? 999) - (b.rank ?? 999);
       if (left === null) return 1;
       if (right === null) return -1;
-      const diff = ascending ? left - right : right - left;
-      return diff || (a.rank ?? 999) - (b.rank ?? 999);
+      return right - left || (a.rank ?? 999) - (b.rank ?? 999);
     });
-  }, [rows, sort, ascending]);
+  }, [rows, metric]);
 
-  const top = Math.max(1, ...rows.flatMap((row) => (row.form?.rounds || []).slice(-window).map((item) => item.points)));
-  const hasForm = rows.some((row) => row.form);
-  const hasProjection = rows.some((row) => row.projection !== null);
+  const top = Math.max(0, ...rows.map((row) => Math.abs(metricValue(row, metric) ?? 0)));
 
   return (
     <section className="home-glass overflow-hidden" aria-label="Clasificación">
-      <CardHead title="Clasificación" count={rows.length} caption="Toca un mánager para ver su plantilla y sus movimientos.">
-        <label className="shrink-0 min-[900px]:hidden">
-          <span className="sr-only">Ordenar por</span>
-          <select
-            value={sort}
-            onChange={(event) => {
-              setSort(event.target.value as Sort);
-              setAscending(false);
-            }}
-            className="h-8 rounded-full bg-white/[0.06] px-2.5 text-[12.5px] text-white outline-none"
-          >
-            {SORTS.map((item) => (
-              <option key={item.id} value={item.id} className="bg-[#141414]">
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </CardHead>
+      <CardHead title="Clasificación" count={rows.length} caption="Elige qué comparar. Toca un mánager para ver su plantilla." />
 
-      {/* Cada columna ordena, y repetir el clic invierte el sentido. */}
-      <div className={`${GRID} hidden border-y border-white/[0.06] px-5 py-2 min-[900px]:grid`}>
-        <span className="text-[11.5px] text-white/40">#</span>
-        <span className="text-[11.5px] text-white/40">Mánager</span>
-        {SORTS.map((item) => {
-          const on = sort === item.id;
+      <div className="flex gap-5 overflow-x-auto border-b border-white/[0.06] px-4 [scrollbar-width:none] min-[900px]:px-5" role="tablist" aria-label="Qué comparar">
+        {METRICS.map((item) => {
+          const on = metric === item.id;
           return (
             <button
               key={item.id}
               type="button"
-              aria-pressed={on}
-              aria-label={`Ordenar por ${item.label}${on ? (ascending ? ", de menor a mayor" : ", de mayor a menor") : ""}`}
-              onClick={() => {
-                if (on) setAscending((state) => !state);
-                else {
-                  setSort(item.id);
-                  setAscending(false);
-                }
-              }}
-              className={`inline-flex items-center justify-end gap-1 text-right text-[11.5px] transition-colors duration-200 ${on ? "font-semibold text-white" : "text-white/40 hover:text-white/75"}`}
+              role="tab"
+              aria-selected={on}
+              onClick={() => setMetric(item.id)}
+              className={`relative shrink-0 whitespace-nowrap pb-3 pt-2 text-[13.5px] transition-colors duration-200 ${on ? "font-semibold text-white" : "text-white/50 hover:text-white/80"}`}
             >
               {item.label}
-              <svg viewBox="0 0 8 8" className={`h-2 w-2 transition-transform duration-300 ${on ? "opacity-100" : "opacity-0"} ${ascending ? "rotate-180" : ""}`} aria-hidden="true">
-                <path d="M1 2.5 4 6l3-3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              {on ? <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-[#FFC08A]" aria-hidden="true" /> : null}
             </button>
           );
         })}
-        <span aria-hidden="true" />
       </div>
+      <p className="px-4 py-3 text-[12.5px] leading-snug text-white/45 min-[900px]:px-5">{helpText(metric, window)}</p>
 
-      <ul className="divide-y divide-white/[0.05] border-t border-white/[0.06] min-[900px]:border-t-0">
+      <ul key={metric} className="divide-y divide-white/[0.05] border-t border-white/[0.06]">
         {sorted.map((row, index) => {
-          const trend = row.form?.trend;
-          const up = typeof trend === "number" && trend > 0.5;
-          const down = typeof trend === "number" && trend < -0.5;
-          const slim =
-            sort === "form" && row.form
-              ? `${points(row.form.recent_avg)} pts de media`
-              : sort === "projection" && row.projection !== null
-                ? `${points(row.projection)} pts previstos`
-                : sort === "value"
-                  ? `Patrimonio ${money(row.value)}`
-                  : `Caja ${money(row.cash)}`;
+          const value = metricValue(row, metric);
+          const tone = metric === "delta" ? toneOf(value) : metric === "cash" && value !== null && value < 0 ? TONE.red : "#fff";
+          const sub = subText(row, metric, leaderGap, window);
           return (
-            <li key={row.id} className="row-in" style={{ animationDelay: `${Math.min(index, 14) * 25}ms` }}>
+            <li key={row.id} className="row-in" style={{ animationDelay: `${Math.min(index, 14) * 20}ms` }}>
               <button
                 type="button"
                 onClick={() => onOpen(row.id)}
                 className={`${GRID} w-full px-4 py-3 text-left transition-colors duration-200 hover:bg-white/[0.035] min-[900px]:px-5 ${row.self ? "bg-white/[0.045]" : ""}`}
               >
                 <span className="text-[14px] font-medium tabular-nums" style={{ color: row.self ? "#FFC08A" : "rgba(255,255,255,0.5)" }}>
-                  {row.rank ?? "—"}
+                  {value === null ? "—" : index + 1}
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-[14.5px] font-medium text-white">
                     {row.name}
                     {row.self ? <span className="ml-1.5 text-[12px] font-normal text-[#FFC08A]">Tú</span> : null}
                   </span>
-                  <span className="mt-0.5 block truncate text-[11.5px] tabular-nums text-white/40 min-[900px]:hidden">{slim}</span>
-                  {row.team ? <span className="mt-0.5 hidden truncate text-[11.5px] text-white/40 min-[900px]:block">{row.team}</span> : null}
+                  {metric !== "points" && row.rank !== null ? (
+                    <span className="mt-0.5 hidden truncate text-[11.5px] tabular-nums text-white/40 min-[900px]:block">
+                      {row.rank}º en la liga{row.points !== null ? ` · ${row.points} pts` : ""}
+                    </span>
+                  ) : null}
+                  <Bar value={value} top={top} metric={metric} self={row.self} className="mt-2 min-[900px]:hidden" />
                 </span>
-                <Cell value={row.points !== null ? String(row.points) : "—"} sub={gapText(row, leaderGap)} strong />
-                <span className="hidden min-w-0 items-center justify-end gap-2.5 min-[900px]:flex">
-                  {row.form ? (
-                    <>
-                      <FormBars row={row.form} top={top} window={window} self={row.self} />
-                      <span className="w-[3.4rem] shrink-0 text-right">
-                        <span className="block text-[14px] font-medium tabular-nums text-white">{points(row.form.recent_avg)}</span>
-                        <span className="mt-0.5 block text-[11.5px] tabular-nums" style={{ color: up ? TONE.green : down ? TONE.red : "rgba(255,255,255,0.4)" }}>
-                          {typeof trend === "number" ? (up ? `▲ ${points(trend)}` : down ? `▼ ${points(-trend)}` : "estable") : "—"}
-                        </span>
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-[14px] text-white/40">—</span>
-                  )}
+                <Bar value={value} top={top} metric={metric} self={row.self} className="hidden min-[900px]:block" />
+                <span className="min-w-0 text-right">
+                  <span className="block truncate text-[16px] font-semibold tabular-nums" style={{ color: tone }}>
+                    {mainText(row, metric)}
+                  </span>
+                  {sub ? <span className="mt-0.5 block truncate text-[11.5px] tabular-nums text-white/40">{sub}</span> : null}
                 </span>
-                <Cell
-                  className="hidden min-[900px]:block"
-                  value={row.projection !== null ? points(row.projection) : "—"}
-                  sub={row.ceiling !== null ? `techo ${points(row.ceiling)}` : null}
-                />
-                <Cell className="hidden min-[900px]:block" value={money(row.cash)} tone={row.cash !== null && row.cash < 0 ? TONE.red : undefined} />
-                <Cell
-                  className="hidden min-[900px]:block"
-                  value={money(row.value)}
-                  sub={typeof row.delta === "number" && Math.abs(row.delta) >= 1 ? `${signedMoney(row.delta)} hoy` : null}
-                  subTone={toneOf(row.delta)}
-                />
                 <svg viewBox="0 0 16 16" className="h-4 w-4 shrink-0 text-white/25" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
                   <path d="m6 4 4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
@@ -229,16 +209,6 @@ export function StandingsTable({
           );
         })}
       </ul>
-
-      <p className="border-t border-white/[0.06] px-4 py-3 text-[12px] leading-relaxed text-white/35 min-[900px]:px-5">
-        {[
-          hasForm ? `Forma: media de puntos de las últimas ${window} jornadas y si la última fue mejor o peor que las anteriores.` : null,
-          hasProjection ? "Próx. jornada: puntos esperados de su mejor once." : null,
-          "La caja de los rivales es una estimación a partir de sus movimientos.",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-      </p>
     </section>
   );
 }

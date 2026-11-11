@@ -325,6 +325,8 @@ export type LeagueProjection = {
   formation?: string | null;
   players_available?: number | null;
   gaps?: string[];
+  /** El once no llega a 11: la plantilla es corta y los huecos puntúan 0. */
+  partial?: boolean;
   source?: string | null;
 };
 
