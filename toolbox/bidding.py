@@ -463,6 +463,10 @@ def needs_from_documents(
                 )
     if store is not None and league_id:
         store.replace_league(league_id, ledgers)
+    if fresh and isinstance(market, dict):
+        from toolbox.auction_journal import capture_live
+
+        capture_live(market, squads, ledgers if isinstance(ledgers, list) else [], now=now or datetime.now(timezone.utc))
     rivals = sabotage_alerts(squads, market, trends, ledgers, now=now)
     scheduled = [
         alert

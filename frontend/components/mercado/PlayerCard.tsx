@@ -4,13 +4,13 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ValueChart } from "@/components/mercado/ValueChart";
 import { CompararConSugerido } from "@/components/comparador/ComparadorReal";
 import { Face, TONE, cleanText, money, parsePct, signedPct } from "@/components/ui/kit";
-import { ACTION_VERDICT, auctionLabel, winShare } from "@/components/mercado/shared";
+import { ACTION_VERDICT, auctionLabel } from "@/components/mercado/shared";
 import { bidStory } from "@/lib/mercado/bidStory";
 import { playerName } from "@/lib/core/format";
 import { actionReason, executableBid, isVetoed, marketAction } from "@/lib/mercado/marketAction";
 import { statusBadgeLabel } from "@/components/ui/StatusBadge";
 import { Crest } from "@/components/ui/Crest";
-import type { MarketDecision } from "@/lib/types";
+import type { MarketDecision, PujaTramo } from "@/lib/types";
 
 type Match = { opponent: string; home: boolean | null; difficulty: string | null };
 
@@ -122,20 +122,177 @@ function Note({ color, children }: { color: string; children: ReactNode }) {
   );
 }
 
-/** Probabilidad de ganar la puja: cifra y barra fina. */
-function WinMeter({ share }: { share: number | null }) {
+const EUROS_DEFECTO = 16_400_000;
+const CLAVE_EUROS = "fantasy.eurosPorPunto";
+
+/** Precio de un punto de xP. Se recuerda en este navegador. */
+function useEuros(fallback: number | null | undefined) {
+  const base = typeof fallback === "number" && fallback > 0 ? fallback : EUROS_DEFECTO;
+  const [euros, setEuros] = useState(base);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(CLAVE_EUROS);
+      const parsed = saved ? Number(saved) : NaN;
+      if (Number.isFinite(parsed) && parsed > 0) setEuros(parsed);
+      else setEuros(base);
+    } catch {
+      setEuros(base);
+    }
+  }, [base]);
+  function update(next: number) {
+    if (!Number.isFinite(next) || next < 0) return;
+    const rounded = Math.round(next);
+    setEuros(rounded);
+    try {
+      window.localStorage.setItem(CLAVE_EUROS, String(rounded));
+    } catch {
+      /* el modo privado no guarda; la cifra sigue valiendo en esta ficha */
+    }
+  }
+  return [euros, update] as const;
+}
+
+function factor(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return value.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const CADUCIDAD_XP_S = 24 * 3600;
+
+function segundosDesde(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const instante = Date.parse(iso);
+  if (!Number.isFinite(instante)) return null;
+  return Math.max(0, (Date.now() - instante) / 1000);
+}
+
+function EscudoRival({ nombre, src }: { nombre: string; src?: string | null }) {
+  if (src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src} alt="" width={28} height={28} decoding="async" referrerPolicy="no-referrer" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+    );
+  }
+  const letra = nombre.trim().charAt(0).toUpperCase() || "?";
+  return <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/10 text-[12px] font-medium text-white/70">{letra}</span>;
+}
+
+/** Ideal, asegurar y máxima. Sin probabilidad de ganar y sin píldoras. */
+function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt }: { tramo: PujaTramo; valor: number | null; puesto?: string | null; euros: number; onEuros: (next: number) => void; sinPuntos?: boolean; fetchedAt?: string | null }) {
+  const xp = typeof tramo.xp_delta === "number" ? tramo.xp_delta : 0;
+  const reventa = typeof tramo.reventa_eur === "number" ? tramo.reventa_eur : 0;
+  const bruto = Math.round(xp * euros + reventa);
+  const tope = typeof tramo.tope_eur === "number" ? Math.max(0, tramo.tope_eur) : null;
+  const maxima = tope === null ? bruto : Math.min(bruto, tope);
+  const recortada = tope !== null && bruto > tope;
+  const n = typeof tramo.n === "number" ? tramo.n : 0;
+  const ideal = typeof tramo.ideal_eur === "number" ? tramo.ideal_eur : null;
+  const asegurar = tramo.fiable && typeof tramo.asegurar_eur === "number" ? tramo.asegurar_eur : null;
+  const presente = tramo.xp_presente === true || (tramo.xp_presente == null && !sinPuntos);
+  const segundos = segundosDesde(tramo.xp_fetched_at || fetchedAt) ?? (typeof tramo.xp_edad_horas === "number" ? tramo.xp_edad_horas * 3600 : null);
+  const horas = segundos === null ? null : Math.floor(segundos / 3600);
+  const fresco = presente && segundos !== null && segundos <= CADUCIDAD_XP_S;
+  const noCompensa = fresco && asegurar !== null && asegurar > maxima;
+  const avisoMaxima = horas !== null && horas >= 24 ? `máxima sin calcular: xP de hace ${horas} h` : "máxima sin calcular: sin xP";
+  const horizonte = typeof tramo.horizonte_jornadas === "number" && tramo.horizonte_jornadas > 0 ? tramo.horizonte_jornadas : 4;
+  const porJornada = `${(euros / horizonte / 1_000_000).toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} M por punto y jornada, a ${horizonte} jornadas`;
+  const barato = valor !== null && valor < 1_500_000;
+  const detalleIdeal = n > 0 ? `valor × ${factor(tramo.mediana)} · mediana de ${n} compras` : "sin compras en este tramo";
+  const detalleMaxima = [
+    xp > 0 ? `${dec(xp)} xP × ${money(euros)}` : "0 € por puntos: no entra en tu once",
+    tramo.subida_incluida ? `reventa a 7 días ${money(reventa)}` : `reventa al valor de hoy ${money(reventa)}`,
+    barato ? "por debajo de 1,5 M no se suma la subida: bajan" : null,
+    recortada ? (tramo.tope_motivo === "guardarrail" ? "recortada al margen del guardarraíl" : "recortada a tu caja más el crédito del 20 %") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const millones = Number((euros / 1_000_000).toFixed(2));
+  const rivales = Array.isArray(tramo.rivales) ? tramo.rivales : [];
   return (
-    <div className="w-[7.5rem] shrink-0 text-right">
-      <p className="text-[11.5px] text-white/40">Opciones de ganar</p>
-      <p className="mt-1.5 text-[1.3rem] font-semibold leading-none tracking-[-0.02em] tabular-nums text-white">
-        {share === null ? "—" : `${Math.round(share * 100)} %`}
-      </p>
-      <span className="mt-2.5 block h-[3px] overflow-hidden rounded-full bg-white/[0.08]" aria-hidden="true">
-        <span
-          className="block h-full rounded-full bg-white/80 transition-[width] duration-700 ease-out"
-          style={{ width: `${Math.round((share ?? 0) * 100)}%` }}
+    <div className="mt-6">
+      <table className="w-full border-collapse text-left">
+        <tbody>
+          <tr className="border-t border-white/[0.07]">
+            <th scope="row" className="py-3 pr-4 align-top text-[13px] font-medium text-white/55">Puja ideal</th>
+            <td className="py-3 text-right">
+              <span className="block text-[1.35rem] font-semibold tabular-nums leading-none text-white">{ideal === null ? "—" : money(ideal)}</span>
+              <span className="mt-1.5 block text-[12px] text-white/40">{detalleIdeal}</span>
+            </td>
+          </tr>
+          <tr className="border-t border-white/[0.07]">
+            <th scope="row" className="py-3 pr-4 align-top text-[13px] font-medium text-white/55">Puja para asegurar</th>
+            <td className="py-3 text-right">
+              {asegurar === null ? (
+                <>
+                  <span className="block text-[1.05rem] font-semibold leading-none text-white">sin cifra fiable</span>
+                  <span className="mt-1.5 block text-[12px] text-white/40">{n} {n === 1 ? "compra" : "compras"} en el tramo</span>
+                </>
+              ) : (
+                <>
+                  <span className="block text-[1.35rem] font-semibold tabular-nums leading-none text-white">{money(asegurar)}</span>
+                  <span className="mt-1.5 block text-[12px] text-white/40">valor × {factor(tramo.p90)} · percentil 90 de {n} compras</span>
+                  {noCompensa ? <span className="mt-1.5 block text-[13.5px] font-medium text-white">a este precio no compensa</span> : null}
+                </>
+              )}
+            </td>
+          </tr>
+          <tr className="border-t border-white/[0.07]">
+            <th scope="row" className="py-3 pr-4 align-top text-[13px] font-medium text-white/55">Puja máxima</th>
+            <td className="py-3 text-right">
+              {fresco ? (
+                <>
+                  <span className="block text-[1.35rem] font-semibold tabular-nums leading-none text-white">{money(maxima)}</span>
+                  <span className="mt-1.5 block text-[12px] leading-snug text-white/40">{detalleMaxima}</span>
+                </>
+              ) : (
+                <span className="block text-[1.05rem] font-semibold leading-snug text-white">{avisoMaxima}</span>
+              )}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <label className="mt-4 flex items-center justify-between gap-4 border-t border-white/[0.07] pt-4 text-[13px] text-white/55">
+        <span>
+          <span className="block text-white/80">{porJornada}</span>
+          <span className="mt-1 block text-[12px] text-white/40">El recuadro suma esas {horizonte} jornadas: {millones.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} M por un punto de una jornada.</span>
+        </span>
+        <input
+          type="number"
+          min={0}
+          step={0.1}
+          inputMode="decimal"
+          aria-label="Millones por punto de una jornada"
+          value={millones}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            if (Number.isFinite(next) && next >= 0) onEuros(Math.round(next * 1_000_000));
+          }}
+          className="w-24 rounded-md bg-white/[0.06] px-2 py-1.5 text-right text-[14px] tabular-nums text-white outline-none focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
         />
-      </span>
+      </label>
+      {tramo.banda === "1.5-4" ? (
+        <div className="mt-5 border-t border-white/[0.07] pt-4">
+          <p className="text-[13px] font-medium text-white">Rivales con caja y hueco en {puesto || "este puesto"}</p>
+          <p className="mt-1 text-[12.5px] text-white/45">La mediana de este tramo sale de {n} compras. El aviso no cambia la cifra.</p>
+          {rivales.length ? (
+            <ul className="mt-3 flex flex-col">
+              {rivales.map((rival) => (
+                <li key={rival.team_id || rival.manager} className="flex items-center gap-3 border-t border-white/[0.06] py-2.5 first:border-t-0">
+                  <EscudoRival nombre={rival.manager || "Rival"} src={rival.avatar} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13.5px] text-white">{rival.manager || "Rival"}</span>
+                    <span className="block truncate text-[12px] text-white/40">
+                      {[rival.aviso, typeof rival.puede_pujar_eur === "number" ? `puede pujar hasta ${money(rival.puede_pujar_eur)}` : null].filter(Boolean).join(" · ")}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-[12.5px] text-white/45">Nadie junta cota alta de caja (100 M de inicio más el crédito del 20 %) y un hueco en este puesto.</p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -175,15 +332,19 @@ export function PlayerCard({
   player,
   photo,
   cash: cashProp,
+  fetchedAt,
   onClose,
 }: {
   player: MarketDecision | null;
   photo?: string | null;
   cash?: number | null;
+  /** Instante de la foto de xP. Si el tramo no trae el suyo, la máxima usa este. */
+  fetchedAt?: string | null;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [comparing, setComparing] = useState<{ id: string; position?: string | null } | null>(null);
+  const [euros, setEuros] = useEuros(typeof player?.puja_tramo?.euros_por_punto === "number" ? player.puja_tramo.euros_por_punto : null);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -201,7 +362,8 @@ export function PlayerCard({
     const story = bidStory(player);
     const action = marketAction(player);
     const verdict = ACTION_VERDICT[action];
-    const ideal = executableBid(player);
+    const tramo = player.puja_tramo ?? null;
+    const ideal = tramo ? (typeof tramo.ideal_eur === "number" ? tramo.ideal_eur : null) : executableBid(player);
     const cash = num(cashProp);
     // El máximo de las fuentes no mira tu caja: pasar de ella te deja en
     // negativo y con saldo negativo puntúas 0, así que se recorta a la caja.
@@ -209,8 +371,6 @@ export function PlayerCard({
     const max = rawMax !== null && cash !== null && cash > 0 ? Math.min(rawMax, cash) : rawMax;
     const maxIsCash = rawMax !== null && max !== null && max < rawMax;
     const value = num(player.market_value) ?? num(player.sale_price);
-    const rawWin = winShare(typeof player.smart_bid_success_pct === "number" ? player.smart_bid_success_pct : player.win_probability);
-    const win = ideal === null ? null : rawWin;
     const forecast = num(player.valor_en_7d);
     const parsedTrend = parsePct(player.prevision_7d_pct);
     const trend = parsedTrend ?? (forecast !== null && value ? ((forecast - value) / value) * 100 : null);
@@ -235,8 +395,6 @@ export function PlayerCard({
     const risk =
       player.offer_source === "rival"
         ? "Venta de un rival: en esta liga casi nunca se gana pujando, y si pasa es por bastante más de la recomendada. No cuenta en el plan."
-        : win !== null && win < 0.4
-        ? "Difícil ganar la puja: hay rivales con caja para superarte."
         : trend !== null && trend < -0.5
           ? `Se espera que pierda valor esta semana (${signedPct(trend)}).`
           : titular !== null && titular < 0.6
@@ -300,16 +458,16 @@ export function PlayerCard({
           </p>
           <p className="mt-1.5 text-[14px] leading-relaxed text-white/60">{reason}</p>
 
-          {shownBid !== null ? (
-            <div className="mt-6 flex items-end justify-between gap-5">
-              <div className="min-w-0">
-                <p className="text-[11.5px] text-white/40">{bidLabel}</p>
-                <p className="mt-1.5 text-[2.4rem] font-semibold leading-none tracking-[-0.035em] tabular-nums text-white">{money(shownBid)}</p>
-              </div>
-              {ideal !== null ? <WinMeter share={win} /> : null}
+          {tramo ? (
+            <TablaPuja tramo={tramo} valor={value} puesto={player.position} euros={euros} onEuros={setEuros} sinPuntos={xp === null} fetchedAt={fetchedAt} />
+          ) : shownBid !== null ? (
+            <div className="mt-6">
+              <p className="text-[11.5px] text-white/40">{bidLabel}</p>
+              <p className="mt-1.5 text-[2.4rem] font-semibold leading-none tracking-[-0.035em] tabular-nums text-white">{money(shownBid)}</p>
             </div>
           ) : null}
 
+          {tramo ? null : (
           <dl className={`mt-6 grid gap-4 border-t border-white/[0.07] pt-4 ${cap !== null ? "grid-cols-3" : "grid-cols-2"}`}>
             {cap !== null ? (
               <div className="min-w-0">
@@ -328,11 +486,12 @@ export function PlayerCard({
               </dd>
             </div>
           </dl>
+          )}
 
-          {sell?.missing != null || overbid || risk ? (
+          {sell?.missing != null || (!tramo && overbid) || risk ? (
             <div className="mt-4 flex flex-col gap-2">
               {sell?.missing != null ? <Note color={TONE.red}>Te faltan {money(sell.missing)} de caja: solo es viable si vendes a alguien.</Note> : null}
-              {overbid ? (
+              {overbid && !tramo ? (
                 <Note color={overbidStatus === "guerra" ? TONE.red : overbidStatus === "high" ? TONE.amber : TONE.green}>{overbid}</Note>
               ) : null}
               {risk ? <Note color={TONE.amber}>{risk}</Note> : null}

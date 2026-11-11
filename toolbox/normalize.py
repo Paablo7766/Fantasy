@@ -973,6 +973,7 @@ def normalize_squad(
         "is_self": own_team_id is not None and team_id == own_team_id,
         "manager_id": _as_str(_coalesce(_first(manager, "id", "managerId"), _first(payload, "managerId"), seed.get("manager_id"))),
         "manager_name": _manager_name(payload) or seed.get("manager_name"),
+        "manager_avatar": _as_str(_first(manager, "avatar", "avatarUrl")),
         "fantasy_team_name": _as_str(_first(team, "name", "teamName")) or seed.get("fantasy_team_name"),
         "rank": seed.get("rank"),
         "points": seed.get("points"),

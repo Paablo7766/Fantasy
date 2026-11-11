@@ -2600,6 +2600,12 @@ def publish_strategy(board: dict[str, Any], payload: dict[str, Any], *, now: dat
             "notas_mercado": {},
         }
     stamp_strategy(payload, report)
+    try:
+        from toolbox.engine.puja_tramos import estampar
+
+        estampar(payload, board if isinstance(board, dict) else None, report)
+    except Exception:
+        logger.exception("pujas por tramo")
     if not calculado:
         # Un plan vacío por error no puede borrar la memoria del plan bueno.
         return

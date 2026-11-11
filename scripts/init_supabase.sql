@@ -99,3 +99,48 @@ create table if not exists public.dashboard_snapshots (
 );
 
 alter table public.dashboard_snapshots enable row level security;
+
+-- Diario de subastas (toolbox/auction_journal.py). Una fila por anuncio y día
+-- de cierre, y el resultado cuando la actividad ya pasa de esa hora.
+create table if not exists public.market_board (
+    league_id text not null,
+    day text not null,
+    market_id text not null,
+    player_id text,
+    player_name text,
+    position text,
+    market_value bigint,
+    sale_price bigint,
+    seller_team_id text,
+    bid_count integer,
+    offer_count integer,
+    direct_offer boolean,
+    expires_at text,
+    own_bid_eur bigint,
+    league_auction boolean not null default true,
+    stored_at double precision not null,
+    primary key (league_id, day, market_id)
+);
+
+create index if not exists market_board_league_day_idx
+    on public.market_board (league_id, day);
+
+create table if not exists public.auction_results (
+    league_id text not null,
+    day text not null,
+    market_id text not null,
+    player_id text,
+    status text not null,
+    winner_team_id text,
+    amount_eur bigint,
+    own_bid_eur bigint,
+    own_result text not null,
+    resolved_at double precision not null,
+    primary key (league_id, day, market_id)
+);
+
+create index if not exists auction_results_league_day_idx
+    on public.auction_results (league_id, day);
+
+alter table public.market_board enable row level security;
+alter table public.auction_results enable row level security;

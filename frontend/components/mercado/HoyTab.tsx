@@ -71,8 +71,8 @@ function Tile({ player, photo, index, onOpen }: { player: MarketDecision; photo:
         </span>
         <span className="mt-auto flex items-end justify-between gap-2 border-t border-white/[0.06] px-3 py-2.5">
           <span className="min-w-0">
-            <span className="block text-[10.5px] text-white/40">{typeof bid === "number" && action === "PUJAR" ? "Puja" : "Valor"}</span>
-            <span className="block truncate text-[15px] font-semibold tabular-nums text-white">{money(typeof bid === "number" && action === "PUJAR" ? bid : player.market_value ?? player.sale_price)}</span>
+            <span className="block text-[10.5px] text-white/40">{typeof player.puja_tramo?.ideal_eur === "number" ? "Puja ideal" : typeof bid === "number" && action === "PUJAR" ? "Puja" : "Valor"}</span>
+            <span className="block truncate text-[15px] font-semibold tabular-nums text-white">{money(typeof player.puja_tramo?.ideal_eur === "number" ? player.puja_tramo.ideal_eur : typeof bid === "number" && action === "PUJAR" ? bid : player.market_value ?? player.sale_price)}</span>
           </span>
           <span className="shrink-0 text-right">
             <span className="block text-[10.5px] tabular-nums text-white/40">{typeof xp === "number" ? `${decimal(xp)} pts` : ""}</span>
@@ -412,7 +412,7 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
 
       <p className="px-1 text-[12px] leading-relaxed text-white/40">{historyLine(summary)}</p>
 
-      <PlayerCard player={selected} photo={selected ? photo(selected) : null} cash={summary.cash_eur ?? trends.cash_eur} onClose={() => setSelectedId(null)} />
+      <PlayerCard player={selected} photo={selected ? photo(selected) : null} cash={summary.cash_eur ?? trends.cash_eur} fetchedAt={trends.fetched_at} onClose={() => setSelectedId(null)} />
     </div>
   );
 }

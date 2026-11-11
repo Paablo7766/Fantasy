@@ -127,6 +127,45 @@ export type MarketDecision = Player & {
   rival_knockout_targets?: string[];
   bid_intent?: "FLIP" | "STRUCTURAL" | "NONE" | string | null;
   auction_decision?: "PUJAR" | "ESPERAR" | "NO" | string | null;
+  /** Ideal, asegurar y máxima. Los multiplicadores salen de las compras del tramo. */
+  puja_tramo?: PujaTramo | null;
+};
+
+export type PujaRival = {
+  team_id?: string | null;
+  manager?: string | null;
+  equipo?: string | null;
+  avatar?: string | null;
+  /** Aviso de estilo. No cambia la cifra. */
+  aviso?: string | null;
+  puede_pujar_eur?: number | null;
+};
+
+export type PujaTramo = {
+  banda?: string | null;
+  etiqueta?: string | null;
+  n?: number | null;
+  mediana?: number | null;
+  ideal_eur?: number | null;
+  p90?: number | null;
+  fiable?: boolean | null;
+  asegurar_eur?: number | null;
+  asegurar_texto?: string | null;
+  xp_delta?: number | null;
+  /** False si el xP falta o la foto tiene más de un día: la máxima no se calcula. */
+  xp_fresco?: boolean | null;
+  xp_edad_horas?: number | null;
+  xp_presente?: boolean | null;
+  xp_fetched_at?: string | null;
+  /** Jornadas que capitaliza el precio de un punto. 16,4 M de una jornada = 4,1 M × 4. */
+  horizonte_jornadas?: number | null;
+  reventa_eur?: number | null;
+  subida_incluida?: boolean | null;
+  tope_eur?: number | null;
+  tope_motivo?: "guardarrail" | "caja_credito" | string | null;
+  /** Euros por un punto de xP de una jornada. Editable en la ficha. */
+  euros_por_punto?: number | null;
+  rivales?: PujaRival[];
 };
 
 export type MarketDecisionSummary = {
