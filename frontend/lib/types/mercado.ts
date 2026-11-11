@@ -1,5 +1,6 @@
 // Mercado de la liga (`/api/trends`): decisiones, pujas y catálogo.
 import type { ApiError, DineroCaliente, PhotoMeta } from "./common";
+import type { Guardarrail } from "./guardarrail";
 import type { PlanFichajes, VentaForzada } from "./fichajes";
 import type { CalibrationPayload, EngineConfidence } from "./laboratorio";
 import type { CapitanPick, Player } from "./once";
@@ -196,6 +197,7 @@ export type TrendsPayload = ApiError & PhotoMeta & {
   capitan_seguro?: CapitanPick | null;
   capitan_remontada?: CapitanPick | null;
   plan_fichajes?: PlanFichajes | null;
+  guardarrail_ruina?: Guardarrail | null;
   ventas_forzadas?: VentaForzada[];
 };
 

@@ -1,5 +1,6 @@
 // Plan de hoy (`/api/plan`): acciones, reloj, línea roja y estrategias.
 import type { AsesorClausulas, RadarAntiRobo } from "./clausulas";
+import type { Guardarrail } from "./guardarrail";
 import type { ApiError, PhotoMeta } from "./common";
 import type { AuditoriaVenta, PlanFichajes, ResumenVentas, VentaForzada } from "./fichajes";
 import type { LeagueEdge, LeagueRacePayload, SquadsPayload } from "./liga";
@@ -238,6 +239,7 @@ export type PlanPayload = ApiError & PhotoMeta & {
   capitan_seguro?: CapitanPick | null;
   capitan_remontada?: CapitanPick | null;
   plan_fichajes?: PlanFichajes | null;
+  guardarrail_ruina?: Guardarrail | null;
   ventas_forzadas?: VentaForzada[];
   /** Una auditoría por jugador susceptible de venta (ofertas de LaLiga y rivales). */
   auditoria_ventas?: AuditoriaVenta[];

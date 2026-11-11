@@ -1,5 +1,6 @@
 // Plan de fichajes, auditoría de ventas y ventas forzadas.
 import type { AlertaClausula } from "./clausulas";
+import type { GuardarrailPlan } from "./guardarrail";
 
 export type PlanFichajeAccion = {
   tipo?: "VENDE" | "VENDER HOY" | "ESCAPARATE" | "PUJA" | "CLAUSULAZO" | "BUSCA" | string;
@@ -191,6 +192,8 @@ export type BrechaPosicional = {
 
 export type PlanFichajes = {
   ok?: boolean;
+  /** Veredicto del guardarraíl sobre las compras de este plan (peor caso al cierre). */
+  guardarrail_ruina?: GuardarrailPlan | null;
   /** Puntos que faltan por puesto frente al rival más fuerte; el optimizador premia DEL/DEF si ahí se pierde. */
   brecha_posicional?: BrechaPosicional | null;
   /** «ok» y «sin_cambios» son cálculos terminados; el resto es un fallo y no significa «nada que hacer». */

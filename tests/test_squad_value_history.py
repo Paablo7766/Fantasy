@@ -75,7 +75,7 @@ class SquadValueHistoryTests(unittest.TestCase):
         ):
             payload = server.shape_squads(board)
         self.assertEqual([row["value_eur"] for row in payload["value_history"]], [1_000_000, 1_200_000])
-        store.list_history.assert_called_once_with(league_id="L1", days=14)
+        store.list_history.assert_any_call(league_id="L1", days=14)
 
     def test_shape_squads_without_snapshots(self) -> None:
         board = {"squads": {"ok": True, "squads": [{"team_id": "t1", "is_self": True, "players": [{"player_id": "a"}]}]}}

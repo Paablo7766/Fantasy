@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -24,6 +25,9 @@ from toolbox.engine.auction_intel import (
     puja_competitiva_liga,
     techo_sobrepuja_eur,
 )
+from toolbox.engine.guardarrail_ruina import evaluar as evaluar_guardarrail
+from toolbox.engine.guardarrail_ruina import evaluar_plan as evaluar_plan_guardarrail
+from toolbox.engine.guardarrail_ruina import plan_cobertura, sigma_cartera
 from toolbox.engine.lineup_math import solve_best_xi, war_del_once
 from toolbox.engine.liquidacion import plan_liquidacion
 from toolbox.engine.market_predictor import (
@@ -761,6 +765,21 @@ def _ofertas_propias(
     return ofertas
 
 
+def _venta_realizable(row: dict[str, Any], own_id: str | None) -> int | None:
+    """Lo que entra de verdad al vender: la mejor oferta con importe, o el suelo de LaLiga."""
+    importes = [
+        oferta["importe"]
+        for oferta in _ofertas_propias(row, own_id, {})
+        if isinstance(oferta.get("importe"), int) and oferta["importe"] > 0
+    ]
+    valor_venta = row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None
+    if importes:
+        return max(importes)
+    if valor_venta and valor_venta > 0:
+        return int(valor_venta * VENTA_SIN_OFERTA_PCT)
+    return None
+
+
 def _xi_and_bench(records: dict[str, dict[str, Any]], board: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     optimize = board.get("optimize") if isinstance(board.get("optimize"), dict) else {}
     xi_ids = [_pid(row.get("player_id")) for row in (optimize.get("xi") or []) if isinstance(row, dict)]
@@ -881,6 +900,165 @@ def _empty_plan(cash: int | None, ratio: float) -> dict[str, Any]:
         "factor_ajuste": round(FACTOR_AJUSTE, 4),
         "modo_liquidez": "SIN_RELOJ",
     }
+
+
+_HISTORIA_VALOR_DIAS = 21
+_HISTORIA_VALOR_TTL_S = 300.0
+_HISTORIA_VALOR_CACHE: dict[tuple[str | None, tuple[str, ...]], tuple[float, dict[str, Any] | None, float | None]] = {}
+
+
+def _epoch(valor: Any) -> float | None:
+    if isinstance(valor, bool):
+        return None
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    if isinstance(valor, str) and valor.strip():
+        try:
+            marca = datetime.fromisoformat(valor.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if marca.tzinfo is None:
+            marca = marca.replace(tzinfo=timezone.utc)
+        return marca.timestamp()
+    return None
+
+
+def _edad(marca: Any, now: datetime) -> float | None:
+    instante = _epoch(marca)
+    return None if instante is None else max(0.0, now.timestamp() - instante)
+
+
+def _sigma_propia(league_id: str | None, ids: list[str]) -> tuple[dict[str, Any] | None, float | None]:
+    """σ diaria del valor de la plantilla actual y el instante de la foto de precios más reciente."""
+    clave = (league_id, tuple(sorted(ids)))
+    guardado = _HISTORIA_VALOR_CACHE.get(clave)
+    ahora = time.monotonic()
+    if guardado is not None and ahora - guardado[0] < _HISTORIA_VALOR_TTL_S:
+        return guardado[1], guardado[2]
+    try:
+        from toolbox.cache import PriceSnapshotStore
+
+        historia = PriceSnapshotStore().list_history(league_id=league_id, days=_HISTORIA_VALOR_DIAS)
+    except Exception:
+        logger.debug("Sin histórico de precios para el guardarraíl", exc_info=True)
+        return None, None
+    propio = {pid: historia.get(pid) or [] for pid in ids}
+    sigma = sigma_cartera(propio, ids)
+    marcas = [
+        marca
+        for filas in propio.values()
+        for fila in filas
+        if isinstance(fila, dict)
+        for marca in [_epoch(fila.get("stored_at"))]
+        if marca is not None
+    ]
+    ultima = max(marcas) if marcas else None
+    _HISTORIA_VALOR_CACHE[clave] = (ahora, sigma, ultima)
+    return sigma, ultima
+
+
+def _pujas_vivas(
+    board: dict[str, Any], records: dict[str, dict[str, Any]], own_id: str | None, now: datetime
+) -> list[dict[str, Any]] | None:
+    """Pujas mías en anuncios abiertos de otros. ``None`` si la foto no trae el mercado."""
+    market = board.get("market") if isinstance(board.get("market"), dict) else None
+    if market is None or not isinstance(market.get("listings"), list):
+        return None
+    vivas: list[dict[str, Any]] = []
+    for listing in market["listings"]:
+        if not isinstance(listing, dict):
+            continue
+        euros = _int(listing.get("own_bid"))
+        player_id = _pid(listing.get("player_id"))
+        if euros is None or euros <= 0 or player_id is None:
+            continue
+        if own_id is not None and _pid(listing.get("seller_team_id")) == own_id:
+            continue
+        cierre = _epoch(listing.get("listing_expires_at"))
+        if cierre is not None and cierre < now.timestamp():
+            continue
+        record = records.get(player_id) or {}
+        vivas.append(
+            {
+                "player_id": player_id,
+                "nombre": record.get("nombre") or listing.get("nickname") or listing.get("name"),
+                "position": record.get("position") if record.get("position") in POSITIONS else listing.get("position"),
+                "jornada": record.get("jornada") if isinstance(record.get("jornada"), (int, float)) else 0.0,
+                "p_titular": record.get("p_titular"),
+                "euros": euros,
+            }
+        )
+    return vivas
+
+
+def _fila_cobertura(row: dict[str, Any], own_id: str | None) -> dict[str, Any] | None:
+    jornada = row.get("jornada")
+    if row.get("position") not in POSITIONS or isinstance(jornada, bool) or not isinstance(jornada, (int, float)):
+        return None
+    return {
+        "player_id": row["player_id"],
+        "nombre": row.get("nombre"),
+        "position": row["position"],
+        "jornada": float(jornada),
+        "p_titular": row.get("p_titular") if row.get("p_titular") is not None else row.get("prob_titular"),
+        "si_titular": row.get("si_titular"),
+        "venta_eur": _venta_realizable(row, own_id),
+    }
+
+
+def _guardarrail(
+    board: dict[str, Any],
+    records: dict[str, dict[str, Any]],
+    plan: dict[str, Any] | None,
+    own_id: str | None,
+    now: datetime,
+) -> dict[str, Any]:
+    """Saldo en el peor caso al cierre. Usa la caja observada de la plantilla, no la reconstruida."""
+    squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
+    propio = own_squad(squads)
+    caja = _int(propio.get("cash")) if isinstance(propio, dict) else None
+    ids = [pid for pid, row in records.items() if row.get("is_self") is True]
+    valor = sum(
+        int(records[pid]["valor"])
+        for pid in ids
+        if isinstance(records[pid].get("valor"), int) and not isinstance(records[pid].get("valor"), bool)
+    )
+    sigma, ultima_foto = _sigma_propia(_league_id(board), ids)
+    market = board.get("market") if isinstance(board.get("market"), dict) else {}
+    pujas = _pujas_vivas(board, records, own_id, now)
+    dias = _days_to_kickoff(board.get("trends") if isinstance(board.get("trends"), dict) else None, now)
+    edad_caja = _edad(squads.get("fetched_at"), now)
+    edad_precios = None if ultima_foto is None else max(0.0, now.timestamp() - ultima_foto)
+    # Las pujas salen del mercado: si esa foto es más vieja que la de la caja, manda la peor.
+    edad_mercado = _edad(market.get("fetched_at"), now)
+    if pujas is not None:
+        edad_caja = None if edad_caja is None or edad_mercado is None else max(edad_caja, edad_mercado)
+    informe = evaluar_guardarrail(
+        caja=caja,
+        pujas_vivas=pujas,
+        valor_equipo=valor,
+        sigma=sigma,
+        dias_al_cierre=dias,
+        edad_caja_s=edad_caja,
+        edad_precios_s=edad_precios,
+        pujas_conocidas=pujas is not None,
+    )
+    informe["ofertas_compra_pendientes_fuente"] = "no disponible en la API: se cuenta 0"
+    informe["accion"] = None
+    if informe["estado"] in {"AVISO", "PELIGRO"} and informe.get("falta_eur"):
+        filas = [fila for fila in (_fila_cobertura(records[pid], own_id) for pid in ids) if fila is not None]
+        try:
+            informe["accion"] = plan_cobertura(
+                falta_eur=int(informe["falta_eur"]), pujas=informe["pujas_vivas"], plantilla=filas
+            )
+        except Exception:
+            logger.exception("cobertura del guardarraíl")
+    if isinstance(plan, dict) and informe.get("saldo_peor") is not None:
+        veredicto = evaluar_plan_guardarrail(informe, [a for a in plan.get("acciones") or [] if isinstance(a, dict)])
+        if veredicto is not None:
+            plan["guardarrail_ruina"] = veredicto
+            informe["plan"] = veredicto
+    return informe
 
 
 def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
@@ -1062,6 +1240,13 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         dias_al_cierre=_num(plan.get("dias_al_cierre")) if isinstance(plan, dict) else None,
     )
     _no_blindar_ventas_del_plan(clausulas, plan_ventas(plan), records)
+    try:
+        guardarrail = _guardarrail(
+            board if isinstance(board, dict) else {}, records, plan if isinstance(plan, dict) else None, own_id, current
+        )
+    except Exception:
+        logger.exception("guardarraíl de ruina")
+        guardarrail = None
     if isinstance(plan, dict):
         plan["alertas_clausulas"] = clausulas.get("alertas_clausulas") or []
         trading = plan.get("trading")
@@ -1096,6 +1281,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         "propios": {pid for pid, row in records.items() if row.get("is_self") is True},
         "caja": saldo,
         "poder_pujas": poder_pujas,
+        "guardarrail_ruina": guardarrail,
     }
 
 
@@ -1840,18 +2026,7 @@ def _plan(
         # Lo que de verdad entra al vender: la mejor oferta con importe que ya
         # tienes. Sin ella, LaLiga puede ofrecer hasta un 5 % por debajo del
         # valor, así que el plan cuenta con el 95 % y no con el 100 %.
-        importes = [
-            oferta["importe"]
-            for oferta in _ofertas_propias(row, own_id, {})
-            if isinstance(oferta.get("importe"), int) and oferta["importe"] > 0
-        ]
-        valor_venta = row.get("valor") if isinstance(row.get("valor"), int) and not isinstance(row.get("valor"), bool) else None
-        if importes:
-            venta = max(importes)
-        elif valor_venta and valor_venta > 0:
-            venta = int(valor_venta * VENTA_SIN_OFERTA_PCT)
-        else:
-            venta = None
+        venta = _venta_realizable(row, own_id)
         owned_rows.append(
             {
                 "player_id": row["player_id"],
@@ -2367,6 +2542,7 @@ def stamp_strategy(payload: dict[str, Any], report: dict[str, Any]) -> None:
     payload["resumen_ventas"] = report.get("resumen_ventas") or _resumen_vacio()
     payload["asesor_clausulas"] = report.get("asesor_clausulas") or _clausulas_vacias()
     payload["radar_anti_robo"] = report.get("radar_anti_robo") or []
+    payload["guardarrail_ruina"] = report.get("guardarrail_ruina")
 
 
 def _league_id(board: dict[str, Any]) -> str | None:

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { gradeColor } from "@/components/mercado/MarketGrade";
 import { PlayerCard } from "@/components/mercado/PlayerCard";
+import { GuardarrailRuina, PlanGuardarrailNota } from "@/components/mercado/GuardarrailRuina";
 import { LiquidacionBlock, ParonBlock, PlanBlock } from "@/components/mercado/PlanSections";
 import { ACTION_VERDICT, auctionLabel, budgetLine, difficultyLabel, historyLine } from "@/components/mercado/shared";
 import { Disclosure, Empty, Face, HeroStat, SectionHead, Skeleton, TONE, cleanText, compact, money, parsePct, projected7d, signedMoney, signedPct, toneOf } from "@/components/ui/kit";
@@ -349,6 +350,8 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
         </div>
       </section>
 
+      <GuardarrailRuina data={trends.guardarrail_ruina} modo="mercado" />
+
       <section className="flex flex-col gap-3">
         <div className="desk-switch" role="tablist" aria-label="Quién vende">
           {SOURCES.map((item) => (
@@ -394,6 +397,7 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
       <CatalogMatches rows={outside} photos={photos} />
 
       <AlertasClausulaBlock plan={trends.plan_fichajes} />
+      <PlanGuardarrailNota plan={trends.plan_fichajes?.guardarrail_ruina} />
       <PlanBlock plan={trends.plan_fichajes} photos={photos} />
       <ParonBlock plan={trends.plan_fichajes} photos={photos} />
       <TradingBlock plan={trends.plan_fichajes} />
