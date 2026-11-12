@@ -145,6 +145,7 @@ def una_pasada(
     refrescar: Callable[[], None] | None = None,
     *,
     now: datetime | None = None,
+    tras_pasada: Callable[[dict[str, Any], datetime], Any] | None = None,
 ) -> dict[str, Any]:
     momento = now or datetime.now(timezone.utc)
     board = cargar_tablero()
@@ -154,12 +155,19 @@ def una_pasada(
         marcar_refresco(board, momento)
         refrescar()
         board = cargar_tablero() or board
+    if tras_pasada is not None:
+        # Gancho sin red (avisos por reloj): un fallo suyo nunca frena la foto.
+        try:
+            tras_pasada(board, momento)
+        except Exception:  # noqa: BLE001
+            logger.debug("Gancho tras pasada fallido", exc_info=True)
     return foto_previa(board, now=momento)
 
 
 def arrancar_vigilante(
     cargar_tablero: Callable[[], dict[str, Any] | None],
     refrescar: Callable[[], None] | None = None,
+    tras_pasada: Callable[[dict[str, Any], datetime], Any] | None = None,
 ) -> bool:
     """Hilo demonio que hace ``una_pasada`` cada ``INTERVALO_SEGUNDOS``. Idempotente."""
     with _LOCK:
@@ -169,7 +177,7 @@ def arrancar_vigilante(
         def bucle() -> None:
             while True:
                 try:
-                    resultado = una_pasada(cargar_tablero, refrescar)
+                    resultado = una_pasada(cargar_tablero, refrescar, tras_pasada=tras_pasada)
                     if resultado.get("hecho"):
                         logger.info("Foto previa guardada: %s", resultado)
                 except Exception:  # noqa: BLE001 — el vigilante nunca tumba el servidor

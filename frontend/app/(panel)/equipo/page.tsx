@@ -6,6 +6,7 @@ import { useDashboard } from "@/components/DashboardProvider";
 import { CarteraTab } from "@/components/equipo/CarteraTab";
 import { OnceTab } from "@/components/equipo/OnceTab";
 import { Skeleton } from "@/components/ui/kit";
+import { DataAge } from "@/components/ui/DataAge";
 import { buildPhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, PlanPayload, SquadsPayload, TrendsPayload } from "@/lib/types";
 
@@ -68,6 +69,7 @@ function EquipoContent() {
         </div>
       </div>
 
+      <DataAge show={tab === "once" ? ["plantillas", "titularidad"] : ["plantillas", "mercado"]} />
       <div key={tab} id={`eq-panel-${tab}`} role="tabpanel" aria-labelledby={`eq-tab-${tab}`} className="row-in min-w-0">
         {tab === "once" ? (
           <OnceTab plan={plan} optimize={optimize} squads={squads} photos={photos} loading={(pending.optimize || busy) && !optimize} />

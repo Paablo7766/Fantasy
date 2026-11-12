@@ -8,15 +8,11 @@ import { eur, eurShort, points, titularShare } from "@/lib/core/format";
 import { signedPoints } from "@/lib/inicio/hoy";
 import { factsFor, photoFor, type PhotoIndex, type PlayerIndex } from "@/lib/core/photoIndex";
 import { Avatar, Chevron, Collapse, FactGrid, Tag, type Fact } from "@/components/inicio/ui";
-import type { PlanFichajeAccion, PlanFichajes, PlanPayload, SquadsPayload } from "@/lib/types";
+import type { PlanFichajeAccion, PlanFichajes, PlanPayload, SquadsPayload, Top4Overlay } from "@/lib/types";
 
-// ── Casillas hechas: se guardan por día de mercado (hora de Madrid) ──────────
+// ── Casillas hechas: se guardan por foto (se reinician cuando cambia la foto) ─
 
 const STORAGE_PREFIX = "fantasy:hoja-ruta:";
-
-function marketDay(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-}
 
 const listeners = new Set<() => void>();
 /** Respaldo si el navegador no deja usar localStorage: vale para esta sesión. */
@@ -31,8 +27,8 @@ function subscribe(listener: () => void) {
   };
 }
 
-function snapshot(): string {
-  const key = STORAGE_PREFIX + marketDay();
+function readDone(scope: string): string {
+  const key = STORAGE_PREFIX + scope;
   try {
     return window.localStorage.getItem(key) ?? memory.get(key) ?? "[]";
   } catch {
@@ -44,11 +40,16 @@ function serverSnapshot(): string {
   return "[]";
 }
 
-function writeDone(done: string[]) {
-  const key = STORAGE_PREFIX + marketDay();
+function writeDone(scope: string, done: string[]) {
+  const key = STORAGE_PREFIX + scope;
   const raw = JSON.stringify(done);
   memory.set(key, raw);
   try {
+    // Las casillas de fotos anteriores ya no valen: se limpian al escribir.
+    for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+      const other = window.localStorage.key(i);
+      if (other && other.startsWith(STORAGE_PREFIX) && other !== key) window.localStorage.removeItem(other);
+    }
     window.localStorage.setItem(key, raw);
   } catch {
     /* sin almacenamiento: la casilla solo vale para esta sesión */
@@ -221,6 +222,47 @@ function stepReason(step: Step): string | null {
   return withCompetitiva(action.detalle || null, action);
 }
 
+// ── El porqué de cada paso: qué gana el once en xP y, si existe, cuánto sube el top 4 ──
+
+type Why = { parts: { text: string; tone?: string }[] };
+
+const MINT = "var(--ini-mint)";
+const RED = "var(--ini-red)";
+
+function pctPoints(fraction: number): string {
+  const value = fraction * 100;
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toLocaleString("es-ES", { maximumFractionDigits: 1 })} pp`;
+}
+
+function sameDecision(row: { player_id?: string | null; nombre?: string | null }, action: PlanFichajeAccion): boolean {
+  if (row.player_id && action.player_id) return String(row.player_id) === String(action.player_id);
+  return !!row.nombre && !!action.nombre && row.nombre === action.nombre;
+}
+
+function stepWhy(step: Step, info: ReturnType<typeof factsFor>, top4: Top4Overlay | null): Why | null {
+  const { action, kind } = step;
+  if (kind === "busca") return null;
+  const parts: Why["parts"] = [];
+  if (kind === "puja" || kind === "clausula") {
+    const gain = typeof action.mejora_neta === "number" ? action.mejora_neta : null;
+    if (gain !== null) parts.push({ text: `${signedPoints(gain)} xP`, tone: gain >= 0 ? MINT : RED });
+    const row = top4?.acciones?.find((r) => sameDecision(r, action));
+    if (row && typeof row.delta_p_ponderado === "number" && Math.abs(row.delta_p_ponderado) >= 0.0005) {
+      parts.push({ text: `top 4 ${pctPoints(row.delta_p_ponderado)}`, tone: row.delta_p_ponderado >= 0 ? MINT : RED });
+    }
+  } else if (kind === "vende") {
+    const lost = typeof info?.tu_once_pierde_sin_el === "number" ? Math.abs(info.tu_once_pierde_sin_el) : null;
+    if (lost !== null) parts.push({ text: lost < 0.05 ? "no baja el once" : `−${points(lost)} xP`, tone: lost < 0.05 ? undefined : RED });
+    const row = top4?.ventas?.find((r) => sameDecision(r, action));
+    if (row && typeof row.delta_p === "number" && Math.abs(row.delta_p) >= 0.0005) {
+      parts.push({ text: `top 4 ${pctPoints(row.delta_p)}`, tone: row.delta_p >= 0 ? MINT : RED });
+    }
+  } else {
+    return null;
+  }
+  return parts.length ? { parts } : null;
+}
+
 // ── Componentes ──────────────────────────────────────────────────────────────
 
 function StepRow({
@@ -234,6 +276,7 @@ function StepRow({
   onCopy,
   facts,
   reason,
+  why,
 }: {
   step: Step;
   index: number;
@@ -245,6 +288,7 @@ function StepRow({
   onCopy: (amount: number) => void;
   facts: Fact[];
   reason: string | null;
+  why: Why | null;
 }) {
   const meta = KIND[step.kind];
   // Al marcar (no al desmarcar ni al cargar ya marcado): pulso en la casilla.
@@ -305,6 +349,18 @@ function StepRow({
           <Chevron open={open} />
         </button>
       </div>
+      {why ? (
+        <p className={`-mt-1.5 mb-3 px-4 text-[11px] leading-4 text-white/55 sm:px-5 ${checkable ? "pl-[4.1rem] sm:pl-[4.35rem]" : "pl-[2.9rem] sm:pl-[3.1rem]"}`} data-ui="step-why">
+        {why.parts.map((part, i) => (
+          <span key={i}>
+            {i > 0 ? " · " : ""}
+            <span className="tabular-nums" style={{ fontFamily: "var(--font-mono), ui-monospace, monospace", color: part.tone }}>
+              {part.text}
+            </span>
+          </span>
+        ))}
+        </p>
+      ) : null}
       <Collapse open={open}>
         <div className={`px-4 pb-4 sm:px-5 ${checkable ? "pl-[6.25rem] sm:pl-[6.5rem]" : "pl-[4.25rem] sm:pl-[4.5rem]"}`}>
           <FactGrid facts={facts} />
@@ -382,12 +438,16 @@ export function TodayPlan({
   facts: PlayerIndex;
 }) {
   const fichajes = plan?.plan_fichajes;
+  const top4 = plan?.top4 ?? null;
   const { today, later } = useMemo(() => buildSteps(fichajes, photos), [fichajes, photos]);
   const radar = fichajes?.en_radar || [];
   const alternativas = fichajes?.alternativas_liquidez || [];
   const presupuesto = fichajes?.presupuesto ?? null;
   const comparativa = fichajes?.comparativa ?? null;
-  const raw = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
+  // Las casillas valen para esta foto: al cambiar la foto (Actualizar) se reinician.
+  const scope = plan?.last_updated || plan?.dashboard_at || "sin-foto";
+  const getDone = useCallback(() => readDone(scope), [scope]);
+  const raw = useSyncExternalStore(subscribe, getDone, serverSnapshot);
   const done = useMemo(() => parseDone(raw), [raw]);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -434,7 +494,7 @@ export function TodayPlan({
       ? fichajes?.veredicto || "Hazlo hoy"
       : failed
         ? "El cálculo no terminó"
-        : "Hoy toca esperar";
+        : "Hoy no hay nada que hacer";
   const income = today.filter((s) => s.kind === "vende").reduce((t, s) => t + (s.amount || 0), 0);
   // Crédito que el plan usa por encima de la caja: deuda real hasta la ruta de salida.
   const saldoFinal = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
@@ -453,11 +513,12 @@ export function TodayPlan({
       checkable={canCheck && step.kind !== "busca"}
       done={canCheck && done.includes(step.key)}
       open={openKey === step.key}
-      onToggleDone={() => writeDone(done.includes(step.key) ? done.filter((k) => k !== step.key) : [...done, step.key])}
+      onToggleDone={() => writeDone(scope, done.includes(step.key) ? done.filter((k) => k !== step.key) : [...done, step.key])}
       onToggleOpen={() => setOpenKey(openKey === step.key ? null : step.key)}
       onCopy={(amount) => void copy(amount)}
       facts={stepFacts(step, step.kind === "busca" ? null : factsFor(facts, step.action.player_id, step.action.nombre || step.name), fichajes, rivalsWithCash)}
       reason={stepReason(step)}
+      why={stepWhy(step, factsFor(facts, step.action.player_id, step.action.nombre || step.name), top4)}
     />
   );
 
@@ -520,7 +581,10 @@ export function TodayPlan({
             failed ? (
               <span style={{ color: "var(--ini-red)" }}>{fichajes?.estado_detalle || "El plan no se pudo calcular. Pulsa Actualizar."}</span>
             ) : (
-              <span>Ningún movimiento mejora tu once con los datos de ahora.</span>
+              <span>
+                Ningún movimiento mejora tu once con los datos de ahora
+                {later.length ? ` · hay ${later.length} para más tarde` : ""}.
+              </span>
             )
           ) : null}
         </p>

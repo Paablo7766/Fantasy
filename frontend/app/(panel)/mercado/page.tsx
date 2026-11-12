@@ -3,6 +3,7 @@
 import { Suspense, useMemo } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { Skeleton } from "@/components/ui/kit";
+import { DataAge } from "@/components/ui/DataAge";
 import { HoyTab } from "@/components/mercado/HoyTab";
 import { ComparadorLauncher } from "@/components/comparador/ComparadorReal";
 import { buildPhotoIndex } from "@/lib/core/photoIndex";
@@ -30,6 +31,7 @@ function MercadoContent() {
         <h1 className="text-[1.6rem] font-semibold leading-tight tracking-tight text-white">Mercado</h1>
         <ComparadorLauncher />
       </div>
+      <DataAge show={["mercado", "titularidad"]} />
       <div className="row-in min-w-0">
         <HoyTab trends={trends} photos={photos} loading={loading} />
       </div>

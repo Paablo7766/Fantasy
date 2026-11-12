@@ -2887,7 +2887,14 @@ def _arrancar_foto_previa() -> None:
         return
     from toolbox.foto_previa import arrancar_vigilante
 
-    arrancar_vigilante(_foto_previa_tablero, _foto_previa_refresco)
+    from toolbox.avisos_reloj import revisar
+
+    # Los avisos por reloj leen la misma foto de disco: cero llamadas a LaLiga.
+    arrancar_vigilante(
+        _foto_previa_tablero,
+        _foto_previa_refresco,
+        tras_pasada=lambda board, ahora: revisar(board, ahora),
+    )
 
 
 @app.get("/")

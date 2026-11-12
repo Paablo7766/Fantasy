@@ -268,6 +268,8 @@ export type SquadsPayload = ApiError & PhotoMeta & {
   league_id?: string | null;
   league_name?: string | null;
   dashboard_at?: string | null;
+  /** Cuándo se descargaron las plantillas de LaLiga. */
+  fetched_at?: string | null;
   stale?: boolean;
   partial?: boolean;
   rival_count?: number | null;
