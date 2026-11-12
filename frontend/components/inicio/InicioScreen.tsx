@@ -5,6 +5,7 @@ import { useDashboard } from "@/components/DashboardProvider";
 import { HomeHeader } from "@/components/inicio/HomeHeader";
 import { GuardarrailRuina } from "@/components/mercado/GuardarrailRuina";
 import { LiveJornada } from "@/components/inicio/LiveJornada";
+import { ResumenJornada } from "@/components/inicio/ResumenJornada";
 import { Top4Card } from "@/components/inicio/Top4Card";
 import { Top4Levers } from "@/components/inicio/Top4Levers";
 import { SquadDesk } from "@/components/inicio/SquadDesk";
@@ -43,6 +44,7 @@ export function InicioScreen() {
         <Top4Card />
         <Top4Levers plan={plan} />
         <GuardarrailRuina data={plan?.guardarrail_ruina} modo="inicio" />
+        <ResumenJornada />
         <LiveJornada plan={plan} />
         <TodayPlan plan={plan} squads={squads} loading={loading} photos={photos} facts={facts} />
       </div>
