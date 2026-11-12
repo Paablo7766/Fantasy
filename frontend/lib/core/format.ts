@@ -61,6 +61,26 @@ export function titularShare(value: number | null | undefined): number | null {
   return share;
 }
 
+export type TitularWord = "fijo" | "probable" | "duda" | "suplente";
+
+/**
+ * Titularidad en palabras. Calibrado con el histórico: el tramo 0,7–0,8 del modelo
+ * sale de titular solo el 64 % de las veces, así que es «duda», no «probable».
+ */
+export function titularWord(share: number | null | undefined): TitularWord | null {
+  if (typeof share !== "number" || Number.isNaN(share)) return null;
+  if (share >= 0.9) return "fijo";
+  if (share >= 0.8) return "probable";
+  if (share >= 0.4) return "duda";
+  return "suplente";
+}
+
+/** «fijo · 93 %»: la palabra y, detrás, el número del modelo. */
+export function titularFull(share: number | null | undefined): string {
+  const word = titularWord(share);
+  return word === null || typeof share !== "number" ? "—" : `${word} · ${Math.round(share * 100)}%`;
+}
+
 /** Valor esperado de la jornada para un jugador del once. */
 export function jornadaEv(row: LineupRow | null | undefined): number | null {
   if (!row) return null;

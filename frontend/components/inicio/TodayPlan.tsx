@@ -4,7 +4,7 @@ import { BlurText } from "@/components/ui/BlurText";
 import { RollingNumber } from "@/components/ui/RollingNumber";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { eur, eurShort, points, titularShare } from "@/lib/core/format";
+import { eur, eurShort, points, titularFull, titularShare } from "@/lib/core/format";
 import { signedPoints } from "@/lib/inicio/hoy";
 import { factsFor, photoFor, type PhotoIndex, type PlayerIndex } from "@/lib/core/photoIndex";
 import { Avatar, Chevron, Collapse, FactGrid, Tag, type Fact } from "@/components/inicio/ui";
@@ -172,7 +172,7 @@ function stepFacts(step: Step, info: ReturnType<typeof factsFor>, fichajes: Plan
   const rows: Fact[] = [];
   if (kind === "vende" || kind === "escaparate") {
     const share = titularShare(info?.p_titular);
-    if (share !== null) rows.push({ label: "Titular", value: `${Math.round(share * 100)}%` });
+    if (share !== null) rows.push({ label: "Titular", value: titularFull(share) });
     if (typeof info?.tu_once_pierde_sin_el === "number") rows.push({ label: "Tu once pierde", value: `−${points(Math.abs(info.tu_once_pierde_sin_el))} pts`, tone: "var(--ini-red)" });
   } else if (kind === "clausula") {
     if (info?.owner) rows.push({ label: "Propietario", value: info.owner });

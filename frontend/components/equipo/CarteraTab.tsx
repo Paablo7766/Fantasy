@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { playerName, points, titularShare } from "@/lib/core/format";
+import { playerName, points, titularShare, titularWord } from "@/lib/core/format";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { statusBadgeLabel } from "@/components/ui/StatusBadge";
 import type { ActivityProfile, AuditoriaVenta, PlanPayload, RivalPlayer, SquadsPayload, VeredictoVenta } from "@/lib/types";
@@ -551,7 +551,7 @@ function PlayerCard({
         <Cell
           className="hidden min-[900px]:block"
           value={typeof player.own_expected_points === "number" ? points(player.own_expected_points) : "—"}
-          sub={share !== null ? `titular ${Math.round(share * 100)} %` : undefined}
+          sub={share !== null ? `titular: ${titularWord(share)}` : undefined}
         />
         <Chevron open={open} />
       </button>
@@ -614,7 +614,7 @@ function PlayerCard({
             <Fact
               label="Próxima jornada"
               value={`${points(player.own_expected_points)} xP`}
-              hint={share !== null ? `Titular ${Math.round(share * 100)}%` : undefined}
+              hint={share !== null ? `Titular: ${titularWord(share)}` : undefined}
             />
             <Fact
               label="Valor en 7 días"

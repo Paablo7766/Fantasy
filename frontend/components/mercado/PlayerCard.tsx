@@ -6,7 +6,7 @@ import { CompararConSugerido } from "@/components/comparador/ComparadorReal";
 import { Face, TONE, cleanText, money, parsePct, signedPct } from "@/components/ui/kit";
 import { ACTION_VERDICT, auctionLabel } from "@/components/mercado/shared";
 import { bidStory } from "@/lib/mercado/bidStory";
-import { playerName } from "@/lib/core/format";
+import { playerName, titularWord } from "@/lib/core/format";
 import { actionReason, executableBid, isVetoed, marketAction } from "@/lib/mercado/marketAction";
 import { statusBadgeLabel } from "@/components/ui/StatusBadge";
 import { Crest } from "@/components/ui/Crest";
@@ -503,7 +503,7 @@ export function PlayerCard({
           <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-4">
             <Figure label="Nota de mercado" value={dec(note)} sub="sobre 10" />
             <Figure label="Próxima jornada" value={`${dec(xp)} pts`} sub={xp4 !== null ? `${dec(xp4)} en 4 jornadas` : "esperados"} />
-            <Figure label="Titular" value={titular === null ? "—" : `${Math.round(titular * 100)} %`} sub="probabilidad" />
+            <Figure label="Titular" value={titular === null ? "—" : (titularWord(titular) ?? "—")} sub={titular === null ? undefined : `${Math.round(titular * 100)} % del modelo`} />
             <Figure
               label="En tu once"
               value={improves ? `+${dec(delta)} pts` : "No mejora"}

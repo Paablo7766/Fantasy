@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { jornadaEv, playerName, points, projectedLineupPoints, titularShare } from "@/lib/core/format";
+import { jornadaEv, playerName, points, projectedLineupPoints, titularFull, titularShare, titularWord } from "@/lib/core/format";
 import { REGLAMENTO } from "@/lib/core/reglamento";
 import { signedPoints } from "@/lib/inicio/hoy";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
@@ -198,7 +198,7 @@ function Pitch({
         const badge = id && id === safeId ? "C" : id && id === boldId ? "R" : null;
         const share = titularShare(slot.p_titular);
         const flag = statusBadgeLabel(shownStatus(slot));
-        const pctText = share !== null ? `${Math.round(share * 100)}%` : null;
+        const pctText = titularWord(share);
         return (
           <button
             key={slot.key}
@@ -211,7 +211,7 @@ function Pitch({
               ["--p" as string]: share !== null ? Math.round(share * 100) : 100,
             }}
             aria-pressed={selected === slot.key}
-            aria-label={`${name}, ${points(jornadaEv(slot))} puntos esperados${pctText ? `, ${pctText} de jugar` : ""}${flag ? `, ${flag}` : ""}${badge ? ", capitán" : ""}`}
+            aria-label={`${name}, ${points(jornadaEv(slot))} puntos esperados${pctText ? `, ${pctText} (${Math.round((share ?? 0) * 100)}% de jugar)` : ""}${flag ? `, ${flag}` : ""}${badge ? ", capitán" : ""}`}
             onClick={() => onSelect(slot.key)}
           >
             <span className="eq-card row-in" style={{ animationDelay: `${index * 30}ms` }}>
@@ -302,7 +302,7 @@ function PlayerSheet({
               hint={ifStarts !== null && ev !== null && Math.abs(ifStarts - ev) >= 0.35 ? `${points(ifStarts)} si juega` : undefined}
             />
             <Fact label="Techo" value={ceiling !== null ? points(ceiling) : "—"} hint={ceiling !== null ? "en su mejor día" : undefined} />
-            <Fact label="Titular" value={share !== null ? `${Math.round(share * 100)}%` : "—"} tone={ringColor(share)} />
+            <Fact label="Titular" value={titularFull(share)} tone={ringColor(share)} />
             <Fact
               label="Valor"
               value={money(player.market_value)}

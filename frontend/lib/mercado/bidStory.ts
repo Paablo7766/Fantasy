@@ -1,4 +1,4 @@
-import { eur, pct, playerName, points } from "@/lib/core/format";
+import { eur, pct, playerName, points, titularWord } from "@/lib/core/format";
 import { marketAction } from "@/lib/mercado/marketAction";
 import type { MarketDecision } from "@/lib/types";
 
@@ -105,7 +105,7 @@ export function bidGlance(player: MarketDecision): string {
   }
   if (player.bid_limit === "sobre_techo" || player.primary_motive === "sobreprecio") return "Ya pasa el tope de precio";
   if (player.bid_limit === "sin_caja" || player.primary_motive === "sin_caja") return "No te llega la caja";
-  if (typeof player.p_titular === "number") return `Titular el ${pct(player.p_titular)}`;
+  if (typeof player.p_titular === "number") return `Titular: ${titularWord(player.p_titular) ?? "—"} (${pct(player.p_titular)})`;
   return motiveText(player.primary_motive);
 }
 
@@ -599,7 +599,7 @@ function facts(player: MarketDecision): BidFact[] {
     });
   }
   if (typeof player.p_titular === "number") {
-    rows.push({ label: "Titular", value: pct(player.p_titular), note: "Probabilidad de salir de inicio" });
+    rows.push({ label: "Titular", value: titularWord(player.p_titular) ?? pct(player.p_titular), note: `${pct(player.p_titular)} del modelo de salir de inicio` });
   }
   if (typeof player.jornada_ev === "number") {
     rows.push({
