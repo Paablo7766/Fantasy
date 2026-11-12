@@ -70,6 +70,11 @@ _DIAS_SEMANA_LARGO = ("lunes", "martes", "miércoles", "jueves", "viernes", "sá
 _MESES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 
 #: Título del aviso cuando perder al jugador deja la plantilla sin once legal.
+#: Puntos de xP que el mejor sustituto comprable no cubre para dejar de contar a un
+#: titular como reponible. Por encima, la cláusula se blinda aunque el euro cuadre.
+XP_FALTA_SIN_EQUIVALENTE = 1.5
+#: Jornadas en las que ese hueco de xP pesa al medir la exposición.
+JORNADAS_BLINDAJE = 4
 TITULO_SIN_RECAMBIO = "ALERTA: SIN RECAMBIO"
 
 TITULOS_PROTEGER = {
@@ -357,7 +362,16 @@ def _proteger(
             exposicion = max(0.0, reposicion - clausula + hueco)
         else:
             exposicion = pierde * ratio + regalo
-        neto_cero = reposicion is not None and exposicion <= 0 and bool(capaces) and not prescindible
+        # Sin sustituto de xP equivalente el euro no mide el daño: reponerlo cuesta
+        # menos que la cláusula, pero el once se queda corto de puntos, y en una
+        # liga que se juega jornada a jornada lo que decide es el top 4. Se mide
+        # lo que falta en puntos, a precio de mercado, durante unas jornadas.
+        sin_equivalente = reposicion is not None and en_xi and falta_xp >= XP_FALTA_SIN_EQUIVALENTE
+        if sin_equivalente:
+            exposicion = max(exposicion, max(falta_xp, 1.0) * ratio * JORNADAS_BLINDAJE)
+        neto_cero = (
+            reposicion is not None and exposicion <= 0 and bool(capaces) and not prescindible and not sin_equivalente
+        )
         elegido: dict[str, Any] | None = None
         mejor_neto = 0.0
         for nivel in () if (prescindible or neto_cero) else niveles:

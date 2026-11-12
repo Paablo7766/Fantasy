@@ -197,6 +197,24 @@ def factor_peaje(mejora_neta: float | None) -> float:
     return 1.0 / (1.0 + math.exp(exponente))
 
 
+# Caja que debe sobrar DESPUÉS de pagar un fichaje para que su peaje de liquidez
+# se apague del todo. Por debajo se descuenta en línea recta.
+COLCHON_SIN_PEAJE_EUR = 10_000_000
+
+
+def escasez_de_caja(caja: int | float | None, euros: int | float) -> float:
+    """Fracción del peaje que sigue vigente para un fichaje según lo que sobra de caja.
+
+    El peaje guarda liquidez. Si pagar este fichaje deja al menos
+    ``COLCHON_SIN_PEAJE_EUR`` en caja, guardarla no tiene ningún uso mejor y no
+    debe frenar una compra que mejora el once. Sin sobrante, paga entero.
+    """
+    if caja is None:
+        return 1.0
+    sobra = float(caja) - float(euros)
+    return max(0.0, min(1.0, 1.0 - sobra / COLCHON_SIN_PEAJE_EUR))
+
+
 def clasificar_impulso(
     *,
     mejora_neta: float,
@@ -1325,7 +1343,7 @@ def _plan_once(
         ficha = ficha_compra[clave]
         if ficha["impulso"] == "CHOLLO" or ficha["credito_paron"]:
             return 0.0
-        return factor_peaje(ficha["mejora"])
+        return factor_peaje(ficha["mejora"]) * escasez_de_caja(saldo, ficha["euros"])
 
     gastos_peaje = pulp.lpSum(
         [

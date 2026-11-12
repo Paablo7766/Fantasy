@@ -48,6 +48,7 @@ from toolbox.analyzer import (
 from toolbox.auth import AuthError, login_with_browser
 from toolbox.league_form import build_league_form
 from toolbox.top4 import build_top4
+from toolbox.top4_levers import apply_overlay
 from toolbox.bidding import flip_from_documents, load_activity, needs_from_documents
 from toolbox.cache import ResponseCache, cache_root
 from toolbox.bid_war import rival_snapshots
@@ -3701,6 +3702,20 @@ def _plan_document(board: dict[str, Any]) -> dict[str, Any]:
     if isinstance(plan_decisions, list):
         document["decisions"] = [_normalize_market_decision(row) for row in plan_decisions if isinstance(row, dict)]
     publish_strategy(board, document)
+    try:
+        form = _league_form_document(board)
+        rounds = {int(n): {str(k): int(v) for k, v in rows.items()} for n, rows in (form.get("scores") or {}).items()}
+        squads_doc = board.get("squads") if isinstance(board.get("squads"), dict) else {}
+        me = next((s for s in squads_doc.get("squads") or [] if isinstance(s, dict) and s.get("is_self") is True), None)
+        from toolbox.analyzer import candidates_from_squad, index_trends
+
+        roster = [
+            {"position": c.position, "p_titular": c.p_titular, "name": c.nickname or c.name}
+            for c in (candidates_from_squad(me, index_trends(board.get("trends"))) if me else [])
+        ]
+        apply_overlay(document, rounds, roster)
+    except Exception:  # noqa: BLE001 - la capa de top 4 nunca tumba el plan
+        logger.warning("Capa de top 4 sin calcular", exc_info=True)
     return document
 
 

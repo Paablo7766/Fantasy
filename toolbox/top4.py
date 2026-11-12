@@ -102,6 +102,72 @@ def simulate(
     }
 
 
+class Top4Model:
+    """Probabilidad de top 4 como función de MIS puntos esperados.
+
+    Los rivales se simulan una sola vez (números aleatorios comunes), así que
+    comparar dos escenarios mide la diferencia real y no ruido de simulación.
+    """
+
+    def __init__(
+        self,
+        rival_means: list[float],
+        sigma: float,
+        *,
+        rival_void: list[bool] | None = None,
+        seed: int = 20260,
+        n: int = SIMULATIONS,
+    ) -> None:
+        rng = np.random.default_rng(seed)
+        mu = np.array(rival_means, dtype=float)
+        draws = np.clip(np.rint(rng.normal(mu, sigma, size=(n, len(mu)))), 0, None)
+        for idx, void in enumerate(rival_void or []):
+            if void:
+                draws[:, idx] = 0
+        self.cutoff = np.sort(draws, axis=1)[:, ::-1][:, TOP_N - 1]
+        self._z = rng.standard_normal(n)
+        self.sigma = float(sigma)
+
+    def p(self, my_points: float, *, void: bool = False) -> float:
+        """Probabilidad de igualar o superar al 4.º de los demás con esa media."""
+        if void:
+            return 0.0
+        mine = np.clip(np.rint(my_points + self.sigma * self._z), 0, None)
+        return float((mine >= self.cutoff).mean())
+
+
+def model_from_race(race: dict[str, Any] | None, rounds: dict[int, dict[str, int]] | None) -> dict[str, Any] | None:
+    """``Top4Model`` de la jornada y los datos propios que hacen falta para usarlo."""
+    table = [row for row in (race or {}).get("table") or [] if isinstance(row, dict)]
+    me = next((row for row in table if row.get("is_self")), None)
+    if me is None:
+        return None
+    calibration = calibrate_sigma(rounds or {})
+    leagues = [
+        v for v in (_number((row.get("projection") or {}).get("expected_points")) for row in table) if v is not None
+    ]
+    league_mean = sum(leagues) / len(leagues) if leagues else 0.0
+    rivals = [row for row in table if not row.get("is_self")]
+    means = [_number((row.get("projection") or {}).get("expected_points")) for row in rivals]
+    model = Top4Model(
+        [m if m is not None else league_mean for m in means],
+        float(calibration["sigma"]),
+        rival_void=[int(row.get("player_count") or 0) < MIN_PLAYERS for row in rivals],
+    )
+    mine = _number(((race or {}).get("my_projection") or {}).get("expected_points"))
+    if mine is None:
+        mine = _number((me.get("projection") or {}).get("expected_points"))
+    xi = ((race or {}).get("my_projection") or {}).get("xi") or []
+    return {
+        "model": model,
+        "mu": mine if mine is not None else league_mean,
+        "players": int(me.get("player_count") or 0),
+        "xi": xi,
+        "calibration": calibration,
+        "cutoff_median": float(np.median(model.cutoff)),
+    }
+
+
 def build_top4(race: dict[str, Any] | None, rounds: dict[int, dict[str, int]] | None) -> dict[str, Any]:
     """Probabilidad de top 4 de la próxima jornada a partir de la carrera."""
     table = [row for row in (race or {}).get("table") or [] if isinstance(row, dict)]

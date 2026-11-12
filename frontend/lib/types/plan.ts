@@ -240,6 +240,7 @@ export type PlanPayload = ApiError & PhotoMeta & {
   capitan_remontada?: CapitanPick | null;
   plan_fichajes?: PlanFichajes | null;
   guardarrail_ruina?: Guardarrail | null;
+  top4?: Top4Overlay | null;
   ventas_forzadas?: VentaForzada[];
   /** Una auditoría por jugador susceptible de venta (ofertas de LaLiga y rivales). */
   auditoria_ventas?: AuditoriaVenta[];
@@ -266,4 +267,24 @@ export type DashboardState = {
   squads: SquadsPayload | null;
   needs: NeedsPayload | null;
   plan: PlanPayload | null;
+};
+
+/** Δ de probabilidad de top 4 (en fracción, 0,12 = +12 puntos) de cada decisión. */
+export type Top4Delta = { player_id?: string | null; nombre?: string | null; delta_p: number };
+
+export type Top4Overlay = {
+  ok?: boolean;
+  p_real?: number;
+  p_con_once_completo?: number;
+  void?: boolean;
+  jugadores?: number;
+  base_xp?: number;
+  corte_xp?: number;
+  acciones?: (Top4Delta & { tipo?: string; mejora_xp: number; p_antes: number; p_despues: number; euros?: number | null })[];
+  plan?: { puntos_once: number; jugadores_despues: number; p_antes: number; p_despues: number; delta_p: number } | null;
+  ventas?: (Top4Delta & { pierde_xp: number; p_si_vendes: number })[];
+  blindaje?: (Top4Delta & { posicion?: string | null; multiplo_clausula?: number | null; clausula?: number | null; rivales_que_pueden_pagar?: number | null; pierde_xp: number; deja_sin_linea: boolean; veredicto?: string | null })[];
+  plantilla_minima?: { cumple: boolean; jugadores: number; delanteros_titulares: number; faltan: string[] };
+  postura?: { nombre: "seguro" | "techo" | "neutro"; texto: string; gap_xp: number; margen_xp: number };
+  reventa_bloqueada?: number;
 };

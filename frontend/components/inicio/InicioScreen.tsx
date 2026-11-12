@@ -6,6 +6,7 @@ import { HomeHeader } from "@/components/inicio/HomeHeader";
 import { GuardarrailRuina } from "@/components/mercado/GuardarrailRuina";
 import { LiveJornada } from "@/components/inicio/LiveJornada";
 import { Top4Card } from "@/components/inicio/Top4Card";
+import { Top4Levers } from "@/components/inicio/Top4Levers";
 import { SquadDesk } from "@/components/inicio/SquadDesk";
 import { TodayPlan } from "@/components/inicio/TodayPlan";
 import { buildPhotoIndex, buildPlayerIndex } from "@/lib/core/photoIndex";
@@ -40,6 +41,7 @@ export function InicioScreen() {
       </div>
       <div className="ini-area-plan min-w-0">
         <Top4Card />
+        <Top4Levers plan={plan} />
         <GuardarrailRuina data={plan?.guardarrail_ruina} modo="inicio" />
         <LiveJornada plan={plan} />
         <TodayPlan plan={plan} squads={squads} loading={loading} photos={photos} facts={facts} />
