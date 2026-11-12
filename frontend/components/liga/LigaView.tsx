@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { endpoint, getJson } from "@/lib/core/api";
+import { useJson } from "@/lib/core/useJson";
 import { points } from "@/lib/core/format";
 import { applyLiquidity, financialIndex, liquidityRead } from "@/lib/liga/liquidity";
 import { SEASON_ROUNDS, paceLines } from "@/lib/liga/pace";
@@ -15,60 +15,18 @@ import { Empty, Skeleton, TONE } from "@/components/ui/kit";
 import { AlertsPanel } from "./AlertsPanel";
 import { HeadToHeadCard } from "./HeadToHeadCard";
 import { RivalDialog } from "./RivalDialog";
+import { RoundsTable } from "./RoundsTable";
 import { StandingsTable, type StandingRow } from "./StandingsTable";
 import { rivalLabel } from "./dashboard/shared";
 import { Tile } from "./parts";
 
-type Tab = "clasificacion" | "duelo" | "alertas";
+type Tab = "clasificacion" | "jornadas" | "duelo" | "alertas";
 
 const MODE: Record<string, { label: string; color: string; text: string }> = {
   ventaja: { label: "Vas por delante", color: TONE.green, text: "Tu once busca puntos seguros: titulares fijos antes que apuestas." },
   remontada: { label: "Toca remontar", color: TONE.copper, text: "Tu once busca techo: jugadores capaces de dar muchos puntos aunque sean más arriesgados." },
   neutro: { label: "Carrera igualada", color: TONE.blue, text: "Ni ventaja ni remontada: el once equilibra suelo y techo." },
 };
-
-/**
- * Última respuesta buena de cada endpoint: al volver a Liga se enseña al
- * instante y se refresca por detrás, en vez de esperar otra vez al servidor.
- */
-const jsonCache = new Map<string, unknown>();
-
-function useJson<T>(path: string, league: string | null): T | null {
-  const key = endpoint(path, league);
-  const [loaded, setLoaded] = useState<{ key: string; payload: T } | null>(() => (jsonCache.has(key) ? { key, payload: jsonCache.get(key) as T } : null));
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      // Un 502/504 suele ser el backend reiniciándose o un arranque en frío:
-      // se reintenta dos veces antes de rendirse.
-      for (let attempt = 0; ; attempt += 1) {
-        try {
-          const payload = await getJson<T>(key);
-          jsonCache.set(key, payload);
-          if (!cancelled) setLoaded({ key, payload });
-          return;
-        } catch (reason: unknown) {
-          if (attempt < 2 && !cancelled) {
-            await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
-            continue;
-          }
-          if (cancelled || jsonCache.has(key)) return; // si hay copia buena, se queda esa
-          // Se conserva el motivo (HTTP 500, sin conexión…) para poder enseñarlo.
-          const sent = (reason as { payload?: unknown } | null)?.payload;
-          const message = reason instanceof Error ? reason.message : "Sin respuesta";
-          setLoaded({ key, payload: (sent && typeof sent === "object" ? sent : { ok: false, error: { message } }) as T });
-          return;
-        }
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [key]);
-  if (loaded && loaded.key === key) return loaded.payload;
-  return jsonCache.has(key) ? (jsonCache.get(key) as T) : null;
-}
 
 function cashOf(squad: RivalSquad): number | null {
   const read = liquidityRead(squad);
@@ -253,6 +211,7 @@ export function LigaView({
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "clasificacion", label: "Clasificación" },
+    { id: "jornadas", label: "Jornadas" },
     { id: "duelo", label: "Cara a cara" },
     { id: "alertas", label: "Alertas", count: threats.length || undefined },
   ];
@@ -305,7 +264,7 @@ export function LigaView({
         </p>
       ) : null}
 
-      <div className="desk-switch w-full !max-w-[26rem]" role="tablist" aria-label="Secciones de la liga">
+      <div className="desk-switch w-full !max-w-[34rem]" role="tablist" aria-label="Secciones de la liga">
         {tabs.map((item) => (
           <button
             key={item.id}
@@ -323,6 +282,8 @@ export function LigaView({
 
       <div key={tab} className="row-in flex min-w-0 flex-col gap-4" role="tabpanel">
         {tab === "clasificacion" ? <StandingsTable rows={standings} window={formWindow} leaderGap={leaderGap} onOpen={setSelected} /> : null}
+
+        {tab === "jornadas" ? <RoundsTable rounds={form && form.ok !== false ? form.my_rounds || [] : []} sources={form?.sources} /> : null}
 
         {tab === "duelo" ? (
           race === null ? (

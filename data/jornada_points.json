@@ -1,20 +1,53 @@
 {
-  "_nota": "Puntos de cada mánager por jornada (columna PFSY de la clasificación de la app). Clave: nombre tal como aparece en la app. Añade una jornada nueva con su número en cada lista.",
+  "_nota": "Respaldo manual de los puntos de cada mánager por jornada. Los puntos salen solos de los premios de jornada de la actividad (tipo 6, 100.000 € por punto); este archivo solo rellena jornadas que la actividad ya no trae. Clave: nombre tal como aparece en la app.",
   "rounds": {
     "9": {
-      "pablooceballos": 61, "Gon redon": 51, "PABS FC": 47, "floren romi": 40,
-      "Pedro Salcines Fc": 40, "Sausor10": 34, "Naviis10": 32, "paaabsnz": 28,
-      "iaaagocab": 19, "gerardo_vp": 19
+      "pablooceballos": 61,
+      "Gon redon": 51,
+      "PABS FC": 47,
+      "floren romi": 40,
+      "Pedro Salcines Fc": 40,
+      "Sausor10": 34,
+      "Naviis10": 32,
+      "paaabsnz": 28,
+      "iaaagocab": 19,
+      "gerardo_vp": 19
     },
     "10": {
-      "gerardo_vp": 58, "Naviis10": 48, "PABS FC": 47, "floren romi": 46,
-      "paaabsnz": 43, "Gon redon": 37, "Pedro Salcines Fc": 35, "Sausor10": 31,
-      "pablooceballos": 19, "iaaagocab": 10
+      "gerardo_vp": 58,
+      "Naviis10": 48,
+      "PABS FC": 47,
+      "floren romi": 46,
+      "paaabsnz": 43,
+      "Gon redon": 37,
+      "Pedro Salcines Fc": 35,
+      "Sausor10": 31,
+      "pablooceballos": 19,
+      "iaaagocab": 10
     },
     "11": {
-      "Gon redon": 65, "gerardo_vp": 60, "PABS FC": 55, "Pedro Salcines Fc": 52,
-      "pablooceballos": 48, "iaaagocab": 41, "paaabsnz": 40, "Naviis10": 37,
-      "floren romi": 34, "Sausor10": 22
+      "Gon redon": 65,
+      "gerardo_vp": 60,
+      "PABS FC": 55,
+      "Pedro Salcines Fc": 52,
+      "pablooceballos": 48,
+      "iaaagocab": 41,
+      "paaabsnz": 40,
+      "Naviis10": 37,
+      "floren romi": 34,
+      "Sausor10": 22
+    },
+    "12": {
+      "pablooceballos": 56,
+      "paaabsnz": 56,
+      "Pedro Salcines Fc": 53,
+      "PABS FC": 52,
+      "Naviis10": 52,
+      "Gon redon": 46,
+      "Sausor10": 46,
+      "iaaagocab": 45,
+      "floren romi": 42,
+      "gerardo_vp": 41
     }
   }
 }

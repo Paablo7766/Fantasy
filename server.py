@@ -47,6 +47,7 @@ from toolbox.analyzer import (
 )
 from toolbox.auth import AuthError, login_with_browser
 from toolbox.league_form import build_league_form
+from toolbox.top4 import build_top4
 from toolbox.bidding import flip_from_documents, load_activity, needs_from_documents
 from toolbox.cache import ResponseCache, cache_root
 from toolbox.bid_war import rival_snapshots
@@ -3122,17 +3123,53 @@ def api_league_race(
     return document
 
 
+def _league_form_document(board: dict[str, Any]) -> dict[str, Any]:
+    squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
+    needs = board.get("needs") if isinstance(board.get("needs"), dict) else {}
+    ledgers = [row for row in needs.get("ledgers") or [] if isinstance(row, dict)]
+    league_id = squads.get("league_id") if isinstance(squads.get("league_id"), str) else None
+    try:
+        store = CashLedgerStore()
+        stored = store.list_ledgers(league_id) if league_id else store.list_ledgers(None)
+        ledgers = merge_ledgers(ledgers, stored)
+    except Exception:
+        logger.debug("Sin libros persistidos para la forma de la liga", exc_info=True)
+    return build_league_form(squads, ledgers=ledgers)
+
+
 @app.get("/api/league-form")
 @_read_only
 def api_league_form(
     league: str | None = Query(default=None),
 ) -> Any:
-    """Puntos por jornada y tendencia de cada mánager. Sin red."""
+    """Puntos por jornada (de los premios de la actividad) y tendencia. Sin red."""
     board = _board("league-form", league, tier="core")
     if isinstance(board, JSONResponse):
         return board
-    squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
-    return build_league_form(squads)
+    return _league_form_document(board)
+
+
+@app.get("/api/top4")
+@_read_only
+def api_top4(
+    league: str | None = Query(default=None),
+) -> Any:
+    """Probabilidad de quedar entre los 4 primeros de la próxima jornada. Sin red."""
+    board = _board("league-race", league, tier="core")
+    if isinstance(board, JSONResponse):
+        return board
+    race = api_league_race(league=league)
+    if isinstance(race, JSONResponse):
+        return race
+    form = _league_form_document(board)
+    rounds = {
+        int(number): {str(name): int(points) for name, points in rows.items()}
+        for number, rows in (form.get("scores") or {}).items()
+    }
+    document = build_top4(race, rounds)
+    document["fetched_at"] = board.get("dashboard_at")
+    document.update(_photo_fields(board))
+    return document
 
 
 @app.get("/api/data-health")

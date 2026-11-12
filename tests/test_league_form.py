@@ -36,11 +36,12 @@ class LeagueFormTest(unittest.TestCase):
     def test_no_data_is_not_ok(self) -> None:
         self.assertFalse(build_league_form(SQUADS, {})["ok"])
 
-    def test_shipped_file_has_three_complete_rounds(self) -> None:
+    def test_shipped_file_has_complete_rounds(self) -> None:
         rounds = load_rounds()
-        self.assertEqual(sorted(rounds), [9, 10, 11])
+        self.assertEqual(sorted(rounds), [9, 10, 11, 12])
         self.assertTrue(all(len(rows) == 10 for rows in rounds.values()))
         self.assertEqual(sum(rounds[11].values()), 454)
+        self.assertEqual(sum(rounds[12].values()), 489)
 
 
 if __name__ == "__main__":

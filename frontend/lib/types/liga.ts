@@ -388,10 +388,71 @@ export type LeagueFormRow = {
   form_rank: number;
 };
 
+/** Mi puesto en una jornada contra la línea del 4.º (el corte de la multa). */
+export type LeagueMyRound = {
+  round: number;
+  points: number;
+  rank: number;
+  /** Puntos del 4.º: la línea que hay que igualar o superar. */
+  cutoff: number;
+  /** Mis puntos menos los del corte. */
+  gap: number;
+  in_top4: boolean;
+  tied_at_cutoff: boolean;
+  leader: number;
+  field: number;
+};
+
 export type LeagueFormPayload = ApiError & {
   ok?: boolean;
+  my_rounds?: LeagueMyRound[];
+  /** De dónde sale cada jornada: premios de la actividad o el respaldo manual. */
+  sources?: Record<string, "actividad" | "manual">;
+  top_n?: number;
   rounds?: number[];
   recent_window?: number;
   rows?: LeagueFormRow[];
   unmatched?: string[];
+};
+
+export type Top4Manager = {
+  team_id?: string | null;
+  manager_name?: string | null;
+  is_self?: boolean;
+  expected_points: number;
+  has_xp: boolean;
+  player_count: number;
+  void: boolean;
+  p_top4: number;
+};
+
+export type Top4Scenario = {
+  missing_players: number;
+  fill_xp: number;
+  expected_points: number;
+  p_top4: number;
+  cutoff_median: number;
+  /** Positivo = faltan xP para el corte; negativo = vas por encima. */
+  xp_gap_to_cutoff: number;
+  expected_rank: number;
+};
+
+export type Top4Payload = ApiError & {
+  ok?: boolean;
+  top_n?: number;
+  p_top4?: number;
+  /** Con menos de 11 jugadores la jornada entera puntúa 0. */
+  void?: boolean;
+  player_count?: number;
+  expected_points?: number;
+  cutoff_median?: number;
+  cutoff_range?: [number, number];
+  xp_gap_to_cutoff?: number;
+  expected_rank?: number;
+  p_win?: number;
+  if_completed?: Top4Scenario | null;
+  managers?: Top4Manager[];
+  calibration?: { sigma: number; rounds_used: number; calibrated: boolean };
+  is_stale?: boolean;
+  photo_age_seconds?: number | null;
 };

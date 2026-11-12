@@ -5,6 +5,7 @@ import { useDashboard } from "@/components/DashboardProvider";
 import { HomeHeader } from "@/components/inicio/HomeHeader";
 import { GuardarrailRuina } from "@/components/mercado/GuardarrailRuina";
 import { LiveJornada } from "@/components/inicio/LiveJornada";
+import { Top4Card } from "@/components/inicio/Top4Card";
 import { SquadDesk } from "@/components/inicio/SquadDesk";
 import { TodayPlan } from "@/components/inicio/TodayPlan";
 import { buildPhotoIndex, buildPlayerIndex } from "@/lib/core/photoIndex";
@@ -38,6 +39,7 @@ export function InicioScreen() {
         <HomeHeader plan={plan} squads={squads} loading={loading} />
       </div>
       <div className="ini-area-plan min-w-0">
+        <Top4Card />
         <GuardarrailRuina data={plan?.guardarrail_ruina} modo="inicio" />
         <LiveJornada plan={plan} />
         <TodayPlan plan={plan} squads={squads} loading={loading} photos={photos} facts={facts} />

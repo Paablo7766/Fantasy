@@ -1114,16 +1114,19 @@ def _ledger(team_id: str, events: list[dict[str, Any]], squad: dict[str, Any] | 
             ignored += 1
             continue
         signed = amount if kind in {"initial", "premium", "sell"} else -amount
-        lines.append(
-            {
-                "kind": kind,
-                "amount_eur": amount,
-                "signed_eur": signed,
-                "player_id": event.get("player_id"),
-                "label": event.get("label"),
-                "at": event.get("at"),
-            }
-        )
+        line = {
+            "kind": kind,
+            "amount_eur": amount,
+            "signed_eur": signed,
+            "player_id": event.get("player_id"),
+            "label": event.get("label"),
+            "at": event.get("at"),
+        }
+        if event.get("activity_type_id") == 6 and isinstance(event.get("week"), int):
+            # Premio de jornada: 100.000 € por punto. Sirve para derivar los puntos.
+            line["activity_type_id"] = 6
+            line["week"] = event["week"]
+        lines.append(line)
     reconstructed = None if initial is None else initial + premiums - purchases - clauses + sales
     observed = squad.get("cash") if isinstance(squad, dict) and isinstance(squad.get("cash"), int) else None
     gap = None if reconstructed is None or observed is None else observed - reconstructed

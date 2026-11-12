@@ -75,6 +75,9 @@ def parse_activity_row(row: dict[str, Any]) -> dict[str, Any] | None:
         "at": row.get("createdAt") if isinstance(row.get("createdAt"), str) else None,
         "activity_type_id": type_id,
     }
+    week = row.get("weekNumber")
+    if type_id == 6 and isinstance(week, int) and not isinstance(week, bool):
+        event["week"] = week
     counterparty = row.get("user2Id")
     if type_id == 1 and counterparty is not None and not isinstance(counterparty, bool):
         event["counterparty_manager_id"] = str(counterparty)
