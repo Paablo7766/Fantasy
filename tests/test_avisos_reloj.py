@@ -63,5 +63,36 @@ class AvisosRelojTests(unittest.TestCase):
         enviar.assert_called_once()
 
 
+class AvisoClausulaTests(unittest.TestCase):
+    def _board(self, cajas: list[int], abre_en_h: float = 5.0) -> dict:
+        abre = (AHORA + timedelta(hours=abre_en_h)).isoformat()
+        propios = [{"player_id": "p1", "name": "Cepeda", "buyout_clause": 10_000_000, "clause_lock": {"present": True, "expires_at": abre}}]
+        return {
+            "squads": {"ok": True, "squads": [{"is_self": True, "cash": 1, "players": propios}]
+                       + [{"is_self": False, "cash": c, "players": []} for c in cajas]},
+            "optimize": {"saved_lineup": {"xi": [{"player_id": "p1"}]}},
+            "market": {},
+            "trends": {},
+        }
+
+    def _con_saque(self, horas: float):
+        return mock.patch("toolbox.jornada_plan.next_lock", return_value=(AHORA + timedelta(hours=horas)).isoformat())
+
+    def test_avisa_si_un_rival_puede_pagar(self) -> None:
+        with self._con_saque(60):
+            avisos = ar.avisos_clausula(self._board([12_000_000, 3_000_000]), AHORA)
+        self.assertEqual(len(avisos), 1)
+        self.assertIn("1 rival", avisos[0]["body"])
+        self.assertIn("10,0 M", avisos[0]["body"])
+
+    def test_no_avisa_sin_caja_rival(self) -> None:
+        with self._con_saque(60):
+            self.assertEqual(ar.avisos_clausula(self._board([2_000_000]), AHORA), [])
+
+    def test_no_avisa_si_se_abre_tras_el_cierre_del_mercado(self) -> None:
+        with self._con_saque(26):  # el mercado cierra en 2 h; se abre en 5 h
+            self.assertEqual(ar.avisos_clausula(self._board([12_000_000]), AHORA), [])
+
+
 if __name__ == "__main__":
     unittest.main()

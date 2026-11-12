@@ -151,6 +151,58 @@ def aviso_once(
     }
 
 
+def avisos_clausula(board: dict[str, Any], ahora: datetime) -> list[dict[str, Any]]:
+    """1b: se abre en menos de 24 h la cláusula de un titular mío y algún rival puede pagarla.
+
+    Solo cuenta si el desbloqueo cae antes del cierre del mercado de clausulazos
+    (24 h antes del saque): lo que se abre después no se puede pagar a tiempo.
+    """
+    from toolbox.analyzer import own_squad
+    from toolbox.jornada_plan import _parse_iso, clause_unlocks_within, next_lock
+
+    squads = board.get("squads") if isinstance(board.get("squads"), dict) else None
+    market = board.get("market") if isinstance(board.get("market"), dict) else None
+    optimize = board.get("optimize") if isinstance(board.get("optimize"), dict) else None
+    if squads is None or squads.get("ok") is not True or optimize is None:
+        return []
+    guardado = optimize.get("saved_lineup") if isinstance(optimize.get("saved_lineup"), dict) else {}
+    titulares = {f.get("player_id") for f in guardado.get("xi") or [] if isinstance(f, dict)}
+    trends = board.get("trends") if isinstance(board.get("trends"), dict) else None
+    saque = _parse_iso(next_lock(trends, now=ahora))
+    cierre_mercado = saque - timedelta(hours=24) if saque else None
+    cajas = [
+        s.get("cash")
+        for s in squads.get("squads") or []
+        if isinstance(s, dict) and s.get("is_self") is not True and isinstance(s.get("cash"), int)
+    ]
+    out: list[dict[str, Any]] = []
+    for fila in clause_unlocks_within(squads, market, now=ahora, hours=24):
+        if fila.get("is_self") is not True or fila.get("player_id") not in titulares:
+            continue
+        abre = _parse_iso(fila.get("at"))
+        if abre is None or (cierre_mercado is not None and abre >= cierre_mercado):
+            continue
+        clausula = fila.get("buyout_clause")
+        if not isinstance(clausula, int) or clausula <= 0:
+            continue
+        millones = f"{clausula / 1_000_000:.1f}".replace(".", ",") + " "
+        capaces = sum(1 for c in cajas if c >= clausula)
+        if capaces == 0:
+            continue
+        horas = max(0.0, (abre - ahora).total_seconds() / 3600.0)
+        cuando = f"{max(1, round(horas))} h" if horas >= 1 else f"{max(1, round(horas * 60))} min"
+        out.append(
+            {
+                "clave": f"clausula:{fila['player_id']}:{abre.astimezone(timezone.utc).isoformat()}",
+                "title": "Cláusula a punto de abrirse",
+                "body": f"{_nombre(fila)} se desbloquea en {cuando} ({millones}M) y {capaces} rival(es) pueden pagarla. Blíndalo o vende.",
+                "tag": f"clausula-{fila['player_id']}",
+                "url": "/clausulas",
+            }
+        )
+    return out
+
+
 def revisar(
     board: dict[str, Any],
     ahora: datetime | None = None,
@@ -169,7 +221,8 @@ def revisar(
         return []
     enviados = _leer()
     nuevos: list[str] = []
-    for aviso in (aviso_once(board, momento),):
+    candidatos = [aviso_once(board, momento), *avisos_clausula(board, momento)]
+    for aviso in candidatos:
         if aviso is None or aviso["clave"] in enviados:
             continue
         if enviar(aviso["title"], aviso["body"], url=aviso["url"], tag=aviso["tag"]) > 0:
