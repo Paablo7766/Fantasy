@@ -27,18 +27,25 @@ export type StandingRow = {
   delta: number | null;
 };
 
-type Metric = "points" | "form" | "projection" | "cash" | "value" | "delta";
+type Metric = "points" | "form" | "projection" | "cash" | "value" | "patrimonio" | "delta";
 
 const METRICS: { id: Metric; label: string }[] = [
   { id: "points", label: "Puntos" },
   { id: "delta", label: "Subida de hoy" },
+  { id: "patrimonio", label: "Patrimonio" },
   { id: "value", label: "Valor del equipo" },
   { id: "cash", label: "Caja" },
   { id: "form", label: "Forma" },
   { id: "projection", label: "Próxima jornada" },
 ];
 
+/** Caja + valor de la plantilla. Sin valor de plantilla no hay patrimonio que comparar. */
+function patrimonioOf(row: StandingRow): number | null {
+  return row.teamValue === null ? null : row.teamValue + (row.cash ?? 0);
+}
+
 function metricValue(row: StandingRow, metric: Metric): number | null {
+  if (metric === "patrimonio") return patrimonioOf(row);
   if (metric === "form") return row.form?.recent_avg ?? null;
   if (metric === "projection") return row.projection;
   if (metric === "cash") return row.cash;
@@ -50,6 +57,7 @@ function metricValue(row: StandingRow, metric: Metric): number | null {
 /** Qué mide cada vista, en una frase: se enseña bajo el selector. */
 function helpText(metric: Metric, window: number): string {
   if (metric === "delta") return "Cuánto ha subido o bajado hoy el valor de mercado de cada plantilla.";
+  if (metric === "patrimonio") return "Todo lo que tiene cada mánager: caja más valor de mercado de la plantilla. La caja de los rivales es una estimación.";
   if (metric === "value") return "Lo que vale en el mercado la plantilla de cada mánager, sin contar su caja.";
   if (metric === "cash") return "Dinero que tiene cada uno para fichar. La de los rivales es una estimación a partir de sus movimientos.";
   if (metric === "form") return `Quién viene en racha: media de puntos por jornada en las últimas ${window}, no en toda la temporada.`;
@@ -78,6 +86,7 @@ function subText(row: StandingRow, metric: Metric, leaderGap: number | null, win
   }
   if (metric === "projection") return row.projection === null ? "sin once" : row.ceiling !== null ? `techo ${points(row.ceiling)}` : "pts esperados";
   if (metric === "cash") return row.bidLimit !== null ? `puja hasta ${money(row.bidLimit)}` : null;
+  if (metric === "patrimonio") return row.teamValue === null ? null : `plantilla ${money(row.teamValue)} · caja ${row.cash === null ? "—" : money(row.cash)}`;
   if (metric === "value") return typeof row.delta === "number" && Math.abs(row.delta) >= 1 ? `${signedMoney(row.delta)} hoy` : "sin cambio hoy";
   if (row.delta !== null && row.teamValue) return `${signedPct((row.delta / (row.teamValue - row.delta)) * 100, 2)} de su valor`;
   return null;
