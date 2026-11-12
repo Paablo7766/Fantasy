@@ -280,8 +280,20 @@ export type Top4Overlay = {
   jugadores?: number;
   base_xp?: number;
   corte_xp?: number;
-  acciones?: (Top4Delta & { tipo?: string; mejora_xp: number; p_antes: number; p_despues: number; euros?: number | null })[];
-  plan?: { puntos_once: number; jugadores_despues: number; p_antes: number; p_despues: number; delta_p: number } | null;
+  paso_1?: { player_id?: string | null; nombre?: string | null; prob_ganar?: number; respaldo?: string | null; texto: string } | null;
+  acciones?: (Top4Delta & { tipo?: string; mejora_xp: number; p_antes: number; p_despues: number; euros?: number | null; prob_ganar: number; prob_conocida: boolean; delta_p_si_ganas: number; delta_p_ponderado: number })[];
+  plan?: {
+    puntos_once: number;
+    jugadores_despues: number;
+    p_antes: number;
+    /** Ponderado por la probabilidad de ganar cada puja. */
+    p_despues: number;
+    delta_p: number;
+    p_si_ganas_todas: number;
+    prob_ganar_todas: number;
+    prob_ganar_ninguna: number;
+    solo_mas_probable?: { nombre?: string | null; prob_ganar: number; p_top4: number } | null;
+  } | null;
   ventas?: (Top4Delta & { pierde_xp: number; p_si_vendes: number })[];
   blindaje?: (Top4Delta & { posicion?: string | null; multiplo_clausula?: number | null; clausula?: number | null; rivales_que_pueden_pagar?: number | null; pierde_xp: number; deja_sin_linea: boolean; veredicto?: string | null })[];
   plantilla_minima?: { cumple: boolean; jugadores: number; delanteros_titulares: number; faltan: string[] };

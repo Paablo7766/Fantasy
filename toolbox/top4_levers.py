@@ -13,8 +13,10 @@ probabilidad de quedar entre los 4 primeros de la jornada».
 
 from __future__ import annotations
 
+from itertools import product
 from typing import Any
 
+from toolbox.analyzer import FORMATIONS
 from toolbox.top4 import MIN_PLAYERS, TOP_N, _number, model_from_race
 
 # Plantilla mínima para poder comprar con ánimo de revender.
@@ -73,6 +75,85 @@ def plantilla_minima(
     }
 
 
+PROB_DESCONOCIDA = 0.5
+MAX_PUJAS_ENUMERADAS = 8
+
+
+def _prob_ganar(plan: dict[str, Any]) -> dict[str, float]:
+    """``win_probability`` de la puja que se recomienda, por jugador (mercado + bid_war)."""
+    out: dict[str, float] = {}
+    for row in plan.get("decisions") or []:
+        if isinstance(row, dict) and isinstance(row.get("player_id"), str):
+            p = _number(row.get("win_probability"))
+            if p is not None:
+                out[row["player_id"]] = max(0.0, min(1.0, p))
+    return out
+
+
+def completa_once(players: list[dict[str, Any]], posicion: str | None) -> bool:
+    """¿Con este fichaje la plantilla puede formar un once legal de 11?"""
+    counts: dict[Any, int] = {}
+    for p in players:
+        counts[p.get("position")] = counts.get(p.get("position"), 0) + 1
+    if posicion:
+        counts[posicion] = counts.get(posicion, 0) + 1
+    return any(all(counts.get(pos, 0) >= need for pos, need in slots.items()) for slots in FORMATIONS.values())
+
+
+def _producto(valores: Any) -> float:
+    total = 1.0
+    for v in valores:
+        total *= v
+    return total
+
+
+def escenarios_pujas(
+    model: Any,
+    pujas: list[dict[str, Any]],
+    puntos_once: float,
+    mejora_total: float,
+    jugadores_base: int,
+) -> dict[str, Any]:
+    """Probabilidad de top 4 repartida entre ganar o perder cada puja.
+
+    Las subastas se resuelven a la vez y son independientes. Con cada subconjunto
+    ganado S, el once suma ``puntos_once`` menos la parte de las mejoras que no
+    llegan (reescalada para que ganarlas todas dé ``puntos_once``). Si tras S no
+    hay 11 jugadores, la jornada vale 0.
+    """
+    pujas = pujas[:MAX_PUJAS_ENUMERADAS]
+    suma = sum(p["mejora"] for p in pujas) or 1.0
+    escala = mejora_total / suma if mejora_total else 1.0
+    esperado = 0.0
+    for gana in product((False, True), repeat=len(pujas)):
+        prob = 1.0
+        perdidas = 0.0
+        ganadas = 0
+        for won, p in zip(gana, pujas):
+            prob *= p["prob"] if won else 1.0 - p["prob"]
+            if won:
+                ganadas += 1
+            else:
+                perdidas += p["mejora"]
+        esperado += prob * model.p(puntos_once - escala * perdidas, void=jugadores_base + ganadas < MIN_PLAYERS)
+    mejor = max(pujas, key=lambda p: p["prob"]) if pujas else None
+    solo_mejor = None
+    if mejor is not None:
+        perdidas = sum(p["mejora"] for p in pujas if p is not mejor)
+        solo_mejor = {
+            "nombre": mejor["nombre"],
+            "prob_ganar": round(mejor["prob"], 4),
+            "p_top4": round(model.p(puntos_once - escala * perdidas, void=jugadores_base + 1 < MIN_PLAYERS), 4),
+        }
+    return {
+        "p_esperado": round(esperado, 4),
+        "p_si_ganas_todas": round(model.p(puntos_once, void=jugadores_base + len(pujas) < MIN_PLAYERS), 4),
+        "prob_ganar_todas": round(_producto(p["prob"] for p in pujas), 4),
+        "prob_ganar_ninguna": round(_producto(1.0 - p["prob"] for p in pujas), 4),
+        "solo_mas_probable": solo_mejor,
+    }
+
+
 def postura(mu: float, cutoff: float, sigma: float) -> dict[str, Any]:
     """Seguro por encima del corte, techo por debajo, equilibrado entre medias."""
     margen = MARGEN_POSTURA_SIGMA * sigma
@@ -107,6 +188,7 @@ def build_overlay(
 
     fichajes = plan.get("plan_fichajes") if isinstance(plan.get("plan_fichajes"), dict) else {}
     acciones = []
+    ganar = _prob_ganar(plan)
     for a in fichajes.get("acciones") or []:
         if not isinstance(a, dict):
             continue
@@ -114,8 +196,14 @@ def build_overlay(
         if mejora is None:
             continue
         despues = model.p(base_completo + mejora)
+        es_puja = a.get("tipo") == "PUJA"
+        prob = ganar.get(a.get("player_id"), PROB_DESCONOCIDA) if es_puja else 1.0
         acciones.append(
             {
+                "prob_ganar": round(prob, 4),
+                "prob_conocida": (not es_puja) or a.get("player_id") in ganar,
+                "delta_p_si_ganas": round(despues - p_completo, 4),
+                "delta_p_ponderado": round(prob * (despues - p_completo), 4),
                 "player_id": a.get("player_id"),
                 "nombre": a.get("nombre"),
                 "tipo": a.get("tipo"),
@@ -126,22 +214,69 @@ def build_overlay(
                 "euros": a.get("euros"),
             }
         )
-    acciones.sort(key=lambda r: -r["delta_p"])
+    acciones.sort(key=lambda r: -r["delta_p_ponderado"])
 
     puntos_once = _number(fichajes.get("puntos_once"))
     compras_hoy = [a for a in fichajes.get("acciones") or [] if isinstance(a, dict) and a.get("tipo") in ("PUJA", "CLAUSULAZO")]
-    ventas_hoy = [a for a in fichajes.get("acciones") or [] if isinstance(a, dict) and a.get("tipo") == "VENTA"]
+    ventas_hoy = [a for a in fichajes.get("acciones") or [] if isinstance(a, dict) and a.get("tipo") in ("VENDE", "VENDER HOY", "VENTA")]
     despues_jugadores = count + len(compras_hoy) - len(ventas_hoy)
     plan_total = None
     if puntos_once is not None:
-        p_plan = model.p(puntos_once, void=despues_jugadores < MIN_PLAYERS)
+        pujas = [
+            {
+                "nombre": x.get("nombre"),
+                "mejora": _number(x.get("mejora_neta")) or 0.0,
+                "prob": ganar.get(x.get("player_id"), PROB_DESCONOCIDA),
+            }
+            for x in compras_hoy
+            if x.get("tipo") == "PUJA"
+        ]
+        seguras = len(compras_hoy) - len(pujas)
+        mejora_total = _number(fichajes.get("mejora_puntos_jornada")) or 0.0
+        esc = escenarios_pujas(model, pujas, puntos_once, mejora_total, count - len(ventas_hoy) + seguras)
         plan_total = {
             "puntos_once": round(puntos_once, 2),
             "jugadores_despues": despues_jugadores,
             "p_antes": round(p_real, 4),
-            "p_despues": round(p_plan, 4),
-            "delta_p": round(p_plan - p_real, 4),
+            # Ponderado por la probabilidad de ganar cada puja.
+            "p_despues": esc["p_esperado"],
+            "delta_p": round(esc["p_esperado"] - p_real, 4),
+            "p_si_ganas_todas": esc["p_si_ganas_todas"],
+            "prob_ganar_todas": esc["prob_ganar_todas"],
+            "prob_ganar_ninguna": esc["prob_ganar_ninguna"],
+            "solo_mas_probable": esc["solo_mas_probable"],
         }
+
+    paso_1 = None
+    if void:
+        candidatas = [
+            x
+            for x in compras_hoy
+            if x.get("tipo") == "PUJA" and completa_once(players or [], x.get("posicion") or x.get("position"))
+        ]
+        candidatas.sort(key=lambda x: -ganar.get(x.get("player_id"), PROB_DESCONOCIDA))
+        if candidatas:
+            primera = candidatas[0]
+            respaldo = candidatas[1] if len(candidatas) > 1 else None
+            paso_1 = {
+                "player_id": primera.get("player_id"),
+                "nombre": primera.get("nombre"),
+                "prob_ganar": round(ganar.get(primera.get("player_id"), PROB_DESCONOCIDA), 4),
+                "respaldo": respaldo.get("nombre") if respaldo else None,
+                "texto": (
+                    f"Tienes {count} jugadores y con menos de {MIN_PLAYERS} la jornada puntúa 0. "
+                    f"Primero asegura al n.º {MIN_PLAYERS}: puja por {primera.get('nombre')}, la que más probabilidad tiene de ganarse."
+                ),
+            }
+            for x in fichajes.get("acciones") or []:
+                if x.get("player_id") == primera.get("player_id"):
+                    x["paso"] = 1
+                    x["asegura_jugador_11"] = True
+            fichajes["acciones"] = sorted(
+                fichajes.get("acciones") or [], key=lambda x: 0 if x.get("player_id") == primera.get("player_id") else 1
+            )
+        else:
+            paso_1 = {"player_id": None, "texto": f"Ninguna puja del plan completa un once legal: con {count} jugadores la jornada puntúa 0."}
 
     ventas = []
     for row in plan.get("auditoria_ventas") or []:
@@ -209,6 +344,7 @@ def build_overlay(
         "jugadores": count,
         "base_xp": round(base_completo, 2),
         "corte_xp": round(cutoff, 2),
+        "paso_1": paso_1,
         "acciones": acciones,
         "plan": plan_total,
         "ventas": ventas,

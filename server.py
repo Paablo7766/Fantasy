@@ -49,6 +49,7 @@ from toolbox.auth import AuthError, login_with_browser
 from toolbox.league_form import build_league_form
 from toolbox.top4 import build_top4
 from toolbox.top4_levers import apply_overlay
+from toolbox.top4_log import evaluar as evaluar_top4, freeze_forecast
 from toolbox.bidding import flip_from_documents, load_activity, needs_from_documents
 from toolbox.cache import ResponseCache, cache_root
 from toolbox.bid_war import rival_snapshots
@@ -3173,6 +3174,20 @@ def api_top4(
     return document
 
 
+@app.get("/api/top4-medicion")
+@_read_only
+def api_top4_medicion(
+    league: str | None = Query(default=None),
+) -> Any:
+    """Cuánto acierta la probabilidad de top 4 guardada antes de cada cierre. Sin red."""
+    board = _board("league-form", league, tier="core")
+    if isinstance(board, JSONResponse):
+        return board
+    form = _league_form_document(board)
+    rounds = {int(n): {str(k): int(v) for k, v in rows.items()} for n, rows in (form.get("scores") or {}).items()}
+    return {"ok": True, **evaluar_top4(rounds)}
+
+
 @app.get("/api/data-health")
 @_read_only
 def api_data_health(
@@ -3714,6 +3729,13 @@ def _plan_document(board: dict[str, Any]) -> dict[str, Any]:
             for c in (candidates_from_squad(me, index_trends(board.get("trends"))) if me else [])
         ]
         apply_overlay(document, rounds, roster)
+        # Cuaderno del top 4: la última foto antes del cierre queda guardada para medir el acierto.
+        freeze_forecast(
+            document.get("league_race"),
+            rounds,
+            kickoff=document.get("kickoff") or document.get("matchday_start"),
+            photo_at=board.get("dashboard_at"),
+        )
     except Exception:  # noqa: BLE001 - la capa de top 4 nunca tumba el plan
         logger.warning("Capa de top 4 sin calcular", exc_info=True)
     return document

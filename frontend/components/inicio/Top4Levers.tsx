@@ -56,24 +56,49 @@ export function Top4Levers({ plan }: { plan: PlanPayload | null }) {
         {t.postura ? <p className="mt-2 text-[13px] leading-snug text-white/70">{t.postura.texto}</p> : null}
       </div>
 
+      {t.paso_1 ? (
+        <Block title="Primer paso">
+          <p className="border-t border-white/[0.05] px-4 py-2.5 text-[13px] leading-snug text-white/80 min-[900px]:px-5">
+            {t.paso_1.texto}
+            {typeof t.paso_1.prob_ganar === "number" ? ` Probabilidad de ganarla: ${Math.round(t.paso_1.prob_ganar * 100)} %.` : ""}
+            {t.paso_1.respaldo ? ` Respaldo: ${t.paso_1.respaldo}.` : ""}
+          </p>
+        </Block>
+      ) : null}
+
       {t.plan ? (
-        <Block title="Plan de hoy">
+        <Block title="Plan de hoy, ponderado por ganar cada puja">
           <ul>
             <Row
               left={`De ${Math.round(t.plan.p_antes * 100)} % a ${Math.round(t.plan.p_despues * 100)} %`}
-              sub={`${t.plan.jugadores_despues} jugadores tras el plan · once de ${points(t.plan.puntos_once)} xP`}
-              right="todo el plan"
+              sub={`${t.plan.jugadores_despues} jugadores si las ganas · once de ${points(t.plan.puntos_once)} xP · ganarlas todas: ${Math.round(t.plan.prob_ganar_todas * 100)} %, ninguna: ${Math.round(t.plan.prob_ganar_ninguna * 100)} %`}
+              right="esperado"
               value={t.plan.delta_p}
             />
+            <Row left={`Si ganas todas: ${Math.round(t.plan.p_si_ganas_todas * 100)} %`} sub="El mejor caso, no el esperado" right="" value={t.plan.p_si_ganas_todas - t.plan.p_antes} />
+            {t.plan.solo_mas_probable ? (
+              <Row
+                left={`Solo ganas la más probable: ${Math.round(t.plan.solo_mas_probable.p_top4 * 100)} %`}
+                sub={`${t.plan.solo_mas_probable.nombre ?? "—"} (${Math.round(t.plan.solo_mas_probable.prob_ganar * 100)} % de ganarla); pierdes el resto`}
+                right=""
+                value={t.plan.solo_mas_probable.p_top4 - t.plan.p_antes}
+              />
+            ) : null}
           </ul>
         </Block>
       ) : null}
 
       {acciones.length ? (
-        <Block title="Fichajes (cada uno sobre el once completo)">
+        <Block title="Fichajes (ponderado por la probabilidad de ganar la puja)">
           <ul>
             {acciones.map((row) => (
-              <Row key={String(row.player_id)} left={row.nombre ?? "—"} sub={`${row.tipo === "PUJA" ? "Puja" : "Cláusula"} · +${points(row.mejora_xp)} xP`} right={`${Math.round(row.p_antes * 100)} → ${Math.round(row.p_despues * 100)} %`} value={row.delta_p} />
+              <Row
+                key={String(row.player_id)}
+                left={row.nombre ?? "—"}
+                sub={`${row.tipo === "PUJA" ? `Puja, ${Math.round(row.prob_ganar * 100)} % de ganarla${row.prob_conocida ? "" : " (sin dato, se supone 50 %)"}` : "Cláusula"} · +${points(row.mejora_xp)} xP · si la ganas ${dp(row.delta_p_si_ganas)}`}
+                right={`${Math.round(row.p_antes * 100)} → ${Math.round(row.p_despues * 100)} %`}
+                value={row.delta_p_ponderado}
+              />
             ))}
           </ul>
         </Block>

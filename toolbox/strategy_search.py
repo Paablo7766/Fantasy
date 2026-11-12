@@ -332,6 +332,34 @@ def _sales_for_plan(
     return chosen
 
 
+def can_field(assets: list[OwnedAsset]) -> bool:
+    """¿Estos jugadores, sin ningún fichaje, forman un once legal de 11?"""
+    counts: dict[str, int] = {}
+    for asset in assets:
+        position = asset.candidate.position
+        counts[position] = counts.get(position, 0) + 1
+    return any(all(counts.get(position, 0) >= need for position, need in slots.items()) for slots in FORMATIONS.values())
+
+
+def keep_legal_sales(owned: list[OwnedAsset], sold: list[OwnedAsset]) -> list[OwnedAsset]:
+    """Regla dura: ninguna venta deja menos de 11 jugadores ni una línea sin titular.
+
+    Se mide con lo que YA está en la plantilla. Un fichaje por comprar (puja o
+    clausulazo, que además cierra 24 h antes de la jornada) no cuenta: la venta
+    solo se propone cuando el sustituto ya es tuyo. Sin once legal hoy no se
+    vende a nadie.
+    """
+    if not can_field(owned):
+        return []
+    kept: list[OwnedAsset] = []
+    for asset in sold:
+        trial = [*kept, asset]
+        sold_ids = {item.candidate.player_id for item in trial}
+        if can_field([item for item in owned if item.candidate.player_id not in sold_ids]):
+            kept.append(asset)
+    return kept
+
+
 def search_plans(
     *,
     cash: int,
@@ -459,7 +487,7 @@ def _solve_once(
     bought = [buyable[key] for key in bought_keys]
     xi_ids = {candidate.player_id for candidate in xi_rows if candidate.player_id}
     spend_now = sum(asset.cost_eur for asset in bought)
-    sold = _sales_for_plan(cash, spend_now, sellable, xi_ids, baseline_ids)
+    sold = keep_legal_sales(owned, _sales_for_plan(cash, spend_now, sellable, xi_ids, baseline_ids))
     spend = sum(asset.cost_eur for asset in bought)
     income = sum(asset.sell_eur or 0 for asset in sold)
     cash_after = cash + income - spend

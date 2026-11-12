@@ -587,14 +587,23 @@ def _bloquear_ventas_sin_esqueleto(
     plantilla: list[dict[str, Any]],
     vende: dict[str, pulp.LpVariable],
     prefix: str,
+    *,
+    solo_sin_once: bool = False,
 ) -> None:
-    """El plan prudente no puede vender el último cuerpo de una línea.
+    """Ningún plan puede vender el último cuerpo de una línea ni bajar de 11.
 
-    Solo se impone si hoy ya hay once legal. Vender cero siempre es factible:
-    la restricción recorta ventas, no obliga a fichar.
+    Con once legal hoy, las ventas tienen que dejarlo legal sin contar pujas.
+    Sin él, no se vende. Vender cero siempre es factible: la restricción recorta
+    ventas, no obliga a fichar.
     """
     cuerpos = [row for row in plantilla if _cuenta_en_esqueleto(row)]
     if not conserva_esqueleto(cuerpos, set()):
+        # Hoy no hay once legal (por ejemplo, 10 jugadores): cualquier venta lo
+        # empeora. No se vende nada hasta tener al sustituto en la plantilla.
+        if vende:
+            problem += pulp.lpSum(vende.values()) == 0
+        return
+    if solo_sin_once:
         return
     for position, minimo in ESQUELETO_MINIMO.items():
         ids = [row["player_id"] for row in cuerpos if row["position"] == position and row["player_id"] in vende]
@@ -1017,9 +1026,12 @@ def _plan_once(
     if sanos:
         # Tope de rotación: un lesionado no gasta plaza de este cupo.
         problem += pulp.lpSum(vende[player_id] for player_id in sanos) <= MAX_VENTAS_TITULARES_SANOS
-    if not permitir_condicionales:
-        # Prudente: las ventas de hoy tienen que dejar once legal sin ninguna puja.
-        _bloquear_ventas_sin_esqueleto(problem, plantilla, vende, prefix)
+    # Regla dura, en todos los planes: sin once legal hoy (10 jugadores, una línea
+    # vacía) no se vende a nadie hasta tener al sustituto en la plantilla; una
+    # puja pendiente o un clausulazo (que además cierra 24 h antes de la jornada)
+    # no cuentan. Con once legal, el plan prudente exige que las ventas de hoy lo
+    # dejen legal sin ninguna puja.
+    _bloquear_ventas_sin_esqueleto(problem, plantilla, vende, prefix, solo_sin_once=permitir_condicionales)
 
     def _alta_compra(
         origen: str,
