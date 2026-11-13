@@ -8,6 +8,7 @@ import { eur, eurShort, points, titularFull, titularShare } from "@/lib/core/for
 import { signedPoints } from "@/lib/inicio/hoy";
 import { factsFor, photoFor, type PhotoIndex, type PlayerIndex } from "@/lib/core/photoIndex";
 import { Avatar, Chevron, Collapse, FactGrid, Tag, type Fact } from "@/components/inicio/ui";
+import { planBid } from "@/lib/mercado/marketAction";
 import type { PlanFichajeAccion, PlanFichajes, PlanPayload, SquadsPayload, Top4Overlay } from "@/lib/types";
 
 // ── Casillas hechas: se guardan por foto (se reinician cuando cambia la foto) ─
@@ -109,18 +110,6 @@ function pctText(value: number): string {
   return `${value >= 0 ? "+" : "−"}${Math.abs(value).toLocaleString("es-ES", { maximumFractionDigits: 0 })}%`;
 }
 
-// La cifra que hay que escribir en la puja: la más alta de las que el plan avala
-// (recomendada, anti-Pizarra, competitiva de liga), sin pasar del techo.
-function bidToPlace(action: PlanFichajeAccion): number | null {
-  const options = [action.euros, action.puja_recomendada, action.puja_anti_pizarra, action.puja_competitiva_liga].filter(
-    (v): v is number => typeof v === "number" && v > 0,
-  );
-  if (!options.length) return null;
-  const best = Math.max(...options);
-  const cap = typeof action.puja_maxima === "number" && action.puja_maxima > 0 ? action.puja_maxima : null;
-  return Math.round(cap !== null && best > cap ? Math.max(cap, action.euros ?? 0) : best);
-}
-
 function stepFrom(action: PlanFichajeAccion, photos: PhotoIndex): Step {
   const tipo = (action.tipo || "PUJA").toUpperCase();
   const kind = kindOf(tipo, action.etiqueta);
@@ -145,7 +134,7 @@ function stepFrom(action: PlanFichajeAccion, photos: PhotoIndex): Step {
     name,
     position,
     imageUrl: kind === "busca" ? null : photoFor(photos, action.player_id, action.nombre),
-    amount: kind === "escaparate" ? null : kind === "puja" ? bidToPlace(action) ?? euros : euros,
+    amount: kind === "escaparate" ? null : kind === "puja" ? planBid(action) ?? euros : euros,
     note,
     later: action.momento === "luego" || conditional,
     action,

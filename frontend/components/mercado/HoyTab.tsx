@@ -10,7 +10,7 @@ import { Disclosure, Empty, Face, HeroStat, SectionHead, Skeleton, TONE, cleanTe
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { errorMessage, playerName } from "@/lib/core/format";
-import { executableBid, marketAction } from "@/lib/mercado/marketAction";
+import { executableBid, marketAction, planBids } from "@/lib/mercado/marketAction";
 import { Crest } from "@/components/ui/Crest";
 import type { AlertaClausula, CatalogPlayer, JornadaClub, MarketDecision, PlanFichajes, TrendsPayload } from "@/lib/types";
 
@@ -27,11 +27,14 @@ function decimal(value: number, digits = 1): string {
 }
 
 /** Tesela del mercado: foto, nota, precio, tendencia y veredicto de un vistazo. */
-function Tile({ player, photo, index, onOpen }: { player: MarketDecision; photo: string | null; index: number; onOpen: () => void }) {
+function Tile({ player, photo, index, planBid, onOpen }: { player: MarketDecision; photo: string | null; index: number; planBid: number | null; onOpen: () => void }) {
   const name = playerName(player);
   const action = marketAction(player);
   const verdict = ACTION_VERDICT[action];
-  const bid = executableBid(player);
+  // Una sola puja por jugador: la del plan si es objetivo; si no, la del motor; si no, la ideal del tramo.
+  const tramoIdeal = typeof player.puja_tramo?.ideal_eur === "number" ? player.puja_tramo.ideal_eur : null;
+  const bid = planBid ?? (action === "PUJAR" ? executableBid(player) : null) ?? tramoIdeal;
+  const bidLabel = planBid !== null ? "Puja del plan" : bid !== null ? (action === "PUJAR" ? "Puja" : "Puja ideal") : "Valor";
   const trend = parsePct(player.prevision_7d_pct);
   const note = typeof player.nota_mercado === "number" ? player.nota_mercado : null;
   const accent = note === null ? TONE.gray : gradeColor(note);
@@ -71,8 +74,8 @@ function Tile({ player, photo, index, onOpen }: { player: MarketDecision; photo:
         </span>
         <span className="mt-auto flex items-end justify-between gap-2 border-t border-white/[0.06] px-3 py-2.5">
           <span className="min-w-0">
-            <span className="block text-[10.5px] text-white/40">{typeof player.puja_tramo?.ideal_eur === "number" ? "Puja ideal" : typeof bid === "number" && action === "PUJAR" ? "Puja" : "Valor"}</span>
-            <span className="block truncate text-[15px] font-semibold tabular-nums text-white">{money(typeof player.puja_tramo?.ideal_eur === "number" ? player.puja_tramo.ideal_eur : typeof bid === "number" && action === "PUJAR" ? bid : player.market_value ?? player.sale_price)}</span>
+            <span className="block text-[10.5px] text-white/40">{bidLabel}</span>
+            <span className="block truncate text-[15px] font-semibold tabular-nums text-white">{money(bid ?? player.market_value ?? player.sale_price)}</span>
           </span>
           <span className="shrink-0 text-right">
             <span className="block text-[10.5px] tabular-nums text-white/40">{typeof xp === "number" ? `${decimal(xp)} pts` : ""}</span>
@@ -320,6 +323,7 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
     gastoPlan > 0
       ? `El plan invierte ${compact(gastoPlan)}${creditoPlan > 0 ? `, ${compact(creditoPlan)} con el crédito del 20 % (la puja admite deuda; vende antes del ${fichajes?.paron?.ruta_salida?.dia_venta || "saque"})` : " con tu caja"}.`
       : budgetLine(summary);
+  const bids = planBids(fichajes);
   const selected = decisions.find((row) => String(row.player_id) === selectedId) || null;
 
   return (
@@ -384,7 +388,7 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
         {filtered.length ? (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {filtered.map((player, index) => (
-              <Tile key={String(player.player_id)} player={player} photo={photo(player)} index={index} onOpen={() => setSelectedId(String(player.player_id))} />
+              <Tile key={String(player.player_id)} player={player} photo={photo(player)} index={index} planBid={bids.get(String(player.player_id)) ?? null} onOpen={() => setSelectedId(String(player.player_id))} />
             ))}
           </ul>
         ) : (
@@ -412,7 +416,7 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
 
       <p className="px-1 text-[12px] leading-relaxed text-white/40">{historyLine(summary)}</p>
 
-      <PlayerCard player={selected} photo={selected ? photo(selected) : null} cash={summary.cash_eur ?? trends.cash_eur} fetchedAt={trends.fetched_at} onClose={() => setSelectedId(null)} />
+      <PlayerCard player={selected} planBid={selected ? (bids.get(String(selected.player_id)) ?? null) : null} photo={selected ? photo(selected) : null} cash={summary.cash_eur ?? trends.cash_eur} fetchedAt={trends.fetched_at} onClose={() => setSelectedId(null)} />
     </div>
   );
 }

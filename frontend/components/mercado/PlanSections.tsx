@@ -7,6 +7,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { Chevron, Face, TONE, cleanText, compact, money } from "@/components/ui/kit";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
+import { planBid } from "@/lib/mercado/marketAction";
 import type { PlanFichajeAccion, PlanFichajes } from "@/lib/types";
 
 const MINT = "#7FE0A8";
@@ -297,7 +298,9 @@ function PlanActionRow({ accion, photos }: { accion: PlanFichajeAccion; photos: 
   const kind = kindOf(accion);
   const meta = KIND[kind];
   const name = kind === "busca" ? `Buscar ${accion.posicion || "jugador"}` : accion.nombre || "Jugador";
-  const competitiva = typeof accion.puja_competitiva_liga === "number" && typeof accion.euros === "number" && accion.puja_competitiva_liga > accion.euros;
+  // En una puja, la cifra a escribir es la misma que enseña Inicio.
+  const cifra = kind === "puja" ? (planBid(accion) ?? accion.euros) : accion.euros;
+  const competitiva = typeof accion.puja_competitiva_liga === "number" && typeof cifra === "number" && accion.puja_competitiva_liga > cifra;
   const later = accion.momento && accion.momento !== "hoy";
   return (
     <PlayerRow
@@ -315,7 +318,7 @@ function PlanActionRow({ accion, photos }: { accion: PlanFichajeAccion; photos: 
           ) : null}
         </>
       }
-      amount={typeof accion.euros === "number" && accion.euros > 0 ? money(accion.euros) : null}
+      amount={typeof cifra === "number" && cifra > 0 ? money(cifra) : null}
       amountTone={kind === "vende" || kind === "escaparate" ? MINT : undefined}
       hint={kind === "escaparate" ? "valor" : kind === "vende" ? "ingresas" : undefined}
     />

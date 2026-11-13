@@ -184,7 +184,7 @@ function EscudoRival({ nombre, src }: { nombre: string; src?: string | null }) {
  * hasta dónde llegar. El cálculo y el precio del punto —un ajuste global, el
  * mismo para todos los jugadores— quedan plegados.
  */
-function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt }: { tramo: PujaTramo; valor: number | null; puesto?: string | null; euros: number; onEuros: (next: number) => void; sinPuntos?: boolean; fetchedAt?: string | null }) {
+function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt, pujaPlan }: { tramo: PujaTramo; valor: number | null; puesto?: string | null; euros: number; onEuros: (next: number) => void; sinPuntos?: boolean; fetchedAt?: string | null; pujaPlan?: number | null }) {
   const xp = typeof tramo.xp_delta === "number" ? tramo.xp_delta : 0;
   const reventa = typeof tramo.reventa_eur === "number" ? tramo.reventa_eur : 0;
   const bruto = Math.round(xp * euros + reventa);
@@ -192,7 +192,10 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt 
   const maxima = tope === null ? bruto : Math.min(bruto, tope);
   const recortada = tope !== null && bruto > tope;
   const n = typeof tramo.n === "number" ? tramo.n : 0;
-  const ideal = typeof tramo.ideal_eur === "number" ? tramo.ideal_eur : null;
+  const referencia = typeof tramo.ideal_eur === "number" ? tramo.ideal_eur : null;
+  // Si el jugador está en tu plan, la primera cifra es la del plan (la misma de Inicio).
+  const delPlan = typeof pujaPlan === "number" && pujaPlan > 0;
+  const ideal = delPlan ? (pujaPlan as number) : referencia;
   const asegurar = tramo.fiable && typeof tramo.asegurar_eur === "number" ? tramo.asegurar_eur : null;
   const presente = tramo.xp_presente === true || (tramo.xp_presente == null && !sinPuntos);
   const segundos = segundosDesde(tramo.xp_fetched_at || fetchedAt) ?? (typeof tramo.xp_edad_horas === "number" ? tramo.xp_edad_horas * 3600 : null);
@@ -227,7 +230,7 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt 
           ? "Tienes margen: puedes subir hasta la de asegurar sin pasar de tu máxima."
           : "Empieza por la ideal y no pases de tu máxima.";
   const columnas: { titulo: string; cifra: string; pie: string; apagada?: boolean }[] = [
-    { titulo: "Ideal", cifra: ideal === null ? "—" : money(ideal), pie: "suele bastar" },
+    { titulo: delPlan ? "Tu puja" : "Ideal", cifra: ideal === null ? "—" : money(ideal), pie: delPlan ? "la de tu plan" : "suele bastar" },
     { titulo: "Para asegurar", cifra: asegurar === null ? "—" : money(asegurar), pie: asegurar === null ? "sin muestra fiable" : "gana 9 de 10", apagada: asegurar === null || noCompensa },
     { titulo: "Máxima", cifra: fresco ? money(maxima) : "—", pie: fresco ? "más no te compensa" : "sin calcular", apagada: !fresco },
   ];
@@ -253,7 +256,10 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt 
         </summary>
         <ul className="mt-2.5 flex flex-col gap-2 text-[12.5px] leading-snug text-white/50">
           <li>
-            <span className="text-white/75">Ideal:</span> {detalleIdeal} de jugadores de {tramo.etiqueta || "su precio"} en tu liga.
+            <span className="text-white/75">{delPlan ? "Tu puja:" : "Ideal:"}</span>{" "}
+            {delPlan
+              ? `la que usa tu plan de Inicio: parte del precio habitual en tu liga${referencia !== null ? ` (${money(referencia)}, ${detalleIdeal})` : ""} y lo ajusta con la subida de hoy, el precio de salida y lo pujado que esté.`
+              : `${detalleIdeal} de jugadores de ${tramo.etiqueta || "su precio"} en tu liga.`}
           </li>
           <li>
             <span className="text-white/75">Para asegurar:</span>{" "}
@@ -347,8 +353,11 @@ export function PlayerCard({
   photo,
   cash: cashProp,
   fetchedAt,
+  planBid,
   onClose,
 }: {
+  /** Puja de este jugador en el plan de fichajes, si es objetivo. */
+  planBid?: number | null;
   player: MarketDecision | null;
   photo?: string | null;
   cash?: number | null;
@@ -473,7 +482,7 @@ export function PlayerCard({
           <p className="mt-1.5 text-[14px] leading-relaxed text-white/60">{reason}</p>
 
           {tramo ? (
-            <TablaPuja tramo={tramo} valor={value} puesto={player.position} euros={euros} onEuros={setEuros} sinPuntos={xp === null} fetchedAt={fetchedAt} />
+            <TablaPuja tramo={tramo} valor={value} puesto={player.position} euros={euros} onEuros={setEuros} sinPuntos={xp === null} fetchedAt={fetchedAt} pujaPlan={planBid} />
           ) : shownBid !== null ? (
             <div className="mt-6">
               <p className="text-[11.5px] text-white/40">{bidLabel}</p>

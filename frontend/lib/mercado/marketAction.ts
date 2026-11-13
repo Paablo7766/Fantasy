@@ -1,4 +1,4 @@
-import type { MarketDecision } from "@/lib/types";
+import type { MarketDecision, PlanFichajeAccion, PlanFichajes } from "@/lib/types";
 
 /**
  * Comando único de mercado. El backend ya manda `action` (PUJAR / ESPERAR / NO)
@@ -47,4 +47,32 @@ export function executableBid(player: Partial<MarketDecision> | null | undefined
   if (typeof player?.optimal_bid_eur === "number") return player.optimal_bid_eur;
   if (typeof player?.suggested_bid === "number") return player.suggested_bid;
   return null;
+}
+
+/**
+ * La cifra que hay que escribir en una puja del plan: la más alta de las que
+ * el plan avala (recomendada, anti-Pizarra, competitiva de liga), sin pasar del
+ * techo. Es la única que enseñan Inicio, el plan de Mercado, la tesela y la
+ * ficha: así un mismo jugador no sale con dos pujas distintas.
+ */
+export function planBid(action: PlanFichajeAccion): number | null {
+  const options = [action.euros, action.puja_recomendada, action.puja_anti_pizarra, action.puja_competitiva_liga].filter(
+    (v): v is number => typeof v === "number" && v > 0,
+  );
+  if (!options.length) return null;
+  const best = Math.max(...options);
+  const cap = typeof action.puja_maxima === "number" && action.puja_maxima > 0 ? action.puja_maxima : null;
+  return Math.round(cap !== null && best > cap ? Math.max(cap, action.euros ?? 0) : best);
+}
+
+/** Puja del plan por jugador (solo las pujas de mercado, no ventas ni cláusulas). */
+export function planBids(plan: PlanFichajes | null | undefined): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const action of plan?.acciones || []) {
+    const tipo = (action.tipo || "").toUpperCase();
+    if (tipo !== "PUJA" || action.etiqueta === "CLAUSULAR" || !action.player_id) continue;
+    const bid = planBid(action);
+    if (bid !== null) out.set(String(action.player_id), bid);
+  }
+  return out;
 }
