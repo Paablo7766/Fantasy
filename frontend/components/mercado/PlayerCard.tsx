@@ -122,8 +122,10 @@ function Note({ color, children }: { color: string; children: ReactNode }) {
   );
 }
 
-const EUROS_DEFECTO = 16_400_000;
-const CLAVE_EUROS = "fantasy.eurosPorPunto";
+// Sin dato del servidor, un punto vale su premio: 100.000 € por jornada, cuatro jornadas.
+const EUROS_DEFECTO = 400_000;
+// v2: la cifra antigua (16,4 M, el ratio de mercado) contaba dos veces el valor del jugador.
+const CLAVE_EUROS = "fantasy.eurosPorPunto.v2";
 
 /** Precio de un punto de xP. Se recuerda en este navegador. */
 function useEuros(fallback: number | null | undefined) {
@@ -202,8 +204,8 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt 
   const barato = valor !== null && valor < 1_500_000;
   const detalleIdeal = n > 0 ? `valor × ${factor(tramo.mediana)} · mediana de ${n} compras` : "sin compras en este tramo";
   const detalleMaxima = [
-    xp > 0 ? `${dec(xp)} xP × ${money(euros)}` : "0 € por puntos: no entra en tu once",
-    tramo.subida_incluida ? `reventa a 7 días ${money(reventa)}` : `reventa al valor de hoy ${money(reventa)}`,
+    xp > 0 ? `${dec(xp)} pts de mejora × ${money(euros)} (${horizonte} jornadas)` : "0 € por puntos: no entra en tu once",
+    tramo.subida_incluida ? `más su reventa a 7 días, ${money(reventa)}` : `más su reventa al valor de hoy, ${money(reventa)}`,
     barato ? "por debajo de 1,5 M no se suma la subida: bajan" : null,
     recortada ? (tramo.tope_motivo === "guardarrail" ? "recortada al margen del guardarraíl" : "recortada a tu caja más el crédito del 20 %") : null,
   ]
@@ -211,6 +213,7 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt 
     .join(" · ");
   const millones = Number((euros / horizonte / 1_000_000).toFixed(2));
   const rivales = Array.isArray(tramo.rivales) ? tramo.rivales : [];
+  const punto = tramo.precio_punto ?? null;
   // Una frase que ordena las tres cifras: hasta dónde tiene sentido llegar.
   const veredicto = !fresco
     ? horas !== null && horas >= 24
@@ -262,15 +265,20 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt 
         </ul>
         <label className="mt-3 flex items-center justify-between gap-4 rounded-xl bg-white/[0.04] px-3 py-2.5">
           <span className="min-w-0">
-            <span className="block text-[12.5px] text-white/75">Lo que pagas por un punto, en millones</span>
-            <span className="mt-0.5 block text-[11.5px] leading-snug text-white/40">Ajuste tuyo, igual para todos los jugadores. La máxima lo cuenta durante {horizonte} jornadas.</span>
+            <span className="block text-[12.5px] text-white/75">Lo que vale un punto por jornada, en millones</span>
+            <span className="mt-0.5 block text-[11.5px] leading-snug text-white/40">
+              {punto && punto.sobreprecio_eur > 0
+                ? `Tu liga: ${money(punto.premio_eur / horizonte)} de premio más ${money(punto.sobreprecio_eur / horizonte)} de sobreprecio habitual.`
+                : "El premio que devuelve cada punto."}{" "}
+              Igual para todos los jugadores; puedes cambiarlo.
+            </span>
           </span>
           <input
             type="number"
             min={0}
-            step={0.1}
+            step={0.05}
             inputMode="decimal"
-            aria-label="Millones que pagas por un punto de una jornada"
+            aria-label="Millones que vale un punto de una jornada"
             value={millones}
             onChange={(event) => {
               const next = Number(event.target.value);

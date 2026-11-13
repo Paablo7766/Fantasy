@@ -3,8 +3,14 @@
 La puja ideal es el valor del día por la mediana del tramo. La de asegurar es
 el percentil 90, y solo se enseña cuando la cola del tramo es fina: hace falta
 una muestra grande y que dos o tres compras extremas no muevan ese percentil.
-La máxima es lo que el jugador vale para esta plantilla: la mejora de xP del
-once, a un precio por punto visible, más la reventa.
+La máxima es lo que el jugador vale para esta plantilla: lo que recuperas al
+revenderlo más lo que valen los puntos que suma a tu once mientras lo tienes.
+
+Un punto de mejora no vale los 16,4 M del ratio de mercado: ese ratio es lo
+que cuesta *comprar* un jugador por cada punto que da, y ese dinero vuelve al
+venderlo (ya está en la reventa). Lo que un punto vale de verdad es lo que se
+pierde por conseguirlo: el premio que devuelve (100.000 € por punto y jornada)
+más el sobreprecio que tu liga paga sobre el valor, repartido por punto.
 
 Los multiplicadores salen de las compras (mismo día e interpoladas, más las
 que vaya cerrando el diario). No hay un ×1,047 ni un ×1,25 escrito aquí.
@@ -26,7 +32,8 @@ import numpy as np
 from toolbox.analyzer import POSITIONS
 from toolbox.bidding import URGENCIA_HUECO, urgencia_posicional
 from toolbox.cache import cache_root
-from toolbox.engine.market_predictor import EUROS_POR_PUNTO, HORIZONTE_JORNADAS
+from toolbox.engine.live_matchday import EUROS_POR_PUNTO as PREMIO_POR_PUNTO
+from toolbox.engine.market_predictor import EUROS_POR_PUNTO as RATIO_REFERENCIA, HORIZONTE_JORNADAS
 from toolbox.engine.trading_desk import DEUDA_PCT_EQUIPO
 from toolbox.league_history import LEAGUE_INITIAL_BUDGET, madrid_day
 
@@ -42,6 +49,9 @@ CADUCIDAD_XP_S = 24 * 3600
 N_MINIMO_FIABLE = 20
 COLA_EXTREMA = 2.0
 HOLGURA_COLA = 0.05
+
+# Con menos compras que estas el sobreprecio de la liga no se mide: solo cuenta el premio.
+N_MINIMO_SOBREPRECIO = 8
 
 # Aviso de estilo. No entra en la cifra.
 _AL_VALOR = frozenset({"gerardo_vp", "naviis10"})
@@ -118,6 +128,37 @@ def tabla(filas: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             "fiable": fiable,
         }
     return salida
+
+
+def precio_punto(filas: list[dict[str, Any]], ratio_mercado: Any = None) -> dict[str, Any]:
+    """Euros que vale un punto de mejora del once durante el horizonte.
+
+    Dos piezas, las dos medibles:
+
+    * el premio: cada punto devuelve 100.000 € por jornada;
+    * el sobreprecio de la liga: lo que se paga de más sobre el valor (mediana
+      de todas las compras menos 1) por los euros de mercado que cuesta un
+      punto. Es dinero que no vuelve al revender: el precio real del punto.
+
+    Sin muestra suficiente solo cuenta el premio.
+    """
+    premio = PREMIO_POR_PUNTO * HORIZONTE_JORNADAS
+    ratios = [
+        float(fila["ratio"])
+        for fila in filas
+        if isinstance(fila, dict) and isinstance(fila.get("ratio"), (int, float)) and not isinstance(fila.get("ratio"), bool) and fila["ratio"] > 0
+    ]
+    ratio = float(ratio_mercado) if isinstance(ratio_mercado, (int, float)) and not isinstance(ratio_mercado, bool) and ratio_mercado > 0 else float(RATIO_REFERENCIA)
+    mediana = percentil(ratios, 50) if len(ratios) >= N_MINIMO_SOBREPRECIO else None
+    sobreprecio = 0 if mediana is None else int(round(max(0.0, mediana - 1.0) * ratio))
+    return {
+        "euros_por_punto": int(premio + sobreprecio),
+        "premio_eur": int(premio),
+        "sobreprecio_eur": sobreprecio,
+        "sobrepuja_mediana": None if mediana is None else round(mediana, 4),
+        "ratio_mercado": int(round(ratio)),
+        "n": len(ratios),
+    }
 
 
 def reventa_eur(valor: int, valor_en_7d: Any) -> tuple[int, bool]:
@@ -205,7 +246,17 @@ def mejora_xp(row: dict[str, Any]) -> float:
     return float(delta)
 
 
-def cifras(valor: int, stats: dict[str, Any], *, xp: float, reventa: int, subida: bool, tope: int | None, tope_motivo: str | None) -> dict[str, Any]:
+def cifras(
+    valor: int,
+    stats: dict[str, Any],
+    *,
+    xp: float,
+    reventa: int,
+    subida: bool,
+    tope: int | None,
+    tope_motivo: str | None,
+    euros_por_punto: int = PREMIO_POR_PUNTO * HORIZONTE_JORNADAS,
+) -> dict[str, Any]:
     """Las tres cifras de un jugador. La máxima aún no aplica el parámetro editable: van las piezas."""
     mediana = stats.get("mediana")
     p90 = stats.get("p90")
@@ -227,7 +278,7 @@ def cifras(valor: int, stats: dict[str, Any], *, xp: float, reventa: int, subida
         "subida_incluida": subida,
         "tope_eur": tope,
         "tope_motivo": tope_motivo,
-        "euros_por_punto": EUROS_POR_PUNTO,
+        "euros_por_punto": int(euros_por_punto),
         "horizonte_jornadas": HORIZONTE_JORNADAS,
         "rivales": [],
     }
@@ -557,8 +608,10 @@ def estampar(payload: dict[str, Any], board: dict[str, Any] | None, report: dict
     stats = tabla(filas)
     tope, motivo = tope_eur(report)
     marca = _marca_xp(board, payload)
+    punto = precio_punto(filas, report.get("ratio_mercado") if isinstance(report, dict) else None)
     payload["puja_tramos"] = {
-        "euros_por_punto": EUROS_POR_PUNTO,
+        "euros_por_punto": punto["euros_por_punto"],
+        "precio_punto": punto,
         "horizonte_jornadas": HORIZONTE_JORNADAS,
         "muestra": len(filas),
         "bandas": [stats[banda[0]] for banda in BANDAS],
@@ -581,7 +634,9 @@ def estampar(payload: dict[str, Any], board: dict[str, Any] | None, report: dict
             subida=subida,
             tope=tope,
             tope_motivo=motivo,
+            euros_por_punto=punto["euros_por_punto"],
         )
+        ficha["precio_punto"] = punto
         ficha.update(frescura_xp(marca, tiene_xp(row)))
         if banda[0] == "1.5-4":
             ficha["rivales"] = rivales_con_hueco(board, row.get("position") if isinstance(row.get("position"), str) else None, valor)

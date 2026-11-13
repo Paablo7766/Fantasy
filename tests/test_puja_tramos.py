@@ -17,6 +17,7 @@ from toolbox.engine.puja_tramos import (
     cola_fina,
     frescura_xp,
     mejora_xp,
+    precio_punto,
     reventa_eur,
     rivales_con_hueco,
     tabla,
@@ -38,6 +39,33 @@ class ColaFina(unittest.TestCase):
         # Con 20 compras, el percentil 90 cae entre el bloque y la primera bomba.
         ratios = [1.05] * 17 + [8.0, 9.0, 10.0]
         self.assertFalse(cola_fina(ratios))
+
+
+class PrecioPunto(unittest.TestCase):
+    def test_sin_muestra_un_punto_vale_solo_su_premio(self) -> None:
+        punto = precio_punto([{"ratio": 1.3}] * 3)
+        # 100.000 € por punto y jornada, cuatro jornadas.
+        self.assertEqual(punto["euros_por_punto"], 400_000)
+        self.assertEqual(punto["sobreprecio_eur"], 0)
+
+    def test_con_muestra_suma_el_sobreprecio_de_la_liga(self) -> None:
+        punto = precio_punto([{"ratio": 1.05}] * 20, 16_000_000)
+        # 5 % de sobrepuja sobre 16 M por punto = 800.000 € que no vuelven al revender.
+        self.assertEqual(punto["sobreprecio_eur"], 800_000)
+        self.assertEqual(punto["euros_por_punto"], 1_200_000)
+
+    def test_una_liga_que_compra_por_debajo_del_valor_no_resta(self) -> None:
+        punto = precio_punto([{"ratio": 0.95}] * 20, 16_000_000)
+        self.assertEqual(punto["euros_por_punto"], 400_000)
+
+    def test_la_maxima_no_cuenta_dos_veces_el_valor(self) -> None:
+        # Un jugador de 3 M que mejora el once 1,4 puntos no puede valer 26 M.
+        punto = precio_punto([{"ratio": 1.047}] * 34)
+        stats = {"banda": "1.5-4", "etiqueta": "1,5–4 M", "n": 34, "mediana": 1.047, "p90": 1.31, "fiable": True}
+        ficha = cifras(3_010_000, stats, xp=1.4, reventa=3_240_000, subida=True, tope=None, tope_motivo=None, euros_por_punto=punto["euros_por_punto"])
+        maxima = ficha["xp_delta"] * ficha["euros_por_punto"] + ficha["reventa_eur"]
+        self.assertLess(maxima, 2 * 3_010_000)
+        self.assertGreater(maxima, ficha["ideal_eur"])
 
 
 class Cifras(unittest.TestCase):

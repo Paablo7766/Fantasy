@@ -157,14 +157,16 @@ export type PujaTramo = {
   xp_edad_horas?: number | null;
   xp_presente?: boolean | null;
   xp_fetched_at?: string | null;
-  /** Jornadas que capitaliza el precio de un punto. 16,4 M de una jornada = 4,1 M × 4. */
+  /** Jornadas durante las que cuenta la mejora del once. */
   horizonte_jornadas?: number | null;
   reventa_eur?: number | null;
   subida_incluida?: boolean | null;
   tope_eur?: number | null;
   tope_motivo?: "guardarrail" | "caja_credito" | string | null;
-  /** Euros por un punto de xP de una jornada. Editable en la ficha. */
+  /** Euros que vale un punto de mejora durante todo el horizonte. Editable en la ficha. */
   euros_por_punto?: number | null;
+  /** De dónde sale: premio por punto más el sobreprecio que paga la liga. */
+  precio_punto?: { euros_por_punto: number; premio_eur: number; sobreprecio_eur: number; sobrepuja_mediana?: number | null; n?: number } | null;
   rivales?: PujaRival[];
 };
 
