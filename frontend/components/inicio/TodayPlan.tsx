@@ -231,7 +231,7 @@ const RED = "var(--ini-red)";
 
 function pctPoints(fraction: number): string {
   const value = fraction * 100;
-  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toLocaleString("es-ES", { maximumFractionDigits: 1 })} pp`;
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toLocaleString("es-ES", { maximumFractionDigits: 1 })} %`;
 }
 
 function sameDecision(row: { player_id?: string | null; nombre?: string | null }, action: PlanFichajeAccion): boolean {
@@ -245,17 +245,17 @@ function stepWhy(step: Step, info: ReturnType<typeof factsFor>, top4: Top4Overla
   const parts: Why["parts"] = [];
   if (kind === "puja" || kind === "clausula") {
     const gain = typeof action.mejora_neta === "number" ? action.mejora_neta : null;
-    if (gain !== null) parts.push({ text: `${signedPoints(gain)} xP`, tone: gain >= 0 ? MINT : RED });
+    if (gain !== null) parts.push({ text: `${signedPoints(gain)} pts en tu once`, tone: gain >= 0 ? MINT : RED });
     const row = top4?.acciones?.find((r) => sameDecision(r, action));
     if (row && typeof row.delta_p_ponderado === "number" && Math.abs(row.delta_p_ponderado) >= 0.0005) {
-      parts.push({ text: `top 4 ${pctPoints(row.delta_p_ponderado)}`, tone: row.delta_p_ponderado >= 0 ? MINT : RED });
+      parts.push({ text: `prob. de top 4 ${pctPoints(row.delta_p_ponderado)}`, tone: row.delta_p_ponderado >= 0 ? MINT : RED });
     }
   } else if (kind === "vende") {
     const lost = typeof info?.tu_once_pierde_sin_el === "number" ? Math.abs(info.tu_once_pierde_sin_el) : null;
-    if (lost !== null) parts.push({ text: lost < 0.05 ? "no baja el once" : `−${points(lost)} xP`, tone: lost < 0.05 ? undefined : RED });
+    if (lost !== null) parts.push({ text: lost < 0.05 ? "no baja el once" : `−${points(lost)} pts en tu once`, tone: lost < 0.05 ? undefined : RED });
     const row = top4?.ventas?.find((r) => sameDecision(r, action));
     if (row && typeof row.delta_p === "number" && Math.abs(row.delta_p) >= 0.0005) {
-      parts.push({ text: `top 4 ${pctPoints(row.delta_p)}`, tone: row.delta_p >= 0 ? MINT : RED });
+      parts.push({ text: `prob. de top 4 ${pctPoints(row.delta_p)}`, tone: row.delta_p >= 0 ? MINT : RED });
     }
   } else {
     return null;

@@ -38,7 +38,8 @@ function Row({ left, sub, value, self }: { left: string; sub?: string | null; va
   );
 }
 
-const Delta = ({ value }: { value: number }) => <span style={{ color: tone(value) }}>{dp(value)} pts</span>;
+/** Cambio en la probabilidad de top 4. Va en %, nunca en «pts»: no son puntos de jornada. */
+const Delta = ({ value }: { value: number }) => <span style={{ color: tone(value) }}>{dp(value)} %</span>;
 
 /**
  * La cifra que decide la jornada: probabilidad de quedar entre los 4 primeros
@@ -89,7 +90,7 @@ export function Top4Card({ plan }: { plan: PlanPayload | null }) {
             <p className="pb-1 text-right text-[12px] leading-tight text-white/45">
               Con el plan de hoy
               <span className="mt-0.5 block text-[15px] font-semibold tabular-nums text-white">
-                {pct(withPlan.p_despues)} % <span style={{ color: tone(withPlan.delta_p) }}>{dp(withPlan.delta_p)}</span>
+                {pct(withPlan.p_despues)} % <span style={{ color: tone(withPlan.delta_p) }}>{dp(withPlan.delta_p)} %</span>
               </span>
             </p>
           ) : null}
@@ -134,7 +135,7 @@ export function Top4Card({ plan }: { plan: PlanPayload | null }) {
                   left={row.nombre ?? "—"}
                   sub={
                     row.tipo === "PUJA"
-                      ? `${row.prob_conocida ? `${Math.round(row.prob_ganar * 100)} % de ganar la puja` : "Puja sin historial"} · ${dp(row.delta_p_si_ganas)} si la ganas`
+                      ? `${row.prob_conocida ? `${Math.round(row.prob_ganar * 100)} % de ganar la puja` : "Puja sin historial"} · ${dp(row.delta_p_si_ganas)} % si la ganas`
                       : `Cláusula · +${points(row.mejora_xp)} pts en tu once`
                   }
                   value={<Delta value={row.delta_p_ponderado} />}
@@ -183,7 +184,7 @@ export function Top4Card({ plan }: { plan: PlanPayload | null }) {
             </Group>
           ) : null}
           <p className="px-5 pt-3 text-[12px] leading-snug text-white/35">
-            Los «pts» de cada fila son puntos de probabilidad de top 4. Sale de simular 20.000 jornadas con el once esperado de cada mánager
+            El porcentaje de cada fila es cuánto sube o baja tu probabilidad de top 4, no puntos de jornada. Sale de simular 20.000 jornadas con el once esperado de cada mánager
             {calibration ? ` y la dispersión real de la liga (±${points(calibration.sigma)} pts en ${calibration.rounds_used} jornadas)` : ""}.
           </p>
         </div>
