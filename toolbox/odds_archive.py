@@ -106,11 +106,19 @@ def display_name(raw: str) -> str:
 
 
 def scorer_prices(fixture: dict[str, Any], *, bookmaker: str = SCORER_BOOKMAKER) -> list[dict[str, Any]]:
-    """Cuotas activas de «marca en cualquier momento» de una respuesta ``/odds``."""
+    """Cuotas de «marca en cualquier momento» de una respuesta ``/odds``.
+
+    bet365 deja la casa en ``suspended`` y cada línea en ``active: false`` desde
+    varios días antes del partido, con la cuota ya escrita. Tirar esas líneas
+    dejaba la tabla vacía: la cuota es la señal, y el cierre de la jornada
+    llega antes de que la casa reabra el mercado. Una línea inactiva con la
+    casa abierta (un jugador retirado del tablero) sí se descarta.
+    """
     books = fixture.get("bookmakerOdds") if isinstance(fixture.get("bookmakerOdds"), dict) else {}
     book = books.get(bookmaker)
-    if not isinstance(book, dict) or book.get("suspended") is True:
+    if not isinstance(book, dict):
         return []
+    book_suspended = book.get("suspended") is True
     markets = book.get("markets") if isinstance(book.get("markets"), dict) else {}
     market = markets.get(MARKET_ANYTIME_SCORER)
     if not isinstance(market, dict) or market.get("marketActive") is False:
@@ -122,7 +130,10 @@ def scorer_prices(fixture: dict[str, Any], *, bookmaker: str = SCORER_BOOKMAKER)
         if not isinstance(players, dict):
             continue
         for line in players.values():
-            if not isinstance(line, dict) or line.get("active") is False:
+            if not isinstance(line, dict):
+                continue
+            inactive = line.get("active") is False
+            if inactive and not book_suspended:
                 continue
             name, price = line.get("playerName"), line.get("price")
             if not isinstance(name, str) or not name.strip():
@@ -133,7 +144,10 @@ def scorer_prices(fixture: dict[str, Any], *, bookmaker: str = SCORER_BOOKMAKER)
             if label in seen:
                 continue
             seen.add(label)
-            rows.append({"name": label, "price": float(price), "bookmaker": bookmaker})
+            row: dict[str, Any] = {"name": label, "price": float(price), "bookmaker": bookmaker}
+            if book_suspended or inactive:
+                row["suspended"] = True
+            rows.append(row)
     return rows
 
 

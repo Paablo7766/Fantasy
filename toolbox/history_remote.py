@@ -38,6 +38,9 @@ TABLES = (
     "matchday_snapshots",
     "matchday_snapshot_log",
     "previa_snapshots",
+    # Foto previa al primer saque. La última captura anterior al cierre manda;
+    # el que escribe ya no guarda nada después de ese saque.
+    "pre_lock_snapshots",
 )
 # Ediciones congeladas: la primera guardada manda, nunca se reescribe.
 KEEP_FIRST = {"previa_snapshots"}

@@ -144,8 +144,10 @@ SOCCER_SPORT_ID = 10
 LALIGA_TOURNAMENT_ID = 8
 # SportsGameOdds pide tres semanas de calendario.
 ODDS_LOOKAHEAD_SECONDS = 21 * 24 * 3600
-# El listado de OddsPapi admite como mucho 10 días entre ``from`` y ``to``.
-ODDS_LOOKAHEAD_DAYS = 9
+# El listado admite como mucho 10 días entre ``from`` y ``to``, y ``to`` no
+# incluye ese día: con 9, un partido del día 10 (el viernes de la J13) devolvía
+# 404 «no hay partidos» y no se guardaba ninguna cuota.
+ODDS_LOOKAHEAD_DAYS = 10
 # Cuotas por partido = una consulta cada una; el plan gratuito da 250 al mes.
 ODDSPAPI_MAX_FIXTURES = 12
 PREFERRED_BOOKMAKER = "pinnacle"
@@ -1928,6 +1930,32 @@ def build_trends(
                 )
             except Exception:  # noqa: BLE001 — el registro es de medición, nunca tumba trends
                 logger.debug("Sin registro de señales del día", exc_info=True)
+            try:
+                from toolbox.history_remote import push as push_history
+                from toolbox.pre_lock import freeze_pre_lock
+
+                foto = freeze_pre_lock(players, match_odds)
+                sources["pre_lock"] = {
+                    "ok": bool(foto.get("wrote")),
+                    "count": int(foto.get("players") or 0),
+                    "error": None if foto.get("wrote") else foto.get("reason"),
+                    "from_cache": False,
+                    "jornada": foto.get("jornada"),
+                }
+                push_history()
+                try:
+                    from toolbox.actas_catalogo import guardar as guardar_actas
+
+                    sources["actas_catalogo"] = {
+                        "ok": bool(guardar_actas()),
+                        "count": 0,
+                        "error": None,
+                        "from_cache": True,
+                    }
+                except Exception as exc:  # noqa: BLE001 — el catálogo no tumba la foto
+                    sources["actas_catalogo"] = {"ok": False, "count": 0, "error": str(exc), "from_cache": True}
+            except Exception as exc:  # noqa: BLE001 — la foto nunca tumba trends
+                sources["pre_lock"] = {"ok": False, "count": 0, "error": str(exc), "from_cache": False}
             try:
                 from toolbox.market_listing_log import record_market_listings
 

@@ -27,7 +27,7 @@ function phaseOf(status: RefreshStatusPayload | null | undefined) {
 /** Avance 0–100 de la descarga en curso. ``0`` si aún no hay latido. */
 export function refreshPct(status: RefreshStatusPayload | null | undefined): number {
   if (!status) return 0;
-  if (status.running === false) return status.result_ok === false ? 0 : 100;
+  if (status.running === false) return status.result_ok === true ? 100 : 0;
   const phase = phaseOf(status);
   return phase ? phase.pct : 4;
 }

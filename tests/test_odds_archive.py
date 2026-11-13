@@ -69,6 +69,16 @@ def test_bet365_names_are_flipped_and_inactive_lines_dropped() -> None:
     assert names == ["Lamine Yamal", "Raphinha", "Julian Alvarez"]
 
 
+def test_a_suspended_book_keeps_priced_lines() -> None:
+    fixture = _fixture()
+    fixture["bookmakerOdds"]["bet365"]["suspended"] = True
+    for line in fixture["bookmakerOdds"]["bet365"]["markets"]["10730"]["outcomes"]["107300"]["players"].values():
+        line["active"] = False
+    rows = scorer_prices(fixture)
+    assert [row["name"] for row in rows] == ["Lamine Yamal", "Raphinha", "Julian Alvarez", "Jugador Lesionado"]
+    assert all(row["suspended"] is True and row["price"] > 1 for row in rows)
+
+
 def test_payload_keeps_kickoff_and_scorers_next_to_the_1x2() -> None:
     index = parse_oddspapi_payload([_fixture()], now=NOW)
     (row,) = index.values()
