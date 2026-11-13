@@ -239,7 +239,7 @@ def _refresh_status_finish(*, ok: bool, error: Any = None) -> None:
             ).start()
         else:
             web_push.notify_refresh_done(ok=ok)
-            if ok:
+            if ok and not os.environ.get("PYTEST_CURRENT_TEST"):
                 # Sin Web Push también se calienta: la primera visita a Inicio
                 # no debe esperar a la carrera de la liga (7-40 s en Render).
                 threading.Thread(target=_prewarm_readers, name="home-prewarm", daemon=True).start()

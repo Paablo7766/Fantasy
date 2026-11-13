@@ -77,7 +77,7 @@ def test_urls_use_v4_with_the_key_as_a_query_parameter() -> None:
     odds = oddspapi_odds_url("id1000000872478700")
     assert fixtures.startswith("https://api.oddspapi.io/v4/fixtures?")
     assert "sportId=10" in fixtures and "tournamentId=8" in fixtures
-    assert "from=2026-11-02" in fixtures and "to=2026-11-11" in fixtures
+    assert "from=2026-11-02" in fixtures and "to=2026-11-12" in fixtures
     assert "apiKey=clave-de-prueba" in fixtures
     assert odds.startswith("https://api.oddspapi.io/v4/odds?")
     assert "fixtureId=id1000000872478700" in odds and "bookmakers=pinnacle" in odds

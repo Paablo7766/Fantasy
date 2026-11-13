@@ -66,7 +66,7 @@ SOFASCORE_LEGACY_URL = (
     "https://api.sofascore.com/api/v1/unique-tournament/8/season/77559/top-players/overall"
 )
 # Solo estas fuentes marcan ``partial`` en trends; el núcleo (FF, AF, Understat, own) sigue siendo decisorio.
-_OPTIONAL_TRENDS_SOURCES = frozenset({"fbref", "sofascore", "transfermarkt", "laliga_odds", "laliga_scorer_odds"})
+_OPTIONAL_TRENDS_SOURCES = frozenset({"fbref", "sofascore", "transfermarkt", "laliga_odds", "laliga_scorer_odds", "pre_lock", "actas_catalogo"})
 
 RANK_LIMIT = 15
 FORM_NOTE = (
