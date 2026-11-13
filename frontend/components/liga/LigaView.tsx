@@ -97,11 +97,15 @@ export function LigaView({
   photos: PhotoIndex;
   loading: boolean;
 }) {
-  const league = useSearchParams().get("league");
+  const search = useSearchParams();
+  const league = search.get("league");
   const race = useJson<LeagueRacePayload>("/api/league-race", league);
   const rivalIntel = useJson<RivalIntelPayload>("/api/rival-intel", league);
   const form = useJson<LeagueFormPayload>("/api/league-form", league);
-  const [tab, setTab] = useState<Tab>("clasificacion");
+  const [tab, setTab] = useState<Tab>(() => {
+    const asked = search.get("tab");
+    return asked === "jornadas" || asked === "duelo" || asked === "alertas" ? asked : "clasificacion";
+  });
   const [selected, setSelected] = useState<string | null>(null);
 
   const view = useMemo(() => enrichSquadsPayload(squads, trends), [squads, trends]);

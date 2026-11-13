@@ -7,7 +7,6 @@ import { GuardarrailRuina } from "@/components/mercado/GuardarrailRuina";
 import { LiveJornada } from "@/components/inicio/LiveJornada";
 import { ResumenJornada } from "@/components/inicio/ResumenJornada";
 import { Top4Card } from "@/components/inicio/Top4Card";
-import { Top4Levers } from "@/components/inicio/Top4Levers";
 import { SquadDesk } from "@/components/inicio/SquadDesk";
 import { TodayPlan } from "@/components/inicio/TodayPlan";
 import { buildPhotoIndex, buildPlayerIndex } from "@/lib/core/photoIndex";
@@ -41,12 +40,11 @@ export function InicioScreen() {
         <HomeHeader plan={plan} squads={squads} loading={loading} />
       </div>
       <div className="ini-area-plan min-w-0">
-        <Top4Card />
-        <Top4Levers plan={plan} />
-        <GuardarrailRuina data={plan?.guardarrail_ruina} modo="inicio" />
-        <ResumenJornada />
         <LiveJornada plan={plan} />
+        <GuardarrailRuina data={plan?.guardarrail_ruina} modo="inicio" />
+        <Top4Card plan={plan} />
         <TodayPlan plan={plan} squads={squads} loading={loading} photos={photos} facts={facts} />
+        <ResumenJornada />
       </div>
       <aside className="ini-area-squad min-w-0" aria-label="Plantilla">
         <SquadDesk plan={plan} photos={photos} loading={loading} />

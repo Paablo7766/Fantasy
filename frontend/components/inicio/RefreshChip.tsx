@@ -38,7 +38,9 @@ export function RefreshChip() {
         : justDone
           ? "Al día"
           : photoAge
-            ? `Actualizado ${photoAge}`
+            ? old
+              ? `Datos de ${photoAge} · actualizar`
+              : `Actualizado ${photoAge}`
             : "Sin datos · actualizar";
 
   return (

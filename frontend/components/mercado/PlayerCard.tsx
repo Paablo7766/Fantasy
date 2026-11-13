@@ -177,7 +177,11 @@ function EscudoRival({ nombre, src }: { nombre: string; src?: string | null }) {
   return <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/10 text-[12px] font-medium text-white/70">{letra}</span>;
 }
 
-/** Ideal, asegurar y máxima. Sin probabilidad de ganar y sin píldoras. */
+/**
+ * Las tres pujas en una fila (ideal, asegurar, máxima) y una frase que dice
+ * hasta dónde llegar. El cálculo y el precio del punto —un ajuste global, el
+ * mismo para todos los jugadores— quedan plegados.
+ */
 function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt }: { tramo: PujaTramo; valor: number | null; puesto?: string | null; euros: number; onEuros: (next: number) => void; sinPuntos?: boolean; fetchedAt?: string | null }) {
   const xp = typeof tramo.xp_delta === "number" ? tramo.xp_delta : 0;
   const reventa = typeof tramo.reventa_eur === "number" ? tramo.reventa_eur : 0;
@@ -195,7 +199,6 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt 
   const noCompensa = fresco && asegurar !== null && asegurar > maxima;
   const avisoMaxima = horas !== null && horas >= 24 ? `máxima sin calcular: xP de hace ${horas} h` : "máxima sin calcular: sin xP";
   const horizonte = typeof tramo.horizonte_jornadas === "number" && tramo.horizonte_jornadas > 0 ? tramo.horizonte_jornadas : 4;
-  const porJornada = `${(euros / horizonte / 1_000_000).toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} M por punto y jornada, a ${horizonte} jornadas`;
   const barato = valor !== null && valor < 1_500_000;
   const detalleIdeal = n > 0 ? `valor × ${factor(tramo.mediana)} · mediana de ${n} compras` : "sin compras en este tramo";
   const detalleMaxima = [
@@ -206,91 +209,94 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt 
   ]
     .filter(Boolean)
     .join(" · ");
-  const millones = Number((euros / 1_000_000).toFixed(2));
+  const millones = Number((euros / horizonte / 1_000_000).toFixed(2));
   const rivales = Array.isArray(tramo.rivales) ? tramo.rivales : [];
+  // Una frase que ordena las tres cifras: hasta dónde tiene sentido llegar.
+  const veredicto = !fresco
+    ? horas !== null && horas >= 24
+      ? `Sin puja máxima: la previsión de puntos es de hace ${horas} h. Actualiza para saber hasta dónde te compensa.`
+      : "Sin puja máxima: no hay previsión de puntos para este jugador."
+    : ideal !== null && ideal > maxima
+      ? "No compensa: lo que suele costar ganarlo es más de lo que te aporta."
+      : noCompensa
+        ? "Empieza por la ideal. Asegurarlo ya cuesta más de lo que te aporta."
+        : asegurar !== null
+          ? "Tienes margen: puedes subir hasta la de asegurar sin pasar de tu máxima."
+          : "Empieza por la ideal y no pases de tu máxima.";
+  const columnas: { titulo: string; cifra: string; pie: string; apagada?: boolean }[] = [
+    { titulo: "Ideal", cifra: ideal === null ? "—" : money(ideal), pie: "suele bastar" },
+    { titulo: "Para asegurar", cifra: asegurar === null ? "—" : money(asegurar), pie: asegurar === null ? "sin muestra fiable" : "gana 9 de 10", apagada: asegurar === null || noCompensa },
+    { titulo: "Máxima", cifra: fresco ? money(maxima) : "—", pie: fresco ? "más no te compensa" : "sin calcular", apagada: !fresco },
+  ];
   return (
-    <div className="mt-6">
-      <table className="w-full border-collapse text-left">
-        <tbody>
-          <tr className="border-t border-white/[0.07]">
-            <th scope="row" className="py-3 pr-4 align-top text-[13px] font-medium text-white/55">Puja ideal</th>
-            <td className="py-3 text-right">
-              <span className="block text-[1.35rem] font-semibold tabular-nums leading-none text-white">{ideal === null ? "—" : money(ideal)}</span>
-              <span className="mt-1.5 block text-[12px] text-white/40">{detalleIdeal}</span>
-            </td>
-          </tr>
-          <tr className="border-t border-white/[0.07]">
-            <th scope="row" className="py-3 pr-4 align-top text-[13px] font-medium text-white/55">Puja para asegurar</th>
-            <td className="py-3 text-right">
-              {asegurar === null ? (
-                <>
-                  <span className="block text-[1.05rem] font-semibold leading-none text-white">sin cifra fiable</span>
-                  <span className="mt-1.5 block text-[12px] text-white/40">{n} {n === 1 ? "compra" : "compras"} en el tramo</span>
-                </>
-              ) : (
-                <>
-                  <span className="block text-[1.35rem] font-semibold tabular-nums leading-none text-white">{money(asegurar)}</span>
-                  <span className="mt-1.5 block text-[12px] text-white/40">valor × {factor(tramo.p90)} · percentil 90 de {n} compras</span>
-                  {noCompensa ? <span className="mt-1.5 block text-[13.5px] font-medium text-white">a este precio no compensa</span> : null}
-                </>
-              )}
-            </td>
-          </tr>
-          <tr className="border-t border-white/[0.07]">
-            <th scope="row" className="py-3 pr-4 align-top text-[13px] font-medium text-white/55">Puja máxima</th>
-            <td className="py-3 text-right">
-              {fresco ? (
-                <>
-                  <span className="block text-[1.35rem] font-semibold tabular-nums leading-none text-white">{money(maxima)}</span>
-                  <span className="mt-1.5 block text-[12px] leading-snug text-white/40">{detalleMaxima}</span>
-                </>
-              ) : (
-                <span className="block text-[1.05rem] font-semibold leading-snug text-white">{avisoMaxima}</span>
-              )}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <label className="mt-4 flex items-center justify-between gap-4 border-t border-white/[0.07] pt-4 text-[13px] text-white/55">
-        <span>
-          <span className="block text-white/80">{porJornada}</span>
-          <span className="mt-1 block text-[12px] text-white/40">El recuadro suma esas {horizonte} jornadas: {millones.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} M por un punto de una jornada.</span>
-        </span>
-        <input
-          type="number"
-          min={0}
-          step={0.1}
-          inputMode="decimal"
-          aria-label="Millones por punto de una jornada"
-          value={millones}
-          onChange={(event) => {
-            const next = Number(event.target.value);
-            if (Number.isFinite(next) && next >= 0) onEuros(Math.round(next * 1_000_000));
-          }}
-          className="w-24 rounded-md bg-white/[0.06] px-2 py-1.5 text-right text-[14px] tabular-nums text-white outline-none focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
-        />
-      </label>
-      {tramo.banda === "1.5-4" ? (
-        <div className="mt-5 border-t border-white/[0.07] pt-4">
-          <p className="text-[13px] font-medium text-white">Rivales con caja y hueco en {puesto || "este puesto"}</p>
-          <p className="mt-1 text-[12.5px] text-white/45">La mediana de este tramo sale de {n} compras. El aviso no cambia la cifra.</p>
-          {rivales.length ? (
-            <ul className="mt-3 flex flex-col">
-              {rivales.map((rival) => (
-                <li key={rival.team_id || rival.manager} className="flex items-center gap-3 border-t border-white/[0.06] py-2.5 first:border-t-0">
-                  <EscudoRival nombre={rival.manager || "Rival"} src={rival.avatar} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] text-white">{rival.manager || "Rival"}</span>
-                    <span className="block truncate text-[12px] text-white/40">
-                      {[rival.aviso, typeof rival.puede_pujar_eur === "number" ? `puede pujar hasta ${money(rival.puede_pujar_eur)}` : null].filter(Boolean).join(" · ")}
-                    </span>
+    <div className="mt-5">
+      <dl className="grid grid-cols-3 divide-x divide-white/[0.07] rounded-2xl bg-white/[0.04]">
+        {columnas.map((col) => (
+          <div key={col.titulo} className="min-w-0 px-3 py-3.5 text-center">
+            <dt className="truncate text-[11.5px] text-white/45">{col.titulo}</dt>
+            <dd className={`mt-1.5 truncate text-[1.1rem] font-semibold leading-none tracking-[-0.02em] tabular-nums ${col.apagada ? "text-white/40" : "text-white"}`}>{col.cifra}</dd>
+            <dd className="mt-1.5 text-[11px] leading-tight text-white/35">{col.pie}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 text-[13.5px] leading-snug text-white/70">{veredicto}</p>
+
+      <details className="group mt-3">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[12.5px] font-medium text-white/45 hover:text-white/70 [&::-webkit-details-marker]:hidden">
+          Cómo se calculan
+          <svg viewBox="0 0 16 16" className="h-3 w-3 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </summary>
+        <ul className="mt-2.5 flex flex-col gap-2 text-[12.5px] leading-snug text-white/50">
+          <li>
+            <span className="text-white/75">Ideal:</span> {detalleIdeal} de jugadores de {tramo.etiqueta || "su precio"} en tu liga.
+          </li>
+          <li>
+            <span className="text-white/75">Para asegurar:</span>{" "}
+            {asegurar === null ? `con ${n} ${n === 1 ? "compra" : "compras"} en el tramo no hay cifra fiable.` : `valor × ${factor(tramo.p90)}, lo que pagó el 10 % que más pujó.`}
+          </li>
+          <li>
+            <span className="text-white/75">Máxima:</span> {fresco ? `${detalleMaxima}.` : avisoMaxima}
+          </li>
+        </ul>
+        <label className="mt-3 flex items-center justify-between gap-4 rounded-xl bg-white/[0.04] px-3 py-2.5">
+          <span className="min-w-0">
+            <span className="block text-[12.5px] text-white/75">Lo que pagas por un punto, en millones</span>
+            <span className="mt-0.5 block text-[11.5px] leading-snug text-white/40">Ajuste tuyo, igual para todos los jugadores. La máxima lo cuenta durante {horizonte} jornadas.</span>
+          </span>
+          <input
+            type="number"
+            min={0}
+            step={0.1}
+            inputMode="decimal"
+            aria-label="Millones que pagas por un punto de una jornada"
+            value={millones}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              if (Number.isFinite(next) && next >= 0) onEuros(Math.round(next * horizonte * 1_000_000));
+            }}
+            className="w-20 shrink-0 rounded-md bg-white/[0.08] px-2 py-1.5 text-right text-[14px] tabular-nums text-white outline-none focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
+          />
+        </label>
+      </details>
+
+      {tramo.banda === "1.5-4" && rivales.length ? (
+        <div className="mt-4 border-t border-white/[0.07] pt-4">
+          <p className="text-[12.5px] font-medium text-white/55">Rivales con caja y hueco en {puesto || "este puesto"}</p>
+          <ul className="mt-2 flex flex-col">
+            {rivales.map((rival) => (
+              <li key={rival.team_id || rival.manager} className="flex items-center gap-3 py-2">
+                <EscudoRival nombre={rival.manager || "Rival"} src={rival.avatar} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13.5px] text-white">{rival.manager || "Rival"}</span>
+                  <span className="block truncate text-[12px] text-white/40">
+                    {[rival.aviso, typeof rival.puede_pujar_eur === "number" ? `puede pujar hasta ${money(rival.puede_pujar_eur)}` : null].filter(Boolean).join(" · ")}
                   </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-[12.5px] text-white/45">Nadie junta cota alta de caja (100 M de inicio más el crédito del 20 %) y un hueco en este puesto.</p>
-          )}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
     </div>

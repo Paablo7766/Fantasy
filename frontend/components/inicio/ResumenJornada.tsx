@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { points } from "@/lib/core/format";
@@ -8,13 +9,23 @@ import type { LeagueFormPayload, PostMortemPayload } from "@/lib/types";
 
 const MINT = "var(--ini-mint)";
 const RED = "var(--ini-red)";
-const MONO = { fontFamily: "var(--font-mono), ui-monospace, monospace" } as const;
+
+function Stat({ label, value, sub, color }: { label: string; value: string; sub?: string | null; color?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="truncate text-[12px] text-white/45">{label}</p>
+      <p className="mt-1 truncate text-[20px] font-semibold leading-none tracking-[-0.02em] tabular-nums" style={{ color: color ?? "#fff" }}>
+        {value}
+      </p>
+      <p className="mt-1 truncate text-[12px] text-white/40">{sub || " "}</p>
+    </div>
+  );
+}
 
 /**
- * Resumen de la última jornada jugada: mi puesto, lo que me faltó (o sobró) para
- * el 4.º y los puntos que dejé fuera del once. Los puntos por mánager salen del
- * premio de jornada de la actividad (100.000 € por punto); si una jornada solo
- * viene del respaldo manual se dice. Dos lecturas de disco, ninguna llamada a LaLiga.
+ * La última jornada en tres cifras: puesto, puntos contra la línea del 4.º y
+ * los puntos que se quedaron en el banquillo. El historial completo vive en
+ * Liga → Jornadas; aquí solo se enlaza.
  */
 export function ResumenJornada() {
   const search = useSearchParams();
@@ -27,74 +38,42 @@ export function ResumenJornada() {
   const last = rounds[rounds.length - 1];
   if (!last) return null;
 
-  const missing = last.in_top4 ? 0 : Math.max(0, last.cutoff - last.points);
   const margin = last.points - last.cutoff;
-  const source = form?.sources?.[String(last.round)];
   const fuga = mortem?.jornada === String(last.round) ? mortem.fuga : undefined;
-  const leaked = fuga?.disponible ? (fuga.fuga ?? null) : null;
-  const left = fuga?.disponible ? (fuga.dejados_fuera ?? []) : [];
+  const leaked = fuga?.disponible && typeof fuga.fuga === "number" ? fuga.fuga : null;
+  const left = fuga?.disponible ? (fuga.dejados_fuera ?? []).map((p) => p.nombre).filter(Boolean).slice(0, 2).join(", ") : "";
+  const recent = rounds.slice(-8);
+  const query = new URLSearchParams(search.toString());
+  query.set("tab", "jornadas");
 
   return (
     <section className="ini-card ini-in" aria-label={`Resumen de la jornada ${last.round}`} data-ui="resumen-jornada">
-      <header className="px-5 pb-3 pt-5">
-        <p className="ini-eyebrow">Resumen de la J{last.round}</p>
-        <h2 className="mt-2 text-[28px] font-semibold leading-tight tracking-[-0.03em] text-white">
-          <span style={MONO}>{last.rank}º</span> <span className="text-[16px] font-normal text-white/50">de {last.field}</span>
-        </h2>
-        <p className="mt-1.5 text-[13px] text-white/60">
-          <span style={MONO}>{last.points} pts</span>
-          {" · "}
-          {last.in_top4 ? (
-            <span style={{ color: MINT }}>
-              Top 4 con <span style={MONO}>{margin >= 0 ? `+${margin}` : margin}</span> sobre el corte
-            </span>
-          ) : (
-            <span style={{ color: RED }}>
-              Te faltaron <span style={MONO}>{missing}</span> para el 4.º
-            </span>
-          )}
-        </p>
-      </header>
-      <dl className="ini-divide text-[13px]">
-        <div className="flex flex-col gap-1 px-5 py-3 min-[420px]:flex-row min-[420px]:items-baseline min-[420px]:justify-between">
-          <dt className="text-white/55">Puntos fuera del once</dt>
-          <dd className="text-white/85 min-[420px]:text-right">
-            {leaked !== null ? (
-              <>
-                <span style={{ ...MONO, color: leaked > 0.05 ? RED : undefined }}>{points(leaked)} pts</span>
-                {left.length ? <span className="block text-[12px] text-white/45">{left.slice(0, 3).map((p) => p.nombre).filter(Boolean).join(", ")}</span> : null}
-              </>
-            ) : (
-              <span className="text-white/45">{fuga?.motivo === "sin_once" ? "No medible: el once guardado tiene menos de 11" : fuga?.detalle || "No medible con el once de ahora"}</span>
-            )}
-          </dd>
+      <div className="px-5 pb-4 pt-5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="ini-eyebrow">Última jornada · J{last.round}</p>
+          <span className="flex items-center gap-1" role="img" aria-label={`Top 4 en ${recent.filter((r) => r.in_top4).length} de las últimas ${recent.length} jornadas`}>
+            {recent.map((r) => (
+              <span key={r.round} title={`J${r.round}: ${r.rank}º`} className="h-1.5 w-1.5 rounded-full" style={{ background: r.in_top4 ? MINT : "rgba(255,255,255,0.18)" }} />
+            ))}
+          </span>
         </div>
-      </dl>
-      <table className="w-full text-[12px]" style={MONO}>
-        <thead>
-          <tr className="text-white/40">
-            <th className="px-5 py-2 text-left font-normal">Jornada</th>
-            <th className="py-2 text-right font-normal">Puntos</th>
-            <th className="py-2 text-right font-normal">Puesto</th>
-            <th className="px-5 py-2 text-right font-normal">Corte 4.º</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[...rounds].reverse().map((r) => (
-            <tr key={r.round} className="border-t border-white/5 text-white/80">
-              <td className="px-5 py-2">J{r.round}</td>
-              <td className="py-2 text-right">{r.points}</td>
-              <td className="py-2 text-right">{r.rank}º</td>
-              <td className="px-5 py-2 text-right" style={{ color: r.in_top4 ? MINT : RED }}>
-                {r.cutoff}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {source === "manual" ? (
-        <p className="px-5 pb-4 pt-2 text-[11px] text-white/40">Puntos de la J{last.round} anotados a mano: no vienen del premio de la actividad.</p>
-      ) : null}
+        <div className="mt-3.5 grid grid-cols-3 gap-3">
+          <Stat label="Puesto" value={`${last.rank}º`} sub={`de ${last.field}`} />
+          <Stat
+            label="Puntos"
+            value={String(last.points)}
+            sub={last.in_top4 ? `${margin > 0 ? `+${margin}` : "igualas"} el corte` : `${margin} del corte`}
+            color={last.in_top4 ? MINT : RED}
+          />
+          <Stat label="En el banquillo" value={leaked !== null ? `${points(leaked)} pts` : "—"} sub={leaked !== null ? left || "nada que rascar" : "no medible"} />
+        </div>
+      </div>
+      <Link href={`/liga?${query.toString()}`} className="ini-foot">
+        <span>Todas las jornadas</span>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true" style={{ transform: "rotate(-90deg)" }}>
+          <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </Link>
     </section>
   );
 }

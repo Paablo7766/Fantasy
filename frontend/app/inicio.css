@@ -2956,3 +2956,77 @@
   outline: 2px solid rgba(255, 255, 255, 0.6);
   outline-offset: 2px;
 }
+
+/* ── Tarjetas de estado de Inicio (top 4, última jornada, saldo al cierre) ── */
+
+/* Las tarjetas compartidas con otras pantallas adoptan la superficie de Inicio. */
+.ini .home-glass {
+  border: 0;
+  border-radius: 1.75rem;
+  background: var(--ini-surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Probabilidad como barra; la marca es dónde te deja el plan de hoy. */
+.ini-meter {
+  position: relative;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ini-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ini-copper, #ff7a3d);
+}
+
+.ini-meter > i {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: #fff;
+  transform: translateX(-1px);
+}
+
+/* Pie de tarjeta que abre el detalle o lleva a otra pantalla. */
+.ini-foot {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-top: 1px solid var(--ini-line, rgba(255, 255, 255, 0.06));
+  padding: 0.8rem 1.25rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: left;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.ini-foot:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.ini-foot svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: transform 200ms ease;
+}
+
+.ini-foot[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.ini-area-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}

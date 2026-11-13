@@ -21,8 +21,8 @@ const LABEL: Record<AgeKey, string> = { mercado: "Mercado", plantillas: "Plantil
  * Edad de cada dato, con la marca que ya trae la foto (nada de red):
  * mercado → ``trends.market.fetched_at`` (LaLiga), plantillas →
  * ``squads.fetched_at`` (LaLiga), titularidad → ``trends.fetched_at``
- * (FútbolFantasy / Analítica Fantasy). Si algo pasa de 6 h se sugiere
- * Actualizar, pero lo lanza la persona: aquí no se pide nada solo.
+ * (FútbolFantasy / Analítica Fantasy). Solo se pinta si algo pasa de 6 h:
+ * un aviso de una línea con el botón Actualizar (lo lanza la persona).
  */
 export function DataAge({ show }: { show: AgeKey[] }) {
   const { state, refresh, refreshing, connecting } = useDashboard();
@@ -36,33 +36,26 @@ export function DataAge({ show }: { show: AgeKey[] }) {
     titularidad: trends?.fetched_at,
   };
   const rows = show.map((key) => ({ key, seconds: ageFromStamp(stamp[key], nowMs) }));
-  const old = rows.some((row) => row.seconds === null || row.seconds >= STALE_SECONDS);
+  const stale = rows.filter((row) => row.seconds === null || row.seconds >= STALE_SECONDS);
+  // Al día no hay nada que decir: la edad solo aparece cuando ya no es de fiar.
+  if (!stale.length) return null;
+  const detail = stale.map((row) => `${LABEL[row.key].toLowerCase()} ${row.seconds === null ? "sin fecha" : ago(row.seconds).replace("hace ", "de hace ")}`).join(" · ");
   return (
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[12px] text-white/45" data-ui="data-age">
-      {rows.map((row) => {
-        const stale = row.seconds === null || row.seconds >= STALE_SECONDS;
-        return (
-          <span key={row.key}>
-            {LABEL[row.key]}{" "}
-            <span
-              className="tabular-nums"
-              style={{ fontFamily: "var(--font-mono), ui-monospace, monospace", color: stale ? "var(--ini-amber, #f5b544)" : undefined }}
-            >
-              {row.seconds === null ? "sin dato" : ago(row.seconds)}
-            </span>
-          </span>
-        );
-      })}
-      {old ? (
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          disabled={refreshing || connecting}
-          className="text-[12px] font-medium text-[var(--ini-copper)] hover:underline disabled:opacity-50"
-        >
-          {refreshing ? "Actualizando…" : "Datos viejos: Actualizar"}
-        </button>
-      ) : null}
-    </p>
+    <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#f5b544]/[0.08] px-4 py-2.5" role="status" data-ui="data-age">
+      <p className="flex min-w-0 items-start gap-2.5 text-[13px] leading-snug text-white/75">
+        <span className="mt-[0.45em] h-1.5 w-1.5 shrink-0 rounded-full bg-[#f5b544]" aria-hidden="true" />
+        <span className="min-w-0">
+          Datos antiguos: <span className="tabular-nums text-white/55">{detail}</span>
+        </span>
+      </p>
+      <button
+        type="button"
+        onClick={() => void refresh()}
+        disabled={refreshing || connecting}
+        className="shrink-0 rounded-full bg-white/10 px-3.5 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-white/15 disabled:opacity-50"
+      >
+        {refreshing ? "Actualizando…" : "Actualizar"}
+      </button>
+    </div>
   );
 }
