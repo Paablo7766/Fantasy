@@ -129,14 +129,15 @@ const BEAT_SLOW_MS = 8000;
  */
 async function waitForRefresh(
   beat: () => Promise<RefreshStatusPayload | null>,
-): Promise<void> {
+): Promise<RefreshStatusPayload | null> {
   const deadline = Date.now() + 60 * 60 * 1000;
   while (Date.now() < deadline) {
     await new Promise((resolve) => window.setTimeout(resolve, BEAT_SLOW_MS));
     const status = await beat();
     if (!status) continue;
-    if (status.running === false) return;
+    if (status.running === false) return status;
   }
+  return null;
 }
 
 /** Render/Vercel pueden tardar en arrancar: el POST falla antes de que ``running`` sea true. */
@@ -345,8 +346,11 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         endpoint("/api/plan/refresh", league, { asyncRefresh: true }),
       );
       if (fresh.accepted) {
-        await waitForRefresh(beat);
+        const last = await waitForRefresh(beat);
         await load();
+        if (last?.running === false && last.result_ok === false) {
+          setRefreshError(last.error?.message || "La descarga falló en el servidor; se mantiene la foto anterior.");
+        }
       } else if (fresh && fresh.ok !== false) {
         setState((prev) => ({ ...prev, plan: fresh }));
         writeDashboardBlock(league, "plan", fresh);

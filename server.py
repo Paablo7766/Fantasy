@@ -4349,6 +4349,10 @@ def _run_plan_refresh_job(league: str | None, force_rivals: bool = False) -> Non
             error={"code": "kill_switch", "message": marker.get("reason")},
         )
         logger.critical("Kill switch disparado durante el refresco manual (async).")
+    except Exception as exc:  # noqa: BLE001 — sin esto el hilo moría con el latido en «running»
+        logger.exception("La descarga asíncrona falló")
+        if refresh_status_snapshot().get("running") is True:
+            _refresh_status_finish(ok=False, error=error_payload("plan-refresh", exc).get("error"))
 
 
 @app.post("/api/plan/refresh")
@@ -4467,7 +4471,11 @@ def _plan_refresh_passes(league: str | None, *, force_rivals: bool = False) -> A
     if isinstance(core, JSONResponse):
         _refresh_status_finish(ok=False, error=None)
         return core
-    core_document = _plan_document(core)
+    try:
+        core_document = _plan_document(core)
+    except Exception as exc:  # noqa: BLE001 — la foto ya está guardada; el plan se recalcula al leer
+        logger.exception("No se pudo calcular el plan tras la foto rápida")
+        core_document = {"ok": True, "command": "plan", "schema_version": SCHEMA_VERSION}
     _refresh_status_core_saved()
 
     def _full_failed(error: Any) -> Any:
@@ -4484,7 +4492,11 @@ def _plan_refresh_passes(league: str | None, *, force_rivals: bool = False) -> A
         payload = error_payload("plan-refresh", exc).get("error")
         _refresh_status_finish(ok=False, error=payload)
         return _full_failed(payload)
-    document = _plan_document(full)
+    try:
+        document = _plan_document(full)
+    except Exception as exc:  # noqa: BLE001 — la foto completa ya está guardada en disco
+        logger.exception("No se pudo calcular el plan tras la foto completa")
+        document = dict(core_document)
     document["refresh"] = {"ok": True, "core": True, "full": True, "error": None}
     _refresh_status_finish(ok=True)
     return document
