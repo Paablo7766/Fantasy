@@ -79,6 +79,9 @@ UMBRAL_VENTA_TITULAR_XP = 1.5
 P_TITULAR_CONSOLIDADO = 0.60
 # Por debajo de esto el jugador no es titular: hay que reemplazarlo y no entra en el tope.
 UMBRAL_BAJA = 0.20
+# Una compra para el once exige que el jugador sea titular probable: con menos
+# de la mitad de opciones de jugar, su xP sale de un once que no se va a dar.
+P_TITULAR_COMPRA = 0.50
 # Desempata a favor de sacar a un lesionado cuando al once le da igual.
 BONUS_REEMPLAZO_BAJA = 0.05
 _MILLON = 1_000_000
@@ -949,6 +952,13 @@ def _plan_once(
                 if row.get("af_alerta_bajada") is True:
                     candidato["af_alerta_bajada"] = True
                 trading_out.append(candidato)
+            return
+        p_compra = _prob_titular(row)
+        if p_compra is not None and p_compra < P_TITULAR_COMPRA:
+            # No es titular probable: no se recomienda para el once, aunque el
+            # solver le atribuya puntos.
+            return
+        if (_jornada(row) or 0.0) <= 0.0:
             return
         ficha = {
             "row": row,

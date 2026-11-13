@@ -213,7 +213,7 @@ function stepReason(step: Step): string | null {
 
 // ── El porqué de cada paso: qué gana el once en xP y, si existe, cuánto sube el top 4 ──
 
-type Why = { parts: { text: string; tone?: string }[] };
+type Why = { parts: { label: string; text: string; tone?: string }[] };
 
 const MINT = "var(--ini-mint)";
 const RED = "var(--ini-red)";
@@ -234,17 +234,17 @@ function stepWhy(step: Step, info: ReturnType<typeof factsFor>, top4: Top4Overla
   const parts: Why["parts"] = [];
   if (kind === "puja" || kind === "clausula") {
     const gain = typeof action.mejora_neta === "number" ? action.mejora_neta : null;
-    if (gain !== null) parts.push({ text: `${signedPoints(gain)} pts en tu once`, tone: gain >= 0 ? MINT : RED });
+    if (gain !== null) parts.push({ label: "Tu once", text: `${signedPoints(gain)} pts`, tone: gain >= 0 ? MINT : RED });
     const row = top4?.acciones?.find((r) => sameDecision(r, action));
     if (row && typeof row.delta_p_ponderado === "number" && Math.abs(row.delta_p_ponderado) >= 0.0005) {
-      parts.push({ text: `prob. de top 4 ${pctPoints(row.delta_p_ponderado)}`, tone: row.delta_p_ponderado >= 0 ? MINT : RED });
+      parts.push({ label: "Top 4", text: pctPoints(row.delta_p_ponderado), tone: row.delta_p_ponderado >= 0 ? MINT : RED });
     }
   } else if (kind === "vende") {
     const lost = typeof info?.tu_once_pierde_sin_el === "number" ? Math.abs(info.tu_once_pierde_sin_el) : null;
-    if (lost !== null) parts.push({ text: lost < 0.05 ? "no baja el once" : `−${points(lost)} pts en tu once`, tone: lost < 0.05 ? undefined : RED });
+    if (lost !== null) parts.push({ label: "Tu once", text: lost < 0.05 ? "sin cambios" : `−${points(lost)} pts`, tone: lost < 0.05 ? undefined : RED });
     const row = top4?.ventas?.find((r) => sameDecision(r, action));
     if (row && typeof row.delta_p === "number" && Math.abs(row.delta_p) >= 0.0005) {
-      parts.push({ text: `prob. de top 4 ${pctPoints(row.delta_p)}`, tone: row.delta_p >= 0 ? MINT : RED });
+      parts.push({ label: "Top 4", text: pctPoints(row.delta_p), tone: row.delta_p >= 0 ? MINT : RED });
     }
   } else {
     return null;
@@ -339,15 +339,15 @@ function StepRow({
         </button>
       </div>
       {why ? (
-        <p className={`-mt-1.5 mb-3 px-4 text-[11px] leading-4 text-white/55 sm:px-5 ${checkable ? "pl-[4.1rem] sm:pl-[4.35rem]" : "pl-[2.9rem] sm:pl-[3.1rem]"}`} data-ui="step-why">
-        {why.parts.map((part, i) => (
-          <span key={i}>
-            {i > 0 ? " · " : ""}
-            <span className="tabular-nums" style={{ fontFamily: "var(--font-mono), ui-monospace, monospace", color: part.tone }}>
-              {part.text}
+        <p className={`-mt-1.5 mb-3 flex flex-wrap gap-x-4 px-4 text-[12px] leading-4 text-white/40 sm:px-5 ${checkable ? "pl-[4.1rem] sm:pl-[4.35rem]" : "pl-[2.9rem] sm:pl-[3.1rem]"}`} data-ui="step-why">
+          {why.parts.map((part, i) => (
+            <span key={i}>
+              {part.label}{" "}
+              <span className="font-medium tabular-nums" style={{ color: part.tone ?? "rgba(255,255,255,0.7)" }}>
+                {part.text}
+              </span>
             </span>
-          </span>
-        ))}
+          ))}
         </p>
       ) : null}
       <Collapse open={open}>

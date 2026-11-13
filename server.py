@@ -239,16 +239,25 @@ def _refresh_status_finish(*, ok: bool, error: Any = None) -> None:
             ).start()
         else:
             web_push.notify_refresh_done(ok=ok)
+            if ok:
+                # Sin Web Push también se calienta: la primera visita a Inicio
+                # no debe esperar a la carrera de la liga (7-40 s en Render).
+                threading.Thread(target=_prewarm_readers, name="home-prewarm", daemon=True).start()
+
+
+def _prewarm_readers() -> None:
+    """Calienta las lecturas pesadas de Inicio. El top 4 va primero: es la más lenta."""
+    for reader in (api_top4, api_trends, api_optimize, api_squads, api_needs):
+        try:
+            reader(None)
+        except Exception:  # noqa: BLE001 — calentar es opcional
+            logger.debug("Precalentado fallido en %s", getattr(reader, "__name__", "?"), exc_info=True)
 
 
 def _prewarm_then_notify() -> None:
     """Calienta las lecturas del panel y después manda el aviso. Nunca lanza."""
     try:
-        for reader in (api_trends, api_optimize, api_squads, api_needs):
-            try:
-                reader(None)
-            except Exception:  # noqa: BLE001 — calentar es opcional
-                logger.debug("Precalentado fallido en %s", getattr(reader, "__name__", "?"), exc_info=True)
+        _prewarm_readers()
     finally:
         web_push.notify_refresh_done(ok=True)
 
@@ -2885,6 +2894,8 @@ def _arrancar_foto_previa() -> None:
     """Foto del Marcador antes del primer saque, aunque nadie abra Laboratorio."""
     if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("FOTO_PREVIA", "1").strip() == "0":
         return
+    # Tras un reinicio la memoria está vacía: se calienta Inicio en segundo plano.
+    threading.Thread(target=_prewarm_readers, name="home-prewarm-boot", daemon=True).start()
     from toolbox.foto_previa import arrancar_vigilante
 
     from toolbox.avisos_reloj import revisar
