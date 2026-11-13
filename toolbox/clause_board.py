@@ -35,7 +35,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -248,6 +248,31 @@ def _latest_takers(ledgers: Any) -> dict[str, dict[str, Any]]:
     return {player_id: value[1] for player_id, value in latest.items()}
 
 
+#: La plantilla oficial va minutos u horas por detrás de la actividad, nunca días.
+VENTANA_ACTIVIDAD_MANDA = timedelta(hours=12)
+
+
+def takers_vigentes(ledgers: Any, squads: Any) -> dict[str, dict[str, Any]]:
+    """Fichajes de la actividad que pueden corregir a la plantilla oficial.
+
+    Solo los de las últimas horas antes de la foto de plantillas. Un fichaje de
+    hace días que contradice a la plantilla no es un retraso de LaLiga: es un
+    traspaso posterior que la actividad no recogió (13 nov: Marc Roca, comprado
+    el 29 oct y ya en otro equipo, volvía a contarse como propio y sumaba
+    33 M€ y 6,2 xP a una plantilla de 10).
+    """
+    takers = _latest_takers(ledgers)
+    foto = _moment(squads.get("fetched_at")) if isinstance(squads, Mapping) else None
+    if foto is None:
+        return takers
+    limite = foto - VENTANA_ACTIVIDAD_MANDA
+    return {
+        player_id: taker
+        for player_id, taker in takers.items()
+        if (_moment(taker.get("at")) or limite) >= limite
+    }
+
+
 def _sort_row(row: dict[str, Any]) -> tuple[int, int, str, str, str]:
     lock = row.get("clause_lock") or {}
     missing = 0 if lock.get("local_date") and lock.get("local_time") else 1
@@ -291,7 +316,7 @@ def build_clause_board(
     # queda en ``from_day``.
     gap_days = _days_between(from_day, day) if from_day and day else None
     paid_index = _acquisitions(ledgers)
-    takers = _latest_takers(ledgers)
+    takers = takers_vigentes(ledgers, squads)
     # Un jugador anunciado en el mercado se compra por oferta o puja sin esperar
     # al candado de su cláusula: sin este cruce el tablero decía «abre a las
     # 14:08» de uno que un rival se llevó por oferta horas antes.

@@ -28,6 +28,11 @@ const MODE: Record<string, { label: string; color: string; text: string }> = {
   neutro: { label: "Carrera igualada", color: TONE.blue, text: "Ni ventaja ni remontada: el once equilibra suelo y techo." },
 };
 
+/** «4 jornadas», «1 jornada»: las que de verdad suman el total. */
+function jornadasJugadas(n: number): string {
+  return `${n} ${n === 1 ? "jornada" : "jornadas"}`;
+}
+
 function cashOf(squad: RivalSquad): number | null {
   const read = liquidityRead(squad);
   return read.calibratedCash ?? read.cash ?? squad.cash_eur ?? null;
@@ -246,7 +251,7 @@ export function LigaView({
             ) : null}
           </div>
           <div className="grid grid-cols-2 gap-2 min-[560px]:grid-cols-4">
-            <Tile label="Tus puntos" value={typeof ownPoints === "number" ? String(ownPoints) : "—"} hint={myForm ? `${Math.round(myForm.total)} en ${formWindow} jornadas` : null} />
+            <Tile label="Tus puntos" value={typeof ownPoints === "number" ? String(ownPoints) : "—"} hint={myForm ? `${Math.round(myForm.total)} en ${jornadasJugadas(myForm.rounds?.length ?? formWindow)}` : null} />
             <Tile
               label="Al de arriba"
               value={above && typeof above.edge_points === "number" ? `${Math.abs(above.edge_points)} pts` : "—"}

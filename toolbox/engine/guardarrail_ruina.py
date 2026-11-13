@@ -156,6 +156,11 @@ def valor_estresado(valor: int, sigma_rel: float | None, dias: float, *, k: floa
     return int(round(valor * max(0.0, 1.0 - caida)))
 
 
+def _edad_legible(segundos: float) -> str:
+    horas = segundos / 3600
+    return f"{horas:.0f} h" if horas < 48 else f"{horas / 24:.0f} días"
+
+
 def evaluar(
     *,
     caja: int | None,
@@ -202,9 +207,14 @@ def evaluar(
     for etiqueta, edad in (("caja", edad_caja_s), ("precios", edad_precios_s)):
         if edad is None or edad > CADUCIDAD_SEGUNDOS:
             caducado = True
-            razones.append(
-                f"Datos de {etiqueta} sin edad conocida." if edad is None else f"Datos de {etiqueta} de hace {edad / 3600:.0f} h."
-            )
+            if edad is None:
+                razones.append(f"Datos de {etiqueta} sin edad conocida.")
+            elif etiqueta == "precios":
+                # No es la edad del mercado (esa va en la cabecera): es la última
+                # foto del histórico con el que se mide la caída de valor.
+                razones.append(f"El histórico de precios no guarda fotos desde hace {_edad_legible(edad)}.")
+            else:
+                razones.append(f"Datos de {etiqueta} de hace {_edad_legible(edad)}.")
     if not pujas_conocidas:
         caducado = True
         razones.append("La foto no trae el mercado: no sé qué pujas tienes vivas.")
@@ -376,7 +386,8 @@ def evaluar_plan(
     for accion in acciones or []:
         if not isinstance(accion, dict):
             continue
-        euros = _entero(accion.get("euros"))
+        # Una puja cuenta por la cifra que se escribe (``puja_final``), no por la base del solver.
+        euros = (_entero(accion.get("puja_final")) if accion.get("tipo") == "PUJA" else None) or _entero(accion.get("euros"))
         if not euros or euros <= 0:
             continue
         if accion.get("tipo") == "PUJA":

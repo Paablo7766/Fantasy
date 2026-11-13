@@ -24,6 +24,8 @@ export type PlanFichajeAccion = {
   puja_maxima?: number | null;
   /** Escalón sobre nuestra cifra que cubre lo que suele pagar la liga (sin pasar del techo). */
   puja_competitiva_liga?: number | null;
+  /** La cifra que se escribe: la decide el backend y es la misma en toda la app. */
+  puja_final?: number | null;
   /** Sobrepuja media que sostiene ese escalón, en %. */
   sobrepuja_liga_pct?: number | null;
   /** En el parón: la puja se paga con el crédito del 20 %. */
@@ -201,6 +203,14 @@ export type PlanFichajes = {
   estado_detalle?: string | null;
   mejora_puntos_jornada?: number | null;
   saldo_al_final?: number | null;
+  /** Cifras oficiales del plan: cada pantalla las lee de aquí, ninguna las recalcula. */
+  cifras?: {
+    inversion_eur?: number | null;
+    saldo_final_eur?: number | null;
+    once_actual?: number | null;
+    once_con_plan?: number | null;
+    mejora?: number | null;
+  } | null;
   nota?: number | null;
   veredicto?: "Hazlo ya" | "Recomendable" | "Opcional" | string | null;
   acciones?: PlanFichajeAccion[];

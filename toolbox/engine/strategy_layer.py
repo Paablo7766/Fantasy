@@ -618,10 +618,10 @@ def _collect(board: dict[str, Any], now: datetime) -> dict[str, dict[str, Any]]:
     # con su dueño y su candado 48 min después de que otro lo fichara). La
     # actividad manda: el jugador pasa a su nuevo dueño y, sin su cláusula
     # nueva, no entra como en peligro ni como clausulazo.
-    from toolbox.clause_board import _latest_takers
+    from toolbox.clause_board import takers_vigentes
 
     needs_doc = board.get("needs") if isinstance(board.get("needs"), dict) else {}
-    takers = _latest_takers(needs_doc.get("ledgers"))
+    takers = takers_vigentes(needs_doc.get("ledgers"), squads)
     own_team_id = next(
         (_pid(sq.get("team_id")) for sq in squads.get("squads") or [] if isinstance(sq, dict) and sq.get("is_self") is True),
         None,
@@ -1790,8 +1790,11 @@ def plan_compras(plan: Any) -> dict[str, dict[str, Any]]:
         euros = accion.get("euros")
         if not isinstance(player_id, str) or not isinstance(euros, int) or isinstance(euros, bool):
             continue
+        final = accion.get("puja_final")
         salida[player_id] = {
             "euros": euros,
+            # La cifra que se escribe: la misma en Inicio, Mercado y la ficha.
+            "puja_final": final if isinstance(final, int) and not isinstance(final, bool) and final > 0 else euros,
             "ventas": [str(nombre) for nombre in atadas.get(player_id) or []],
             "ventas_hoy": [
                 str(a.get("nombre") or a.get("player_id"))
@@ -1833,6 +1836,12 @@ def _veto_de_caja(row: dict[str, Any]) -> bool:
     return bool(motivos & _VETOS_DE_CAJA)
 
 
+def _veto_de_once_incompleto(row: dict[str, Any]) -> bool:
+    """El único motivo del «no» es que hoy no hay once legal: comprar es cómo se arregla."""
+    motivos = {str(m) for m in row.get("reasons") or [] if isinstance(m, str)}
+    return motivos == {"xi_invalido"}
+
+
 def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
     """Mercado habla con la voz del plan: misma cifra y, si es objetivo, mismo veredicto."""
     player_id = _pid(row.get("player_id"))
@@ -1857,7 +1866,7 @@ def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
     compras = report.get("compras_plan") or {}
     objetivo = compras.get(player_id) if isinstance(compras, dict) else None
     if isinstance(objetivo, dict):
-        cifra = int(objetivo["euros"])
+        cifra = int(objetivo.get("puja_final") or objetivo["euros"])
         if isinstance(caja, int) and cifra > caja:
             # Objetivo del plan pagado con crédito: no es un veto, es cómo se financia.
             _sin_veto_de_caja("usa_credito")
@@ -1870,8 +1879,9 @@ def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
         mejora = objetivo.get("mejora_neta")
         if isinstance(mejora, (int, float)) and not isinstance(mejora, bool):
             texto += f" (mejora el once {mejora:+.1f} xP)"
-        if row.get("action") in {None, "PUJAR"} or _veto_de_caja(row):
-            # Mercado decía «no te llega la caja» sin contar las ventas del plan.
+        if row.get("action") in {None, "PUJAR"} or _veto_de_caja(row) or _veto_de_once_incompleto(row):
+            # Mercado decía «no te llega la caja» sin contar las ventas del plan,
+            # o «once inválido» de un fichaje que es justo el que lo completa.
             row["action"] = "PUJAR"
             row["decision"] = "PUJAR"
             row["is_vetoed"] = False
@@ -1967,6 +1977,7 @@ def _sellar_pujas_plan(
         return
     presupuesto = plan.get("presupuesto") if isinstance(plan.get("presupuesto"), dict) else {}
     holgura = presupuesto.get("holgura")
+    extra_total = 0
     for accion in plan.get("acciones") or []:
         if not isinstance(accion, dict) or accion.get("tipo") != "PUJA":
             continue
@@ -1979,7 +1990,9 @@ def _sellar_pujas_plan(
         accion["alta_demanda"] = puja.get("alta_demanda") is True
         accion["puja_recomendada"] = puja.get("puja_recomendada")
         accion["puja_maxima"] = puja.get("puja_maxima")
-        margen = holgura if isinstance(holgura, int) and not isinstance(holgura, bool) else 0
+        # La holgura es una sola para todo el plan: lo que ya se llevó la
+        # competitiva de otra puja no se puede prometer dos veces.
+        margen = (holgura if isinstance(holgura, int) and not isinstance(holgura, bool) else 0) - extra_total
         if accion.get("financia_con_credito") is True:
             tope = presupuesto.get("credito_20pct")
             usado = presupuesto.get("credito_paron")
@@ -1997,6 +2010,56 @@ def _sellar_pujas_plan(
         # Mercado ve la misma cifra que el plan.
         puja["puja_competitiva_liga"] = accion["puja_competitiva_liga"]
         puja["sobrepuja_liga_pct"] = accion["sobrepuja_liga_pct"]
+        final = puja_final(accion)
+        accion["puja_final"] = final
+        base = accion.get("euros")
+        if final is not None and isinstance(base, int) and not isinstance(base, bool) and accion.get("momento") in _MOMENTOS_PLAN:
+            extra_total += max(0, final - base)
+    plan["cifras"] = _cifras_plan(plan, extra_total)
+
+
+def puja_final(accion: dict[str, Any]) -> int | None:
+    """La cifra que hay que escribir en una puja del plan. Una sola para toda la app.
+
+    La más alta de las que el plan avala (la suya, la recomendada, la
+    anti-Pizarra y la competitiva de liga), sin pasar del techo.
+    """
+    opciones = [
+        int(accion[clave])
+        for clave in ("euros", "puja_recomendada", "puja_anti_pizarra", "puja_competitiva_liga")
+        if isinstance(accion.get(clave), int) and not isinstance(accion.get(clave), bool) and accion[clave] > 0
+    ]
+    if not opciones:
+        return None
+    mejor = max(opciones)
+    techo = accion.get("puja_maxima")
+    if isinstance(techo, int) and not isinstance(techo, bool) and 0 < techo < mejor:
+        base = accion.get("euros")
+        mejor = max(techo, base if isinstance(base, int) and not isinstance(base, bool) else 0)
+    return int(mejor)
+
+
+def _cifras_plan(plan: dict[str, Any], extra_pujas: int) -> dict[str, Any]:
+    """Las cifras del plan que enseña cualquier pantalla, calculadas una sola vez.
+
+    ``inversion_eur`` y ``saldo_final_eur`` cuentan cada puja por su cifra final
+    (la que se escribe), no por la base del solver: así el total de Inicio, el
+    de Mercado y el saldo tras el plan salen de la misma suma.
+    """
+    presupuesto = plan.get("presupuesto") if isinstance(plan.get("presupuesto"), dict) else {}
+    gasto = sum(
+        int(presupuesto[clave])
+        for clave in ("gasto_pujas", "gasto_clausulas")
+        if isinstance(presupuesto.get(clave), int) and not isinstance(presupuesto.get(clave), bool)
+    )
+    saldo = plan.get("saldo_al_final")
+    return {
+        "inversion_eur": gasto + extra_pujas,
+        "saldo_final_eur": saldo - extra_pujas if isinstance(saldo, int) and not isinstance(saldo, bool) else None,
+        "once_actual": plan.get("puntos_once_actual"),
+        "once_con_plan": plan.get("puntos_once"),
+        "mejora": plan.get("mejora_puntos_jornada"),
+    }
 
 
 def _plan(

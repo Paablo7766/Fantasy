@@ -56,6 +56,8 @@ export function executableBid(player: Partial<MarketDecision> | null | undefined
  * ficha: así un mismo jugador no sale con dos pujas distintas.
  */
 export function planBid(action: PlanFichajeAccion): number | null {
+  // El backend ya la decide (``puja_final``); lo de abajo es el respaldo de fotos antiguas.
+  if (typeof action.puja_final === "number" && action.puja_final > 0) return Math.round(action.puja_final);
   const options = [action.euros, action.puja_recomendada, action.puja_anti_pizarra, action.puja_competitiva_liga].filter(
     (v): v is number => typeof v === "number" && v > 0,
   );
@@ -75,4 +77,17 @@ export function planBids(plan: PlanFichajes | null | undefined): Map<string, num
     if (bid !== null) out.set(String(action.player_id), bid);
   }
   return out;
+}
+
+/**
+ * Lo que invierte el plan y el saldo que deja, con cada puja a su cifra final.
+ * Sale de ``cifras`` (backend); el respaldo es el presupuesto del solver.
+ */
+export function planTotals(plan: PlanFichajes | null | undefined): { inversion: number; saldoFinal: number | null } {
+  const p = plan?.presupuesto;
+  const cifras = plan?.cifras;
+  const inversion = typeof cifras?.inversion_eur === "number" ? cifras.inversion_eur : p ? p.gasto_pujas + p.gasto_clausulas : 0;
+  const saldoFinal =
+    typeof cifras?.saldo_final_eur === "number" ? cifras.saldo_final_eur : typeof plan?.saldo_al_final === "number" ? plan.saldo_al_final : null;
+  return { inversion, saldoFinal };
 }

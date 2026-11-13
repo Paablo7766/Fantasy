@@ -10,7 +10,7 @@ import { Disclosure, Empty, Face, HeroStat, SectionHead, Skeleton, TONE, cleanTe
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { errorMessage, playerName } from "@/lib/core/format";
-import { executableBid, marketAction, planBids } from "@/lib/mercado/marketAction";
+import { executableBid, marketAction, planBids, planTotals } from "@/lib/mercado/marketAction";
 import { Crest } from "@/components/ui/Crest";
 import type { AlertaClausula, CatalogPlayer, JornadaClub, MarketDecision, PlanFichajes, TrendsPayload } from "@/lib/types";
 
@@ -311,19 +311,19 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
     rival: decisions.filter((row) => row.offer_source === "rival").length,
     todos: decisions.length,
   };
-  const pujar = decisions.filter((row) => marketAction(row) === "PUJAR").length;
   const empty = SOURCES.find((item) => item.id === source)?.empty || "";
   // Con plan de fichajes, la cabecera habla con su voz: lo que invierte y con qué lo paga.
   const fichajes = trends.plan_fichajes ?? null;
   const presupuesto = fichajes?.presupuesto ?? null;
-  const gastoPlan = presupuesto ? presupuesto.gasto_pujas + presupuesto.gasto_clausulas : 0;
-  const saldoFinal = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
+  const { inversion: gastoPlan, saldoFinal } = planTotals(fichajes);
   const creditoPlan = Math.max(presupuesto?.credito_paron ?? 0, saldoFinal !== null && saldoFinal < 0 ? -saldoFinal : 0);
   const budget =
     gastoPlan > 0
       ? `El plan invierte ${compact(gastoPlan)}${creditoPlan > 0 ? `, ${compact(creditoPlan)} con el crédito del 20 % (la puja admite deuda; vende antes del ${fichajes?.paron?.ruta_salida?.dia_venta || "saque"})` : " con tu caja"}.`
       : budgetLine(summary);
   const bids = planBids(fichajes);
+  // Las pujas del plan cuentan siempre: la cabecera no puede decir «0» con el plan pidiendo tres debajo.
+  const pujar = decisions.filter((row) => marketAction(row) === "PUJAR" || bids.has(String(row.player_id))).length;
   const selected = decisions.find((row) => String(row.player_id) === selectedId) || null;
 
   return (

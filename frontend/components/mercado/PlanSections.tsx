@@ -7,7 +7,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { Chevron, Face, TONE, cleanText, compact, money } from "@/components/ui/kit";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
-import { planBid } from "@/lib/mercado/marketAction";
+import { planBid, planTotals } from "@/lib/mercado/marketAction";
 import type { PlanFichajeAccion, PlanFichajes } from "@/lib/types";
 
 const MINT = "#7FE0A8";
@@ -335,8 +335,8 @@ export function PlanBlock({ plan, photos }: { plan: PlanFichajes | null | undefi
   const before = plan?.puntos_once_actual;
   const after = plan?.puntos_once;
   const p = plan?.presupuesto;
-  const spend = p ? p.gasto_pujas + p.gasto_clausulas : 0;
-  const credit = Math.max(p?.credito_paron ?? 0, typeof plan?.saldo_al_final === "number" && plan.saldo_al_final < 0 ? -plan.saldo_al_final : 0);
+  const { inversion: spend, saldoFinal } = planTotals(plan);
+  const credit = Math.max(p?.credito_paron ?? 0, saldoFinal !== null && saldoFinal < 0 ? -saldoFinal : 0);
   const fromCash = Math.max(0, spend - credit - (p?.ventas_hoy ?? 0) - (p?.ventas_si_ganas ?? 0));
   const saleDay = plan?.paron?.ruta_salida?.dia_venta;
   const tone = PLAN_TONE[veredicto] || TONE.gray;
@@ -372,7 +372,13 @@ export function PlanBlock({ plan, photos }: { plan: PlanFichajes | null | undefi
       {typeof before === "number" && typeof after === "number" && after > before ? (
         <>
           <p className="text-[14px] leading-snug text-white/75">
-            Tu once pasa de <span className="font-semibold tabular-nums text-white">{num(before)}</span> a{" "}
+            {before <= 0 ? (
+              <>Hoy no tienes once legal y la jornada vale 0. Con el plan tu once suma{" "}</>
+            ) : (
+              <>
+                Tu once pasa de <span className="font-semibold tabular-nums text-white">{num(before)}</span> a{" "}
+              </>
+            )}
             <span className="font-semibold tabular-nums text-[#7FE0A8]">{num(after)} pts</span> en la próxima jornada.
           </p>
           <BeforeAfter before={before} after={after} />

@@ -177,3 +177,40 @@ class VentaDeRivalFueraDelPlanTests(unittest.TestCase):
             conn.close()
             resumen = sobrepuja_de_liga(ruta)
             self.assertEqual(resumen["perdidas"], 1)
+
+
+class CifrasUnicasTests(unittest.TestCase):
+    """Una sola cifra por puja y un solo total para toda la app."""
+
+    def _plan(self) -> dict:
+        return {
+            "saldo_al_final": 1_000_000,
+            "presupuesto": {"holgura": 1_000_000, "credito_20pct": 0, "credito_paron": 0, "gasto_pujas": 20_000_000, "gasto_clausulas": 0},
+            "acciones": [
+                {"tipo": "PUJA", "player_id": "7", "euros": 10_000_000, "momento": "hoy"},
+                {"tipo": "PUJA", "player_id": "8", "euros": 10_000_000, "momento": "hoy"},
+            ],
+        }
+
+    def test_la_holgura_se_reparte_y_el_saldo_cuenta_la_cifra_final(self) -> None:
+        plan = self._plan()
+        pujas = {"7": {"puja_maxima": 14_000_000}, "8": {"puja_maxima": 14_000_000}}
+        strategy_layer._sellar_pujas_plan(plan, pujas, {"estimada": 0.13})
+        primera, segunda = plan["acciones"]
+        # La primera se lleva toda la holgura; a la segunda ya no le queda escalón.
+        self.assertEqual(primera["puja_final"], 11_000_000)
+        self.assertEqual(segunda["puja_final"], 10_000_000)
+        self.assertEqual(plan["cifras"]["inversion_eur"], 21_000_000)
+        self.assertEqual(plan["cifras"]["saldo_final_eur"], 0)
+        self.assertEqual(strategy_layer.plan_compras(plan)["7"]["puja_final"], 11_000_000)
+
+    def test_un_fichaje_antiguo_no_corrige_a_la_plantilla(self) -> None:
+        from toolbox.clause_board import takers_vigentes
+
+        ledgers = [
+            {"team_id": "yo", "events": [{"kind": "buy", "player_id": "1", "at": "2026-10-29T14:08:15+01:00"}]},
+            {"team_id": "rival", "events": [{"kind": "clause", "player_id": "2", "at": "2026-11-11T11:03:00+01:00"}]},
+        ]
+        vigentes = takers_vigentes(ledgers, {"fetched_at": "2026-11-11T11:51:00+01:00"})
+        self.assertNotIn("1", vigentes)
+        self.assertEqual(vigentes["2"]["team_id"], "rival")

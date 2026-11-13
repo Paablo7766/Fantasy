@@ -7,6 +7,7 @@ import { money, signedMoney } from "@/components/ui/kit";
 import { points } from "@/lib/core/format";
 import { buildClockReport, countdownParts, eventTitle } from "@/lib/inicio/hoy";
 import { useNow } from "@/lib/core/useClock";
+import { planTotals } from "@/lib/mercado/marketAction";
 import { RefreshChip } from "@/components/inicio/RefreshChip";
 import { RollingNumber } from "@/components/ui/RollingNumber";
 import type { PlanPayload, SquadsPayload } from "@/lib/types";
@@ -128,7 +129,7 @@ export function HomeHeader({ plan, squads, loading }: { plan: PlanPayload | null
   const gap = plan?.mode?.gap_to_leader ?? null;
 
   const fichajes = plan?.plan_fichajes;
-  const cashEnd = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
+  const cashEnd = planTotals(fichajes).saldoFinal;
   const search = useSearchParams();
   const labQuery = search.toString();
   const labHref = labQuery ? `/laboratorio?${labQuery}` : "/laboratorio";

@@ -8,7 +8,7 @@ import { eur, eurShort, points, titularFull, titularShare } from "@/lib/core/for
 import { signedPoints } from "@/lib/inicio/hoy";
 import { factsFor, photoFor, type PhotoIndex, type PlayerIndex } from "@/lib/core/photoIndex";
 import { Avatar, Chevron, Collapse, FactGrid, Tag, type Fact } from "@/components/inicio/ui";
-import { planBid } from "@/lib/mercado/marketAction";
+import { planBid, planTotals } from "@/lib/mercado/marketAction";
 import type { PlanFichajeAccion, PlanFichajes, PlanPayload, SquadsPayload, Top4Overlay } from "@/lib/types";
 
 // ── Casillas hechas: se guardan por foto (se reinician cuando cambia la foto) ─
@@ -486,7 +486,7 @@ export function TodayPlan({
         : "Hoy no hay nada que hacer";
   const income = today.filter((s) => s.kind === "vende").reduce((t, s) => t + (s.amount || 0), 0);
   // Crédito que el plan usa por encima de la caja: deuda real hasta la ruta de salida.
-  const saldoFinal = typeof fichajes?.saldo_al_final === "number" ? fichajes.saldo_al_final : null;
+  const saldoFinal = planTotals(fichajes).saldoFinal;
   const credit = Math.max(
     typeof presupuesto?.credito_paron === "number" ? presupuesto.credito_paron : 0,
     saldoFinal !== null && saldoFinal < 0 ? -saldoFinal : 0,
