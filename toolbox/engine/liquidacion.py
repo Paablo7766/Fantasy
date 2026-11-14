@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 from toolbox.engine.lineup_math import UMBRAL_HUECO, prob_titular, solve_best_xi
+from toolbox.analyzer import POSITIONS
 
 FASE_APALANCAMIENTO = "APALANCAMIENTO"
 FASE_ESCAPARATE = "ESCAPARATE"
@@ -221,6 +222,13 @@ def plan_liquidacion(
     ]
     xi = solve_best_xi(elegibles)
     once_ids = set(xi["player_ids"]) if xi.get("ok") else set()
+    if not xi.get("ok") and elegibles:
+        # Con menos de 11 no hay once legal, pero eso no convierte a los 10 en
+        # sobrantes: el once es el mejor con los huecos a 0 puntos.
+        huecos = [{"player_id": f"hueco:{pos}", "position": pos, "jornada": 0.0} for pos in POSITIONS]
+        parcial = solve_best_xi([*elegibles, *huecos])
+        if parcial.get("ok"):
+            once_ids = {pid for pid in parcial["player_ids"] if not str(pid).startswith("hueco:")}
     cobertura = cobertura_inaugural(filas, once_ids, inicio=inicio)
     guardar = {str(item) for item in conservar or set()} | cobertura["conservar"]
     known = ofertas or {}

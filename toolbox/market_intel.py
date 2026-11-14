@@ -24,7 +24,7 @@ from toolbox.analyzer import (
 from toolbox.bid_war import overbid_risk, plan_market_auction_bid, profiles_for_listing, public_bids, recommend_bid, rival_snapshots
 from toolbox.engine.shock_jornada import detectar_shock
 from toolbox.league_history import fit_rival_profiles_eb
-from toolbox.bidding import assess_purchase, bid_amount, schedule_snipe
+from toolbox.bidding import assess_purchase, bid_amount, compra_cubre_hueco, schedule_snipe
 from toolbox.cache import ResponseCache
 from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.normalize import SCHEMA_VERSION, titularity_overrides_injury
@@ -233,6 +233,7 @@ def build_market_decisions(
 
     gap_positions = _gap_positions(optimize)
     gap_player_ids = _gap_player_ids(optimize)
+    plantilla_por_puesto = _elegibles_por_puesto(optimize) if lineup_void else None
     xi_margins = _xi_margins(optimize, indexed)
     xi_pool = _xi_pool(optimize, indexed)
     pressure = rivals if isinstance(rivals, list) else rival_snapshots(squads, trends)
@@ -272,6 +273,7 @@ def build_market_decisions(
             cash=cash,
             bid_power=bid_power,
             lineup_void=lineup_void,
+            fills_gap=compra_cubre_hueco(plantilla_por_puesto, listing.get("position") or trend.get("position")),
             own_team_id=own_team_id,
             owned=player_id in owned,
             gap_positions=gap_positions,
@@ -508,6 +510,7 @@ def _decide_listing(
     cash: int | None,
     bid_power: int | None = None,
     lineup_void: bool,
+    fills_gap: bool = False,
     own_team_id: str | None,
     owned: bool,
     gap_positions: set[str],
@@ -528,7 +531,7 @@ def _decide_listing(
         else trend.get("position") if isinstance(trend.get("position"), str) else None
     )
     amount = bid_amount(listing)
-    purchase = assess_purchase(cash=cash, cost=amount, lineup_void=lineup_void)
+    purchase = assess_purchase(cash=cash, cost=amount, lineup_void=lineup_void, fills_gap=fills_gap)
     usable = trend_usable(trend)
     p_titular = _probability(trend.get("p_titular"))
     # El estado oficial se enseña, pero no entra en el veto: el scoring de esta
@@ -558,6 +561,7 @@ def _decide_listing(
         own_team_id=own_team_id,
         now=now,
         unavailable=blocked,
+        fills_gap=fills_gap,
     )
 
     # Cascada: own_* → af_* → LALIGA/OPTA.
@@ -1102,6 +1106,24 @@ def _offer_source(listing: dict[str, Any], own_team_id: str | None) -> tuple[str
     if isinstance(own_team_id, str) and seller_id == own_team_id:
         return "propio", seller_id, seller_name
     return "rival", seller_id, seller_name
+
+
+def _elegibles_por_puesto(optimize: dict[str, Any] | None) -> dict[str, int] | None:
+    """Plantilla que puede jugar, por puesto, cuando el once es nulo por huecos.
+
+    Si el once es nulo por caja negativa, comprar no lo arregla: ``None``.
+    """
+    if not isinstance(optimize, dict) or optimize.get("matchday_void") is not True:
+        return None
+    motivos = optimize.get("void_reasons") or []
+    if "empty_slot" not in motivos or "negative_cash" in motivos:
+        return None
+    counts: dict[str, int] = {}
+    for key in ("xi", "benched"):
+        for row in optimize.get(key) or []:
+            if isinstance(row, dict) and isinstance(row.get("position"), str):
+                counts[row["position"]] = counts.get(row["position"], 0) + 1
+    return counts or None
 
 
 def _gap_positions(optimize: dict[str, Any] | None) -> set[str]:

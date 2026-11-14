@@ -195,13 +195,14 @@ def schedule_snipe(
     now: datetime,
     unavailable: str | None = None,
     lead_seconds: int = SNIPE_LEAD_SECONDS,
+    fills_gap: bool = False,
 ) -> dict[str, Any]:
     """La puja no se publica hasta ``lead_seconds`` antes del cierre."""
     amount = bid_amount(listing)
     expires = _parse_iso(listing.get("listing_expires_at"))
     seller = listing.get("seller_team_id")
     own_listing = isinstance(own_team_id, str) and seller == own_team_id
-    purchase = assess_purchase(cash=cash, cost=amount, lineup_void=lineup_void)
+    purchase = assess_purchase(cash=cash, cost=amount, lineup_void=lineup_void, fills_gap=fills_gap)
     fire = expires - timedelta(seconds=lead_seconds) if expires is not None else None
     clock = _clock(fire) if fire is not None else None
     close = _clock(expires) if expires is not None else None
@@ -283,18 +284,41 @@ def bid_amount(listing: dict[str, Any]) -> int | None:
     return None
 
 
-def assess_purchase(*, cash: int | None, cost: int | None, lineup_void: bool) -> dict[str, Any]:
+def huecos_para_once(counts: dict[str, int]) -> int:
+    """Jugadores que faltan para el once legal más cercano (0 = ya hay once)."""
+    return min(
+        sum(max(0, need - int(counts.get(position, 0))) for position, need in slots.items())
+        for slots in FORMATIONS.values()
+    )
+
+
+def compra_cubre_hueco(counts: dict[str, int] | None, position: str | None) -> bool:
+    """¿Fichar a alguien de ``position`` acerca la plantilla a un once legal?"""
+    if not counts or not isinstance(position, str):
+        return False
+    return huecos_para_once({**counts, position: int(counts.get(position, 0)) + 1}) < huecos_para_once(counts)
+
+
+def assess_purchase(
+    *, cash: int | None, cost: int | None, lineup_void: bool, fills_gap: bool = False
+) -> dict[str, Any]:
+    """¿Se puede comprar? ``fills_gap``: la compra tapa un hueco del once.
+
+    Con once incompleto la jornada vale 0, y comprar es justo lo que lo arregla:
+    solo se veta con ``xi_invalido`` la compra que no acerca a un once legal.
+    """
     reasons: list[str] = []
     if not isinstance(cost, int):
         reasons.append("precio_desconocido")
     if not isinstance(cash, int):
         reasons.append("caja_desconocida")
-    if lineup_void:
+    void_blocks = lineup_void and not fills_gap
+    if void_blocks:
         reasons.append("xi_invalido")
     after = cash - cost if isinstance(cash, int) and isinstance(cost, int) else None
     if isinstance(after, int) and after < 0:
         reasons.append("negative_cash")
-    eligible = isinstance(after, int) and after >= 0 and not lineup_void and isinstance(cost, int)
+    eligible = isinstance(after, int) and after >= 0 and not void_blocks and isinstance(cost, int)
     return {"eligible": eligible, "cash_after_eur": after, "reasons": reasons}
 
 
