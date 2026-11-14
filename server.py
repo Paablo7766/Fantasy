@@ -2743,6 +2743,7 @@ def _refresh(
 
 _PHOTO_MEMO: dict[tuple[Any, ...], dict[str, Any]] = {}
 _PHOTO_MEMO_LOCK = threading.Lock()
+_PHOTO_FLIGHT: dict[tuple[Any, ...], threading.Lock] = {}
 
 
 def _photo_memo(
@@ -2762,13 +2763,24 @@ def _photo_memo(
     key = (name, _league(league), stamp)
     with _PHOTO_MEMO_LOCK:
         cached = _PHOTO_MEMO.get(key)
+        flight = _PHOTO_FLIGHT.setdefault(key, threading.Lock()) if cached is None else None
     if cached is None:
-        cached = build()
-        if stamp is not None and isinstance(cached, dict) and cached.get("ok") is not False:
+        # Un solo cálculo por clave: si el precalentado ya está en ello, la visita
+        # espera ese resultado en vez de repetirlo (varias copias en paralelo se
+        # pisan la CPU y todas tardan más).
+        with flight:
             with _PHOTO_MEMO_LOCK:
-                if len(_PHOTO_MEMO) >= 64:
-                    _PHOTO_MEMO.clear()
-                _PHOTO_MEMO[key] = cached
+                cached = _PHOTO_MEMO.get(key)
+            if cached is None:
+                cached = build()
+                if stamp is not None and isinstance(cached, dict) and cached.get("ok") is not False:
+                    with _PHOTO_MEMO_LOCK:
+                        if len(_PHOTO_MEMO) >= 64:
+                            _PHOTO_MEMO.clear()
+                        _PHOTO_MEMO[key] = cached
+        with _PHOTO_MEMO_LOCK:
+            if len(_PHOTO_FLIGHT) >= 64:
+                _PHOTO_FLIGHT.clear()
     return dict(cached)
 
 
@@ -3181,12 +3193,17 @@ def api_top4(
     race = api_league_race(league=league)
     if isinstance(race, JSONResponse):
         return race
-    form = _league_form_document(board)
-    rounds = {
-        int(number): {str(name): int(points) for name, points in rows.items()}
-        for number, rows in (form.get("scores") or {}).items()
-    }
-    document = build_top4(race, rounds)
+
+    def build() -> dict[str, Any]:
+        form = _league_form_document(board)
+        rounds = {
+            int(number): {str(name): int(points) for name, points in rows.items()}
+            for number, rows in (form.get("scores") or {}).items()
+        }
+        return build_top4(race, rounds)
+
+    # 20.000 simulaciones + forma de la liga en cada visita (1-2 s): solo cambian con la foto.
+    document = _photo_memo("top4", league, board, build)
     document["fetched_at"] = board.get("dashboard_at")
     document.update(_photo_fields(board))
     return document
