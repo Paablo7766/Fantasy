@@ -9,6 +9,7 @@ tampoco vuelve al vender al jugador.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any
 
 import pulp
@@ -433,6 +434,34 @@ def _texto_credito_paron(ficha: dict[str, Any], dias: float, credito: int) -> st
     )
 
 
+def _p_ganar(
+    prob_ganar: Callable[[dict[str, Any], float], float | None] | None,
+    row: dict[str, Any],
+    mejora: float,
+) -> float | None:
+    if prob_ganar is None or mejora <= 0:
+        return None
+    try:
+        p = prob_ganar(row, mejora)
+    except Exception:  # noqa: BLE001 — sin probabilidad la puja cuenta como segura
+        return None
+    if isinstance(p, bool) or not isinstance(p, (int, float)):
+        return None
+    return max(0.0, min(1.0, float(p)))
+
+
+def peso_esperado(p: float | None, mejora: float, jornada: float) -> float:
+    """Fracción de los puntos de un fichaje que se esperan con una puja que puede perderse.
+
+    ``jornada - (1 - p) × mejora``, dividido entre ``jornada``: si se pierde, el hueco
+    lo ocupa quien ya tienes y solo se pierde la mejora. Sin ``p``, 1.
+    """
+    if p is None or jornada <= 0:
+        return 1.0
+    perdida = (1.0 - p) * max(0.0, mejora)
+    return max(0.0, min(1.0, (jornada - perdida) / jornada))
+
+
 def _mejora_neta(row: dict[str, Any], elegibles: list[dict[str, Any]], base: float, base_ok: bool) -> float:
     fantasma = {
         "player_id": f"nuevo:{row.get('player_id')}",
@@ -836,8 +865,13 @@ def _plan_once(
     trading_out: list[dict[str, Any]] | None = None,
     permitir_condicionales: bool = True,
     bonus_posicional: dict[str, float] | None = None,
+    prob_ganar: Callable[[dict[str, Any], float], float | None] | None = None,
 ) -> dict[str, Any]:
     """Maximiza ``xP - peaje × drenaje neto``. No envía órdenes.
+
+    ``prob_ganar(fila, mejora)``: probabilidad de ganar la puja con la cifra que
+    se escribiría. Con ella cada puja cuenta por lo que se espera sacar: si se
+    pierde, juega quien ya tienes, así que su xP baja en ``(1 - p) × mejora``.
 
     ``objetivos_previos`` son los fichajes que recomendó el plan anterior. Si
     siguen disponibles, el solver los premia con ``CONTINUIDAD_XP`` y el plan
@@ -901,6 +935,7 @@ def _plan_once(
             preparar_escaparate=False,
             objetivos_previos=previos,
             permitir_condicionales=permitir_condicionales,
+            prob_ganar=prob_ganar,
         )
         ventas_viernes = {
             accion["player_id"]
@@ -991,6 +1026,7 @@ def _plan_once(
                 mejora=mejora,
                 cambio_hoy_pct=_cambio_hoy_pct(row),
             ),
+            "p_ganar": _p_ganar(prob_ganar, row, mejora) if origen == "bid" else None,
         }
         if impulso == "HOLD":
             dias_txt = _dias_texto(dias or 0.0)
@@ -1340,12 +1376,26 @@ def _plan_once(
             if f"{origen}:{row['player_id']}" in variables
         ]
 
+    filas_puja = {id(row) for row in compras}
+
+    def _esperado(row: dict[str, Any]) -> float:
+        # Puja que se puede perder: cuenta por lo esperado. Si se pierde juega quien
+        # ya tienes, así que lo que se deja de ganar es (1 - p) × su mejora.
+        if id(row) not in filas_puja:
+            return 1.0
+        ficha = ficha_compra.get(f"bid:{row['player_id']}")
+        if ficha is None:
+            return 1.0
+        return peso_esperado(ficha.get("p_ganar"), float(ficha["mejora"]), _jornada(row) or 0.0)
+
     puntos_j1 = pulp.lpSum(
-        (float(row.get("jornada") or 0.0) - penalizacion_varianza(row)) * variable
+        (float(row.get("jornada") or 0.0) * _esperado(row) - penalizacion_varianza(row)) * variable
         for row, variable in _filas_con(en_once)
     )
     puntos_j1 += pulp.lpSum(BUSCA_PUNTOS * busca[position] for position in POSITIONS)
-    puntos_futuro = pulp.lpSum(_futuro_efectivo(row) * variable for row, variable in _filas_con(en_futuro))
+    puntos_futuro = pulp.lpSum(
+        _futuro_efectivo(row) * _esperado(row) * variable for row, variable in _filas_con(en_futuro)
+    )
     puntos_futuro += pulp.lpSum(3.0 * BUSCA_PUNTOS * busca_futuro[position] for position in POSITIONS)
     puntos = _horizonte(puntos_j1, puntos_futuro)
     # Brecha posicional: un fichaje que juega en el puesto donde más puntos faltan
@@ -1712,6 +1762,8 @@ def _plan_once(
         )
         if credito_paron_eur > 0 and ficha["credito_paron"]:
             acciones[-1]["financia_con_credito"] = True
+        if isinstance(ficha.get("p_ganar"), float):
+            acciones[-1]["p_ganar_estimada"] = round(ficha["p_ganar"], 3)
     for row in raids:
         if row["player_id"] not in clausula or not _on(clausula[row["player_id"]]):
             continue

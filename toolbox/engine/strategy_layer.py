@@ -1219,6 +1219,8 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
             }
         )
 
+    muestras_primas = _muestras_primas()
+    calibracion_xp = _factor_xp()
     plan = _plan(
         records,
         xi,
@@ -1232,14 +1234,15 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         previsiones,
         notas,
         curva=curva,
+        prob_ganar=_prob_ganar_plan(pujas, muestras_primas, calibracion_xp, ratio, poder_pujas),
     )
     _sellar_pujas_plan(
         plan,
         pujas,
         sobrepuja_liga,
-        muestras_primas=_muestras_primas(),
+        muestras_primas=muestras_primas,
         plantilla_por_puesto=_plantilla_por_puesto(records),
-        factor_xp=_factor_xp(),
+        factor_xp=calibracion_xp,
     )
     consejos = _consejos(records, war, plan, own_id)
     auditoria = _auditar_ventas(records, war, plan, previsiones, saldo, own_id)
@@ -1774,6 +1777,33 @@ def _factor_xp() -> dict[str, Any]:
     except Exception:  # noqa: BLE001 — sin base queda el backtest
         logger.debug("Sin pendiente de xP en vivo", exc_info=True)
     return factor_calibracion_xp(vivo)
+
+
+def _prob_ganar_plan(
+    pujas: dict[str, dict[str, Any]],
+    muestras: list[dict[str, Any]] | None,
+    calibracion: dict[str, Any],
+    ratio: float,
+    tope: int | None,
+) -> Any:
+    """Probabilidad de ganar la puja que se escribiría por este jugador, para el solver.
+
+    La misma regla que la cifra final (curva del jugador, ganancia descontada por
+    el xP), sin el freno por remuestreo, que es caro y casi no la mueve.
+    """
+    factor = float(calibracion.get("factor") or 1.0)
+
+    def _p(row: dict[str, Any], mejora: float) -> float | None:
+        puja = pujas.get(row.get("player_id")) if isinstance(row.get("player_id"), str) else None
+        if not isinstance(puja, dict):
+            return None
+        curva = _curva_de(puja, muestras)
+        if curva is None:
+            return None
+        r = puja_por_valor(puja.get("valor_mercado"), mejora * ratio * factor, tope_eur=tope, curva=curva[0])
+        return float(r["p_ganar"]) if r else None
+
+    return _p
 
 
 def _plantilla_por_puesto(records: dict[str, dict[str, Any]]) -> dict[str, int]:
@@ -2437,6 +2467,7 @@ def _plan(
     notas: dict[str, dict[str, Any]] | None = None,
     *,
     curva: dict[str, list[float]] | None = None,
+    prob_ganar: Any = None,
 ) -> dict[str, Any]:
     del rivales
     previsto = previsiones or {}
@@ -2606,6 +2637,8 @@ def _plan(
         "baseline_puntos": baseline,
         "objetivos_previos": board.get("plan_objetivos_previos") or None,
     }
+    if prob_ganar is not None:
+        entrada["prob_ganar"] = prob_ganar
     brecha = None
     try:
         squads_doc = board.get("squads") if isinstance(board.get("squads"), dict) else {}
