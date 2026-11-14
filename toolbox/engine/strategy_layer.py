@@ -1245,6 +1245,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         factor_xp=calibracion_xp,
     )
     _anadir_reservas(plan, pujas, muestras_primas)
+    _si_pierdes(plan)
     consejos = _consejos(records, war, plan, own_id)
     auditoria = _auditar_ventas(records, war, plan, previsiones, saldo, own_id)
     # Una sola caja: las cláusulas cuentan con lo que el plan no compromete en pujas.
@@ -1896,6 +1897,9 @@ def plan_compras(plan: Any) -> dict[str, dict[str, Any]]:
                 if isinstance(a, dict) and a.get("tipo") == "VENDER HOY"
             ],
             "mejora_neta": accion.get("mejora_neta"),
+            "si_pierdes": accion.get("si_pierdes"),
+            "reserva_de_nombre": accion.get("reserva_de_nombre"),
+            "p_ganar": accion.get("p_ganar_por_valor"),
         }
     return salida
 
@@ -1973,20 +1977,33 @@ def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
         mejora = objetivo.get("mejora_neta")
         if isinstance(mejora, (int, float)) and not isinstance(mejora, bool):
             texto += f" (mejora el once {mejora:+.1f} xP)"
+        if objetivo.get("reserva_de_nombre"):
+            texto = f"Reserva de {objetivo['reserva_de_nombre']} en el plan de hoy"
+        # Mercado habla con la voz del plan: el veredicto de un objetivo es el del plan.
+        row["veredicto_mercado"] = "OBJETIVO DEL PLAN"
+        row["etiqueta_mercado"] = "PLAN"
+        if objetivo.get("si_pierdes"):
+            row["si_pierdes"] = objetivo["si_pierdes"]
         if row.get("action") in {None, "PUJAR"} or _veto_de_caja(row) or _veto_de_once_incompleto(row):
             # Mercado decía «no te llega la caja» sin contar las ventas del plan,
             # o «once inválido» de un fichaje que es justo el que lo completa.
             row["action"] = "PUJAR"
             row["decision"] = "PUJAR"
             row["is_vetoed"] = False
-            row["action_reason"] = texto + "."
+            row["action_reason"] = texto + "." + (f" {objetivo['si_pierdes']}" if objetivo.get("si_pierdes") else "")
             row["smart_bid_eur"] = cifra
             row["suggested_bid"] = cifra
         else:
             # Otro motivo (snipe al cierre, lesión, mercado cerrado): se respeta
             # el veredicto, pero con la cifra y el contexto del plan.
             previo = row.get("action_reason") if isinstance(row.get("action_reason"), str) else ""
-            row["action_reason"] = f"{texto}. {previo}".strip()
+            if "esperar_snipe" in (row.get("reasons") or []):
+                # No es que no acompañe el precio: la puja se escribe justo antes del cierre.
+                snipe = row.get("snipe") if isinstance(row.get("snipe"), dict) else {}
+                hora = snipe.get("fire_local_time")
+                previo = f"Puja a las {hora}, justo antes del cierre." if hora else "Puja justo antes del cierre."
+            extra = f" {objetivo['si_pierdes']}" if objetivo.get("si_pierdes") else ""
+            row["action_reason"] = f"{texto}. {previo}{extra}".strip()
             if row.get("is_vetoed") is not True:
                 row["smart_bid_eur"] = cifra
         return
@@ -2260,6 +2277,32 @@ def _sellar_pujas_plan(
         if final is not None and isinstance(base, int) and not isinstance(base, bool) and accion.get("momento") in _MOMENTOS_PLAN:
             extra_total += max(0, final - base)
     plan["cifras"] = _cifras_plan(plan, extra_total)
+
+
+def _si_pierdes(plan: Any) -> None:
+    """Cada puja del plan dice qué pasa si se pierde: entra la reserva o sigue tu once."""
+    if not isinstance(plan, dict):
+        return
+    acciones = [a for a in plan.get("acciones") or [] if isinstance(a, dict)]
+    reservas = {a.get("reserva_de"): a for a in acciones if a.get("reserva_de")}
+    for accion in acciones:
+        if accion.get("tipo") != "PUJA" or accion.get("momento") != "hoy" or accion.get("reserva_de"):
+            continue
+        reserva = reservas.get(accion.get("player_id"))
+        posicion = accion.get("posicion") or "jugador"
+        if reserva is not None:
+            texto = f"Si la pierdes, entra {reserva.get('nombre')}, la puja de reserva."
+        else:
+            mejora = _num(accion.get("mejora_neta"))
+            perdida = f" (te quedas sin los +{mejora:.1f} xP)" if mejora else ""
+            texto = (
+                f"Si la pierdes, en su puesto juega quien ya tienes{perdida}; "
+                f"el plan de mañana buscará otro {posicion}."
+            )
+        accion["si_pierdes"] = texto
+        detalle = accion.get("detalle") if isinstance(accion.get("detalle"), str) else ""
+        if texto not in detalle:
+            accion["detalle"] = f"{detalle} {texto}".strip()
 
 
 #: Una puja con menos probabilidad que esto pide reserva en su posición.

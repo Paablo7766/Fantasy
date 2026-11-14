@@ -279,7 +279,8 @@ def calcular_nota_mercado(
     elif 6.0 <= nota <= 7.5 and precio is not None and precio < _PRECIO_PARCHE:
         veredicto, etiqueta = "PARCHE ÚTIL", "PARCHE"
     elif nota < 6.0:
-        veredicto, etiqueta = "DESCARTAR / SOBREPRECIO", "DESCARTAR"
+        # La nota no mira el precio: «sobreprecio» lo dice la puja por valor del plan.
+        veredicto, etiqueta = "DESCARTAR", "DESCARTAR"
     else:
         veredicto, etiqueta = "VIGILAR", "VIGILAR"
 
