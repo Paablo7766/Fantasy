@@ -99,6 +99,13 @@ DIAS_ESCAPARATE = 4.5
 CREDITO_PARON_PCT = 12.0
 CREDITO_PARON_MEJORA = 2.0
 DIAS_DECIDIR_VENTAS = 3.0
+# Fuera del parón también se puede pujar con crédito si queda tiempo para vender:
+# la subasta se resuelve al cierre, al día siguiente llega la oferta de LaLiga por
+# el que pongas a la venta y se acepta antes del saque.
+DIAS_CREDITO_CON_VENTA = 2.0
+# El crédito tiene que estar cubierto por el banquillo vendido a este porcentaje
+# de lo que se espera cobrar (la oferta de LaLiga va del -10 % al +10 % del valor).
+CREDITO_CUBIERTO_PCT = 0.95
 _SEQ = 0
 ETIQUETA_COMPRA = {"PUJA": "PUJAR", "CLAUSULAZO": "CLAUSULAR"}
 # Fichajes fuertes que no caben en la caja de hoy y se enseñan como alternativa.
@@ -460,6 +467,50 @@ def peso_esperado(p: float | None, mejora: float, jornada: float) -> float:
         return 1.0
     perdida = (1.0 - p) * max(0.0, mejora)
     return max(0.0, min(1.0, (jornada - perdida) / jornada))
+
+
+def venta_para_credito(
+    plantilla: list[dict[str, Any]],
+    credito: int,
+    *,
+    vendidos: set[str],
+    en_once: set[str],
+) -> list[dict[str, Any]]:
+    """A quién vender, si ganas, para devolver el crédito: los que menos puntúan fuera del once."""
+    if credito <= 0:
+        return []
+    banquillo = sorted(
+        (
+            row
+            for row in plantilla
+            if row["player_id"] not in vendidos
+            and row["player_id"] not in en_once
+            and isinstance(row.get("venta_eur"), int)
+            and not isinstance(row.get("venta_eur"), bool)
+        ),
+        key=lambda row: (float(row.get("jornada") or 0.0), -int(row["venta_eur"])),
+    )
+    salida: list[dict[str, Any]] = []
+    cubierto = 0.0
+    for row in banquillo:
+        if cubierto >= credito:
+            break
+        salida.append({"player_id": row["player_id"], "nombre": _nombre(row), "venta_eur": int(row["venta_eur"])})
+        cubierto += CREDITO_CUBIERTO_PCT * int(row["venta_eur"])
+    return salida
+
+
+def _texto_credito_con_venta(
+    ficha: dict[str, Any], dias: float, credito: int, venta: list[dict[str, Any]]
+) -> str:
+    """Puja con crédito fuera del parón: la venta que lo devuelve ya está decidida."""
+    nombres = ", ".join(str(item["nombre"]) for item in venta) or "tu banquillo"
+    return (
+        f"Mejora el once +{float(ficha['mejora']):.1f} xP. Se puja con crédito "
+        f"({credito / _MILLON:.1f} M€, dentro del 20 %): las pujas vivas reservan saldo y LaLiga lo permite. "
+        f"Si la ganas, pon a la venta a {nombres} ese mismo día y acepta la oferta de LaLiga antes del saque "
+        f"(en {_dias_texto(dias)}): con saldo negativo la jornada vale 0."
+    )
 
 
 def _mejora_neta(row: dict[str, Any], elegibles: list[dict[str, Any]], base: float, base_ok: bool) -> float:
@@ -898,6 +949,11 @@ def _plan_once(
     # Parón: lejos del cierre el saldo negativo no cuesta nada hasta el saque.
     # El plan prudente es «solo caja y ventas de hoy»: tampoco usa el crédito del parón.
     paron_credito = ventana and dias is not None and dias > DIAS_ESCAPARATE and permitir_condicionales
+    # Entre 2 días y el parón: crédito solo si el banquillo lo cubre (venta preparada).
+    credito_con_venta = (
+        not paron_credito and dias is not None and dias >= DIAS_CREDITO_CON_VENTA and permitir_condicionales
+    )
+    credito_activo = paron_credito or credito_con_venta
     penalizacion = float(meta["penalizacion_liquidez"])
     saldo = cash if isinstance(cash, int) and not isinstance(cash, bool) else None
     plantilla = [row for row in owned if isinstance(row, dict) and isinstance(row.get("player_id"), str)]
@@ -1020,7 +1076,7 @@ def _plan_once(
             "impulso": impulso,
             "origen": origen,
             "prima": prima_quemada_mercado(euros, _valor_mercado(row), pct) if origen == "bid" else 0.0,
-            "credito_paron": paron_credito and merece_credito_paron(
+            "credito_paron": credito_activo and merece_credito_paron(
                 origen=origen,
                 pct=pct,
                 mejora=mejora,
@@ -1186,9 +1242,17 @@ def _plan_once(
     tope_deuda_conocido = bool(plantilla) and all(valor > 0 for valor in valores_propios.values())
     pujas_credito = [pid for pid in puja if ficha_compra[f"bid:{pid}"]["credito_paron"]]
     credito_usado: Any = 0
-    if paron_credito and tope_deuda_conocido and pujas_credito:
+    if credito_activo and tope_deuda_conocido and pujas_credito:
         credito_usado = pulp.LpVariable(f"{prefix}_credito", lowBound=0)
         problem += credito_usado <= pulp.lpSum(_euros_de(f"bid:{pid}") * puja[pid] for pid in pujas_credito)
+        # Venta preparada: el crédito no pasa de lo que cobrarías vendiendo a quien
+        # se queda fuera del once (y no se vende ya), por si ganas todas.
+        problem += credito_usado <= CREDITO_CUBIERTO_PCT * pulp.lpSum(
+            int(row["venta_eur"])
+            * (1 - en_once.get(f"own:{row['player_id']}", 0) - vende.get(row["player_id"], 0))
+            for row in plantilla
+            if isinstance(row.get("venta_eur"), int) and not isinstance(row.get("venta_eur"), bool)
+        )
     problem += saldo + ingresos - gastos_puja - gastos_clausula - gastos_busca + credito_usado >= 0
 
     # Cobertura de cada puja. Las subastas se resuelven a la vez y puedes ganar
@@ -1605,7 +1669,14 @@ def _plan_once(
         + sum(coste_busca for variable in busca.values() if _on(variable))
     )
     credito_paron_eur = (
-        max(0, gasto_total - saldo - sum(int(row["venta_eur"]) for row in ventas_sel)) if paron_credito else 0
+        max(0, gasto_total - saldo - sum(int(row["venta_eur"]) for row in ventas_sel)) if credito_activo else 0
+    )
+    # Si ganas todas: a quién vender para devolver el crédito antes del saque.
+    venta_preparada = venta_para_credito(
+        plantilla,
+        credito_paron_eur,
+        vendidos={row["player_id"] for row in ventas_sel},
+        en_once={row["player_id"] for row in plantilla if _on(en_once.get(f"own:{row['player_id']}"))},
     )
     ventas_de_puja: dict[str, list[dict[str, Any]]] = {}
     for venta, puja_row in pares:
@@ -1706,6 +1777,8 @@ def _plan_once(
         impulso = ficha["impulso"]
         mejora = float(ficha["mejora"])
         if credito_paron_eur > 0 and ficha["credito_paron"]:
+            if credito_con_venta:
+                return "hoy", _texto_credito_con_venta(ficha, dias or 0.0, credito_paron_eur, venta_preparada)
             return "hoy", _texto_credito_paron(ficha, dias or 0.0, credito_paron_eur)
         if impulso == "CHOLLO":
             return (
@@ -1762,6 +1835,7 @@ def _plan_once(
         )
         if credito_paron_eur > 0 and ficha["credito_paron"]:
             acciones[-1]["financia_con_credito"] = True
+            acciones[-1]["venta_si_ganas"] = [item["nombre"] for item in venta_preparada]
         if isinstance(ficha.get("p_ganar"), float):
             acciones[-1]["p_ganar_estimada"] = round(ficha["p_ganar"], 3)
     for row in raids:
@@ -1948,6 +2022,7 @@ def _plan_once(
         "mejora_horizonte": mejora_horizonte,
         "cobertura_pujas": cobertura_pujas,
         "presupuesto": presupuesto,
+        "venta_preparada": venta_preparada,
         "deuda_paron": _deuda_paron(
             credito_paron_eur,
             dias,

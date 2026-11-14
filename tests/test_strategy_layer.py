@@ -820,7 +820,9 @@ class ProteccionPatrimonioTests(unittest.TestCase):
         ventas = [accion["player_id"] for accion in plan["acciones"] if accion["tipo"] in {"VENDE", "VENDER HOY"}]
         sanos = [player_id for player_id in ventas if player_id and not str(player_id).startswith("baja-")]
         bajas = [player_id for player_id in ventas if str(player_id).startswith("baja-")]
-        self.assertEqual(len(sanos), MAX_VENTAS_TITULARES_SANOS)
+        # Con crédito y venta preparada (auditoría 14-nov) puede no hacer falta vender
+        # titulares sanos hoy; el tope sigue siendo el mismo.
+        self.assertLessEqual(len(sanos), MAX_VENTAS_TITULARES_SANOS)
         self.assertEqual(len(bajas), 3)
         self.assertGreater(plan["mejora_puntos_jornada"], 10)
         self.assertFalse(any(accion["tipo"] == "BUSCA" for accion in plan["acciones"]))

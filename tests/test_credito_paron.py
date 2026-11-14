@@ -110,10 +110,32 @@ class PujarConCreditoTests(unittest.TestCase):
         plan = _plan([_mercado("caro", "DEL", 9.0, int(tope) + 5_000_000, 30.0)])
         self.assertFalse([a for a in plan["acciones"] if a["tipo"] == "PUJA"])
 
-    def test_sin_paron_no_hay_credito(self) -> None:
+    def test_antes_del_paron_el_credito_pide_venta_preparada(self) -> None:
+        # Auditoría 14-nov, fallo 2: las pujas vivas reservan saldo y LaLiga deja
+        # pujar hasta caja + 20 %. Con 2 días o más se puede, si el banquillo lo cubre.
         plan = _plan([_mercado("felix", "DEL", 7.0, 9_000_000, 28.0)], dias=4.0)
-        self.assertFalse([a for a in plan["acciones"] if a["tipo"] == "PUJA"])
+        puja = next(a for a in plan["acciones"] if a["tipo"] == "PUJA")
+        self.assertTrue(puja["financia_con_credito"])
+        self.assertTrue(puja["venta_si_ganas"])
+        self.assertIn("Si la ganas, pon a la venta", puja["detalle"])
+        self.assertTrue(plan["venta_preparada"])
+
+    def test_a_menos_de_dos_dias_no_hay_credito(self) -> None:
+        # Sin tiempo para vender después: si puja, la paga una venta atada a ganarla.
+        plan = _plan([_mercado("felix", "DEL", 7.0, 9_000_000, 28.0)], dias=1.5)
+        self.assertFalse([a for a in plan["acciones"] if a.get("financia_con_credito")])
         self.assertIsNone(plan.get("deuda_paron"))
+        self.assertEqual(plan["venta_preparada"], [])
+
+    def test_sin_banquillo_que_vender_no_hay_credito(self) -> None:
+        owned = _plantilla()
+        for row in owned:
+            row.pop("venta_eur")
+        plan = build_plan_fichajes(
+            cash=200_000, owned=owned, mercado=[_mercado("felix", "DEL", 7.0, 9_000_000, 28.0)], clausulas=[],
+            ratio=3_000_000, dias_para_jornada=4.0, baseline_puntos=33.0,
+        )
+        self.assertFalse([a for a in plan["acciones"] if a["tipo"] == "PUJA" and a.get("momento") == "hoy"])
 
     def test_no_compra_hoy_a_quien_mejora_el_once_pero_baja(self) -> None:
         plan = _plan([_mercado("cae", "DEL", 7.0, 9_000_000, -6.0)])

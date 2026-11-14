@@ -9,8 +9,9 @@ from toolbox.engine.signing_plan import build_plan_fichajes, peso_esperado
 
 
 def fila(pid, pos, jornada=4.0, **extra):
+    # Sin venta_eur: nada que vender, así el crédito con venta preparada no entra.
     row = {"player_id": pid, "nombre": pid, "position": pos, "jornada": jornada, "elegible": True,
-           "valor": 3_000_000, "venta_eur": 2_850_000}
+           "valor": 3_000_000}
     row.update(extra)
     return row
 
