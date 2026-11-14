@@ -152,7 +152,7 @@ export function DatosSimple() {
                         <span className="text-white/75">{s.label}</span>
                         <span className="tabular-nums text-white">
                           {s.calls}
-                          {s.errors ? <span className="ml-2 text-[#FC734D]">{s.errors} fallos</span> : null}
+                          {s.errors ? <span className="ml-2 text-coral">{s.errors} fallos</span> : null}
                         </span>
                       </div>
                       <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/[0.07]">

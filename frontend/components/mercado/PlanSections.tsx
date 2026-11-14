@@ -312,7 +312,7 @@ function PlanActionRow({ accion, photos }: { accion: PlanFichajeAccion; photos: 
         <>
           {[accion.posicion, planWhy(accion, kind)].filter(Boolean).join(" · ").replace(/^./, (c) => c.toUpperCase())}
           {competitiva && accion.alta_demanda ? (
-            <span className="mt-0.5 block text-[#FFC08A]">
+            <span className="mt-0.5 block text-peach">
               Muy pujado: para asegurarlo, {money(accion.puja_competitiva_liga)}
             </span>
           ) : null}
@@ -379,7 +379,7 @@ export function PlanBlock({ plan, photos }: { plan: PlanFichajes | null | undefi
                 Tu once pasa de <span className="font-semibold tabular-nums text-white">{num(before)}</span> a{" "}
               </>
             )}
-            <span className="font-semibold tabular-nums text-[#7FE0A8]">{num(after)} pts</span> en la próxima jornada.
+            <span className="font-semibold tabular-nums text-mint-soft-text">{num(after)} pts</span> en la próxima jornada.
           </p>
           <BeforeAfter before={before} after={after} />
         </>
@@ -483,7 +483,7 @@ export function ParonBlock({ plan, photos }: { plan: PlanFichajes | null | undef
       title="Modo parón"
       summary={
         <>
-          <span className="font-semibold text-[#FFC08A]">{`Fase ${paron.fase} de 3`}</span>
+          <span className="font-semibold text-peach">{`Fase ${paron.fase} de 3`}</span>
           <span className="text-white/30"> · </span>
           {venta ? `vende el ${venta}` : `cierra en ${num(paron.dias_al_cierre, 0)} días`}
           {deuda > 0 ? (
@@ -512,11 +512,11 @@ export function ParonBlock({ plan, photos }: { plan: PlanFichajes | null | undef
       <div className="mt-4 grid grid-cols-3 gap-2">
         <div className="min-w-0 rounded-2xl bg-white/[0.04] p-3">
           <p className="text-[11px] text-white/40">Ganas en valor</p>
-          <p className="truncate text-[17px] font-semibold tabular-nums text-[#7FE0A8]">{compact(proy.beneficio_total_eur, true)}</p>
+          <p className="truncate text-[17px] font-semibold tabular-nums text-mint-soft-text">{compact(proy.beneficio_total_eur, true)}</p>
         </div>
         <div className="min-w-0 rounded-2xl bg-white/[0.04] p-3">
           <p className="text-[11px] text-white/40">Puntos extra</p>
-          <p className="truncate text-[17px] font-semibold tabular-nums text-[#FFC08A]">{pts(proy.mejora_xp_j13).replace(" pts", "")}</p>
+          <p className="truncate text-[17px] font-semibold tabular-nums text-peach">{pts(proy.mejora_xp_j13).replace(" pts", "")}</p>
         </div>
         <div className="min-w-0 rounded-2xl bg-white/[0.04] p-3">
           <p className="text-[11px] text-white/40">Deuda a saldar</p>
@@ -531,10 +531,10 @@ export function ParonBlock({ plan, photos }: { plan: PlanFichajes | null | undef
           <Eyebrow right="subida prevista">Se revalorizan</Eyebrow>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {paron.hold_j13.map((item) => (
-              <span key={`hold-${item.player_id}`} className="inline-flex items-center gap-1.5 rounded-full bg-[#10B981]/10 py-1 pl-1 pr-2.5 text-[12.5px] text-white/80">
+              <span key={`hold-${item.player_id}`} className="inline-flex items-center gap-1.5 rounded-full bg-mint/10 py-1 pl-1 pr-2.5 text-[12.5px] text-white/80">
                 <Face name={item.nombre} src={photoFor(photos, item.player_id, item.nombre)} size={22} />
                 {item.nombre}
-                <span className="font-semibold tabular-nums text-[#7FE0A8]">{compact(item.subida_esperada_eur, true)}</span>
+                <span className="font-semibold tabular-nums text-mint-soft-text">{compact(item.subida_esperada_eur, true)}</span>
               </span>
             ))}
           </div>

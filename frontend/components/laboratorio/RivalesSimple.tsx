@@ -205,7 +205,7 @@ export function RivalesSimple({ photos }: { photos: PhotoIndex }) {
                 ["Fiabilidad", "«Dato fiable» si la cuenta cuadra con lo visible; «Aproximado» si faltan movimientos."],
               ].map(([title, text], i) => (
                 <li key={title} className="flex gap-3">
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#FF7A3D]/15 text-[12.5px] font-semibold text-[#FF9A5A]">{i + 1}</span>
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ember-strong/15 text-[12.5px] font-semibold text-ember">{i + 1}</span>
                   <span>
                     <span className="block text-[14.5px] font-medium text-white">{title}</span>
                     <span className="block text-[13px] leading-snug text-white/55">{text}</span>

@@ -62,7 +62,7 @@ export function SenalesSimple({ trends, loading, photos }: { trends: TrendsPaylo
         {visible.map((v) => (
           <button key={v.id} type="button" role="tab" aria-selected={active === v.id} className={active === v.id ? "eq-chip eq-chip--on" : "eq-chip"} onClick={() => setView(v.id)}>
             {v.label}
-            {v.id === "choque" ? <span className="ml-1 tabular-nums text-[#F59E0B]">{clashes.length}</span> : null}
+            {v.id === "choque" ? <span className="ml-1 tabular-nums text-amber-warn">{clashes.length}</span> : null}
           </button>
         ))}
       </div>

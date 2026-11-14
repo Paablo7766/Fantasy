@@ -183,7 +183,7 @@ function Picker({
       .slice(0, 40);
   }, [opciones, texto, excluir]);
   return (
-    <div className="flex flex-col rounded-3xl bg-[#141414] p-3">
+    <div className="flex flex-col rounded-3xl bg-raised-deep p-3">
       <div className="flex items-center gap-2 px-1">
         <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
         <p className="flex-1 text-[13px] font-semibold text-white">Buscar {etiqueta}</p>
@@ -196,7 +196,7 @@ function Picker({
         onChange={(event) => setTexto(event.target.value)}
         placeholder="Nombre, equipo o dueño"
         aria-label={`Buscar ${etiqueta}`}
-        className="mt-3 h-12 w-full rounded-full bg-[#1c1c1e] px-5 text-[15px] text-white outline-none placeholder:text-white/35 focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.25)]"
+        className="mt-3 h-12 w-full rounded-full bg-raised px-5 text-[16px] text-white sm:text-[15px] outline-none placeholder:text-white/35 focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.25)]"
       />
       <ul className="mt-2 max-h-[18rem] overflow-y-auto">
         {filtradas.map((opcion) => (
@@ -204,7 +204,7 @@ function Picker({
             <button
               type="button"
               onClick={() => onPick(opcion.id)}
-              className="flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left transition-colors hover:bg-[#1c1c1e]"
+              className="flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left transition-colors hover:bg-raised"
             >
               <Face name={opcion.nombre} src={opcion.foto || photoFor(photos, opcion.id, opcion.nombre)} size={36} />
               <span className="min-w-0 flex-1">
@@ -273,7 +273,7 @@ function EmptySlot({ color, etiqueta, active, onPick }: { color: string; etiquet
       type="button"
       onClick={onPick}
       aria-pressed={active}
-      className="flex min-h-[10.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-2.5 rounded-3xl border border-dashed bg-[#141414] text-center transition-colors hover:bg-[#1c1c1e]"
+      className="flex min-h-[10.5rem] min-w-0 flex-1 flex-col items-center justify-center gap-2.5 rounded-3xl border border-dashed bg-raised-deep text-center transition-colors hover:bg-raised"
       style={{ borderColor: active ? color : `${color}66`, background: active ? `${color}14` : undefined, boxShadow: active ? `inset 0 0 0 1px ${color}` : undefined }}
     >
       <span className="grid h-12 w-12 place-items-center rounded-full text-[22px]" style={{ color, background: `${color}1a` }}>
@@ -563,7 +563,7 @@ export function ComparadorModal({
             type="button"
             onClick={onClose}
             aria-label="Cerrar"
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#1c1c1e] text-white/70 outline-none transition-colors hover:text-white"
+            className="grid h-9 w-9 place-items-center rounded-full bg-raised text-white/70 outline-none transition-colors hover:text-white"
           >
             <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
@@ -587,7 +587,7 @@ export function ComparadorModal({
                   onClick={swap}
                   disabled={!idA && !idB}
                   aria-label="Intercambiar jugadores"
-                  className="grid h-9 w-9 shrink-0 place-items-center self-center rounded-full bg-[#1c1c1e] text-white/60 transition-colors hover:bg-white/[0.14] hover:text-white disabled:opacity-30"
+                  className="grid h-9 w-9 shrink-0 place-items-center self-center rounded-full bg-raised text-white/60 transition-colors hover:bg-white/[0.14] hover:text-white disabled:opacity-30"
                 >
                   <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                     <path d="M5 3 2 6l3 3M2 6h9M11 13l3-3-3-3M14 10H5" strokeLinecap="round" strokeLinejoin="round" />
@@ -621,8 +621,8 @@ export function ComparadorModal({
               ) : null}
 
               {idA && idB && error ? (
-                <div className="flex flex-col items-start gap-3 rounded-2xl bg-[#FC734D]/10 px-4 py-3">
-                  <p className="text-[13.5px] text-[#FC734D]">{error}</p>
+                <div className="flex flex-col items-start gap-3 rounded-2xl bg-coral/10 px-4 py-3">
+                  <p className="text-[13.5px] text-coral">{error}</p>
                   <button
                     type="button"
                     onClick={() => setAttempt((value) => value + 1)}
@@ -673,7 +673,7 @@ export function ComparadorModal({
                     ) : null}
                   </section>
 
-                  <section className="rounded-3xl bg-[#141414] px-4 py-1">
+                  <section className="rounded-3xl bg-raised-deep px-4 py-1">
                     <div className="divide-y divide-white/[0.05]">
                       <Duel label="Puntos próxima jornada" a={dec(a?.xp_j1)} b={dec(b?.xp_j1)} va={num(a?.xp_j1)} vb={num(b?.xp_j1)} />
                       <Duel label="Puntos por jornada · próximas 4" a={dec(a?.xp_4j)} b={dec(b?.xp_4j)} va={num(a?.xp_4j)} vb={num(b?.xp_4j)} />
@@ -702,13 +702,13 @@ export function ComparadorModal({
                   </section>
 
                   <section className="grid grid-cols-2 gap-3">
-                    <div className="rounded-3xl bg-[#141414] p-4">
+                    <div className="rounded-3xl bg-raised-deep p-4">
                       <p className="mb-2 text-[11px] font-medium text-white/40">Últimas jornadas</p>
                       <LastWeeks values={a?.ultimas || []} color={COLOR_A} align="left" />
                       <p className="mb-2 mt-4 text-[11px] font-medium text-white/40">Próximos rivales</p>
                       <Fixtures items={a?.proximos} align="left" />
                     </div>
-                    <div className="rounded-3xl bg-[#141414] p-4 text-right">
+                    <div className="rounded-3xl bg-raised-deep p-4 text-right">
                       <p className="mb-2 text-[11px] font-medium text-white/40">Últimas jornadas</p>
                       <LastWeeks values={b?.ultimas || []} color={COLOR_B} align="right" />
                       <p className="mb-2 mt-4 text-[11px] font-medium text-white/40">Próximos rivales</p>
@@ -747,7 +747,7 @@ export function ComparadorLauncher({ className = "" }: { className?: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-[#1c1c1e] px-4 text-[13.5px] font-semibold text-white transition-colors hover:bg-[#262628] ${className}`}
+        className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-raised px-4 text-[13.5px] font-semibold text-white transition-colors hover:bg-[#262628] ${className}`}
       >
         <svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
           <path d="M5 3 2 6l3 3M2 6h9M11 13l3-3-3-3M14 10H5" strokeLinecap="round" strokeLinejoin="round" />
@@ -792,7 +792,7 @@ export function CompararButton({
           event.preventDefault();
           setOpen(true);
         }}
-        className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold text-[#0297DE] transition-colors hover:bg-[#0297DE]/10 ${className}`}
+        className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/10 ${className}`}
       >
         Comparar
       </button>

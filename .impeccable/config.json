@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "frontend/app/globals.css"
+        ],
+        "createdAt": "2026-11-14T15:56:35.515Z",
+        "reason": "Brillo animado del texto de carga (.text-working): efecto funcional, no decoración de titular; decidido por Claude tras revisar el CSS"
+      }
+    ]
+  }
+}

@@ -92,7 +92,7 @@ export function AlertsPanel({
       {threats.length ? (
         <section className="home-glass overflow-hidden" aria-label="Jugadores que te pueden quitar">
           <CardHead title="Te los pueden quitar" count={threats.length} caption="Tienen la cláusula abierta y hay rivales con caja para pagarla. Cada punto es un rival; los rojos pueden pagarla hoy.">
-            <Link href="/clausulas" className="shrink-0 text-[13px] font-medium text-[#FFC08A] transition-colors hover:text-white">
+            <Link href="/clausulas" className="shrink-0 text-[13px] font-medium text-peach transition-colors hover:text-white">
               Protegerlos en Cláusulas →
             </Link>
           </CardHead>

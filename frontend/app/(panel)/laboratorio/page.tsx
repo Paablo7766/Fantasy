@@ -90,7 +90,7 @@ function LaboratorioContent() {
             <p className="text-[13px] font-medium text-white/60">Zona de auditoría</p>
             <h1 className="mt-1 text-[2rem] font-semibold leading-none tracking-[-0.035em] text-white">Laboratorio</h1>
           </div>
-          <span className="rounded-full bg-black/30 px-3 py-1.5 text-[12px] font-semibold text-[#FF9A5A] backdrop-blur-md">
+          <span className="rounded-full bg-black/30 px-3 py-1.5 text-[12px] font-semibold text-ember backdrop-blur-md">
             {TABS.findIndex((item) => item.id === tab) + 1} / {TABS.length} · {current.label}
           </span>
         </div>

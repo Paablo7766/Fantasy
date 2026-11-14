@@ -10,7 +10,7 @@
   --ink: #f0f6fc;
   --muted: #8b9eb0;
   --muted-strong: #c5d4e2;
-  --faint: #4b6075;
+  --faint: #6f8499;
   --accent: #0297de;
   --accent-soft: rgba(2, 151, 222, 0.15);
   --magma: #fc734d;
@@ -38,12 +38,22 @@
   --color-ink: #f0f6fc;
   --color-muted: #8b9eb0;
   --color-muted-strong: #c5d4e2;
-  --color-faint: #4b6075;
+  --color-faint: #6f8499;
   --color-gold: #fc734d;
   --color-mint: #10b981;
   --color-coral: #fc734d;
   --color-warn: #fc734d;
   --color-info: #0297de;
+  --color-peach: #ffc08a;
+  --color-amber-warn: #f59e0b;
+  --color-ember: #ff9a5a;
+  --color-raised: #1c1c1e;
+  --color-raised-deep: #141414;
+  --color-ink-on-light: #0b0b0b;
+  --color-ember-strong: #ff7a3d;
+  --color-mint-soft-text: #7fe0a8;
+  --color-mint-mid: #4fd1a5;
+  --color-amber-soft: #f5b544;
   --color-accent: #0297de;
   --font-sans: var(--font-sans), var(--font-sans-app);
   --font-mono: var(--font-mono), var(--font-mono-app);
@@ -84,6 +94,7 @@ body {
 @layer components {
 .app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   background: #02070a;
   color: var(--foreground);
 }
@@ -93,6 +104,7 @@ body {
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
   flex-direction: column;
   overflow: auto;
   padding: 1.15rem 0.8rem 1rem;
@@ -242,9 +254,11 @@ body {
   transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
+@media (hover: hover) {
 .side-link:hover {
   background: rgba(243, 239, 230, 0.04);
   color: var(--sidebar-ink);
+}
 }
 
 .side-link--active {
@@ -282,9 +296,11 @@ body {
   transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
+@media (hover: hover) {
 .tab-link:hover {
   color: var(--ink);
   background: rgba(243, 239, 230, 0.04);
+}
 }
 
 .tab-link--active {
@@ -303,8 +319,10 @@ body {
   transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 
+@media (hover: hover) {
 .card:hover {
   border-color: rgba(2, 151, 222, 0.32);
+}
 }
 
 .glow-metric {
@@ -444,8 +462,10 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
+@media (hover: hover) {
 .btn-primary:not(:disabled):hover {
   background: #0284c7;
+}
 }
 
 .btn-secondary {
@@ -454,9 +474,11 @@ body {
   color: var(--ink);
 }
 
+@media (hover: hover) {
 .btn-secondary:not(:disabled):hover {
   background: rgba(243, 239, 230, 0.08);
   border-color: rgba(243, 239, 230, 0.24);
+}
 }
 
 .btn-ghost {
@@ -465,9 +487,11 @@ body {
   color: var(--sidebar-muted);
 }
 
+@media (hover: hover) {
 .btn-ghost:not(:disabled):hover {
   background: rgba(243, 239, 230, 0.06);
   color: #fff;
+}
 }
 
 .status-dot {
@@ -561,8 +585,10 @@ body {
   transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
+@media (hover: hover) {
 .seg__btn:hover {
   color: var(--ink);
+}
 }
 
 .seg__btn--active {
@@ -587,7 +613,6 @@ body {
 
 .callout {
   border: 1px solid rgba(255, 141, 124, 0.32);
-  border-left: 3px solid var(--coral);
   border-radius: 0.85rem;
   background: var(--coral-soft);
   color: #ffd2cb;
@@ -603,7 +628,7 @@ body {
   background: rgba(7, 9, 14, 0.55);
   color: var(--ink);
   padding: 0.75rem 0.85rem;
-  font-size: 0.875rem;
+  font-size: 1rem;
   line-height: 1.5;
   outline: none;
   transition: border-color 160ms ease, box-shadow 160ms ease;
@@ -626,7 +651,9 @@ body {
   transition: border-color 160ms ease, transform 160ms ease;
 }
 
+@media (hover: hover) {
 .fixture:hover { transform: translateY(-1px); }
+}
 
 .fixture--good {
   border-color: rgba(62, 224, 160, 0.32);
@@ -649,7 +676,9 @@ body {
 
 .data-row:last-child { border-bottom: none; }
 
+@media (hover: hover) {
 .data-row:hover { background: rgba(62, 224, 160, 0.05); }
+}
 
 .table-dense th {
   padding: 0.7rem 0.85rem;
@@ -669,12 +698,16 @@ body {
 }
 
 .table-dense tbody tr { transition: background-color 160ms ease; }
+@media (hover: hover) {
 .table-dense tbody tr:hover { background: rgba(62, 224, 160, 0.045); }
+}
 
 .row-link { cursor: pointer; }
 .row-link:focus-visible { outline: 2px solid rgba(62, 224, 160, 0.7); outline-offset: -2px; }
 .row-link--open { background: var(--mint-soft); }
+@media (hover: hover) {
 .row-link--open:hover { background: rgba(62, 224, 160, 0.18); }
+}
 
 .bid-dialog {
   width: min(440px, 100vw);
@@ -718,21 +751,25 @@ body {
   transition: background-color 160ms ease;
 }
 
+@media (hover: hover) {
 .rival-card:hover {
   background: rgba(243, 239, 230, 0.03);
+}
 }
 
 .rival-card--self {
   background: var(--gold-soft);
 }
 
+@media (hover: hover) {
 .rival-card--self:hover {
   background: rgba(232, 201, 138, 0.2);
+}
 }
 
 .rival-card--debt {
   background: rgba(255, 141, 124, 0.08);
-  box-shadow: inset 3px 0 0 var(--coral);
+  box-shadow: inset 0 0 0 1px rgba(252, 115, 77, 0.45);
 }
 
 .rival-card:focus-visible {
@@ -1031,9 +1068,11 @@ body {
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, opacity 150ms ease;
 }
 
+@media (hover: hover) {
 .hoy-btn:not(:disabled):hover {
   background: rgba(250, 250, 250, 0.14);
   border-color: rgba(250, 250, 250, 0.26);
+}
 }
 
 .hoy-btn:disabled {
@@ -1047,10 +1086,12 @@ body {
   color: #18181b;
 }
 
+@media (hover: hover) {
 .hoy-btn--primary:not(:disabled):hover {
   background: #e4e4e7;
   border-color: #e4e4e7;
   color: #09090b;
+}
 }
 
 /* ── Hero: veredicto del día ─────────────────────────────────────────────── */
@@ -1225,10 +1266,12 @@ body {
   background: linear-gradient(180deg, rgba(74, 222, 128, 0.7), transparent 78%);
 }
 
+@media (hover: hover) {
 .hoy-act:hover {
   border-color: rgba(250, 250, 250, 0.22);
   box-shadow: 0 26px 50px -40px rgba(0, 0, 0, 0.95);
   transform: translateY(-1px);
+}
 }
 
 .hoy-act--blocked { border-color: rgba(248, 113, 113, 0.26); }
@@ -2100,7 +2143,9 @@ body {
   transition: all 200ms ease-out;
 }
 
+@media (hover: hover) {
 .eq-chip:hover { color: #fff; }
+}
 
 .eq-chip--on {
   border-color: transparent;
@@ -2367,10 +2412,12 @@ body {
   transition: transform 200ms ease-out, border-color 200ms ease-out, box-shadow 200ms ease-out;
 }
 
+@media (hover: hover) {
 .mk-tile:hover {
   transform: translateY(-2px);
   border-color: rgba(255, 154, 90, 0.35);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2425,13 +2472,17 @@ body {
   background: #fff;
   color: #120c09;
 }
+@media (hover: hover) {
 .lab-panel .btn-primary:hover { background: #ffe9dc; }
+}
 .lab-panel .btn-secondary {
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.8);
 }
+@media (hover: hover) {
 .lab-panel .btn-secondary:hover { color: #fff; background: rgba(255, 255, 255, 0.09); }
+}
 
 /* ══ Movimiento con intención ═══════════════════════════════════════════════
    Revelado palabra a palabra (borroso → nítido) para las conclusiones y brillo

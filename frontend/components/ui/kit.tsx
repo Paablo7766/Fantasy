@@ -164,7 +164,7 @@ export function Disclosure({
         onClick={() => setOpen((value) => !value)}
         className="flex min-h-[3.5rem] w-full items-center gap-3 px-4 text-left transition-colors duration-200 ease-out hover:bg-white/[0.02]"
       >
-        {icon ? <span className="shrink-0 text-[#FF9A5A]">{icon}</span> : null}
+        {icon ? <span className="shrink-0 text-ember">{icon}</span> : null}
         <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-white">{title}</span>
         {meta ? <span className="shrink-0 text-[13px] tabular-nums text-white/50">{meta}</span> : null}
         <Chevron open={open} />
@@ -230,7 +230,7 @@ export function Fact({ label, value, tone, hint }: { label: string; value: strin
 export function Empty({ title, detail, action }: { title: string; detail?: string; action?: ReactNode }) {
   return (
     <div className="home-glass flex flex-col items-center px-6 py-10 text-center">
-      <span className="grid h-12 w-12 place-items-center rounded-full bg-[#FF7A3D]/15 text-[#FF9A5A]" aria-hidden="true">
+      <span className="grid h-12 w-12 place-items-center rounded-full bg-ember-strong/15 text-ember" aria-hidden="true">
         <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6">
           <path d="M10 6v4.5M10 13.5h.01" strokeLinecap="round" />
           <circle cx="10" cy="10" r="7" />

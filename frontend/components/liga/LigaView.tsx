@@ -76,11 +76,11 @@ function RaceStrip({ rows }: { rows: StandingRow[] }) {
       {own ? (
         <>
           <span
-            className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#FFC08A] shadow-[0_0_0_4px_rgba(255,192,138,0.18)]"
+            className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-peach shadow-[0_0_0_4px_rgba(255,192,138,0.18)]"
             style={{ left: `${at(own.points)}%` }}
             aria-hidden="true"
           />
-          <span className={`absolute bottom-0 whitespace-nowrap text-[11.5px] tabular-nums text-[#FFC08A] ${anchor(at(own.points))}`} style={{ left: `${at(own.points)}%` }}>
+          <span className={`absolute bottom-0 whitespace-nowrap text-[11.5px] tabular-nums text-peach ${anchor(at(own.points))}`} style={{ left: `${at(own.points)}%` }}>
             Tú · <span className="font-medium">{own.points}</span>
           </span>
         </>

@@ -33,8 +33,8 @@ function PickRow({ pick }: { pick: PreviaPick }) {
       <span className="min-w-0">
         <span className="block truncate text-[14px] font-medium text-white">
           {pick.name ?? "Jugador"}
-          {pick.mine ? <span className="ml-2 text-[12px] font-medium text-[#FF9A5A]">Tuyo</span> : null}
-          {pick.on_market ? <span className="ml-2 text-[12px] font-medium text-[#F59E0B]">En mercado</span> : null}
+          {pick.mine ? <span className="ml-2 text-[12px] font-medium text-ember">Tuyo</span> : null}
+          {pick.on_market ? <span className="ml-2 text-[12px] font-medium text-amber-warn">En mercado</span> : null}
         </span>
         <span className="block truncate text-[12px] text-white/45">
           {[pick.position, pick.club, `media ${dec(pick.mean)}`, `juega el ${Math.round(pick.availability * 100)} %`].filter(Boolean).join(" · ")}
@@ -82,9 +82,9 @@ function MatchCard({ match }: { match: PreviaMatch }) {
           </p>
         </div>
       </div>
-      <Group title="Los mejores" tone="text-[#10B981]" picks={match.top} />
-      <Group title="Sorpresa posible" tone="text-[#F59E0B]" picks={match.apuesta} note="en pruebas" />
-      <Group title="Mejor evitar" tone="text-[#FC734D]" picks={match.no_recomendable} />
+      <Group title="Los mejores" tone="text-mint" picks={match.top} />
+      <Group title="Sorpresa posible" tone="text-amber-warn" picks={match.apuesta} note="en pruebas" />
+      <Group title="Mejor evitar" tone="text-coral" picks={match.no_recomendable} />
       {extra > 0 ? (
         <>
           <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="mt-3 text-[12.5px] font-medium text-white/60 hover:text-white">

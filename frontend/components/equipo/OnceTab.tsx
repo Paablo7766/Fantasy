@@ -270,7 +270,7 @@ function PlayerSheet({
     <article className={`home-glass row-in p-4 ${className}`} aria-live="polite">
       <div className="flex items-center gap-3">
         {player.gap ? (
-          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-dashed border-[#FC734D] text-xl text-[#FC734D]">+</span>
+          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-dashed border-coral text-xl text-coral">+</span>
         ) : (
           <Face name={name} src={player.image_url || photoFor(photos, player.player_id, name)} size={56} ring={ringColor(share)} />
         )}
@@ -278,7 +278,7 @@ function PlayerSheet({
           <p className="truncate text-[16px] font-semibold text-white">{name}</p>
           <p className="truncate text-[13px] text-white/50">
             {player.gap ? "Plaza sin titular en tu plantilla" : [player.position, player.club].filter(Boolean).join(" · ")}
-            {flag ? <span className="text-[#F59E0B]"> · {flag}</span> : null}
+            {flag ? <span className="text-amber-warn"> · {flag}</span> : null}
           </p>
         </div>
         <button
@@ -513,7 +513,7 @@ export function OnceTab({
             </p>
           ) : model.same ? (
             <p className="relative mt-2 flex items-center gap-1.5 text-[13.5px] text-white/55">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#10B981]" aria-hidden="true" />
+              <span className="h-1.5 w-1.5 rounded-full bg-mint" aria-hidden="true" />
               Coincide con tu once guardado
             </p>
           ) : null}
@@ -602,7 +602,7 @@ export function OnceTab({
                   >
                     <Face name={name} src={player.image_url || photoFor(photos, player.player_id, name)} size={44} ring={ringColor(titularShare(player.p_titular))} />
                     <span className="mt-1.5 w-full truncate text-center text-[12px] text-white/70">{lastName(name)}</span>
-                    <span className="text-[12px] font-semibold tabular-nums text-[#FFC08A]">{points(jornadaEv(player))}</span>
+                    <span className="text-[12px] font-semibold tabular-nums text-peach">{points(jornadaEv(player))}</span>
                   </li>
                 );
               })}

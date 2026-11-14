@@ -172,7 +172,7 @@ function EscudoRival({ nombre, src }: { nombre: string; src?: string | null }) {
   if (src) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={src} alt="" width={28} height={28} decoding="async" referrerPolicy="no-referrer" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+      <img src={src} alt="" width={28} height={28} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="h-7 w-7 shrink-0 rounded-full object-cover" />
     );
   }
   const letra = nombre.trim().charAt(0).toUpperCase() || "?";
@@ -290,7 +290,7 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
               const next = Number(event.target.value);
               if (Number.isFinite(next) && next >= 0) onEuros(Math.round(next * horizonte * 1_000_000));
             }}
-            className="w-20 shrink-0 rounded-md bg-white/[0.08] px-2 py-1.5 text-right text-[14px] tabular-nums text-white outline-none focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
+            className="w-20 shrink-0 rounded-md bg-white/[0.08] px-2 py-1.5 text-right text-[16px] tabular-nums sm:text-[14px] text-white outline-none focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
           />
         </label>
       </details>
@@ -589,7 +589,7 @@ export function PlayerCard({
               if (player.player_id) setComparing({ id: String(player.player_id), position: player.position });
               onClose();
             }}
-            className="h-12 w-full rounded-full bg-white text-[14px] font-semibold text-[#0b0b0b] transition-transform duration-200 ease-out active:scale-[0.98]"
+            className="h-12 w-full rounded-full bg-white text-[14px] font-semibold text-ink-on-light transition-transform duration-200 ease-out active:scale-[0.98]"
           >
             Comparar con otro jugador
           </button>

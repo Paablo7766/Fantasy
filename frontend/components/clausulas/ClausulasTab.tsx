@@ -698,7 +698,7 @@ function Openings({ timeline, photos }: { timeline: DateBucket[]; photos: PhotoI
               aria-label={`${chip.week} ${chip.day}: ${bucket.count} aperturas`}
               onClick={() => setPicked(bucket.local_date)}
               className={`flex h-[3.75rem] w-[3.1rem] shrink-0 flex-col items-center justify-center rounded-2xl transition-colors duration-300 ease-out ${
-                on ? "bg-white text-[#0b0b0b]" : "text-white/60 hover:bg-white/[0.05] hover:text-white"
+                on ? "bg-white text-ink-on-light" : "text-white/60 hover:bg-white/[0.05] hover:text-white"
               }`}
             >
               <span className="text-[10.5px] font-medium capitalize opacity-60">{chip.week}</span>
@@ -832,7 +832,7 @@ export function ClausulasTab({
         <p className="shrink-0 text-[13px] font-medium text-white/65">{attack ? "Clausulazos" : "Tus cláusulas"}</p>
         {open !== null ? (
           <p className="flex min-w-0 items-center gap-2 rounded-full bg-black/35 px-3 py-1.5 text-[12px] text-white/70 backdrop-blur-md">
-            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${open ? "bg-[#10B981]" : "bg-white/40"}`} aria-hidden="true" />
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${open ? "bg-mint" : "bg-white/40"}`} aria-hidden="true" />
             <span className="truncate">{open ? (parts ? "Cierra en" : "Ventana abierta") : "Ventana cerrada"}</span>
             {parts ? (
               <span className="shrink-0 font-medium tabular-nums text-white">
@@ -943,7 +943,7 @@ export function ClausulasTab({
                   aria-selected={estado === item.id}
                   onClick={() => setEstado(item.id)}
                   className={`relative z-10 min-h-[2rem] whitespace-nowrap rounded-full px-3.5 text-[12px] font-semibold transition-colors duration-300 ${
-                    estado === item.id ? "text-[#0b0b0b]" : "text-white/55 hover:text-white"
+                    estado === item.id ? "text-ink-on-light" : "text-white/55 hover:text-white"
                   }`}
                 >
                   {item.label}
@@ -1024,7 +1024,7 @@ export function ClausulasTab({
             </>
           ) : (
             <li className="flex items-center gap-2.5 px-4 py-5 text-[14px] text-white/60 min-[900px]:px-5">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#10B981]" aria-hidden="true" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-mint" aria-hidden="true" />
               Ningún rival puede pagar hoy tus cláusulas.
             </li>
           )}

@@ -263,7 +263,7 @@ export function RivalDialog({
                   className={`relative pb-1.5 text-[13px] transition-colors duration-200 ${order === id ? "font-semibold text-white" : "text-white/50 hover:text-white/80"}`}
                 >
                   {label}
-                  {order === id ? <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-[#FFC08A]" aria-hidden="true" /> : null}
+                  {order === id ? <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-peach" aria-hidden="true" /> : null}
                 </button>
               ))}
             </div>

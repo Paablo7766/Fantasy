@@ -169,7 +169,7 @@ export function StandingsTable({
               className={`relative shrink-0 whitespace-nowrap pb-3 pt-2 text-[13.5px] transition-colors duration-200 ${on ? "font-semibold text-white" : "text-white/50 hover:text-white/80"}`}
             >
               {item.label}
-              {on ? <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-[#FFC08A]" aria-hidden="true" /> : null}
+              {on ? <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-peach" aria-hidden="true" /> : null}
             </button>
           );
         })}
@@ -194,7 +194,7 @@ export function StandingsTable({
                 <span className="min-w-0">
                   <span className="block truncate text-[14.5px] font-medium text-white">
                     {row.name}
-                    {row.self ? <span className="ml-1.5 text-[12px] font-normal text-[#FFC08A]">Tú</span> : null}
+                    {row.self ? <span className="ml-1.5 text-[12px] font-normal text-peach">Tú</span> : null}
                   </span>
                   {metric !== "points" && row.rank !== null ? (
                     <span className="mt-0.5 hidden truncate text-[11.5px] tabular-nums text-white/40 min-[900px]:block">

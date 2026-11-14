@@ -56,7 +56,7 @@ function Tile({ player, photo, index, planBid, onOpen }: { player: MarketDecisio
             </span>
           ) : null}
           {player.offer_source === "rival" ? (
-            <span className="absolute left-2.5 top-2.5 rounded-full bg-[#F59E0B]/15 px-2 py-0.5 text-[10.5px] font-semibold text-[#F59E0B]">
+            <span className="absolute left-2.5 top-2.5 rounded-full bg-amber-warn/15 px-2 py-0.5 text-[10.5px] font-semibold text-amber-warn">
               Rival
             </span>
           ) : null}
@@ -66,7 +66,7 @@ function Tile({ player, photo, index, planBid, onOpen }: { player: MarketDecisio
             {[player.position, player.club].filter(Boolean).join(" · ")}
           </span>
           {heat ? (
-            <span className="mt-1.5 inline-flex items-center rounded-full bg-[#F59E0B]/15 px-2 py-0.5 text-[10.5px] font-semibold text-[#F59E0B]">
+            <span className="mt-1.5 inline-flex items-center rounded-full bg-amber-warn/15 px-2 py-0.5 text-[10.5px] font-semibold text-amber-warn">
               {heat}
             </span>
           ) : null}
@@ -171,7 +171,7 @@ function TradingBlock({ plan }: { plan: PlanFichajes | null | undefined }) {
             </span>
             <span className="shrink-0 text-right">
               {typeof op.euros === "number" ? <span className="block text-[14.5px] font-semibold tabular-nums text-white">{money(op.euros)}</span> : null}
-              <span className="block text-[11px] font-semibold tabular-nums text-[#7FE0A8]">{`+${compact(op.ganancia_esperada)}`}</span>
+              <span className="block text-[11px] font-semibold tabular-nums text-mint-soft-text">{`+${compact(op.ganancia_esperada)}`}</span>
             </span>
           </li>
         ))}
@@ -382,7 +382,7 @@ export function HoyTab({ trends, photos, loading }: { trends: TrendsPayload | nu
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Buscar cualquier jugador o equipo"
-            className="h-12 w-full rounded-full bg-[#1c1c1e] pl-11 pr-4 text-[14px] text-white outline-none transition-shadow duration-200 placeholder:text-white/35 focus-visible:outline-none focus:shadow-[inset_0_0_0_1px_rgba(255,154,90,0.6)]"
+            className="h-12 w-full rounded-full bg-raised pl-11 pr-4 text-[16px] text-white sm:text-[14px] outline-none transition-shadow duration-200 placeholder:text-white/35 focus-visible:outline-none focus:shadow-[inset_0_0_0_1px_rgba(255,154,90,0.6)]"
           />
         </label>
         {filtered.length ? (

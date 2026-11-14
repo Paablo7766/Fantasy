@@ -41,9 +41,9 @@ export function DataAge({ show }: { show: AgeKey[] }) {
   if (!stale.length) return null;
   const detail = stale.map((row) => `${LABEL[row.key].toLowerCase()} ${row.seconds === null ? "sin fecha" : ago(row.seconds).replace("hace ", "de hace ")}`).join(" · ");
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#f5b544]/[0.08] px-4 py-2.5" role="status" data-ui="data-age">
+    <div className="flex items-center justify-between gap-3 rounded-2xl bg-amber-soft/[0.08] px-4 py-2.5" role="status" data-ui="data-age">
       <p className="flex min-w-0 items-start gap-2.5 text-[13px] leading-snug text-white/75">
-        <span className="mt-[0.45em] h-1.5 w-1.5 shrink-0 rounded-full bg-[#f5b544]" aria-hidden="true" />
+        <span className="mt-[0.45em] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-soft" aria-hidden="true" />
         <span className="min-w-0">
           Datos antiguos: <span className="tabular-nums text-white/55">{detail}</span>
         </span>

@@ -101,7 +101,7 @@ function ProfileRow({ row, photo, index, tooPricey }: { row: CatalogProfilePlaye
         </span>
         <span className="shrink-0 text-right">
           <span className={`block text-[15px] font-semibold tabular-nums ${tooPricey ? "text-white/45" : "text-white"}`}>{money(row.market_value)}</span>
-          <span className="block text-[12.5px] font-medium tabular-nums text-[#FFC08A]">{points(row.median)} pts</span>
+          <span className="block text-[12.5px] font-medium tabular-nums text-peach">{points(row.median)} pts</span>
         </span>
       </button>
       {open ? (

@@ -18,11 +18,11 @@ function statusRing(player: Player): string {
   const out =
     player.sanction?.suspended === true ||
     /baja|lesion|lesión|sancion|sanción|no juega|out|injured|suspend/.test(blob);
-  if (out) return "ring-[#4B6075]";
+  if (out) return "ring-faint";
   const share = titularShare(player.p_titular);
-  if (share !== null && share >= 0.75) return "ring-[#0297DE]";
-  if (share !== null && share > 0 && share < 0.75) return "ring-[#FC734D]";
-  return "ring-[#4B6075]";
+  if (share !== null && share >= 0.75) return "ring-accent";
+  if (share !== null && share > 0 && share < 0.75) return "ring-coral";
+  return "ring-faint";
 }
 
 function Bolt() {
@@ -82,7 +82,7 @@ export function PlayerQuantCard({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold tracking-tight text-[#F0F6FC]">{playerName(player)}</p>
-              <p className="truncate text-[11px] text-[#8B9EB0]">{team || "Sin equipo"}</p>
+              <p className="truncate text-[11px] text-muted">{team || "Sin equipo"}</p>
             </div>
             <div className="shrink-0 text-right">
               <p className="font-mono text-sm font-semibold tabular-nums text-[#F0F6FC]">{eurShort(price ?? player.market_value)}</p>
@@ -90,34 +90,34 @@ export function PlayerQuantCard({
                 <span
                   className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums ${
                     tone === "up"
-                      ? "bg-[#10B981]/15 text-[#10B981]"
+                      ? "bg-mint/15 text-mint"
                       : tone === "down"
-                        ? "bg-[#FC734D]/15 text-[#FC734D]"
-                        : "bg-white/5 text-[#8B9EB0]"
+                        ? "bg-coral/15 text-coral"
+                        : "bg-white/5 text-muted"
                   }`}
                 >
                   {variation}
                 </span>
               ) : (
-                <span className="mt-1 inline-flex font-mono text-[10px] text-[#4B6075]">s/d</span>
+                <span className="mt-1 inline-flex font-mono text-[10px] text-faint">s/d</span>
               )}
             </div>
           </div>
           <div className="mt-2.5 flex items-center gap-2">
-            <span className="inline-flex items-baseline gap-1 rounded-full bg-[#02070A] px-2.5 py-1 font-mono text-[13px] font-bold tabular-nums text-[#0297DE]">
-              <span className="text-[9px] font-semibold tracking-wide text-[#8B9EB0]">xP</span>
+            <span className="inline-flex items-baseline gap-1 rounded-full bg-[#02070A] px-2.5 py-1 font-mono text-[13px] font-bold tabular-nums text-accent">
+              <span className="text-[9px] font-semibold tracking-wide text-muted">xP</span>
               {points(xp)}
             </span>
             {typeof ceiling === "number" ? (
-              <span className="inline-flex items-center gap-0.5 font-mono text-[12px] font-semibold tabular-nums text-[#FC734D]">
+              <span className="inline-flex items-center gap-0.5 font-mono text-[12px] font-semibold tabular-nums text-coral">
                 <Bolt />
                 {points(ceiling)}
               </span>
             ) : null}
             <span className="ml-auto min-w-0 text-right">
-              <span className="block truncate text-[10px] font-semibold uppercase tracking-wider text-[#4B6075]">{rightTitle}</span>
+              <span className="block truncate text-[10px] font-semibold uppercase tracking-wider text-faint">{rightTitle}</span>
               <span className="block font-mono text-[12px] font-semibold tabular-nums text-[#F0F6FC]">{rightValue}</span>
-              {rightHint ? <span className="block truncate font-mono text-[10px] tabular-nums text-[#8B9EB0]">{rightHint}</span> : null}
+              {rightHint ? <span className="block truncate font-mono text-[10px] tabular-nums text-muted">{rightHint}</span> : null}
             </span>
           </div>
         </div>
@@ -125,8 +125,8 @@ export function PlayerQuantCard({
       {children}
     </>
   );
-  const className = `w-full rounded-2xl border border-[#0297DE]/15 bg-[#07121A]/85 p-3.5 text-left backdrop-blur-xl ${shadow} ${
-    pressed ? "border-[#0297DE]" : ""
+  const className = `w-full rounded-2xl border border-accent/15 bg-[#07121A]/85 p-3.5 text-left backdrop-blur-xl ${shadow} ${
+    pressed ? "border-accent" : ""
   }`;
   if (onClick) {
     return (

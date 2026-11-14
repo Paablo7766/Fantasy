@@ -190,8 +190,10 @@
   transition: transform 160ms ease, opacity 160ms ease;
 }
 
+@media (hover: hover) {
 .ini-refresh__btn:hover:not(:disabled) {
   transform: rotate(-30deg);
+}
 }
 
 .ini-refresh__btn:active:not(:disabled) {
@@ -520,8 +522,10 @@
   transition: background-color 220ms ease, transform 220ms var(--ini-ease);
 }
 
+@media (hover: hover) {
 .ini-tile:hover {
   background: var(--ini-surface-2);
+}
 }
 
 .ini-tile__icon {
@@ -651,8 +655,10 @@
   transition: background-color 200ms ease, box-shadow 240ms ease;
 }
 
+@media (hover: hover) {
 .ini .ini-divide > li:hover {
   background: #232325;
+}
 }
 
 .ini .ini-row:has([aria-expanded="true"]) {
@@ -702,8 +708,10 @@
   border-radius: 1.25rem;
 }
 
+@media (hover: hover) {
 .ini-disclosure > button:hover {
   background: rgba(255, 255, 255, 0.03);
+}
 }
 
 /* Pestañas: indicador blanco con texto negro. */
@@ -743,8 +751,10 @@
   color: rgba(11, 11, 11, 0.45);
 }
 
+@media (hover: hover) {
 .ini .ini-amount:hover {
   background: #e9e9e9;
+}
 }
 
 .ini .ini-check {
@@ -773,9 +783,11 @@
   transition: background-color 200ms ease, color 200ms ease;
 }
 
+@media (hover: hover) {
 .ini-more:hover {
   background: #fff;
   color: #0b0b0b;
+}
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -839,8 +851,10 @@
   transition: opacity 360ms var(--ini-ease);
 }
 
+@media (hover: hover) {
 .ini-row:hover {
   background: rgba(255, 255, 255, 0.022);
+}
 }
 
 /* Se atenúa el contenido: la animación de entrada fija la opacidad de la fila. */
@@ -860,8 +874,10 @@
   transition: background-color 240ms var(--ini-ease), border-color 240ms ease, transform 160ms ease;
 }
 
+@media (hover: hover) {
 .ini-check:hover {
   border-color: rgba(255, 255, 255, 0.45);
+}
 }
 
 .ini-check:active {
@@ -970,9 +986,11 @@
   transition: background-color 180ms ease, border-color 180ms ease, transform 140ms ease;
 }
 
+@media (hover: hover) {
 .ini-amount:hover {
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.1);
+}
 }
 
 .ini-amount:active {
@@ -1065,10 +1083,7 @@
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.03em;
-  background: linear-gradient(180deg, #fff, rgba(255, 255, 255, 0.72));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: #fff;
 }
 
 @media (min-width: 1024px) {
@@ -1122,8 +1137,10 @@
   transition: border-color 200ms ease, background-color 200ms ease;
 }
 
+@media (hover: hover) {
 .fresh:hover {
   border-color: rgba(255, 255, 255, 0.16);
+}
 }
 
 .fresh__label {
@@ -1199,8 +1216,10 @@
   transition: background 280ms ease;
 }
 
+@media (hover: hover) {
 .fresh__btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.16);
+}
 }
 
 .fresh__btn:active:not(:disabled) {
@@ -1528,8 +1547,10 @@
   transition: background-color 500ms cubic-bezier(0.16, 1, 0.3, 1), color 300ms ease, box-shadow 500ms ease;
 }
 
+@media (hover: hover) {
 .eq-stack .desk-switch__btn:hover {
   color: #fff;
+}
 }
 
 .eq-stack .desk-switch__btn--on {
@@ -1579,8 +1600,10 @@
   transition: background-color 300ms ease, box-shadow 300ms ease;
 }
 
+@media (hover: hover) {
 .eq-stack ul.home-glass > li:hover {
   background: #232325;
+}
 }
 
 .eq-stack ul.home-glass > li:has([aria-expanded="true"]) {
@@ -1592,8 +1615,10 @@
   border-radius: 1.25rem;
 }
 
+@media (hover: hover) {
 .eq-stack ul.home-glass > li > button:hover {
   background: transparent !important;
+}
 }
 
 /* Filtros. */
@@ -1689,8 +1714,10 @@
   height: 1.5rem;
 }
 
+@media (hover: hover) {
 .dock-link:hover {
   color: rgba(255, 255, 255, 0.85);
+}
 }
 
 .dock-link:active {
@@ -1779,7 +1806,7 @@
   border-radius: 9999px;
   background: #fff;
   box-shadow: 0 8px 22px -10px rgba(0, 0, 0, 0.9);
-  transition: transform 520ms cubic-bezier(0.34, 1.36, 0.64, 1);
+  transition: transform 520ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .eq-stack .eq-tabs__btn {
@@ -1868,8 +1895,10 @@
   text-overflow: ellipsis;
 }
 
+@media (hover: hover) {
 .ini-refresh--quiet .ini-refresh__age:hover {
   color: #fff;
+}
 }
 
 .ini-refresh--quiet .ini-refresh__btn {
@@ -1880,9 +1909,11 @@
   color: rgba(255, 255, 255, 0.9);
 }
 
+@media (hover: hover) {
 .ini-refresh--quiet .ini-refresh__btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.2);
   color: #fff;
+}
 }
 
 .ini-refresh--quiet .ini-refresh__btn:disabled {
@@ -1917,9 +1948,11 @@
   transition: background 140ms ease;
 }
 
+@media (hover: hover) {
 .ini-refresh__item:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
+}
 }
 
 .ini-refresh__item:disabled {
@@ -2148,8 +2181,10 @@
   color: rgba(255, 255, 255, 0.35);
 }
 
+@media (hover: hover) {
 .ini-switch__tabs button:hover {
   color: #fff;
+}
 }
 
 .ini-switch__tabs button[data-on="true"] {
@@ -2471,9 +2506,11 @@
   transition: background-color 240ms var(--ini-premium, ease), color 240ms ease, transform 200ms ease;
 }
 
+@media (hover: hover) {
 .ini-lab:hover {
   background: rgba(255, 255, 255, 0.2);
   color: #fff;
+}
 }
 
 .ini-lab:active {
@@ -2581,9 +2618,11 @@
   font-weight: 600;
 }
 
+@media (hover: hover) {
 .ini-hero__foot .ini-refresh--quiet .ini-refresh__btn:hover:not(:disabled) {
   background: #ececec;
   transform: none;
+}
 }
 
 .ini-hero__foot .ini-refresh__btn[data-progress="true"]::before {
@@ -2598,8 +2637,10 @@
   font-size: 12.5px;
 }
 
+@media (hover: hover) {
 .ini-hero__foot .ini-lab:hover {
   background: rgba(255, 255, 255, 0.12);
+}
 }
 
 .ini-hero__foot .ini-refresh__menu {
@@ -2717,9 +2758,11 @@
   transition: background-color 260ms var(--ini-premium, ease), color 260ms ease, transform 200ms ease;
 }
 
+@media (hover: hover) {
 .ini-sync:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.09);
   color: #fff;
+}
 }
 
 .ini-sync:active:not(:disabled) {
@@ -2752,8 +2795,10 @@
   transition: transform 500ms var(--ini-premium, ease);
 }
 
+@media (hover: hover) {
 .ini-sync:hover:not(:disabled) .ini-sync__icon {
   transform: rotate(180deg);
+}
 }
 
 .ini-sync__bar {
@@ -2904,9 +2949,11 @@
   text-decoration: none;
 }
 
+@media (hover: hover) {
 .ini-sync--link:hover {
   background: rgba(255, 255, 255, 0.09);
   color: #fff;
+}
 }
 
 .ini-dock {
@@ -3008,9 +3055,11 @@
   transition: color 150ms ease, background 150ms ease;
 }
 
+@media (hover: hover) {
 .ini-foot:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.025);
+}
 }
 
 .ini-foot svg {

@@ -150,7 +150,7 @@ function MachineRange({ spread }: { spread: number }) {
       <div className="relative h-1.5 rounded-full" style={{ background: `linear-gradient(90deg, ${TONE.red}66, rgba(255,255,255,0.12) 50%, ${TONE.green}66)` }}>
         <span className="absolute top-1/2 h-3 w-px -translate-y-1/2 bg-white/30" style={{ left: "50%" }} aria-hidden="true" />
         <span
-          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#1c1c1e] bg-white shadow-[0_0_10px_rgba(255,255,255,0.4)]"
+          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-raised bg-white shadow-[0_0_10px_rgba(255,255,255,0.4)]"
           style={{ left: `${left}%` }}
           aria-hidden="true"
         />
@@ -174,7 +174,7 @@ function OfferRow({ row, photos, index }: { row: AuditoriaVenta; photos: PhotoIn
   const amount = offer.importe_oferta;
   const spread = offer.spread_pct;
   return (
-    <li className="row-in rounded-[1.25rem] bg-[#1c1c1e]" style={{ animationDelay: `${index * 40}ms` }}>
+    <li className="row-in rounded-[1.25rem] bg-raised" style={{ animationDelay: `${index * 40}ms` }}>
       <button
         type="button"
         aria-expanded={open}
@@ -411,7 +411,7 @@ function MovesCard({ views }: { views: Partial<Record<MoveMode, MoveView>> }) {
                 aria-selected={current === item}
                 onClick={() => setMode(item)}
                 className={`relative z-10 min-h-[2rem] whitespace-nowrap rounded-full px-3 text-[12px] font-semibold transition-colors duration-300 ${
-                  current === item ? "text-[#0b0b0b]" : "text-white/55 hover:text-white"
+                  current === item ? "text-ink-on-light" : "text-white/55 hover:text-white"
                 }`}
               >
                 {item === "day" ? "Último día" : "7 días"}
@@ -625,7 +625,7 @@ function PlayerCard({
             <Fact label="Cláusula" value={money(player.buyout_clause)} hint={lockCaption(player) || undefined} />
           </div>
           {audit && !audit.oferta_activa?.comprador && audit.veredicto_codigo === "PONER_ESCAPARATE" ? (
-            <p className="mt-3 rounded-2xl bg-[#0297DE]/10 px-3 py-2.5 text-[13px] leading-relaxed text-white/70">{audit.motivo_detallado}</p>
+            <p className="mt-3 rounded-2xl bg-accent/10 px-3 py-2.5 text-[13px] leading-relaxed text-white/70">{audit.motivo_detallado}</p>
           ) : null}
           {player.points_owned_estimated ? (
             <p className="mt-3 text-[11.5px] leading-snug text-white/35">
@@ -864,7 +864,7 @@ export function CarteraTab({
                   aria-pressed={position === item.id}
                   onClick={() => setPosition(item.id)}
                   className={`min-h-[2rem] shrink-0 rounded-full px-3 text-[12.5px] font-medium transition-colors duration-300 ${
-                    position === item.id ? "bg-white text-[#0b0b0b]" : "text-white/55 hover:text-white"
+                    position === item.id ? "bg-white text-ink-on-light" : "text-white/55 hover:text-white"
                   }`}
                 >
                   {item.label}
@@ -879,10 +879,10 @@ export function CarteraTab({
                   setSort(event.target.value as Sort);
                   setAscending(false);
                 }}
-                className="h-8 rounded-full bg-white/[0.06] px-2.5 text-[12.5px] text-white outline-none"
+                className="h-8 rounded-full bg-white/[0.06] px-2.5 text-[16px] text-white sm:text-[12.5px] outline-none"
               >
                 {SORTS.map((item) => (
-                  <option key={item.id} value={item.id} className="bg-[#141414]">
+                  <option key={item.id} value={item.id} className="bg-raised-deep">
                     {item.label}
                   </option>
                 ))}

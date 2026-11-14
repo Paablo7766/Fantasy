@@ -181,7 +181,7 @@ function Scorers({ rows, listed }: { rows: ModelScorerRow[]; listed: number }) {
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[14.5px] font-medium text-white">
                 {r.name}
-                {r.mine ? <span className="ml-2 text-[12px] text-[#FF9A5A]">Tuyo</span> : null}
+                {r.mine ? <span className="ml-2 text-[12px] text-ember">Tuyo</span> : null}
               </span>
               <span className="block truncate text-[12px] text-white/45">{r.club ?? ""}</span>
             </span>
@@ -211,10 +211,10 @@ function Trials({ items, history }: { items: ModelShadowItem[]; history: NonNull
           <li key={item.id} className="home-glass p-4">
             <div className="flex items-start justify-between gap-3">
               <p className="text-[14.5px] font-medium text-white">{item.label}</p>
-              <span className="shrink-0 rounded-full bg-[#F59E0B]/15 px-2.5 py-0.5 text-[11.5px] font-medium text-[#F59E0B]">{item.state}</span>
+              <span className="shrink-0 rounded-full bg-amber-warn/15 px-2.5 py-0.5 text-[11.5px] font-medium text-amber-warn">{item.state}</span>
             </div>
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.07]" aria-hidden="true">
-              <div className="h-full rounded-full bg-[#FF7A3D]" style={{ width: `${Math.max(3, Math.round(item.progress * 100))}%` }} />
+              <div className="h-full rounded-full bg-ember-strong" style={{ width: `${Math.max(3, Math.round(item.progress * 100))}%` }} />
             </div>
             <p className="mt-2 text-[12.5px] text-white/55">{item.progress_text}</p>
             <details className="mt-1.5">
@@ -271,7 +271,7 @@ function CopyReport({ text }: { text: string | undefined }) {
             autoFocus
             value={text}
             onFocus={(event) => event.currentTarget.select()}
-            className="h-40 w-full rounded-lg border border-white/[0.07] bg-black/30 p-2 font-mono text-[11px] text-white/80"
+            className="h-40 w-full rounded-lg border border-white/[0.07] bg-black/30 p-2 font-mono text-[16px] text-white/80 sm:text-[11px]"
             data-ui="copy-model-report-text"
           />
         </div>

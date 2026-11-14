@@ -37,3 +37,10 @@ Actualizar_Fantasy.bat
 /_tmp_curl/
 *.log
 CLAVES_AVISOS.txt
+
+# Skills y agentes de IA instalados localmente (no son parte del producto)
+/.agents/
+/.claude/skills/
+/.claude/agents/
+/.claude/settings.local.json
+/.codex/

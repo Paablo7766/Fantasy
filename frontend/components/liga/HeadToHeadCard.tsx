@@ -210,7 +210,7 @@ export function HeadToHeadCard({
       <div className="min-w-0 px-4 pb-4 pt-1 min-[900px]:px-5 min-[900px]:pt-5">
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-x-4">
           <div className="min-w-0">
-            <p className="truncate text-[12.5px] text-[#FFC08A]">Tu once</p>
+            <p className="truncate text-[12.5px] text-peach">Tu once</p>
             <p className="mt-1 text-[2.1rem] font-semibold leading-none tracking-tight tabular-nums text-white">{points(mineTotal)}</p>
             {myCeiling !== null ? <p className="mt-1.5 text-[11.5px] tabular-nums text-white/40">techo {points(myCeiling)}</p> : null}
           </div>
@@ -228,7 +228,7 @@ export function HeadToHeadCard({
         </div>
 
         <div className="mt-4 flex h-1.5 gap-1 overflow-hidden rounded-full" aria-hidden="true">
-          <span className="rounded-full bg-[#FFC08A] transition-[width] duration-700 ease-out" style={{ width: `${share}%` }} />
+          <span className="rounded-full bg-peach transition-[width] duration-700 ease-out" style={{ width: `${share}%` }} />
           <span className="flex-1 rounded-full bg-white/25" />
         </div>
         <p className="mt-3 text-[13.5px] leading-snug text-white/65">
@@ -245,7 +245,7 @@ export function HeadToHeadCard({
                 <li key={line.id} className="grid grid-cols-[2.75rem_minmax(0,1fr)_4.5rem_minmax(0,1fr)_2.75rem] items-center gap-x-2.5 py-2">
                   <span className={`text-right text-[13.5px] tabular-nums ${diff >= 0 ? "font-semibold text-white" : "text-white/50"}`}>{points(line.me)}</span>
                   <span className="flex h-2 justify-end overflow-hidden rounded-full bg-white/[0.05]" aria-hidden="true">
-                    <span className="h-full rounded-full bg-[#FFC08A] transition-[width] duration-500 ease-out" style={{ width: `${(line.me / lineTop) * 100}%` }} />
+                    <span className="h-full rounded-full bg-peach transition-[width] duration-500 ease-out" style={{ width: `${(line.me / lineTop) * 100}%` }} />
                   </span>
                   <span className="text-center">
                     <span className="block text-[12px] text-white/60">{line.label}</span>

@@ -177,7 +177,7 @@ export function ValueChart({ points, summary }: { points: ValuePoint[]; summary:
         />
         {forecast ? (
           <span
-            className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/80 bg-[#0b0b0b]"
+            className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/80 bg-ink-on-light"
             style={{ left: `${xOf(forecast.t)}%`, top: `${yOf(forecast.value)}%` }}
             aria-hidden="true"
           />
@@ -187,7 +187,7 @@ export function ValueChart({ points, summary }: { points: ValuePoint[]; summary:
           <>
             <span className="pointer-events-none absolute inset-y-0 w-px bg-white/25" style={{ left: `${shownX}%` }} aria-hidden="true" />
             <span
-              className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#0b0b0b] bg-white"
+              className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-ink-on-light bg-white"
               style={{ left: `${shownX}%`, top: `${yOf(shown.value)}%` }}
               aria-hidden="true"
             />

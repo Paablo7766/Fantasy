@@ -26,7 +26,7 @@ export function CuentaPanel() {
         </Row>
         {refreshError || trends?.partial ? (
           <Row title="Estado de la lectura" detail={refreshError || "La última descarga quedó incompleta."}>
-            <span className="rounded-full bg-[#F59E0B]/15 px-2.5 py-1 text-[11.5px] font-semibold text-[#F59E0B]">{refreshError ? "Con error" : "Parcial"}</span>
+            <span className="rounded-full bg-amber-warn/15 px-2.5 py-1 text-[11.5px] font-semibold text-amber-warn">{refreshError ? "Con error" : "Parcial"}</span>
           </Row>
         ) : null}
         <Row title="Conectar cuenta" detail="Elige tu cuenta de LaLiga Fantasy en Chrome para leer tu liga.">
