@@ -447,15 +447,31 @@ def _mejora_neta(row: dict[str, Any], elegibles: list[dict[str, Any]], base: flo
     # Plantilla sin once legal (por ejemplo 10 jugadores): el hueco vale 0 puntos.
     # Se compara contra el mejor once con un suplente de 0 por puesto, para que
     # la mejora sea lo que aporta el fichaje y no el once entero.
-    huecos = [
-        {"player_id": f"hueco:{posicion}", "position": posicion, "jornada": 0.0}
-        for posicion in POSITIONS
-    ]
-    antes = solve_best_xi([*elegibles, *huecos])
-    con = solve_best_xi([*elegibles, *huecos, fantasma])
+    antes = solve_best_xi([*elegibles, *_huecos_a_cero()])
+    con = solve_best_xi([*elegibles, *_huecos_a_cero(), fantasma])
     if not antes["ok"] or not con["ok"]:
         return 0.0
     return round(max(0.0, float(con["puntos"]) - float(antes["puntos"])), 4)
+
+
+def _huecos_a_cero() -> list[dict[str, Any]]:
+    return [
+        {"player_id": f"hueco:{posicion}", "position": posicion, "jornada": 0.0}
+        for posicion in POSITIONS
+    ]
+
+
+def puntos_referencia_mejoras(elegibles: list[dict[str, Any]], actual: dict[str, Any]) -> float:
+    """Base contra la que se mide cada ``mejora_neta``.
+
+    Con once legal es el once actual. Sin él (10 jugadores) es el mejor once con
+    los huecos a 0 puntos, no 0: si no, «once del plan − base» vale el once
+    entero y no la suma de lo que aporta cada fichaje.
+    """
+    if actual.get("ok"):
+        return float(actual["puntos"])
+    con_huecos = solve_best_xi([*elegibles, *_huecos_a_cero()])
+    return float(con_huecos["puntos"]) if con_huecos["ok"] else 0.0
 
 
 def _tiene_oferta(row: dict[str, Any]) -> bool:
@@ -902,6 +918,7 @@ def _plan_once(
     ]
     actual = solve_best_xi(elegibles)
     base_puntos = float(actual["puntos"]) if actual["ok"] else 0.0
+    referencia_mejoras = puntos_referencia_mejoras(elegibles, actual)
     xi_ids = set(actual["player_ids"]) if actual["ok"] else set()
     bajas = {row["player_id"] for row in plantilla if _es_baja(row)}
     huecos = set(actual.get("huecos_obligatorios") or [])
@@ -1849,6 +1866,9 @@ def _plan_once(
         "formacion": chosen_form,
         "puntos_once": round(puntos_once, 2),
         "puntos_once_actual": round(float(baseline_puntos), 2),
+        # Base de las ``mejora_neta`` de cada acción (con 10 jugadores, el once con
+        # huecos a 0): «puntos_once − esto» es comparable con su suma.
+        "puntos_once_referencia": round(referencia_mejoras, 2),
         "huecos_obligatorios": _publicar_huecos(plantilla, huecos),
         "ratio_mercado": round(ratio, 2) if ratio else None,
         "once": once,

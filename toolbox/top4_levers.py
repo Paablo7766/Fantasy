@@ -232,7 +232,16 @@ def build_overlay(
             if x.get("tipo") == "PUJA"
         ]
         seguras = len(compras_hoy) - len(pujas)
-        mejora_total = _number(fichajes.get("mejora_puntos_jornada")) or 0.0
+        # Las ``mejora_neta`` se miden contra ``puntos_once_referencia``. Con
+        # plantilla incompleta ``puntos_once_actual`` es 0 y «mejora_puntos_jornada»
+        # vale el once entero: escalar con ella triplicaba lo que resta cada puja perdida.
+        referencia = _number(fichajes.get("puntos_once_referencia"))
+        if referencia is not None:
+            mejora_total = max(0.0, puntos_once - referencia)
+        elif void:
+            mejora_total = 0.0
+        else:
+            mejora_total = _number(fichajes.get("mejora_puntos_jornada")) or 0.0
         esc = escenarios_pujas(model, pujas, puntos_once, mejora_total, count - len(ventas_hoy) + seguras)
         plan_total = {
             "puntos_once": round(puntos_once, 2),
