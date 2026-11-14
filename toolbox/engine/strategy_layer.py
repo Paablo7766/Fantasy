@@ -23,6 +23,7 @@ from toolbox.engine.auction_intel import (
     capitanes,
     puja_anti_pizarra,
     puja_competitiva_liga,
+    puja_por_valor,
     techo_sobrepuja_eur,
 )
 from toolbox.engine.guardarrail_ruina import evaluar as evaluar_guardarrail
@@ -1158,6 +1159,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         )
         techo = techo_sobrepuja_eur(valor, supervivencia=row["supervivencia"] is True)
         pujas[player_id]["techo_sobrepuja"] = None if techo is None else int(math.floor(techo))
+        pujas[player_id]["valor_mercado"] = valor
         _aplicar_anti_pizarra(pujas[player_id], row, notas.get(player_id), previsto_pct, saldo)
         # Demanda alta en el mercado: el escalón de liga también se enseña fuera del plan.
         base_mercado = (
@@ -1225,7 +1227,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         notas,
         curva=curva,
     )
-    _sellar_pujas_plan(plan, pujas, sobrepuja_liga)
+    _sellar_pujas_plan(plan, pujas, sobrepuja_liga, curva_primas=_curva_primas())
     consejos = _consejos(records, war, plan, own_id)
     auditoria = _auditar_ventas(records, war, plan, previsiones, saldo, own_id)
     clausulas = _asesorar_clausulas(
@@ -1725,6 +1727,17 @@ def _sobrepuja_liga() -> dict[str, Any] | None:
         return None
 
 
+def _curva_primas() -> tuple[tuple[float, float], ...] | None:
+    """Curva de primas de la liga desde la base local; ``None`` usa la medida el 14-nov."""
+    try:
+        from toolbox.engine_calibration import curva_primas_de_liga
+
+        return curva_primas_de_liga()
+    except Exception:  # noqa: BLE001 — sin base se usa la curva medida
+        logger.debug("Sin curva de primas de liga", exc_info=True)
+        return None
+
+
 def _aplicar_competitiva(
     destino: dict[str, Any],
     *,
@@ -1965,6 +1978,8 @@ def _sellar_pujas_plan(
     plan: dict[str, Any],
     pujas: dict[str, dict[str, Any]],
     sobrepuja: dict[str, Any] | None = None,
+    *,
+    curva_primas: tuple[tuple[float, float], ...] | None = None,
 ) -> None:
     """Las acciones PUJA del plan llevan la cifra de La Pizarra y la nuestra.
 
@@ -2011,11 +2026,45 @@ def _sellar_pujas_plan(
         puja["puja_competitiva_liga"] = accion["puja_competitiva_liga"]
         puja["sobrepuja_liga_pct"] = accion["sobrepuja_liga_pct"]
         final = puja_final(accion)
+        por_valor = _puja_por_valor_plan(accion, puja, plan, margen, curva_primas)
+        if por_valor is not None:
+            # Objetivo del plan: la cifra sale de probabilidad × lo que vale para tu
+            # once, no del techo fijo del +10 % (auditoría 14-nov-2026, fallo 1).
+            final = por_valor["puja"]
         accion["puja_final"] = final
         base = accion.get("euros")
         if final is not None and isinstance(base, int) and not isinstance(base, bool) and accion.get("momento") in _MOMENTOS_PLAN:
             extra_total += max(0, final - base)
     plan["cifras"] = _cifras_plan(plan, extra_total)
+
+
+def _puja_por_valor_plan(
+    accion: dict[str, Any],
+    puja: dict[str, Any],
+    plan: dict[str, Any],
+    margen: int,
+    curva: tuple[tuple[float, float], ...] | None,
+) -> dict[str, Any] | None:
+    """Cifra de un objetivo del plan por valor esperado, dentro de lo que el plan puede poner."""
+    valor = puja.get("valor_mercado")
+    mejora = _num(accion.get("mejora_neta"))
+    ratio = _num(plan.get("ratio_mercado"))
+    base = accion.get("euros")
+    if mejora is None or ratio is None or not isinstance(valor, int) or isinstance(base, bool) or not isinstance(base, int):
+        return None
+    ganancia = mejora * ratio
+    resultado = puja_por_valor(
+        valor, ganancia, tope_eur=base + max(0, margen), curva=curva, clave=accion.get("player_id")
+    )
+    if resultado is None:
+        return None
+    resultado["puja"] = max(int(resultado["puja"]), valor)
+    accion["puja_por_valor"] = resultado["puja"]
+    accion["prima_por_valor_pct"] = round(resultado["prima"] * 100.0, 1)
+    accion["p_ganar_por_valor"] = resultado["p_ganar"]
+    accion["ganancia_once_eur"] = int(round(ganancia))
+    accion["valor_esperado_puja_eur"] = resultado["valor_esperado_eur"]
+    return resultado
 
 
 def puja_final(accion: dict[str, Any]) -> int | None:

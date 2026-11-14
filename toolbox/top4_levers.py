@@ -87,6 +87,13 @@ def _prob_ganar(plan: dict[str, Any]) -> dict[str, float]:
             p = _number(row.get("win_probability"))
             if p is not None:
                 out[row["player_id"]] = max(0.0, min(1.0, p))
+    # Objetivo del plan con cifra por valor: su probabilidad es la de esa cifra.
+    fichajes = plan.get("plan_fichajes") if isinstance(plan.get("plan_fichajes"), dict) else {}
+    for accion in fichajes.get("acciones") or []:
+        if isinstance(accion, dict) and isinstance(accion.get("player_id"), str):
+            p = _number(accion.get("p_ganar_por_valor"))
+            if p is not None:
+                out[accion["player_id"]] = max(0.0, min(1.0, p))
     return out
 
 

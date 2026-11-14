@@ -39,9 +39,20 @@ UMBRAL_PREVISION_DEMANDA = 15.0
 SOBREPUJA_PRIOR = 0.05
 SOBREPUJA_PESO_PRIOR = 4.0
 SOBREPUJA_MAX = 0.20
-# Frente 20: por encima de +10 % sobre el valor la puja pierde dinero
-# (−0,85 M€ en +10..25 %, −2,94 M€ por encima de +25 %). Techo duro.
+# Frente 20: por encima de +10 % sobre el valor la prima se pierde al revender
+# (−0,85 M€ en +10..25 %, −2,94 M€ por encima de +25 %). Mide euros de reventa, no
+# subastas ganadas ni puntos: vale de techo para lo que se compra sin mejorar el
+# once. Los objetivos del plan usan ``puja_por_valor`` (auditoría 14-nov-2026).
 TECHO_SOBREPUJA = 0.10
+# Curva de la liga: parte de las compras al cierre que habrías superado con cada
+# prima sobre el valor del día. Medida el 14-nov-2026 con 83 compras; se usa
+# mientras la base local no tenga ``MIN_MUESTRA_CURVA`` compras propias.
+CURVA_PRIMAS_PRIOR: tuple[tuple[float, float], ...] = (
+    (0.00, 0.29), (0.02, 0.34), (0.05, 0.37), (0.10, 0.47), (0.15, 0.60), (0.20, 0.63),
+    (0.30, 0.72), (0.40, 0.72), (0.50, 0.76), (0.75, 0.81), (1.00, 0.87),
+)
+MIN_MUESTRA_CURVA = 30
+PRIMA_MAX_POR_VALOR = 1.0
 # Un parche por debajo de esto, y solo si tapa un once que si no hace 0, puede saltarse el techo.
 PARCHE_SUPERVIVENCIA_EUR = 1_500_000
 # Entre 140.000 y 220.000 €, en pasos de 10.000, sin múltiplos de 50.000.
@@ -516,3 +527,73 @@ def nota_y_veredicto(mejora: float, acciones: list[dict[str, Any]]) -> tuple[int
     nota = int(round(mejora * 4))
     nota = max(suelo, min(10, nota))
     return nota, veredicto
+
+
+def curva_primas(primas: list[float]) -> tuple[tuple[float, float], ...] | None:
+    """Curva empírica (prima, parte de compras con prima <= esa) en los puntos de la prior.
+
+    Primas negativas (el valor del día ya había cambiado) cuentan como 0.
+    Con menos de ``MIN_MUESTRA_CURVA`` compras devuelve ``None``.
+    """
+    datos = sorted(max(0.0, float(x)) for x in primas if isinstance(x, (int, float)) and not isinstance(x, bool))
+    if len(datos) < MIN_MUESTRA_CURVA:
+        return None
+    n = len(datos)
+    return tuple((prima, round(sum(1 for x in datos if x <= prima + 1e-9) / n, 4)) for prima, _ in CURVA_PRIMAS_PRIOR)
+
+
+def prob_ganar_prima(prima: float, curva: tuple[tuple[float, float], ...] | None = None) -> float:
+    """Probabilidad de ganar la subasta pujando ``valor × (1 + prima)``, interpolada en la curva."""
+    puntos = curva or CURVA_PRIMAS_PRIOR
+    if prima <= puntos[0][0]:
+        return puntos[0][1]
+    for (x0, p0), (x1, p1) in zip(puntos, puntos[1:]):
+        if prima <= x1:
+            return p0 + (p1 - p0) * (prima - x0) / (x1 - x0)
+    return puntos[-1][1]
+
+
+def puja_por_valor(
+    valor: Any,
+    ganancia_eur: Any,
+    *,
+    tope_eur: Any = None,
+    curva: tuple[tuple[float, float], ...] | None = None,
+    clave: Any = None,
+) -> dict[str, Any] | None:
+    """La puja que maximiza P(ganar) × (lo que vale para tu once − la prima perdida).
+
+    ``ganancia_eur`` es la mejora del once en euros (xP × ratio de mercado). La
+    prima sobre el valor se da por perdida al revender (Frente 20). ``tope_eur``
+    es lo que el plan puede poner (caja, holgura y crédito). Sin ganancia no hay
+    cifra: el jugador no mejora el once y manda el techo fijo.
+    """
+    if any(isinstance(v, bool) for v in (valor, ganancia_eur, tope_eur)):
+        return None
+    if not isinstance(valor, (int, float)) or valor <= 0:
+        return None
+    if not isinstance(ganancia_eur, (int, float)) or ganancia_eur <= 0:
+        return None
+    tope = float(tope_eur) if isinstance(tope_eur, (int, float)) and tope_eur > 0 else None
+    mejor: tuple[float, float, float] | None = None
+    for paso in range(int(PRIMA_MAX_POR_VALOR * 100) + 1):
+        prima = paso / 100.0
+        cifra = float(valor) * (1.0 + prima)
+        if tope is not None and cifra > tope:
+            break
+        p = prob_ganar_prima(prima, curva)
+        esperado = p * (float(ganancia_eur) - (cifra - float(valor)))
+        if mejor is None or esperado > mejor[2] + 1e-6:
+            mejor = (prima, p, esperado)
+    if mejor is None:
+        return None
+    prima, p, esperado = mejor
+    cifra = max(int(valor), _paso(float(valor) * (1.0 + prima)))
+    if tope is not None:
+        cifra = min(cifra, int(tope))
+    return {
+        "puja": con_cola_anti_picos(cifra, clave=clave if clave is not None else valor, techo=tope),
+        "prima": prima,
+        "p_ganar": round(p, 4),
+        "valor_esperado_eur": int(round(esperado)),
+    }

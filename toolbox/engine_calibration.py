@@ -283,6 +283,41 @@ def sobrepuja_de_liga(db_path: Path | None = None) -> dict[str, Any] | None:
     return resumen if resumen["estimada"] is not None else None
 
 
+def curva_primas_de_liga(db_path: Path | None = None) -> tuple[tuple[float, float], ...] | None:
+    """Curva de primas de las compras al cierre de la liga contra el valor de ese día.
+
+    Lee ``activity_buys`` y ``price_snapshots``. Sin base o con poca muestra, ``None``
+    (quien llama usa la curva medida el 14-nov-2026).
+    """
+    from toolbox.engine.auction_intel import curva_primas
+
+    ruta = db_path or calibration_db_path()
+    if not Path(ruta).is_file():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{Path(ruta).as_posix()}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        filas = conn.execute(
+            """
+            select b.amount_eur, (
+                select p.market_value from price_snapshots p
+                where p.player_id = b.player_id and p.day <= substr(b.at, 1, 10)
+                order by p.day desc limit 1
+            )
+            from activity_buys b
+            where b.amount_eur > 0
+            """
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    primas = [pagado / valor - 1.0 for pagado, valor in filas if isinstance(valor, int) and valor > 0]
+    return curva_primas(primas)
+
+
 def matchday_points_trend(conn: sqlite3.Connection) -> dict[str, Any]:
     rows = conn.execute(
         """
