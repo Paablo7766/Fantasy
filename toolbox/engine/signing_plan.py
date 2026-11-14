@@ -1908,8 +1908,28 @@ def _plan_once(
     orden = {"hoy": 0, "condicional": 1, "luego": 2}
     tipo_orden = {"PUJA": 0, "ESCAPARATE": 1, "VENDER HOY": 2, "VENDE": 3, "CLAUSULAZO": 4, "BUSCA": 5}
     acciones.sort(key=lambda accion: (orden.get(str(accion["momento"]), 9), tipo_orden.get(str(accion["tipo"]), 9)))
+    elegidas = {row["player_id"] for row in pujas_sel}
+    # Pujas que el solver no eligió pero mejoran el once: de aquí salen las
+    # reservas de una puja dudosa (misma posición), que se deciden fuera.
+    candidatos_puja = [
+        {
+            "player_id": ficha["row"]["player_id"],
+            "nombre": _nombre(ficha["row"]),
+            "posicion": ficha["row"].get("position"),
+            "jornada": _jornada(ficha["row"]),
+            "euros": int(ficha["euros"]),
+            "mejora_neta": round(float(ficha["mejora"]), 2),
+            "p_ganar_estimada": None if ficha.get("p_ganar") is None else round(float(ficha["p_ganar"]), 3),
+        }
+        for clave, ficha in ficha_compra.items()
+        if clave.startswith("bid:")
+        and ficha["row"]["player_id"] not in elegidas
+        and float(ficha["mejora"]) > 0
+        and ficha["impulso"] != "CHOLLO"
+    ]
     return {
         "ok": True,
+        "candidatos_puja": candidatos_puja,
         "mejora_puntos_jornada": mejora,
         "saldo_al_final": saldo_final,
         "nota": nota,

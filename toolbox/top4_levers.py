@@ -129,24 +129,35 @@ def escenarios_pujas(
     hay 11 jugadores, la jornada vale 0.
     """
     pujas = pujas[:MAX_PUJAS_ENUMERADAS]
-    suma = sum(p["mejora"] for p in pujas) or 1.0
+    # Las reservas no están en ``puntos_once``: solo devuelven la mejora de su
+    # principal cuando esta se pierde.
+    principales = [p for p in pujas if not p.get("reserva_de")]
+    suma = sum(p["mejora"] for p in principales) or 1.0
     escala = mejora_total / suma if mejora_total else 1.0
     esperado = 0.0
     for gana in product((False, True), repeat=len(pujas)):
         prob = 1.0
         perdidas = 0.0
         ganadas = 0
+        ganada = {}
         for won, p in zip(gana, pujas):
             prob *= p["prob"] if won else 1.0 - p["prob"]
+            ganada[p.get("id")] = won
             if won:
                 ganadas += 1
-            else:
+            elif not p.get("reserva_de"):
                 perdidas += p["mejora"]
+        for won, p in zip(gana, pujas):
+            if not won or not p.get("reserva_de"):
+                continue
+            principal = next((q for q in principales if q.get("id") == p["reserva_de"]), None)
+            if principal is not None and not ganada.get(principal.get("id")):
+                perdidas -= min(p["mejora"], principal["mejora"])
         esperado += prob * model.p(puntos_once - escala * perdidas, void=jugadores_base + ganadas < MIN_PLAYERS)
-    mejor = max(pujas, key=lambda p: p["prob"]) if pujas else None
+    mejor = max(principales, key=lambda p: p["prob"]) if principales else None
     solo_mejor = None
     if mejor is not None:
-        perdidas = sum(p["mejora"] for p in pujas if p is not mejor)
+        perdidas = sum(p["mejora"] for p in principales if p is not mejor)
         solo_mejor = {
             "nombre": mejor["nombre"],
             "prob_ganar": round(mejor["prob"], 4),
@@ -154,9 +165,9 @@ def escenarios_pujas(
         }
     return {
         "p_esperado": round(esperado, 4),
-        "p_si_ganas_todas": round(model.p(puntos_once, void=jugadores_base + len(pujas) < MIN_PLAYERS), 4),
-        "prob_ganar_todas": round(_producto(p["prob"] for p in pujas), 4),
-        "prob_ganar_ninguna": round(_producto(1.0 - p["prob"] for p in pujas), 4),
+        "p_si_ganas_todas": round(model.p(puntos_once, void=jugadores_base + len(principales) < MIN_PLAYERS), 4),
+        "prob_ganar_todas": round(_producto(p["prob"] for p in principales), 4),
+        "prob_ganar_ninguna": round(_producto(1.0 - p["prob"] for p in principales), 4),
         "solo_mas_probable": solo_mejor,
     }
 
@@ -231,6 +242,8 @@ def build_overlay(
     if puntos_once is not None:
         pujas = [
             {
+                "id": x.get("player_id"),
+                "reserva_de": x.get("reserva_de"),
                 "nombre": x.get("nombre"),
                 "mejora": _number(x.get("mejora_neta")) or 0.0,
                 "prob": ganar.get(x.get("player_id"), PROB_DESCONOCIDA),

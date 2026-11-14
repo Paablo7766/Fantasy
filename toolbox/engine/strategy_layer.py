@@ -1244,6 +1244,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         plantilla_por_puesto=_plantilla_por_puesto(records),
         factor_xp=calibracion_xp,
     )
+    _anadir_reservas(plan, pujas, muestras_primas)
     consejos = _consejos(records, war, plan, own_id)
     auditoria = _auditar_ventas(records, war, plan, previsiones, saldo, own_id)
     # Una sola caja: las cláusulas cuentan con lo que el plan no compromete en pujas.
@@ -2259,6 +2260,117 @@ def _sellar_pujas_plan(
         if final is not None and isinstance(base, int) and not isinstance(base, bool) and accion.get("momento") in _MOMENTOS_PLAN:
             extra_total += max(0, final - base)
     plan["cifras"] = _cifras_plan(plan, extra_total)
+
+
+#: Una puja con menos probabilidad que esto pide reserva en su posición.
+P_PIDE_RESERVA = 0.6
+#: Al ganar la principal y la reserva, una se revende a LaLiga: su oferta va del
+#: -10 % al +10 % del valor; se cuenta un 5 % de pérdida.
+PERDIDA_REVENTA = 0.05
+#: Valor esperado mínimo de una reserva para que merezca la caja que bloquea.
+RESERVA_MINIMA_EUR = 500_000
+
+
+def _anadir_reservas(
+    plan: Any,
+    pujas: dict[str, dict[str, Any]],
+    muestras: list[dict[str, Any]] | None,
+) -> None:
+    """Una puja de reserva por cada puja dudosa del plan, si sale a cuenta.
+
+    La reserva vale lo que mejora el once solo cuando se pierde la principal:
+    ``(1 - p_principal) × mejora × ratio × factor_xp``, menos la pérdida de
+    revenderla si se ganan las dos. Su cifra sale de la misma regla de valor
+    esperado y tiene que caber en la caja que deja el plan: las pujas vivas
+    reservan saldo. No entra en ``puntos_once`` (el once si ganas las principales).
+    """
+    if not isinstance(plan, dict):
+        return
+    ratio = _num(plan.get("ratio_mercado"))
+    calibracion = plan.get("calibracion_xp") if isinstance(plan.get("calibracion_xp"), dict) else {}
+    factor = float(calibracion.get("factor") or 1.0)
+    cifras = plan.get("cifras") if isinstance(plan.get("cifras"), dict) else {}
+    restante = cifras.get("saldo_final_eur")
+    if ratio is None or not isinstance(restante, int) or isinstance(restante, bool) or restante <= 0:
+        return
+    candidatos = [c for c in plan.get("candidatos_puja") or [] if isinstance(c, dict)]
+    usados = {a.get("player_id") for a in plan.get("acciones") or [] if isinstance(a, dict)}
+    principales = sorted(
+        (
+            a
+            for a in plan.get("acciones") or []
+            if isinstance(a, dict)
+            and a.get("tipo") == "PUJA"
+            and a.get("momento") == "hoy"
+            and not a.get("reserva_de")
+            and isinstance(a.get("p_ganar_por_valor"), (int, float))
+            and a["p_ganar_por_valor"] < P_PIDE_RESERVA
+        ),
+        key=lambda a: a["p_ganar_por_valor"],
+    )
+    nuevas: list[dict[str, Any]] = []
+    for principal in principales:
+        p_principal = float(principal["p_ganar_por_valor"])
+        mejor: tuple[float, dict[str, Any], dict[str, Any]] | None = None
+        for c in candidatos:
+            pid = c.get("player_id")
+            puja = pujas.get(pid) if isinstance(pid, str) else None
+            if pid in usados or c.get("posicion") != principal.get("posicion") or not isinstance(puja, dict):
+                continue
+            valor = puja.get("valor_mercado")
+            mejora = _num(c.get("mejora_neta"))
+            if not isinstance(valor, int) or valor <= 0 or mejora is None or valor > restante:
+                continue
+            ganancia = (1.0 - p_principal) * mejora * ratio * factor - p_principal * PERDIDA_REVENTA * valor
+            curva = _curva_de(puja, muestras)
+            r = puja_por_valor(valor, ganancia, tope_eur=restante, curva=curva[0] if curva else None, clave=pid)
+            if r is None or r["valor_esperado_eur"] < RESERVA_MINIMA_EUR:
+                continue
+            if mejor is None or r["valor_esperado_eur"] > mejor[0]:
+                mejor = (float(r["valor_esperado_eur"]), c, r)
+        if mejor is None:
+            continue
+        _, c, r = mejor
+        cifra = max(int(r["puja"]), int(pujas[c["player_id"]]["valor_mercado"]))
+        usados.add(c["player_id"])
+        restante -= cifra
+        nuevas.append(
+            {
+                "tipo": "PUJA",
+                "etiqueta": "PUJAR",
+                "momento": "hoy",
+                "impulso": "RESERVA",
+                "player_id": c["player_id"],
+                "nombre": c.get("nombre"),
+                "posicion": c.get("posicion"),
+                "jornada": c.get("jornada"),
+                "euros": cifra,
+                "mejora_neta": c.get("mejora_neta"),
+                "reserva_de": principal.get("player_id"),
+                "reserva_de_nombre": principal.get("nombre"),
+                "puja_final": cifra,
+                "puja_por_valor": int(r["puja"]),
+                "prima_por_valor_pct": round(float(r["prima"]) * 100.0, 1),
+                "p_ganar_por_valor": r["p_ganar"],
+                "valor_esperado_puja_eur": r["valor_esperado_eur"],
+                "detalle": (
+                    f"Reserva de {principal.get('nombre')} ({p_principal:.0%} de ganarla): si la pierdes, "
+                    f"{c.get('nombre')} ocupa su puesto (+{float(c.get('mejora_neta') or 0):.1f} xP). "
+                    "Si ganas las dos, vende una a LaLiga antes del saque."
+                ),
+            }
+        )
+    if not nuevas:
+        return
+    plan["acciones"] = [*(plan.get("acciones") or []), *nuevas]
+    gasto = sum(int(a["puja_final"]) for a in nuevas)
+    if isinstance(cifras.get("inversion_eur"), int):
+        cifras["inversion_eur"] += gasto
+    cifras["saldo_final_eur"] = restante
+    plan["reservas"] = [
+        {"player_id": a["player_id"], "nombre": a["nombre"], "reserva_de": a["reserva_de_nombre"], "euros": a["puja_final"]}
+        for a in nuevas
+    ]
 
 
 def _curva_de(puja: dict[str, Any], muestras: list[dict[str, Any]] | None) -> tuple[Any, dict[str, Any]] | None:
