@@ -134,7 +134,7 @@ export function GuardarrailRuina({ data, modo }: { data: Guardarrail | null | un
       ) : null}
       {data.accion && data.accion.acciones.length ? <AccionesTabla data={data.accion} /> : null}
       <details className="group mt-2.5">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[12.5px] font-medium text-white/45 hover:text-white/70 [&::-webkit-details-marker]:hidden">
+        <summary className="relative flex cursor-pointer list-none items-center gap-1.5 text-[12.5px] before:absolute before:inset-x-0 before:-inset-y-3.5 font-medium text-white/45 hover:text-white/70 [&::-webkit-details-marker]:hidden">
           Ver las cuentas
           <svg viewBox="0 0 16 16" className="h-3 w-3 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
             <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />

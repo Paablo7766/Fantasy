@@ -52,7 +52,7 @@ export function DataAge({ show }: { show: AgeKey[] }) {
         type="button"
         onClick={() => void refresh()}
         disabled={refreshing || connecting}
-        className="shrink-0 rounded-full bg-white/10 px-3.5 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-white/15 disabled:opacity-50"
+        className="relative shrink-0 rounded-full bg-white/10 px-3.5 py-1.5 before:absolute before:-inset-x-1 before:-inset-y-2 text-[12.5px] font-semibold text-white transition-colors hover:bg-white/15 disabled:opacity-50"
       >
         {refreshing ? "Actualizando…" : "Actualizar"}
       </button>

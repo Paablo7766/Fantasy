@@ -166,7 +166,7 @@ export function StandingsTable({
               role="tab"
               aria-selected={on}
               onClick={() => setMetric(item.id)}
-              className={`relative shrink-0 whitespace-nowrap pb-3 pt-2 text-[13.5px] transition-colors duration-200 ${on ? "font-semibold text-white" : "text-white/50 hover:text-white/80"}`}
+              className={`relative shrink-0 whitespace-nowrap pb-3 pt-2 text-[13.5px] before:absolute before:-inset-x-2 before:inset-y-0 transition-colors duration-200 ${on ? "font-semibold text-white" : "text-white/50 hover:text-white/80"}`}
             >
               {item.label}
               {on ? <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-peach" aria-hidden="true" /> : null}

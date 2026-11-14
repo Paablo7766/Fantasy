@@ -103,7 +103,7 @@ export function SquadDesk({ plan, photos, loading }: { plan: PlanPayload | null;
     <section className="ini-card ini-in" style={{ "--i": 2 } as CSSProperties} aria-label="Tu plantilla">
       <div className="flex items-center justify-between gap-3 px-5 pt-5">
         <p className="ini-eyebrow">Tu plantilla</p>
-        <Link href={href} className="text-[12px] font-medium text-white/50 transition-colors hover:text-white">
+        <Link href={href} className="relative text-[12px] font-medium text-white/50 transition-colors hover:text-white before:absolute before:-inset-x-2 before:-inset-y-3">
           Ver todo →
         </Link>
       </div>

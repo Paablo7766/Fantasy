@@ -1963,6 +1963,12 @@
    Pulso en la casilla con una onda verde, tachado que se dibuja de izquierda a
    derecha y check del veredicto que aparece con un pequeño rebote. */
 .ini-check { position: relative; }
+/* Zona táctil de 44 px alrededor de la casilla de 24 px (sin cambiar lo que se ve) */
+.ini-check::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+}
 .ini-check::after {
   content: "";
   position: absolute;
