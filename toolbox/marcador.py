@@ -67,6 +67,31 @@ def evaluacion_prematura(kickoff: Any, evaluated_at: Any) -> bool:
     return float(evaluated_at) < inicio + HORAS_PUNTOS_DEFINITIVOS * 3600.0
 
 
+#: Un partido que se juega más de esto después del primero de su jornada es un
+#: aplazado: no marca cuándo son definitivos los puntos del resto.
+DIAS_BLOQUE_JORNADA = 4.0
+
+
+def ultimo_saque_por_jornada(filas: Any) -> dict[str, str]:
+    """Último saque del bloque principal de cada jornada, para las filas sin saque propio.
+
+    ``filas``: pares ``(jornada, kickoff)``. Un aplazado semanas después (J12 tuvo uno
+    el 22-nov) no cuenta: si contara, cada arranque vaciaba y volvía a poner los
+    puntos de todas las filas sin saque, y quien leía entre medias veía la mitad.
+    """
+    saques: dict[str, list[tuple[float, str]]] = {}
+    for jornada, kickoff in filas:
+        momento = epoch_kickoff(kickoff)
+        if momento is not None:
+            saques.setdefault(jornada, []).append((momento, kickoff))
+    ultimo: dict[str, str] = {}
+    for jornada, lista in saques.items():
+        primero = min(momento for momento, _ in lista)
+        bloque = [item for item in lista if item[0] <= primero + DIAS_BLOQUE_JORNADA * 86400.0]
+        ultimo[jornada] = max(bloque)[1]
+    return ultimo
+
+
 def reparar_historico(conn: sqlite3.Connection) -> dict[str, int]:
     """Limpia el histórico ya guardado. Idempotente.
 
@@ -84,13 +109,7 @@ def reparar_historico(conn: sqlite3.Connection) -> dict[str, int]:
     ).fetchall()
     prematuras = recuperadas = anuladas = 0
     hay_log = "matchday_snapshot_log" in tablas
-    # Fila sin saque (p. ej. un portero sin partido enlazado): vale el último de su jornada.
-    ultimo: dict[str, str] = {}
-    for jornada, _pid, kickoff, *_resto in filas:
-        if epoch_kickoff(kickoff) is not None and (
-            jornada not in ultimo or (epoch_kickoff(kickoff) or 0) > (epoch_kickoff(ultimo[jornada]) or 0)
-        ):
-            ultimo[jornada] = kickoff
+    ultimo = ultimo_saque_por_jornada((jornada, kickoff) for jornada, _pid, kickoff, *_resto in filas)
     for jornada, player_id, kickoff, stored_at, evaluated_at, actual, expected in filas:
         propio = kickoff
         if epoch_kickoff(kickoff) is None:
