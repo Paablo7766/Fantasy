@@ -24,6 +24,7 @@ from toolbox.engine.auction_intel import (
     puja_anti_pizarra,
     puja_competitiva_liga,
     curva_para_jugador,
+    prima_frenada,
     puja_por_valor,
     techo_sobrepuja_eur,
 )
@@ -2315,11 +2316,33 @@ def _puja_por_valor_plan(
         return None
     ganancia = mejora * ratio + (rescate or 0)
     curva = _curva_de(puja, muestras)
+    tope = base + max(0, margen)
+    sin_freno = puja_por_valor(valor, ganancia, tope_eur=tope, curva=curva[0] if curva else None)
+    if sin_freno is None:
+        return None
+    # Freno por poca muestra: la prima tiene que aguantar el remuestreo de las compras.
+    freno = prima_frenada(
+        muestras,
+        valor=valor,
+        ganancia=ganancia,
+        subiendo=puja.get("subiendo") if isinstance(puja.get("subiendo"), bool) else None,
+        pujas=puja.get("pujas_vistas") if isinstance(puja.get("pujas_vistas"), int) else None,
+        tope_eur=tope,
+        clave=accion.get("player_id"),
+    )
     resultado = puja_por_valor(
-        valor, ganancia, tope_eur=base + max(0, margen), curva=curva[0] if curva else None, clave=accion.get("player_id")
+        valor,
+        ganancia,
+        tope_eur=tope,
+        curva=curva[0] if curva else None,
+        clave=accion.get("player_id"),
+        prima_max=freno["prima_max"],
     )
     if resultado is None:
         return None
+    accion["prima_sin_freno_pct"] = round(float(sin_freno["prima"]) * 100.0, 1)
+    accion["prima_max_freno_pct"] = None if freno["prima_max"] is None else round(float(freno["prima_max"]) * 100.0, 1)
+    accion["freno_aplicado"] = resultado["prima"] < sin_freno["prima"]
     resultado["puja"] = max(int(resultado["puja"]), valor)
     accion["puja_por_valor"] = resultado["puja"]
     accion["prima_por_valor_pct"] = round(resultado["prima"] * 100.0, 1)

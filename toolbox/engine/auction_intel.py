@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import random
 import zlib
 from typing import Any
 
@@ -57,6 +58,11 @@ PRIMA_MAX_POR_VALOR = 1.0
 # tiene pujas. Cada nivel se mezcla con el de arriba con este peso en compras
 # imaginarias: con 10 compras propias un segmento pesa 10/(10+20).
 PESO_PRIOR_SEGMENTO = 20.0
+# Freno por poca muestra: la curva se rehace con las compras remuestreadas
+# (bootstrap) y la prima no pasa del percentil 25 de las primas óptimas. Si la
+# cifra depende de tres o cuatro compras sueltas, baja; con muestra firme no cambia.
+BOOTSTRAP_RONDAS = 200
+CUANTIL_FRENO = 0.25
 # Curvas por tramo medidas el 14-nov-2026 (n compras, puntos). Entre 1 y 5 M€ la
 # mediana ganadora fue +50,7 %; por encima de 5 M€, +9,5 %.
 CURVAS_TRAMO_PRIOR: dict[str, tuple[int, tuple[tuple[float, float], ...]]] = {
@@ -637,6 +643,7 @@ def puja_por_valor(
     tope_eur: Any = None,
     curva: tuple[tuple[float, float], ...] | None = None,
     clave: Any = None,
+    prima_max: float | None = None,
 ) -> dict[str, Any] | None:
     """La puja que maximiza P(ganar) × (lo que vale para tu once − la prima perdida).
 
@@ -652,8 +659,11 @@ def puja_por_valor(
     if not isinstance(ganancia_eur, (int, float)) or ganancia_eur <= 0:
         return None
     tope = float(tope_eur) if isinstance(tope_eur, (int, float)) and tope_eur > 0 else None
+    techo_prima = PRIMA_MAX_POR_VALOR
+    if isinstance(prima_max, (int, float)) and not isinstance(prima_max, bool):
+        techo_prima = max(0.0, min(PRIMA_MAX_POR_VALOR, float(prima_max)))
     mejor: tuple[float, float, float] | None = None
-    for paso in range(int(PRIMA_MAX_POR_VALOR * 100) + 1):
+    for paso in range(int(round(techo_prima * 100)) + 1):
         prima = paso / 100.0
         cifra = float(valor) * (1.0 + prima)
         if tope is not None and cifra > tope:
@@ -674,3 +684,54 @@ def puja_por_valor(
         "p_ganar": round(p, 4),
         "valor_esperado_eur": int(round(esperado)),
     }
+
+
+def muestras_prior() -> list[dict[str, Any]]:
+    """Compras reconstruidas de las curvas por tramo del 14-nov, para remuestrear sin base.
+
+    Cada tramo reparte sus n compras en los escalones de su curva; lo que queda por
+    encima de +100 % se pone a +150 %. ``valor`` es uno representativo del tramo.
+    """
+    valores = {"<1M": 600_000, "1-5M": 3_000_000, ">=5M": 10_000_000}
+    muestras: list[dict[str, Any]] = []
+    for tramo, (n, puntos) in CURVAS_TRAMO_PRIOR.items():
+        colocadas = 0
+        for prima, p in puntos:
+            cuantas = int(round(n * p)) - colocadas
+            muestras.extend({"prima": prima, "valor": valores[tramo]} for _ in range(max(0, cuantas)))
+            colocadas += max(0, cuantas)
+        muestras.extend({"prima": 1.5, "valor": valores[tramo]} for _ in range(max(0, n - colocadas)))
+    return muestras
+
+
+def prima_frenada(
+    muestras: list[dict[str, Any]] | None,
+    *,
+    valor: float,
+    ganancia: float,
+    subiendo: bool | None = None,
+    pujas: int | None = None,
+    tope_eur: Any = None,
+    clave: Any = None,
+) -> dict[str, float | None]:
+    """Primas óptimas al remuestrear las compras: ``prima_max`` es el percentil 25.
+
+    La semilla sale de ``clave``: la misma puja da la misma cifra en cada refresco.
+    """
+    datos = [m for m in muestras or [] if isinstance(m, dict) and isinstance(m.get("prima"), (int, float))]
+    if len(datos) < MIN_MUESTRA_CURVA:
+        datos = muestras_prior()
+    rng = random.Random(zlib.crc32(f"freno|{clave if clave is not None else valor}".encode("utf-8")))
+    n = len(datos)
+    optimas: list[float] = []
+    for _ in range(BOOTSTRAP_RONDAS):
+        remuestra = [datos[rng.randrange(n)] for _ in range(n)]
+        curva, _info = curva_para_jugador(remuestra, valor=valor, subiendo=subiendo, pujas=pujas)
+        r = puja_por_valor(valor, ganancia, tope_eur=tope_eur, curva=curva)
+        optimas.append(float(r["prima"]) if r else 0.0)
+    optimas.sort()
+
+    def _q(f: float) -> float:
+        return optimas[int(f * (len(optimas) - 1))]
+
+    return {"prima_max": _q(CUANTIL_FRENO), "mediana": _q(0.5), "p75": _q(0.75)}
