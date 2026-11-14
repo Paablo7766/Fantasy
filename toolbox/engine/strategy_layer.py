@@ -1230,18 +1230,31 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
     _sellar_pujas_plan(plan, pujas, sobrepuja_liga, curva_primas=_curva_primas())
     consejos = _consejos(records, war, plan, own_id)
     auditoria = _auditar_ventas(records, war, plan, previsiones, saldo, own_id)
+    # Una sola caja: las cláusulas cuentan con lo que el plan no compromete en pujas.
+    # Los clausulazos del propio plan son la misma operación que lista el asesor: su
+    # coste vuelve a la caja del asesor para que no se den por imposibles.
+    caja_clausulas = _caja_para_clausulas(saldo, plan)
+    caja_asesor = caja_clausulas
+    if isinstance(caja_clausulas, int) and isinstance(saldo, int):
+        gasto_clausulazos = sum(
+            int(a["euros"])
+            for a in _pujas_del_plan(plan)
+            if a.get("tipo") == "CLAUSULAZO" and isinstance(a.get("euros"), int) and not isinstance(a.get("euros"), bool)
+        )
+        caja_asesor = min(saldo, caja_clausulas + gasto_clausulazos)
     clausulas = _asesorar_clausulas(
         records,
         war,
         previsiones,
         rivales,
-        saldo,
+        caja_asesor,
         ratio,
         board if isinstance(board, dict) else {},
         current,
         dias_al_cierre=_num(plan.get("dias_al_cierre")) if isinstance(plan, dict) else None,
     )
     _no_blindar_ventas_del_plan(clausulas, plan_ventas(plan), records)
+    _caja_unica(clausulas, plan, saldo_inicial=saldo, caja_clausulas=caja_clausulas)
     try:
         guardarrail = _guardarrail(
             board if isinstance(board, dict) else {}, records, plan if isinstance(plan, dict) else None, own_id, current
@@ -1932,6 +1945,141 @@ def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
             _sin_veto_de_caja("fuera_del_plan")
     elif isinstance(row.get("smart_bid_eur"), int):
         row["smart_bid_eur"] = cifra
+
+
+def _caja_para_clausulas(saldo: int | None, plan: Any) -> int | None:
+    """Caja real que queda para subir cláusulas tras las pujas del plan.
+
+    Subir una cláusula no admite crédito: si las pujas ya tiran de él, no queda nada.
+    """
+    if not isinstance(saldo, int) or isinstance(saldo, bool):
+        return saldo
+    cifras = plan.get("cifras") if isinstance(plan, dict) and isinstance(plan.get("cifras"), dict) else {}
+    tras_plan = cifras.get("saldo_final_eur")
+    if not isinstance(tras_plan, int) or isinstance(tras_plan, bool):
+        return saldo
+    return max(0, min(saldo, tras_plan))
+
+
+def _pujas_del_plan(plan: Any) -> list[dict[str, Any]]:
+    if not isinstance(plan, dict):
+        return []
+    return [
+        accion
+        for accion in plan.get("acciones") or []
+        if isinstance(accion, dict)
+        and accion.get("tipo") in {"PUJA", "CLAUSULAZO"}
+        and accion.get("momento") in _MOMENTOS_PLAN
+    ]
+
+
+def _caja_unica(
+    clausulas: dict[str, Any],
+    plan: Any,
+    *,
+    saldo_inicial: int | None,
+    caja_clausulas: int | None,
+) -> None:
+    """Cláusulas y recambios hablan con la caja y las compras del plan.
+
+    * ``resumen`` dice cuánto se llevan las pujas y cuánto queda para cláusulas.
+    * Una subida que no cabe tras el plan dice qué puja soltar para pagarla, si
+      vale más (euros en riesgo menos coste) que el valor esperado de esa puja.
+    * Un recambio que el plan ya ficha (misma posición) no se pide aparte.
+    """
+    if not isinstance(clausulas, dict):
+        return
+    compras = _pujas_del_plan(plan)
+    resumen = clausulas.get("resumen")
+    if isinstance(resumen, dict) and isinstance(saldo_inicial, int) and isinstance(caja_clausulas, int):
+        resumen["caja_inicial_eur"] = saldo_inicial
+        resumen["caja_para_clausulas_eur"] = caja_clausulas
+        resumen["comprometido_en_pujas_eur"] = max(0, saldo_inicial - caja_clausulas)
+
+    def _cifra(accion: dict[str, Any]) -> int | None:
+        for clave in ("puja_final", "euros"):
+            valor = accion.get(clave)
+            if isinstance(valor, int) and not isinstance(valor, bool):
+                return valor
+        return None
+
+    pujas = [a for a in compras if _cifra(a) is not None]
+    # La caja de cláusulas también es una: cada subida recomendada descuenta de la
+    # siguiente, también las que se preparan para cuando abra el candado.
+    restante = caja_clausulas
+    for grupo in ("proteger", "preparar"):
+        for fila in clausulas.get(grupo) or []:
+            if not isinstance(fila, dict):
+                continue
+            perfecta = fila.get("clausula_perfecta") if isinstance(fila.get("clausula_perfecta"), dict) else {}
+            recomendada = fila.get("subida_recomendada") if isinstance(fila.get("subida_recomendada"), dict) else None
+            coste = (recomendada or perfecta).get("coste_eur")
+            # Se mide contra la caja real tras todo el plan, no contra la del asesor.
+            if not isinstance(coste, int) or not isinstance(restante, int):
+                continue
+            if coste <= restante:
+                if recomendada is not None:
+                    restante -= coste
+                continue
+            if recomendada is None and perfecta.get("viable") is not False:
+                continue
+            if not isinstance(saldo_inicial, int) or coste > saldo_inicial:
+                continue
+            falta = coste - restante
+            exposicion = _num(fila.get("exposicion_eur")) or 0.0
+            neto = exposicion - coste
+            candidatas = sorted(
+                (a for a in pujas if (_cifra(a) or 0) >= falta),
+                key=lambda a: _num(a.get("valor_esperado_puja_eur")) or 0.0,
+            )
+            soltar = candidatas[0] if candidatas and neto > (_num(candidatas[0].get("valor_esperado_puja_eur")) or 0.0) else None
+            fila["compite_con_plan"] = {
+                "coste_eur": coste,
+                "falta_eur": falta,
+                "soltar": soltar.get("nombre") if soltar else None,
+                "soltar_player_id": soltar.get("player_id") if soltar else None,
+            }
+            if soltar is not None:
+                texto = (
+                    f"No cabe con las pujas del plan (faltan {falta / 1_000_000:.1f}M). "
+                    f"Vale más que la puja por {soltar.get('nombre')}: no pujes por él y sube esta cláusula."
+                )
+            else:
+                texto = (
+                    f"No cabe con las pujas del plan (faltan {falta / 1_000_000:.1f}M) y vale menos que cualquiera "
+                    "de ellas: van primero las pujas."
+                )
+            previo = fila.get("motivo_detallado") if isinstance(fila.get("motivo_detallado"), str) else ""
+            fila["motivo_detallado"] = f"{texto} {previo}".strip()
+
+    por_puesto: dict[str, dict[str, Any]] = {}
+    for accion in compras:
+        puesto = accion.get("posicion")
+        if isinstance(puesto, str) and puesto not in por_puesto:
+            por_puesto[puesto] = accion
+    alertas = resumen.get("alertas_prioritarias") if isinstance(resumen, dict) else None
+    for fila in [*(clausulas.get("proteger") or []), *(clausulas.get("preparar") or []), *(alertas or [])]:
+        if not isinstance(fila, dict) or not fila.get("recambio_sugerido"):
+            continue
+        accion = por_puesto.get(fila.get("posicion"))
+        if accion is None:
+            continue
+        nombre = accion.get("nombre")
+        sugerido = fila.get("recambio_sugerido") if isinstance(fila.get("recambio_sugerido"), dict) else {}
+        fila["recambio_en_plan"] = nombre
+        # El sugerido queda de plan B: la puja del plan puede perderse.
+        fila["recambio_si_pierdes"] = sugerido or None
+        fila["recambio_sugerido"] = None
+        plan_b = f" Si la pierdes, ficha a {sugerido.get('nombre')}." if sugerido.get("nombre") else ""
+        for clave in ("accion", "motivo_detallado"):
+            texto = fila.get(clave)
+            if not isinstance(texto, str):
+                continue
+            corte = texto.find("Ficha ")
+            base = texto[:corte].rstrip() if corte >= 0 else texto
+            fila[clave] = (
+                f"{base} El plan ya puja por {nombre} ({fila.get('posicion')}): si lo ganas, ese es el recambio.{plan_b}"
+            ).strip()
 
 
 def _no_blindar_ventas_del_plan(
