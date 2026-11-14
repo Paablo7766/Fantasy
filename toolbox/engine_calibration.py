@@ -283,14 +283,15 @@ def sobrepuja_de_liga(db_path: Path | None = None) -> dict[str, Any] | None:
     return resumen if resumen["estimada"] is not None else None
 
 
-def curva_primas_de_liga(db_path: Path | None = None) -> tuple[tuple[float, float], ...] | None:
-    """Curva de primas de las compras al cierre de la liga contra el valor de ese día.
+def muestras_primas_de_liga(db_path: Path | None = None) -> list[dict[str, Any]] | None:
+    """Compras al cierre de la liga con su prima sobre el valor de ese día.
 
-    Lee ``activity_buys`` y ``price_snapshots``. Sin base o con poca muestra, ``None``
-    (quien llama usa la curva medida el 14-nov-2026).
+    El valor es el de ese día o el anterior (una foto más vieja daría primas
+    falsas): ``price_snapshots`` y, si falta, ``market_listing_log``.
+    Cada muestra lleva ``prima``, ``valor``, ``subiendo`` (el valor subió ese día)
+    y ``pujas`` (las que tenía el anuncio según ``market_listing_log``, o ``None``).
+    Sin base, ``None``: quien llama usa las curvas medidas el 14-nov-2026.
     """
-    from toolbox.engine.auction_intel import curva_primas
-
     ruta = db_path or calibration_db_path()
     if not Path(ruta).is_file():
         return None
@@ -301,11 +302,25 @@ def curva_primas_de_liga(db_path: Path | None = None) -> tuple[tuple[float, floa
     try:
         filas = conn.execute(
             """
-            select b.amount_eur, (
-                select p.market_value from price_snapshots p
-                where p.player_id = b.player_id and p.day <= substr(b.at, 1, 10)
-                order by p.day desc limit 1
-            )
+            select b.amount_eur,
+                coalesce(
+                    (select p.market_value from price_snapshots p
+                     where p.player_id = b.player_id and p.day <= substr(b.at, 1, 10)
+                       and p.day >= date(substr(b.at, 1, 10), '-1 day')
+                     order by p.day desc limit 1),
+                    (select l.market_value from market_listing_log l
+                     where l.player_id = b.player_id and l.day <= substr(b.at, 1, 10)
+                       and l.day >= date(substr(b.at, 1, 10), '-1 day')
+                     order by l.day desc limit 1)
+                ),
+                (select p.market_value_change from price_snapshots p
+                 where p.player_id = b.player_id and p.day <= substr(b.at, 1, 10)
+                   and p.day >= date(substr(b.at, 1, 10), '-1 day')
+                 order by p.day desc limit 1),
+                (select l.bid_count from market_listing_log l
+                 where l.player_id = b.player_id and l.day <= substr(b.at, 1, 10)
+                   and l.day >= date(substr(b.at, 1, 10), '-3 day')
+                 order by l.day desc limit 1)
             from activity_buys b
             where b.amount_eur > 0
             """
@@ -314,8 +329,16 @@ def curva_primas_de_liga(db_path: Path | None = None) -> tuple[tuple[float, floa
         return None
     finally:
         conn.close()
-    primas = [pagado / valor - 1.0 for pagado, valor in filas if isinstance(valor, int) and valor > 0]
-    return curva_primas(primas)
+    return [
+        {
+            "prima": max(0.0, pagado / valor - 1.0),
+            "valor": valor,
+            "subiendo": isinstance(cambio, (int, float)) and cambio > 0,
+            "pujas": pujas if isinstance(pujas, int) else None,
+        }
+        for pagado, valor, cambio, pujas in filas
+        if isinstance(valor, int) and valor > 0
+    ]
 
 
 def matchday_points_trend(conn: sqlite3.Connection) -> dict[str, Any]:

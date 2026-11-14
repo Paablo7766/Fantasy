@@ -14,7 +14,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from toolbox.analyzer import POSITIONS, own_squad
-from toolbox.bidding import MIN_HEADCOUNT
+from toolbox.bidding import MIN_HEADCOUNT, compra_cubre_hueco, huecos_para_once
 from toolbox.engine.auction_intel import (
     PREVISION_ALTA_PCT,
     UMBRAL_WAR_OFERTA,
@@ -23,6 +23,7 @@ from toolbox.engine.auction_intel import (
     capitanes,
     puja_anti_pizarra,
     puja_competitiva_liga,
+    curva_para_jugador,
     puja_por_valor,
     techo_sobrepuja_eur,
 )
@@ -42,7 +43,7 @@ from toolbox.engine.clause_advisor import auditar_clausulas_plantilla, evaluar_c
 from toolbox.engine.market_grade import calcular_nota_mercado
 from toolbox.engine.sales_audit import LALIGA, evaluar_ventas_y_ofertas
 from toolbox.engine.brecha_posicional import brecha_posicional
-from toolbox.engine.signing_plan import FACTOR_AJUSTE, build_plan_fichajes, conserva_esqueleto
+from toolbox.engine.signing_plan import FACTOR_AJUSTE, PESO_FUTURO, build_plan_fichajes, conserva_esqueleto
 from toolbox.engine.paron import UMBRAL_PARON_DIAS, paron_conocido
 from toolbox.engine.live_matchday import construir_jornada_en_juego
 from toolbox.engine.paron_plan import construir_paron, fase_paron
@@ -1160,6 +1161,9 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         techo = techo_sobrepuja_eur(valor, supervivencia=row["supervivencia"] is True)
         pujas[player_id]["techo_sobrepuja"] = None if techo is None else int(math.floor(techo))
         pujas[player_id]["valor_mercado"] = valor
+        # Demanda de este jugador para su curva de ganar.
+        pujas[player_id]["subiendo"] = float(row.get("delta_hoy") or 0.0) > 0
+        pujas[player_id]["pujas_vistas"] = row.get("bid_count") if isinstance(row.get("bid_count"), int) else None
         _aplicar_anti_pizarra(pujas[player_id], row, notas.get(player_id), previsto_pct, saldo)
         # Demanda alta en el mercado: el escalón de liga también se enseña fuera del plan.
         base_mercado = (
@@ -1227,7 +1231,13 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         notas,
         curva=curva,
     )
-    _sellar_pujas_plan(plan, pujas, sobrepuja_liga, curva_primas=_curva_primas())
+    _sellar_pujas_plan(
+        plan,
+        pujas,
+        sobrepuja_liga,
+        muestras_primas=_muestras_primas(),
+        plantilla_por_puesto=_plantilla_por_puesto(records),
+    )
     consejos = _consejos(records, war, plan, own_id)
     auditoria = _auditar_ventas(records, war, plan, previsiones, saldo, own_id)
     # Una sola caja: las cláusulas cuentan con lo que el plan no compromete en pujas.
@@ -1740,15 +1750,27 @@ def _sobrepuja_liga() -> dict[str, Any] | None:
         return None
 
 
-def _curva_primas() -> tuple[tuple[float, float], ...] | None:
-    """Curva de primas de la liga desde la base local; ``None`` usa la medida el 14-nov."""
+def _muestras_primas() -> list[dict[str, Any]] | None:
+    """Compras al cierre de la liga desde la base local; ``None`` usa las curvas del 14-nov."""
     try:
-        from toolbox.engine_calibration import curva_primas_de_liga
+        from toolbox.engine_calibration import muestras_primas_de_liga
 
-        return curva_primas_de_liga()
-    except Exception:  # noqa: BLE001 — sin base se usa la curva medida
-        logger.debug("Sin curva de primas de liga", exc_info=True)
+        return muestras_primas_de_liga()
+    except Exception:  # noqa: BLE001 — sin base se usan las curvas medidas
+        logger.debug("Sin compras de liga para la curva de primas", exc_info=True)
         return None
+
+
+def _plantilla_por_puesto(records: dict[str, dict[str, Any]]) -> dict[str, int]:
+    """Tu plantilla que puede jugar, por puesto."""
+    cuentas: dict[str, int] = {}
+    for row in records.values():
+        if row.get("is_self") is not True or row.get("excluded") is True:
+            continue
+        puesto = row.get("position")
+        if isinstance(puesto, str):
+            cuentas[puesto] = cuentas.get(puesto, 0) + 1
+    return cuentas
 
 
 def _aplicar_competitiva(
@@ -2127,7 +2149,8 @@ def _sellar_pujas_plan(
     pujas: dict[str, dict[str, Any]],
     sobrepuja: dict[str, Any] | None = None,
     *,
-    curva_primas: tuple[tuple[float, float], ...] | None = None,
+    muestras_primas: list[dict[str, Any]] | None = None,
+    plantilla_por_puesto: dict[str, int] | None = None,
 ) -> None:
     """Las acciones PUJA del plan llevan la cifra de La Pizarra y la nuestra.
 
@@ -2141,6 +2164,7 @@ def _sellar_pujas_plan(
     presupuesto = plan.get("presupuesto") if isinstance(plan.get("presupuesto"), dict) else {}
     holgura = presupuesto.get("holgura")
     extra_total = 0
+    rescate = _rescate_once(plan, pujas, plantilla_por_puesto, muestras_primas, holgura)
     for accion in plan.get("acciones") or []:
         if not isinstance(accion, dict) or accion.get("tipo") != "PUJA":
             continue
@@ -2174,7 +2198,9 @@ def _sellar_pujas_plan(
         puja["puja_competitiva_liga"] = accion["puja_competitiva_liga"]
         puja["sobrepuja_liga_pct"] = accion["sobrepuja_liga_pct"]
         final = puja_final(accion)
-        por_valor = _puja_por_valor_plan(accion, puja, plan, margen, curva_primas)
+        por_valor = _puja_por_valor_plan(
+            accion, puja, plan, margen, muestras_primas, rescate=rescate.get(accion.get("player_id"))
+        )
         if por_valor is not None:
             # Objetivo del plan: la cifra sale de probabilidad × lo que vale para tu
             # once, no del techo fijo del +10 % (auditoría 14-nov-2026, fallo 1).
@@ -2186,23 +2212,111 @@ def _sellar_pujas_plan(
     plan["cifras"] = _cifras_plan(plan, extra_total)
 
 
+def _curva_de(puja: dict[str, Any], muestras: list[dict[str, Any]] | None) -> tuple[Any, dict[str, Any]] | None:
+    valor = puja.get("valor_mercado")
+    if not isinstance(valor, int) or isinstance(valor, bool) or valor <= 0:
+        return None
+    return curva_para_jugador(
+        muestras,
+        valor=valor,
+        subiendo=puja.get("subiendo") if isinstance(puja.get("subiendo"), bool) else None,
+        pujas=puja.get("pujas_vistas") if isinstance(puja.get("pujas_vistas"), int) else None,
+    )
+
+
+#: Peso de una jornada suelta frente a una mejora que dura: la próxima jornada
+#: pesa 1 de 1 + 3 × PESO_FUTURO en el horizonte del plan.
+PESO_JORNADA_UNICA = 1.0 / (1.0 + 3.0 * PESO_FUTURO)
+
+
+def _rescate_once(
+    plan: dict[str, Any],
+    pujas: dict[str, dict[str, Any]],
+    plantilla: dict[str, int] | None,
+    muestras: list[dict[str, Any]] | None,
+    holgura: Any,
+) -> dict[str, int]:
+    """Euros extra de cada puja que completa un once al que le falta un jugador.
+
+    Sin el n.º 11 la jornada vale 0: ganar la puja rescata el resto del once
+    (``puntos_once_referencia``, el once con el hueco a 0), una sola jornada.
+    Si varias pujas lo completan, cada una vale ese rescate por la probabilidad
+    de que las demás se pierdan. Con dos o más huecos no se reparte: hace falta
+    ganar varias y el plan no lo modela aún.
+    """
+    if not plantilla or huecos_para_once(plantilla) != 1:
+        return {}
+    referencia = _num(plan.get("puntos_once_referencia"))
+    ratio = _num(plan.get("ratio_mercado"))
+    if referencia is None or referencia <= 0 or ratio is None:
+        return {}
+    rescate_total = referencia * ratio * PESO_JORNADA_UNICA
+    completan = [
+        accion
+        for accion in plan.get("acciones") or []
+        if isinstance(accion, dict)
+        and accion.get("tipo") == "PUJA"
+        and isinstance(accion.get("player_id"), str)
+        and isinstance(pujas.get(accion["player_id"]), dict)
+        and compra_cubre_hueco(plantilla, accion.get("posicion"))
+    ]
+    if not completan:
+        return {}
+    margen = holgura if isinstance(holgura, int) and not isinstance(holgura, bool) else 0
+
+    def _otras_pierden(accion: dict[str, Any], prob: dict[str, float]) -> float:
+        total = 1.0
+        for otra in completan:
+            if otra is not accion:
+                total *= 1.0 - prob.get(otra["player_id"], 0.0)
+        return total
+
+    prob: dict[str, float] = {}
+    for _ in range(3):
+        # Ronda a ronda: la probabilidad de cada puja depende de cuánto rescata, y
+        # cuánto rescata depende de que las demás se pierdan.
+        nuevo: dict[str, float] = {}
+        for accion in completan:
+            pid = accion["player_id"]
+            curva = _curva_de(pujas[pid], muestras)
+            base = accion.get("euros") if isinstance(accion.get("euros"), int) else 0
+            ganancia = (_num(accion.get("mejora_neta")) or 0.0) * ratio + rescate_total * _otras_pierden(accion, prob)
+            r = puja_por_valor(
+                pujas[pid].get("valor_mercado"),
+                ganancia,
+                tope_eur=base + max(0, margen),
+                curva=curva[0] if curva else None,
+            )
+            nuevo[pid] = float(r["p_ganar"]) if r else 0.0
+        prob = nuevo
+    return {accion["player_id"]: int(round(rescate_total * _otras_pierden(accion, prob))) for accion in completan}
+
+
 def _puja_por_valor_plan(
     accion: dict[str, Any],
     puja: dict[str, Any],
     plan: dict[str, Any],
     margen: int,
-    curva: tuple[tuple[float, float], ...] | None,
+    muestras: list[dict[str, Any]] | None,
+    *,
+    rescate: int | None = None,
 ) -> dict[str, Any] | None:
-    """Cifra de un objetivo del plan por valor esperado, dentro de lo que el plan puede poner."""
+    """Cifra de un objetivo del plan por valor esperado, dentro de lo que el plan puede poner.
+
+    La probabilidad sale de la curva de este jugador (tramo de valor, si sube hoy
+    y si ya tiene pujas). ``rescate``: euros extra si completa un once al que le
+    falta un jugador.
+    """
     valor = puja.get("valor_mercado")
     mejora = _num(accion.get("mejora_neta"))
     ratio = _num(plan.get("ratio_mercado"))
     base = accion.get("euros")
     if mejora is None or ratio is None or not isinstance(valor, int) or isinstance(base, bool) or not isinstance(base, int):
         return None
-    ganancia = mejora * ratio
+    ganancia = mejora * ratio + (rescate or 0)
+    curva = _curva_de(puja, muestras)
     resultado = puja_por_valor(
-        valor, ganancia, tope_eur=base + max(0, margen), curva=curva, clave=accion.get("player_id")
+        valor, ganancia, tope_eur=base + max(0, margen), curva=curva[0] if curva else None, clave=accion.get("player_id")
     )
     if resultado is None:
         return None
@@ -2212,6 +2326,10 @@ def _puja_por_valor_plan(
     accion["p_ganar_por_valor"] = resultado["p_ganar"]
     accion["ganancia_once_eur"] = int(round(ganancia))
     accion["valor_esperado_puja_eur"] = resultado["valor_esperado_eur"]
+    accion["rescate_once_eur"] = rescate or 0
+    if curva:
+        accion["curva_segmento"] = curva[1]["segmento"]
+        accion["curva_muestra"] = curva[1]["muestra"]
     return resultado
 
 
