@@ -28,7 +28,9 @@ export function endpoint(
 export async function getJson<T>(path: string): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path);
+    // Con el móvil en segundo plano el sistema congela las peticiones en vuelo:
+    // sin techo se quedaban colgadas para siempre al volver a la app.
+    response = await fetch(path, { signal: AbortSignal.timeout(25_000) });
   } catch {
     const error = new Error("No se pudo contactar con el servidor FastAPI.");
     (error as Error & { payload: ApiError }).payload = {
@@ -66,7 +68,7 @@ export async function postJsonBody<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function postJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { method: "POST" });
+  const response = await fetch(path, { method: "POST", signal: AbortSignal.timeout(60_000) });
   const data = (await response.json().catch(() => ({
     ok: false,
     error: { message: `HTTP ${response.status}` },

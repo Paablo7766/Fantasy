@@ -132,7 +132,20 @@ async function waitForRefresh(
 ): Promise<RefreshStatusPayload | null> {
   const deadline = Date.now() + 60 * 60 * 1000;
   while (Date.now() < deadline) {
-    await new Promise((resolve) => window.setTimeout(resolve, BEAT_SLOW_MS));
+    // Al volver a la app se sondea al momento: en segundo plano los temporizadores
+    // se congelan y esperar otros 8 s dejaba la pantalla sin cargar.
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        window.clearTimeout(id);
+        document.removeEventListener("visibilitychange", onVisible);
+        resolve();
+      };
+      const onVisible = () => {
+        if (document.visibilityState === "visible") done();
+      };
+      const id = window.setTimeout(done, BEAT_SLOW_MS);
+      document.addEventListener("visibilitychange", onVisible);
+    });
     const status = await beat();
     if (!status) continue;
     if (status.running === false) return status;
@@ -370,8 +383,13 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         await waitForRefresh(beat);
         await load();
       } else {
-        // La foto anterior sigue siendo válida: se avisa y no se borra nada.
-        setRefreshError(failedPayload(reason).error?.message || "No se pudo actualizar.");
+        // Si la app estuvo en segundo plano, el POST muere pero la descarga pudo
+        // terminar: se relee la foto del servidor antes de dar nada por perdido.
+        await load();
+        if (status === null || status.result_ok === false) {
+          // La foto anterior sigue siendo válida: se avisa y no se borra nada.
+          setRefreshError(failedPayload(reason).error?.message || "No se pudo actualizar.");
+        }
       }
     } finally {
       window.clearInterval(timer);
