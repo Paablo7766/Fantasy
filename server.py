@@ -2744,6 +2744,38 @@ def _refresh(
 _PHOTO_MEMO: dict[tuple[Any, ...], dict[str, Any]] = {}
 _PHOTO_MEMO_LOCK = threading.Lock()
 _PHOTO_FLIGHT: dict[tuple[Any, ...], threading.Lock] = {}
+# Vistas pesadas cuyo resultado también se guarda en Supabase: tras un reinicio o un
+# arranque en frío de Render se lee ya hecho (milisegundos) en vez de recalcularlo.
+_PHOTO_MEMO_REMOTE = frozenset({"top4", "league-race", "trends"})
+
+
+def _memo_code_version() -> str:
+    """Un despliegue nuevo puede cambiar la lógica: invalida lo guardado."""
+    return os.environ.get("RENDER_GIT_COMMIT", "").strip()
+
+
+def _memo_remote_load(name: str, league: str | None, stamp: Any) -> dict[str, Any] | None:
+    try:
+        envelope = snapshot_remote.load(f"memo-{name}", _league_dir_key(league))
+    except Exception:  # noqa: BLE001 — la copia remota es opcional
+        return None
+    if not isinstance(envelope, dict):
+        return None
+    if envelope.get("stamp") != stamp or envelope.get("code") != _memo_code_version():
+        return None
+    value = envelope.get("value")
+    return value if isinstance(value, dict) else None
+
+
+def _memo_remote_save(name: str, league: str | None, stamp: Any, value: dict[str, Any]) -> None:
+    try:
+        snapshot_remote.save(
+            f"memo-{name}",
+            _league_dir_key(league),
+            {"saved_unix": time.time(), "stamp": stamp, "code": _memo_code_version(), "value": value},
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("No se pudo guardar %s en Supabase", name, exc_info=True)
 
 
 def _photo_memo(
@@ -2771,13 +2803,23 @@ def _photo_memo(
         with flight:
             with _PHOTO_MEMO_LOCK:
                 cached = _PHOTO_MEMO.get(key)
+            if cached is None and stamp is not None and name in _PHOTO_MEMO_REMOTE:
+                cached = _memo_remote_load(name, league, stamp)
             if cached is None:
                 cached = build()
                 if stamp is not None and isinstance(cached, dict) and cached.get("ok") is not False:
-                    with _PHOTO_MEMO_LOCK:
-                        if len(_PHOTO_MEMO) >= 64:
-                            _PHOTO_MEMO.clear()
-                        _PHOTO_MEMO[key] = cached
+                    if name in _PHOTO_MEMO_REMOTE:
+                        threading.Thread(
+                            target=_memo_remote_save,
+                            args=(name, league, stamp, cached),
+                            name="memo-remote-save",
+                            daemon=True,
+                        ).start()
+            if stamp is not None and isinstance(cached, dict) and cached.get("ok") is not False:
+                with _PHOTO_MEMO_LOCK:
+                    if len(_PHOTO_MEMO) >= 64:
+                        _PHOTO_MEMO.clear()
+                    _PHOTO_MEMO[key] = cached
         with _PHOTO_MEMO_LOCK:
             if len(_PHOTO_FLIGHT) >= 64:
                 _PHOTO_FLIGHT.clear()
