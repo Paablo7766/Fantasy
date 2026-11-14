@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useDashboard } from "@/components/DashboardProvider";
 import { Face, TONE, money } from "@/components/ui/kit";
 import { apiUrl } from "@/lib/core/api";
-import { playerName } from "@/lib/core/format";
+import { errorText, playerName } from "@/lib/core/format";
 import { buildPhotoIndex, photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { OptimizePayload, Player, SquadsPayload, TrendsPayload } from "@/lib/types";
 
@@ -480,7 +480,7 @@ export function ComparadorModal({
           error: { message: `HTTP ${response.status}` },
         }))) as ComparacionLiga & { error?: { message?: string }; message?: string };
         if (!response.ok || payload.ok === false) {
-          throw new Error(payload.error?.message || payload.message || "No se ha podido comparar.");
+          throw new Error(errorText(payload, "No se ha podido comparar."));
         }
         return payload;
       })

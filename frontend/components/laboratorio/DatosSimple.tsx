@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { endpoint } from "@/lib/core/api";
+import { errorText } from "@/lib/core/format";
 import { useCachedJson } from "@/lib/core/useCachedJson";
 import { buildDataHealthReport } from "@/lib/laboratorio/dataHealth";
 import type { ApiUsagePayload } from "@/lib/types";
@@ -128,7 +129,7 @@ export function DatosSimple() {
         ) : usage === null ? (
           <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">Leyendo contadores…</p>
         ) : usage.ok === false ? (
-          <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">{usage.error?.message || "El contador no respondió."}</p>
+          <p className="home-glass px-4 py-6 text-center text-[13.5px] text-white/50">{errorText(usage, "El contador no respondió.")}</p>
         ) : (
           <div className="flex flex-col gap-3">
             <div className="grid grid-cols-3 gap-2.5">

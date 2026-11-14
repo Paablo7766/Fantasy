@@ -245,8 +245,40 @@ export function glass(extra = ""): string {
   return `home-glass ${extra}`;
 }
 
+/**
+ * Traduce un error técnico (HTTP 500, Bad Gateway, fallo de red…) a una frase
+ * que se entienda. Los mensajes que el backend ya escribe en español claro
+ * pasan tal cual.
+ */
+export function friendlyError(message: string | null | undefined, code?: string | null): string {
+  const text = (message || "").trim();
+  if (!text) return "";
+  const status = /HTTP\s*(\d{3})/i.exec(text)?.[1];
+  if (code === "network" || code === "timeout" || /No se pudo contactar|Failed to fetch|NetworkError|fetch failed|ECONN|timed? ?out/i.test(text)) {
+    return "No se pudo contactar con el servidor. Se mantiene lo último guardado";
+  }
+  if (status === "401" || status === "403" || code === "auth_required" || code === "unauthorized") {
+    return "La sesión ha caducado. Vuelve a conectar tu cuenta";
+  }
+  if (status === "404") return "El servidor no tiene este dato todavía";
+  if (status === "429") return "LaLiga está limitando las peticiones. Espera un momento";
+  if (status && status.startsWith("5")) return "El servidor ha tenido un fallo al calcularlo. Reinténtalo en un momento";
+  if (/Bad Gateway|Service Unavailable|Gateway Timeout|FastAPI|Traceback|invalid json|Unexpected token/i.test(text)) {
+    return "El servidor no está disponible ahora mismo. Reinténtalo en un momento";
+  }
+  return text;
+}
+
 export function errorMessage(payload: ApiError | null | undefined): string {
-  return payload?.error?.message || payload?.message || "No se pudo cargar este bloque.";
+  return friendlyError(payload?.error?.message || payload?.message, payload?.error?.code) || "No se pudo cargar este bloque.";
+}
+
+/** Mensaje de error de un payload con su alternativa, ya en lenguaje claro. */
+export function errorText(
+  payload: { error?: { code?: string; message?: string } | null; message?: string | null } | null | undefined,
+  fallback: string,
+): string {
+  return friendlyError(payload?.error?.message || payload?.message, payload?.error?.code) || fallback;
 }
 
 export function cashClass(value: number | null | undefined): string {

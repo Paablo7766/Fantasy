@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { endpoint } from "@/lib/core/api";
 import { useCachedJson } from "@/lib/core/useCachedJson";
-import { playerName, points } from "@/lib/core/format";
+import { errorText, playerName, points } from "@/lib/core/format";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import type { ClauseBoardPayload, ClauseBoardRow, RivalFinancialTeam, RivalIntelPayload, SquadsPayload } from "@/lib/types";
 import { Empty, HeroStat, Skeleton, TONE, money } from "@/components/ui/kit";
@@ -92,7 +92,7 @@ export function RivalesSimple({ photos }: { photos: PhotoIndex }) {
 
   if (intel === null) return <Skeleton />;
   if (intel.ok === false) {
-    return <Empty title="No se pudo leer a los rivales" detail={`${intel.error?.message || "Sin datos."} Prueba a actualizar la foto desde Inicio.`} />;
+    return <Empty title="No se pudo leer a los rivales" detail={`${errorText(intel, "Sin datos")}. Prueba a actualizar la foto desde Inicio.`} />;
   }
 
   const richest = rivals[0];
@@ -146,7 +146,7 @@ export function RivalesSimple({ photos }: { photos: PhotoIndex }) {
           board === null ? (
             <Skeleton />
           ) : board.ok === false ? (
-            <Empty title="Sin tablero de cláusulas" detail={board.error?.message || "Sin datos."} />
+            <Empty title="Sin tablero de cláusulas" detail={`${errorText(board, "Sin datos")}.`} />
           ) : (
             <div className="flex flex-col gap-5">
               <section className="flex flex-col gap-2">

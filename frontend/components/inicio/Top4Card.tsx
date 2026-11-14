@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { useJson } from "@/lib/core/useJson";
-import { points } from "@/lib/core/format";
+import { errorText, points } from "@/lib/core/format";
 import type { PlanPayload, Top4Payload } from "@/lib/types";
 
 const MINT = "var(--ini-mint)";
@@ -57,7 +57,7 @@ export function Top4Card({ plan }: { plan: PlanPayload | null }) {
     return (
       <section className="ini-card px-5 py-4" aria-label="Probabilidad de top 4">
         <p className="ini-eyebrow">Top 4 · próxima jornada</p>
-        <p className="mt-1.5 text-[13px] text-white/50">Sin simulación: {data.error?.message || data.message || "faltan plantillas"}.</p>
+        <p className="mt-1.5 text-[13px] text-white/50">Sin simulación: {errorText(data, "faltan plantillas")}.</p>
       </section>
     );
   }

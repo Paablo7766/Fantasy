@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useDashboard } from "@/components/DashboardProvider";
 import { endpoint } from "@/lib/core/api";
 import { useCachedJson as useCached } from "@/lib/core/useCachedJson";
-import { playerName, points } from "@/lib/core/format";
+import { errorText, playerName, points } from "@/lib/core/format";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
 import { beyondBudget, bidBudget } from "@/lib/mercado/budget";
 import type { CatalogProfilePlayer, FreeAgentsPayload, QuantPlayer, QuantRadarPayload } from "@/lib/types";
@@ -125,7 +125,7 @@ export function RadarSimple({ photos }: { photos: PhotoIndex }) {
 
   if (radar === null) return <Skeleton />;
   if (radar.ok === false) {
-    return <Empty title="El radar no ha respondido" detail={`${radar.error?.message || "Sin datos."} Prueba a actualizar la foto desde Inicio.`} />;
+    return <Empty title="El radar no ha respondido" detail={`${errorText(radar, "Sin datos")}. Prueba a actualizar la foto desde Inicio.`} />;
   }
 
   const summary = radar.summary ?? {};

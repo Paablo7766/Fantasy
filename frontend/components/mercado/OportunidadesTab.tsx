@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/kit";
 import { endpoint } from "@/lib/core/api";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
-import { playerName, points, roiPct } from "@/lib/core/format";
+import { errorText, playerName, points, roiPct } from "@/lib/core/format";
 import type { QuantPlayer, QuantRadarPayload } from "@/lib/types";
 
 export type Tone = "buy" | "watch" | "toxic";
@@ -214,7 +214,7 @@ export function OportunidadesTab({ photos }: { photos: PhotoIndex }) {
     return (
       <Empty
         title="Sin lectura cuantitativa"
-        detail={`${payload.error?.message || "El radar no devolvió la lista priorizada."} Pulsa Actualizar para guardar una foto nueva.`}
+        detail={`${errorText(payload, "El radar no devolvió la lista priorizada.")} Pulsa Actualizar para guardar una foto nueva.`}
       />
     );
   }

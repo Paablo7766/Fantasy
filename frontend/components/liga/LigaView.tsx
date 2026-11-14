@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useJson } from "@/lib/core/useJson";
-import { points } from "@/lib/core/format";
+import { errorText, points } from "@/lib/core/format";
 import { applyLiquidity, financialIndex, liquidityRead } from "@/lib/liga/liquidity";
 import { SEASON_ROUNDS, paceLines } from "@/lib/liga/pace";
 import { enrichSquadsPayload } from "@/lib/liga/squadEnrich";
@@ -269,7 +269,7 @@ export function LigaView({
         <p className="px-1 text-[12px] text-white/35">Calculando la carrera de liga…</p>
       ) : race.ok === false ? (
         <p className="px-1 text-[12px] leading-relaxed text-white/35">
-          La carrera de liga no ha respondido: {race.error?.message || race.message || "sin detalle"}. Sin ella no hay proyección ni cara a cara.
+          La carrera de liga no ha respondido: {errorText(race, "sin detalle")}. Sin ella no hay proyección ni cara a cara.
         </p>
       ) : null}
 
@@ -301,7 +301,7 @@ export function LigaView({
               <Skeleton />
             </>
           ) : race.ok === false ? (
-            <Empty title="Cara a cara no disponible" detail={`La carrera de liga no ha respondido: ${race.error?.message || race.message || "sin detalle"}.`} />
+            <Empty title="Cara a cara no disponible" detail={`La carrera de liga no ha respondido: ${errorText(race, "sin detalle")}.`} />
           ) : !(race.rivals || []).length ? (
             <Empty title="Sin rivales proyectados" detail="Pulsa Actualizar para calcular los onces de tus rivales." />
           ) : (

@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiUrl, endpoint, getJson, postJson } from "@/lib/core/api";
 import { readDashboardSnapshot, writeDashboardBlock } from "@/lib/core/dashboardCache";
-import { durationAgo, liveAge, stamp } from "@/lib/core/format";
+import { durationAgo, errorText, liveAge, stamp } from "@/lib/core/format";
 import { refreshPhaseLabel, refreshPct, refreshSummary } from "@/lib/core/refreshStatus";
 import { useNow } from "@/lib/core/useClock";
 import type {
@@ -362,7 +362,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         const last = await waitForRefresh(beat);
         await load();
         if (last?.running === false && last.result_ok === false) {
-          setRefreshError(last.error?.message || "La descarga falló en el servidor; se mantiene la foto anterior.");
+          setRefreshError(errorText(last, "La descarga falló en el servidor; se mantiene la foto anterior."));
         }
       } else if (fresh && fresh.ok !== false) {
         setState((prev) => ({ ...prev, plan: fresh }));
@@ -388,7 +388,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         await load();
         if (status === null || status.result_ok === false) {
           // La foto anterior sigue siendo válida: se avisa y no se borra nada.
-          setRefreshError(failedPayload(reason).error?.message || "No se pudo actualizar.");
+          setRefreshError(errorText(failedPayload(reason), "No se pudo actualizar."));
         }
       }
     } finally {

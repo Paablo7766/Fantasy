@@ -20,7 +20,7 @@ import {
   usageTone,
   usageVerdict,
 } from "@/lib/laboratorio/apiUsage";
-import { elapsedLabel } from "@/lib/core/format";
+import { elapsedLabel, errorText } from "@/lib/core/format";
 import { refreshNetworkNote } from "@/lib/core/refreshStatus";
 import type { ApiSourceUsage, ApiUsagePayload, NetworkDiagnosticsPayload, RefreshStatusPayload } from "@/lib/types";
 
@@ -240,7 +240,7 @@ function LiveStrip({ status, refreshing }: { status: RefreshStatusPayload | null
       </div>
       <p className="mt-1 text-xs leading-5 text-white/50">
         {failed
-          ? status?.error?.message || "El backend no terminó la foto. La anterior sigue en pantalla."
+          ? errorText(status, "El backend no terminó la foto. La anterior sigue en pantalla.")
           : running
             ? `${status?.phase_label || "Trabajando"}${
                 status?.current_label ? ` · pidiendo ${status.current_label}` : ""
@@ -300,7 +300,7 @@ export function ApiUsagePanel() {
     try {
       const payload = await getJson<ApiUsagePayload>(endpoint("/api/api-usage", league));
       setUsage(payload);
-      setFailed(payload.ok === false ? payload.error?.message || "El medidor no respondió." : null);
+      setFailed(payload.ok === false ? errorText(payload, "El medidor no respondió.") : null);
     } catch (reason) {
       setFailed(reason instanceof Error ? reason.message : "El medidor no respondió.");
     }

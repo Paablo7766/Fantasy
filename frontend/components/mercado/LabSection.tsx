@@ -8,7 +8,7 @@ import { useDashboard } from "@/components/DashboardProvider";
 import { endpoint } from "@/lib/core/api";
 import { beyondBudget, bidBudget } from "@/lib/mercado/budget";
 import { photoFor, type PhotoIndex } from "@/lib/core/photoIndex";
-import { points } from "@/lib/core/format";
+import { errorText, points } from "@/lib/core/format";
 import type { ArbitragePayload, CatalogProfilePlayer, FreeAgentsPayload } from "@/lib/types";
 
 type Vista = "libres" | "suelo" | "refugio" | "riesgo";
@@ -197,7 +197,7 @@ export function LabSection({ photos }: { photos: PhotoIndex }) {
   if (freePayload.ok === false && arbPayload.ok === false) {
     return (
       <p className="home-glass px-4 py-4 text-[13.5px] text-white/50">
-        Sin catálogo guardado: {freePayload.error?.message || "pulsa Actualizar para leerlo."}
+        Sin catálogo guardado: {errorText(freePayload, "pulsa Actualizar para leerlo.")}
       </p>
     );
   }
