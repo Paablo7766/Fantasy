@@ -26,7 +26,7 @@ Se usa a diario, con picos antes del cierre de mercado y de cada jornada. La inf
 - Trabajo directo en `main`.
 
 ## Brand Commitments
-Estética ya definida y vinculante: "Cyber-Ocean Quant", terminal financiera sobria y densa (estilo Revolut Ultra / Robinhood Gold), nada infantil. Fondo `#02070A`, tarjetas `#07121A`, acento de métricas `#0297DE`, alertas y ventas `#FC734D`. Tipografía Plus Jakarta Sans / Inter, cifras en JetBrains Mono.
+Estética sobria y densa, estilo app financiera móvil de gama alta (Revolut Ultra / Robinhood Gold), nada infantil. Hoy el aspecto real es negro profundo con tarjetas gris oscuro y un hero naranja brasa; el azul `#0297DE` de la versión "Cyber-Ocean" queda como acento de datos. Tipografía Inter, cifras en JetBrains Mono. El detalle vive en `DESIGN.md`.
 
 ## Evidence on Hand
 Datos reales de la liga del usuario vía backend; documentación en `CONTEXTO_ALGORITMO_ACTUAL.md` y en `docs/`. No hay testimonios ni usuarios externos.
