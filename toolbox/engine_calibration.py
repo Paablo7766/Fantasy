@@ -341,6 +341,47 @@ def muestras_primas_de_liga(db_path: Path | None = None) -> list[dict[str, Any]]
     ]
 
 
+def pendiente_xp_en_vivo(db_path: Path | None = None, *, xp_minimo: float = 2.0) -> dict[str, Any] | None:
+    """Pendiente de los puntos reales sobre el xP guardado antes de cada jornada.
+
+    Lee ``matchday_snapshots`` (una predicción por jugador y jornada, ya evaluada).
+    Solo jugadores con xP >= ``xp_minimo``: los que el plan llega a fichar. Con
+    menos de 30 filas, ``None``.
+    """
+    ruta = db_path or calibration_db_path()
+    if not Path(ruta).is_file():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{Path(ruta).as_posix()}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        filas = conn.execute(
+            """
+            select expected_points, actual_points from matchday_snapshots
+            where actual_points is not null and expected_points >= ?
+            """,
+            (xp_minimo,),
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    pares = [(float(x), float(y)) for x, y in filas if isinstance(x, (int, float)) and isinstance(y, (int, float))]
+    n = len(pares)
+    if n < 30:
+        return None
+    mx = sum(x for x, _ in pares) / n
+    my = sum(y for _, y in pares) / n
+    sxx = sum((x - mx) ** 2 for x, _ in pares)
+    if sxx <= 0:
+        return None
+    b = sum((x - mx) * (y - my) for x, y in pares) / sxx
+    a = my - b * mx
+    residuo = sum((y - a - b * x) ** 2 for x, y in pares) / (n - 2)
+    return {"pendiente": round(b, 4), "se": round((residuo / sxx) ** 0.5, 4), "n": n}
+
+
 def matchday_points_trend(conn: sqlite3.Connection) -> dict[str, Any]:
     rows = conn.execute(
         """

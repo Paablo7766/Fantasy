@@ -24,6 +24,7 @@ from toolbox.engine.auction_intel import (
     puja_anti_pizarra,
     puja_competitiva_liga,
     curva_para_jugador,
+    factor_calibracion_xp,
     prima_frenada,
     puja_por_valor,
     techo_sobrepuja_eur,
@@ -1238,6 +1239,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         sobrepuja_liga,
         muestras_primas=_muestras_primas(),
         plantilla_por_puesto=_plantilla_por_puesto(records),
+        factor_xp=_factor_xp(),
     )
     consejos = _consejos(records, war, plan, own_id)
     auditoria = _auditar_ventas(records, war, plan, previsiones, saldo, own_id)
@@ -1762,6 +1764,18 @@ def _muestras_primas() -> list[dict[str, Any]] | None:
         return None
 
 
+def _factor_xp() -> dict[str, Any]:
+    """Cuánto de la mejora en xP se ve en puntos: backtest combinado con lo medido en vivo."""
+    vivo = None
+    try:
+        from toolbox.engine_calibration import pendiente_xp_en_vivo
+
+        vivo = pendiente_xp_en_vivo()
+    except Exception:  # noqa: BLE001 — sin base queda el backtest
+        logger.debug("Sin pendiente de xP en vivo", exc_info=True)
+    return factor_calibracion_xp(vivo)
+
+
 def _plantilla_por_puesto(records: dict[str, dict[str, Any]]) -> dict[str, int]:
     """Tu plantilla que puede jugar, por puesto."""
     cuentas: dict[str, int] = {}
@@ -2152,6 +2166,7 @@ def _sellar_pujas_plan(
     *,
     muestras_primas: list[dict[str, Any]] | None = None,
     plantilla_por_puesto: dict[str, int] | None = None,
+    factor_xp: dict[str, Any] | None = None,
 ) -> None:
     """Las acciones PUJA del plan llevan la cifra de La Pizarra y la nuestra.
 
@@ -2165,7 +2180,10 @@ def _sellar_pujas_plan(
     presupuesto = plan.get("presupuesto") if isinstance(plan.get("presupuesto"), dict) else {}
     holgura = presupuesto.get("holgura")
     extra_total = 0
-    rescate = _rescate_once(plan, pujas, plantilla_por_puesto, muestras_primas, holgura)
+    calibracion = factor_xp if isinstance(factor_xp, dict) else factor_calibracion_xp(None)
+    factor = float(calibracion["factor"])
+    plan["calibracion_xp"] = calibracion
+    rescate = _rescate_once(plan, pujas, plantilla_por_puesto, muestras_primas, holgura, factor=factor)
     for accion in plan.get("acciones") or []:
         if not isinstance(accion, dict) or accion.get("tipo") != "PUJA":
             continue
@@ -2200,7 +2218,7 @@ def _sellar_pujas_plan(
         puja["sobrepuja_liga_pct"] = accion["sobrepuja_liga_pct"]
         final = puja_final(accion)
         por_valor = _puja_por_valor_plan(
-            accion, puja, plan, margen, muestras_primas, rescate=rescate.get(accion.get("player_id"))
+            accion, puja, plan, margen, muestras_primas, rescate=rescate.get(accion.get("player_id")), factor=factor
         )
         if por_valor is not None:
             # Objetivo del plan: la cifra sale de probabilidad × lo que vale para tu
@@ -2236,6 +2254,8 @@ def _rescate_once(
     plantilla: dict[str, int] | None,
     muestras: list[dict[str, Any]] | None,
     holgura: Any,
+    *,
+    factor: float = 1.0,
 ) -> dict[str, int]:
     """Euros extra de cada puja que completa un once al que le falta un jugador.
 
@@ -2251,7 +2271,7 @@ def _rescate_once(
     ratio = _num(plan.get("ratio_mercado"))
     if referencia is None or referencia <= 0 or ratio is None:
         return {}
-    rescate_total = referencia * ratio * PESO_JORNADA_UNICA
+    rescate_total = referencia * ratio * PESO_JORNADA_UNICA * factor
     completan = [
         accion
         for accion in plan.get("acciones") or []
@@ -2281,7 +2301,7 @@ def _rescate_once(
             pid = accion["player_id"]
             curva = _curva_de(pujas[pid], muestras)
             base = accion.get("euros") if isinstance(accion.get("euros"), int) else 0
-            ganancia = (_num(accion.get("mejora_neta")) or 0.0) * ratio + rescate_total * _otras_pierden(accion, prob)
+            ganancia = (_num(accion.get("mejora_neta")) or 0.0) * ratio * factor + rescate_total * _otras_pierden(accion, prob)
             r = puja_por_valor(
                 pujas[pid].get("valor_mercado"),
                 ganancia,
@@ -2301,6 +2321,7 @@ def _puja_por_valor_plan(
     muestras: list[dict[str, Any]] | None,
     *,
     rescate: int | None = None,
+    factor: float = 1.0,
 ) -> dict[str, Any] | None:
     """Cifra de un objetivo del plan por valor esperado, dentro de lo que el plan puede poner.
 
@@ -2314,7 +2335,8 @@ def _puja_por_valor_plan(
     base = accion.get("euros")
     if mejora is None or ratio is None or not isinstance(valor, int) or isinstance(base, bool) or not isinstance(base, int):
         return None
-    ganancia = mejora * ratio + (rescate or 0)
+    # La mejora en xP, descontada por lo que el xP exagera las diferencias.
+    ganancia = mejora * ratio * factor + (rescate or 0)
     curva = _curva_de(puja, muestras)
     tope = base + max(0, margen)
     sin_freno = puja_por_valor(valor, ganancia, tope_eur=tope, curva=curva[0] if curva else None)
@@ -2350,6 +2372,7 @@ def _puja_por_valor_plan(
     accion["ganancia_once_eur"] = int(round(ganancia))
     accion["valor_esperado_puja_eur"] = resultado["valor_esperado_eur"]
     accion["rescate_once_eur"] = rescate or 0
+    accion["factor_xp"] = factor
     if curva:
         accion["curva_segmento"] = curva[1]["segmento"]
         accion["curva_muestra"] = curva[1]["muestra"]

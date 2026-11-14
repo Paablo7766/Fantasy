@@ -63,6 +63,14 @@ PESO_PRIOR_SEGMENTO = 20.0
 # cifra depende de tres o cuatro compras sueltas, baja; con muestra firme no cambia.
 BOOTSTRAP_RONDAS = 200
 CUANTIL_FRENO = 0.25
+# Calibración del xP: pendiente de los puntos reales sobre el xP previsto (xP >= 2).
+# Si es < 1, el xP exagera las diferencias entre jugadores y la mejora de un fichaje
+# vale esa fracción. Backtest walk-forward J8–J12 (14-nov-2026, n=699): 0,93 ± 0,08.
+# Se combina con la medida en vivo (predicciones guardadas antes de jugar) por
+# varianza inversa. Nunca infla: tope 1.
+PENDIENTE_XP_BACKTEST = 0.93
+SE_PENDIENTE_XP_BACKTEST = 0.08
+FACTOR_XP_MIN = 0.3
 # Curvas por tramo medidas el 14-nov-2026 (n compras, puntos). Entre 1 y 5 M€ la
 # mediana ganadora fue +50,7 %; por encima de 5 M€, +9,5 %.
 CURVAS_TRAMO_PRIOR: dict[str, tuple[int, tuple[tuple[float, float], ...]]] = {
@@ -735,3 +743,23 @@ def prima_frenada(
         return optimas[int(f * (len(optimas) - 1))]
 
     return {"prima_max": _q(CUANTIL_FRENO), "mediana": _q(0.5), "p75": _q(0.75)}
+
+
+def factor_calibracion_xp(vivo: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Fracción de la mejora en xP que se espera ver en puntos reales.
+
+    ``vivo``: ``{"pendiente", "se", "n"}`` medida con las predicciones guardadas
+    antes de cada jornada. Se combina con el backtest por varianza inversa.
+    """
+    pesos = [(PENDIENTE_XP_BACKTEST, SE_PENDIENTE_XP_BACKTEST)]
+    if isinstance(vivo, dict):
+        b, se = vivo.get("pendiente"), vivo.get("se")
+        if isinstance(b, (int, float)) and isinstance(se, (int, float)) and se > 0:
+            pesos.append((float(b), float(se)))
+    total = sum(1.0 / se**2 for _, se in pesos)
+    media = sum(b / se**2 for b, se in pesos) / total
+    return {
+        "factor": round(max(FACTOR_XP_MIN, min(1.0, media)), 3),
+        "pendiente_vivo": vivo.get("pendiente") if isinstance(vivo, dict) else None,
+        "muestra_vivo": vivo.get("n") if isinstance(vivo, dict) else None,
+    }

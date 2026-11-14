@@ -9,6 +9,7 @@ import unittest
 
 from toolbox.engine.auction_intel import (
     CURVA_PRIMAS_PRIOR,
+    PENDIENTE_XP_BACKTEST,
     curva_para_jugador,
     prob_ganar_prima,
 )
@@ -110,7 +111,7 @@ class RescateDelOnce(unittest.TestCase):
         sin_hueco = self._plan([("del", "DEL", 8_000_000, 2.0)], {**DIEZ, "DEL": 3})["del"]
         con_hueco = self._plan([("del", "DEL", 8_000_000, 2.0)], DIEZ)["del"]
         self.assertEqual(sin_hueco["rescate_once_eur"], 0)
-        self.assertEqual(con_hueco["rescate_once_eur"], int(round(40.0 * RATIO * PESO_JORNADA_UNICA)))
+        self.assertEqual(con_hueco["rescate_once_eur"], int(round(40.0 * RATIO * PESO_JORNADA_UNICA * PENDIENTE_XP_BACKTEST)))
         self.assertGreater(con_hueco["puja_final"], sin_hueco["puja_final"])
         self.assertGreater(con_hueco["p_ganar_por_valor"], sin_hueco["p_ganar_por_valor"])
 
