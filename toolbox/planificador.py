@@ -19,6 +19,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 HORIZONTE = 4
+#: Margen sobre el precio para llamar a un fichaje rentable (o caro, si falta).
+#: El valor justo sale del xP y es ruidoso: dentro de ±10 % es precio justo.
+MARGEN_RENTABLE = 0.10
+#: Titulares que forman la curva de valor justo: misma muestra que la capa de estrategia.
+P_TITULAR_CURVA = 0.60
 _POS = {"POR": "POR", "PT": "POR", "DEF": "DEF", "DF": "DEF", "MC": "MC", "MED": "MC", "DEL": "DEL", "DC": "DEL"}
 _BAJA = {"baja", "lesionado", "injured", "sancionado", "suspended", "fuera"}
 _DUDA = {"duda", "doubtful"}
@@ -103,6 +108,51 @@ def _clausula(row: dict[str, Any], now: datetime) -> dict[str, Any] | None:
         "abre_at": abre.isoformat() if estado == "bloqueada" and abre else None,
         "cara": bool(patrimonio["descartar"]),
         "prima_eur": int(patrimonio["prima_quemada_neta"]) if valor else None,
+    }
+
+
+def _rentabilidad(fila: dict[str, Any], ratio: float, curva: Any) -> dict[str, Any] | None:
+    """¿Compensa ficharlo a este precio? Valor justo de su xP frente a lo que cuesta.
+
+    Valor justo = lo que esta liga paga en mercado por el xP de la próxima jornada
+    (curva por percentiles de la capa de estrategia, la misma que usan Mercado y
+    Cláusulas). Si pasa de 2,5× su valor de mercado es una estimación inflada y se
+    recorta ahí. Una cláusula que quema patrimonio es «caro» aunque el xP la cubra.
+    """
+    from toolbox.engine.clause_advisor import MULTIPLO_CREIBLE
+    from toolbox.engine.market_predictor import valor_justo_jugador
+
+    if fila["dueno"]["tipo"] == "mio":
+        return None
+    if fila["mercado"] is not None:
+        precio = fila["mercado"].get("precio")
+        via = "mercado"
+    elif fila["clausula"] and fila["clausula"]["estado"] in {"abierta", "bloqueada"}:
+        precio = fila["clausula"]["eur"]
+        via = "clausula"
+    else:
+        return None
+    xp = fila["xp"][0]
+    if not precio or precio <= 0 or xp is None:
+        return None
+    justo = valor_justo_jugador(max(0.0, float(xp)), ratio, curva)
+    valor = fila.get("valor")
+    if valor and justo > valor * MULTIPLO_CREIBLE:
+        justo = int(valor * MULTIPLO_CREIBLE)
+    margen = justo / precio - 1.0
+    if via == "clausula" and fila["clausula"].get("cara"):
+        veredicto = "caro"
+    elif margen >= MARGEN_RENTABLE:
+        veredicto = "rentable"
+    elif margen <= -MARGEN_RENTABLE:
+        veredicto = "caro"
+    else:
+        veredicto = "justo"
+    return {
+        "veredicto": veredicto,
+        "valor_justo": int(justo),
+        "precio": int(precio),
+        "margen_pct": round(margen * 100.0, 1),
     }
 
 
@@ -273,6 +323,18 @@ def build_planificador(
                 "clausula": _clausula(squad_row, moment) if dueno["tipo"] == "rival" and squad_row else None,
             }
         )
+
+    from toolbox.engine.market_predictor import curva_valor_justo, ratio_mercado_liga
+
+    titulares = [
+        (float(fila["valor"]), float(fila["xp"][0]))
+        for fila in filas
+        if fila["valor"] and fila["xp"][0] and fila["xp"][0] > 0 and (fila["p_titular"] or 0.0) >= P_TITULAR_CURVA
+    ]
+    ratio = float(ratio_mercado_liga(titulares)["ratio_mercado"])
+    curva = curva_valor_justo(titulares)
+    for fila in filas:
+        fila["rentabilidad"] = _rentabilidad(fila, ratio, curva)
 
     filas.sort(key=lambda fila: -(fila["xp"][0] or 0.0))
     from toolbox.matching import normalize_club

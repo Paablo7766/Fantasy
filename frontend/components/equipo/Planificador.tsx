@@ -10,7 +10,7 @@ import { Empty, Face, Skeleton, TONE, lastName, money, ringColor } from "@/compo
 import { endpoint } from "@/lib/core/api";
 import { points, titularFull } from "@/lib/core/format";
 import { cachedJson, peekJson } from "@/lib/core/jsonCache";
-import { POSICIONES, construirTablero, valor, ventaja, type Horizonte, type Liston } from "@/lib/equipo/planificador";
+import { POSICIONES, compensa, construirTablero, valor, ventaja, type Horizonte, type Liston } from "@/lib/equipo/planificador";
 import type { PlanificadorJugador, PlanificadorLibre, PlanificadorPayload, PlanificadorPosicion } from "@/lib/types";
 
 const NOMBRE_PUESTO: Record<PlanificadorPosicion, string> = { POR: "Porteros", DEF: "Defensas", MC: "Medios", DEL: "Delanteros" };
@@ -41,22 +41,51 @@ function EstadoMedico({ estado }: { estado: "baja" | "duda" | null }) {
 }
 
 /** Dónde está y cuánto cuesta, en una línea corta. */
-function disponible(jugador: PlanificadorJugador): ReactNode {
+function disponible(jugador: PlanificadorJugador): string {
   if (jugador.dueno.tipo === "mio") return jugador.valor ? `${jugador.posicion} · ${money(jugador.valor)}` : jugador.posicion;
   if (jugador.mercado) return `Mercado · ${money(jugador.mercado.precio)}`;
   const c = jugador.clausula;
   if (!c) return jugador.dueno.nombre;
-  if (c.cara) {
-    return (
-      <>
-        {money(c.eur)} · <span style={{ color: TONE.amber }}>{multiplo(c.multiplo) ?? "cara"}</span>
-      </>
-    );
-  }
   if (c.estado === "abierta") return [`Cláusula ${money(c.eur)}`, multiplo(c.multiplo)].filter(Boolean).join(" ");
   if (c.estado === "bloqueada") return `Abre ${fecha(c.abre_at) ?? "más adelante"} · ${money(c.eur)}`;
   if (c.estado === "blindado") return "Blindado";
   return jugador.dueno.nombre;
+}
+
+const VEREDICTO = {
+  rentable: { texto: "Rentable", color: TONE.green },
+  justo: { texto: "Precio justo", color: "rgba(255,255,255,0.62)" },
+  caro: { texto: "No rentable", color: TONE.amber },
+} as const;
+
+/** ¿Compensa ficharlo? En una línea: veredicto y lo que vale su xP. */
+function Veredicto({ jugador }: { jugador: PlanificadorJugador }) {
+  const r = jugador.rentabilidad;
+  if (!r) return null;
+  const v = VEREDICTO[r.veredicto];
+  const quema = r.veredicto === "caro" && jugador.clausula?.cara && !jugador.mercado && jugador.clausula.prima_eur;
+  return (
+    <span className="mt-0.5 block truncate text-[12px]">
+      <span className="font-medium" style={{ color: v.color }}>
+        {v.texto}
+      </span>
+      <span className="text-white/40"> · {quema ? `quemas ${money(jugador.clausula?.prima_eur)}` : `vale ${money(r.valor_justo)}`}</span>
+    </span>
+  );
+}
+
+/** Explicación del veredicto para el detalle. */
+function porQue(jugador: PlanificadorJugador, jornada: number | null): string | null {
+  const r = jugador.rentabilidad;
+  if (!r) return null;
+  const xp = `Su xP${jornada ? ` de la J${jornada}` : ""} (${points(jugador.xp[0])}) vale unos ${money(r.valor_justo)} en esta liga y cuesta ${money(r.precio)}`;
+  const margen = `${r.margen_pct > 0 ? "+" : ""}${Math.round(r.margen_pct)} %`;
+  if (r.veredicto === "caro" && jugador.clausula?.cara && !jugador.mercado) {
+    return `${xp}, pero la cláusula pasa de 1,25× su valor de mercado: pagas ${money(jugador.clausula.prima_eur)} que pierdes nada más ficharlo. No rentable.`;
+  }
+  if (r.veredicto === "rentable") return `${xp}: rentable (${margen}).`;
+  if (r.veredicto === "justo") return `${xp}: precio justo (${margen}).`;
+  return `${xp}: pagas más de lo que rinde (${margen}). No rentable.`;
 }
 
 /** Línea completa del detalle: dueño, fechas y, si es cara, lo que pagas de más. */
@@ -74,10 +103,11 @@ function contexto(jugador: PlanificadorJugador): string {
       : c.estado === "blindado"
         ? `De ${jugador.dueno.nombre}. Blindado`
         : `De ${jugador.dueno.nombre}. Cláusula ${money(c.eur)}`;
-  return c.cara && c.prima_eur ? `${base}. Pagas ${money(c.prima_eur)} por encima de su valor: no compensa.` : `${base}.`;
+  return `${base}.`;
 }
 
 function Detalle({ jugador, h, jornadas, sufijo }: { jugador: PlanificadorJugador; h: Horizonte; jornadas: Array<number | null>; sufijo: string }) {
+  const explicacion = porQue(jugador, jornadas[0]);
   const accion = jugador.mercado
     ? { href: `/mercado${sufijo}`, label: "Pujar en Mercado" }
     : jugador.clausula && jugador.dueno.tipo === "rival" && jugador.clausula.estado !== "blindado"
@@ -85,7 +115,9 @@ function Detalle({ jugador, h, jornadas, sufijo }: { jugador: PlanificadorJugado
       : null;
   return (
     <div className="row-in px-3.5 pb-3.5">
-      <p className="mb-2.5 text-[12.5px] leading-snug text-white/60">{contexto(jugador)}</p>
+      <p className="text-[12.5px] leading-snug text-white/60">{contexto(jugador)}</p>
+      {explicacion ? <p className="mt-1 text-[12.5px] leading-snug text-white/60">{explicacion}</p> : null}
+      <div className="mb-2.5" />
       <ul className="grid grid-cols-4 gap-1.5">
         {jugador.partidos.map((partido, index) => (
           <li key={index} className={h === index ? "plan-day plan-day--on" : "plan-day"}>
@@ -148,6 +180,7 @@ function Fila({ jugador, h, liston, abierto, onToggle, jornadas, sufijo, lead }:
             ) : null}
             <span className="truncate">{disponible(jugador)}</span>
           </span>
+          <Veredicto jugador={jugador} />
         </span>
         <span className="shrink-0 text-right">
           <span className="block font-mono text-[1.05rem] font-semibold leading-none tabular-nums" style={{ color: mio ? "rgba(255,255,255,0.7)" : "#fff" }}>
@@ -291,6 +324,7 @@ export function Planificador() {
   const [puesto, setPuesto] = useState<PlanificadorPosicion | null>(null);
   const [abierto, setAbierto] = useState<string | null>(null);
   const [verMas, setVerMas] = useState<Record<string, boolean>>({});
+  const [filtro, setFiltro] = useState<"todos" | "compensan">("todos");
 
   useEffect(() => {
     let cancelled = false;
@@ -360,9 +394,9 @@ export function Planificador() {
     );
   };
 
-  const fichables = delPuesto(tablero.fichables);
-  const porAbrir = delPuesto(tablero.porAbrir);
-  const caras = delPuesto(tablero.caras);
+  const deFiltro = (lista: PlanificadorJugador[]) => delPuesto(filtro === "compensan" ? lista.filter(compensa) : lista);
+  const fichables = deFiltro(tablero.fichables);
+  const porAbrir = deFiltro(tablero.porAbrir);
   const fuera = delPuesto(tablero.fuera);
 
   return (
@@ -389,23 +423,34 @@ export function Planificador() {
         }}
       />
 
-      <Seccion titulo={nombrePuesto ? `Fichables ahora · ${nombrePuesto}` : "Fichables ahora"} nota="Mercado y cláusulas abiertas a precio razonable, por xP.">
+      <Switch<"todos" | "compensan">
+        label="Qué fichajes ver"
+        actual={filtro}
+        opciones={[
+          ["todos", "Todos"],
+          ["compensan", "Solo rentables"],
+        ]}
+        onChange={(v) => {
+          setFiltro(v);
+          setAbierto(null);
+          setVerMas({});
+        }}
+      />
+
+      <Seccion
+        titulo={nombrePuesto ? `Fichables ahora · ${nombrePuesto}` : "Fichables ahora"}
+        nota="Mercado y cláusulas abiertas, por xP. Rentable = su xP vale más de lo que cuesta."
+      >
         {fichables.length ? (
           lista("fichables", fichables, 8, true)
         ) : (
-          <p className="rounded-[1.5rem] bg-white/[0.04] px-4 py-4 text-[13.5px] text-white/50">Nada fichable ahora{nombrePuesto ? ` en ${nombrePuesto}` : ""}.</p>
+          <p className="rounded-[1.5rem] bg-white/[0.04] px-4 py-4 text-[13.5px] text-white/50">{filtro === "compensan" ? "Nada rentable" : "Nada fichable"} ahora{nombrePuesto ? ` en ${nombrePuesto}` : ""}.</p>
         )}
       </Seccion>
 
       {porAbrir.length ? (
-        <Seccion titulo="Cláusulas que se abren" nota="A precio razonable. Apunta la fecha.">
+        <Seccion titulo="Cláusulas que se abren" nota="Aún bloqueadas: apunta la fecha.">
           {lista("abrir", porAbrir, 5)}
-        </Seccion>
-      ) : null}
-
-      {caras.length ? (
-        <Seccion titulo="Cláusulas caras" nota="Pagarías bastante más de lo que valen: no compensa salvo urgencia.">
-          {lista("caras", caras, 4)}
         </Seccion>
       ) : null}
 

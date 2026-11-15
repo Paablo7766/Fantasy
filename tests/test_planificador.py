@@ -70,6 +70,39 @@ def test_clausula_cara_con_la_regla_del_asesor():
     assert por_id["3"]["clausula"]["prima_eur"] == 0
 
 
+def test_rentabilidad_por_jugador():
+    out = build_planificador(_board(), now=NOW)
+    por_id = {f["player_id"]: f for f in out["jugadores"]}
+    # Tuyo: sin veredicto.
+    assert por_id["1"]["rentabilidad"] is None
+    # Cláusula que quema patrimonio: cara aunque su xP la cubra.
+    assert por_id["2"]["rentabilidad"]["veredicto"] == "caro"
+    # Mercado: precio frente al valor justo de su xP.
+    mercado = por_id["4"]["rentabilidad"]
+    assert mercado["precio"] == 1_500_000 and mercado["valor_justo"] > 0
+    assert mercado["veredicto"] in {"rentable", "justo", "caro"}
+    esperado = round((mercado["valor_justo"] / mercado["precio"] - 1) * 100, 1)
+    assert mercado["margen_pct"] == esperado
+
+
+def test_rentabilidad_umbral():
+    from toolbox.planificador import _rentabilidad
+
+    fila = {
+        "dueno": {"tipo": "mercado"},
+        "mercado": {"precio": 10_000_000},
+        "clausula": None,
+        "xp": [5.0, None, None, None],
+        "valor": 10_000_000,
+    }
+    # Sin curva: recta de 2 M€ por punto → 10 M€ de valor justo = precio justo.
+    assert _rentabilidad(fila, 2_000_000.0, None)["veredicto"] == "justo"
+    assert _rentabilidad(fila, 2_400_000.0, None)["veredicto"] == "rentable"
+    assert _rentabilidad(fila, 1_600_000.0, None)["veredicto"] == "caro"
+    # Valor justo inflado: se recorta a 2,5× el valor de mercado.
+    assert _rentabilidad(fila, 20_000_000.0, None)["valor_justo"] == 25_000_000
+
+
 def test_blindado():
     board = _board()
     board["squads"]["squads"][1]["players"][0]["is_shielded"] = True

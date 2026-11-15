@@ -40,12 +40,10 @@ export type Liston = Record<PlanificadorPosicion, PlanificadorJugador | null>;
 
 export type Tablero = {
   liston: Liston;
-  /** Mercado y cláusulas abiertas a precio razonable. */
+  /** Mercado y cláusulas abiertas, cada uno con su veredicto de rentabilidad. */
   fichables: PlanificadorJugador[];
-  /** Cláusulas a precio razonable que aún están bloqueadas. */
+  /** Cláusulas que aún están bloqueadas. */
   porAbrir: PlanificadorJugador[];
-  /** Cláusulas por encima de lo que compensa pagar (regla del asesor de cláusulas). */
-  caras: PlanificadorJugador[];
   /** Tuyos que no entran en tu mejor once. */
   fuera: PlanificadorJugador[];
 };
@@ -65,11 +63,16 @@ export function construirTablero(jugadores: PlanificadorJugador[], h: Horizonte)
   const conClausula = ajenos.filter((j) => !j.mercado && j.dueno.tipo === "rival" && j.clausula);
   return {
     liston,
-    fichables: ajenos.filter((j) => j.mercado || (j.clausula?.estado === "abierta" && !j.clausula.cara && j.dueno.tipo === "rival")).sort(porXp),
-    porAbrir: conClausula.filter((j) => j.clausula?.estado === "bloqueada" && !j.clausula.cara).sort(porXp),
-    caras: conClausula.filter((j) => (j.clausula?.estado === "abierta" || j.clausula?.estado === "bloqueada") && j.clausula.cara).sort(porXp),
+    fichables: ajenos.filter((j) => j.mercado || (j.clausula?.estado === "abierta" && j.dueno.tipo === "rival")).sort(porXp),
+    porAbrir: conClausula.filter((j) => j.clausula?.estado === "bloqueada").sort(porXp),
     fuera: once ? mios.filter((j) => !ids.has(j.player_id)).sort(porXp) : [],
   };
+}
+
+/** Rentable o a precio justo: compensa ficharlo. */
+export function compensa(jugador: PlanificadorJugador): boolean {
+  const veredicto = jugador.rentabilidad?.veredicto;
+  return veredicto === "rentable" || veredicto === "justo";
 }
 
 /** Puntos que saca a tu titular más flojo de su puesto (negativo = no lo mejora). */

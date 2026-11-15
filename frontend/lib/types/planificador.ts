@@ -47,6 +47,16 @@ export type PlanificadorJugador = {
   dueno: PlanificadorDueno;
   mercado: { precio: number | null; cierra_at: string | null } | null;
   clausula: PlanificadorClausula | null;
+  /** ¿Compensa ficharlo? Valor justo de su xP (próxima jornada) frente al precio. Null si es tuyo o no tiene precio. */
+  rentabilidad?: PlanificadorRentabilidad | null;
+};
+
+export type PlanificadorRentabilidad = {
+  veredicto: "rentable" | "justo" | "caro";
+  valor_justo: number;
+  precio: number;
+  /** (valor justo / precio − 1) × 100. */
+  margen_pct: number;
 };
 
 /** De LaLiga, sin dueño en la liga ni en el mercado. Sin xP (faltan sus actas). */
