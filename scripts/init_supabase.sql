@@ -144,3 +144,32 @@ create index if not exists auction_results_league_day_idx
 
 alter table public.market_board enable row level security;
 alter table public.auction_results enable row level security;
+
+-- Cuaderno de consejos (toolbox/consejo_log.py). Una fila por plan distinto:
+-- la recarga del mismo día no pisa la anterior. El once propio es una fila
+-- por jornada y se reescribe solo mientras el primer saque no ha llegado.
+create table if not exists public.advice_events (
+    league_id text not null,
+    day text not null,
+    kind text not null,
+    fingerprint text not null,
+    stored_at double precision not null,
+    payload text not null,
+    primary key (league_id, kind, fingerprint)
+);
+
+create index if not exists advice_events_day_idx
+    on public.advice_events (league_id, day);
+
+create table if not exists public.xi_locks (
+    league_id text not null,
+    season text not null,
+    jornada integer not null,
+    kickoff text not null,
+    stored_at double precision not null,
+    payload text not null,
+    primary key (league_id, season, jornada)
+);
+
+alter table public.advice_events enable row level security;
+alter table public.xi_locks enable row level security;

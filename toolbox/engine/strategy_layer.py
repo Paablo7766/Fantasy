@@ -3183,3 +3183,9 @@ def publish_strategy(board: dict[str, Any], payload: dict[str, Any], *, now: dat
         save_plan(league_id, report.get("plan_fichajes"))
     except Exception:
         logger.exception("memoria del plan")
+    try:
+        from toolbox.consejo_log import registrar
+
+        registrar(league_id, report.get("plan_fichajes"), board, payload, now=now)
+    except Exception:
+        logger.exception("registro del consejo")
