@@ -13,6 +13,15 @@ Para cada candidato: MAE, ΔMAE frente a la base en las MISMAS filas, IC 95 % po
 bootstrap pareado por bloques (jugador y partido, 10 000 remuestreos),
 Wilcoxon de los |e| y Diebold-Mariano con error estándar por partido.
 
+Junto al MAE se informan (no deciden el veredicto):
+
+* RMSE: el xP es una media (E[pts]) y los puntos tienen cola a la derecha;
+  el MAE premia predecir la mediana, el RMSE la media.
+* Spearman: si el orden de los jugadores es el bueno.
+* NDCG@11 y captura del once, por jornada: si los 11 con más xP son los que
+  más puntuaron. La captura es puntos reales del top-11 por xP / puntos del
+  mejor 11 posible, que es lo que se juega al alinear.
+
     python scripts/ablacion_xp.py                 # tabla completa
     python scripts/ablacion_xp.py --solo-base     # solo la base y el diagnóstico
 """
@@ -409,6 +418,46 @@ def _dm(d: np.ndarray, grupos: list[str]) -> tuple[float, float]:
     return z, 2 * (1 - sstats.norm.cdf(abs(z)))
 
 
+def rmse(pred: np.ndarray, filas: list[Fila]) -> float:
+    y = np.array([f.actual for f in filas])
+    return float(np.sqrt(np.mean((pred - y) ** 2)))
+
+
+def spearman(pred: np.ndarray, filas: list[Fila]) -> float:
+    y = np.array([f.actual for f in filas])
+    if np.std(pred) == 0:
+        return float("nan")
+    return float(sstats.spearmanr(pred, y).statistic)
+
+
+def ranking_once(pred: np.ndarray, filas: list[Fila], k: int = 11) -> tuple[float, float]:
+    """NDCG@k y captura del once, media de las jornadas.
+
+    Ganancia = puntos reales con suelo 0 (un −2 no resta en el NDCG). La
+    captura usa los puntos reales tal cual: top-k por xP / mejor top-k.
+    """
+    ndcgs: list[float] = []
+    capturas: list[float] = []
+    for w in sorted({f.week for f in filas}):
+        idx = [i for i, f in enumerate(filas) if f.week == w]
+        if len(idx) < k:
+            continue
+        y = np.array([filas[i].actual for i in idx])
+        orden = np.argsort(-pred[idx], kind="stable")[:k]
+        ideal = np.sort(y)[::-1][:k]
+        descuento = 1.0 / np.log2(np.arange(2, k + 2))
+        dcg = float(np.sum(np.maximum(y[orden], 0) * descuento))
+        idcg = float(np.sum(np.maximum(ideal, 0) * descuento))
+        if idcg > 0:
+            ndcgs.append(dcg / idcg)
+        if ideal.sum() > 0:
+            capturas.append(float(y[orden].sum() / ideal.sum()))
+    return (
+        float(np.mean(ndcgs)) if ndcgs else float("nan"),
+        float(np.mean(capturas)) if capturas else float("nan"),
+    )
+
+
 @dataclass
 class Resultado:
     nombre: str
@@ -423,6 +472,12 @@ class Resultado:
     r: float
     por_semana: dict[int, float]
     nota: str = ""
+    rmse: float = float("nan")
+    delta_rmse: float = float("nan")
+    rho: float = float("nan")
+    ndcg11: float = float("nan")
+    delta_ndcg11: float = float("nan")
+    captura11: float = float("nan")
 
     @property
     def veredicto(self) -> str:
@@ -447,7 +502,18 @@ def comparar(nombre: str, filas: list[Fila], pred_base: np.ndarray, pred_new: np
     for w in sorted({f.week for f in filas}):
         m = np.array([f.week == w for f in filas])
         semanas[w] = float(d[m].mean())
-    return Resultado(nombre, len(filas), float(e_n.mean()), float(d.mean()), ic_j, ic_p, p_w, z, p_dm, r, semanas, nota)
+    ndcg_b, _ = ranking_once(pred_base, filas)
+    ndcg_n, captura_n = ranking_once(pred_new, filas)
+    rmse_n = rmse(pred_new, filas)
+    return Resultado(
+        nombre, len(filas), float(e_n.mean()), float(d.mean()), ic_j, ic_p, p_w, z, p_dm, r, semanas, nota,
+        rmse=rmse_n,
+        delta_rmse=rmse_n - rmse(pred_base, filas),
+        rho=spearman(pred_new, filas),
+        ndcg11=ndcg_n,
+        delta_ndcg11=ndcg_n - ndcg_b,
+        captura11=captura_n,
+    )
 
 
 def imprimir(res: list[Resultado], base_mae: float) -> None:
@@ -460,6 +526,10 @@ def imprimir(res: list[Resultado], base_mae: float) -> None:
             + (f"   ({r.nota})" if r.nota else "")
         )
         print("    Δ por jornada: " + "  ".join(f"J{w} {v:+.3f}" for w, v in r.por_semana.items()))
+        print(
+            f"    RMSE {r.rmse:.3f} ({r.delta_rmse:+.3f})  Spearman {r.rho:.3f}  "
+            f"NDCG@11 {r.ndcg11:.3f} ({r.delta_ndcg11:+.3f})  captura del once {r.captura11:.1%}"
+        )
 
 
 def mae(pred: np.ndarray, filas: list[Fila]) -> float:
@@ -480,11 +550,21 @@ def main() -> int:
 
     filas, _, _ = construir_filas(args.test_weeks, args.min_prior)
     base, _ = correr(filas, Config("base"))
-    print(f"Filas {len(filas)}  MAE base {mae(base, filas):.3f}")
+    ndcg, captura = ranking_once(base, filas)
+    print(
+        f"Filas {len(filas)}  MAE base {mae(base, filas):.3f}  RMSE {rmse(base, filas):.3f}  "
+        f"Spearman {spearman(base, filas):.3f}  NDCG@11 {ndcg:.3f}  captura del once {captura:.1%}"
+    )
     for w in args.test_weeks:
         sub = [i for i, f in enumerate(filas) if f.week == w]
         if sub:
-            print(f"  J{w}: n={len(sub)} MAE {np.mean([abs(base[i] - filas[i].actual) for i in sub]):.3f}")
+            sf = [filas[i] for i in sub]
+            sp = base[sub]
+            n_w, c_w = ranking_once(sp, sf)
+            print(
+                f"  J{w}: n={len(sub)} MAE {mae(sp, sf):.3f}  RMSE {rmse(sp, sf):.3f}  "
+                f"Spearman {spearman(sp, sf):.3f}  NDCG@11 {n_w:.3f}  captura {c_w:.1%}"
+            )
     return 0
 
 
