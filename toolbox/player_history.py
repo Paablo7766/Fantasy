@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -243,19 +244,38 @@ def registrar_actas(payloads: Any) -> int:
             temporal = ruta.with_suffix(".tmp")
             temporal.write_text(json.dumps(_almacen_a_json(existentes), ensure_ascii=False), encoding="utf-8")
             temporal.replace(ruta)
+            _GENERACION_ALMACEN[0] += 1
             return cambiados
     except Exception:  # noqa: BLE001 — guardar actas es un extra, nunca rompe el refresco
         return 0
 
 
 _CACHE_ACTAS: dict[str, Any] = {"firma": None, "jugadores": {}}
+# El xP pide las actas una vez por jugador (y el ajuste por rival otra). Mirar
+# la firma de la carpeta es un ``stat`` por fichero: con ~170 cuerpos y ~600
+# jugadores eran >100 000 ``stat`` por Actualizar, minutos en Windows. Si en
+# este proceso no se ha escrito nada, la firma se vuelve a mirar como mucho
+# cada ``_REVISAR_ACTAS_S`` (cambios hechos por otro proceso, p. ej. la CLI).
+_REVISAR_ACTAS_S = 5.0
+_GENERACION_ALMACEN = [0]
+_ULTIMA_REVISION: dict[str, Any] = {"clave": None, "en": 0.0}
 
 
 def actas_en_cache() -> dict[str, dict[str, Any]]:
     """Actas de ``.cache/scraper_bodies`` más el almacén acumulado, releídas solo si algo cambia."""
-    from toolbox.cache import cache_root
+    from toolbox.cache import cache_root, scraper_bodies_generation
 
     carpeta = cache_root() / "scraper_bodies"
+    clave = (str(carpeta), scraper_bodies_generation(), _GENERACION_ALMACEN[0])
+    ahora = time.monotonic()
+    if (
+        _CACHE_ACTAS["firma"] is not None
+        and _ULTIMA_REVISION["clave"] == clave
+        and ahora - _ULTIMA_REVISION["en"] < _REVISAR_ACTAS_S
+    ):
+        return _CACHE_ACTAS["jugadores"]
+    _ULTIMA_REVISION["clave"] = clave
+    _ULTIMA_REVISION["en"] = ahora
     try:
         ficheros = list(carpeta.iterdir())
         firma_carpeta = (str(carpeta), len(ficheros), max((f.stat().st_mtime_ns for f in ficheros), default=0))

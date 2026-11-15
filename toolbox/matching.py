@@ -506,6 +506,8 @@ class EntityResolver:
 
         claimed_players: set[str] = set(manual)
         claimed_records: set[str] = set(used_records)
+        pending_links: list[dict[str, Any]] = []
+        pending_audits: list[dict[str, Any]] = []
         best_for: dict[str, list[tuple[float, ExternalRecord]]] = {}
         for score, player, record in ranked:
             bucket = best_for.setdefault(player.player_id, [])
@@ -525,13 +527,14 @@ class EntityResolver:
             if ambiguous or key in claimed_records or best_score < MATCH_THRESHOLD:
                 reason = "ambiguous" if ambiguous else "low_confidence"
                 if best_score >= AUDIT_FLOOR or ambiguous:
-                    self._store.put_audit(
-                        player_id=player.player_id,
-                        source=source,
-                        external_name=best_record.name,
-                        candidate_name=player.nickname or player.name,
-                        confidence=round(best_score, 4),
-                        reason=reason,
+                    pending_audits.append(
+                        {
+                            "player_id": player.player_id,
+                            "external_name": best_record.name,
+                            "candidate_name": player.nickname or player.name,
+                            "confidence": round(best_score, 4),
+                            "reason": reason,
+                        }
                     )
                 decisions.append(
                     MatchDecision(
@@ -546,15 +549,15 @@ class EntityResolver:
                     )
                 )
                 continue
-            self._store.put_link(
-                player_id=player.player_id,
-                source=source,
-                external_name=best_record.name,
-                external_id=best_record.external_id,
-                club=best_record.club,
-                position=canonical_position(best_record.position),
-                confidence=round(best_score, 4),
-                manual=False,
+            pending_links.append(
+                {
+                    "player_id": player.player_id,
+                    "external_name": best_record.name,
+                    "external_id": best_record.external_id,
+                    "club": best_record.club,
+                    "position": canonical_position(best_record.position),
+                    "confidence": round(best_score, 4),
+                }
             )
             claimed_players.add(player.player_id)
             claimed_records.add(key)
@@ -569,7 +572,23 @@ class EntityResolver:
                     linked=True,
                 )
             )
+        self._flush_links(source, pending_links, pending_audits)
         return decisions
+
+    def _flush_links(self, source: str, links: list[dict[str, Any]], audits: list[dict[str, Any]]) -> None:
+        """Una escritura por tabla y fuente: uno a uno eran minutos por Actualizar."""
+        put_audits = getattr(self._store, "put_audits", None)
+        if callable(put_audits):
+            put_audits(source, audits)
+        else:
+            for audit in audits:
+                self._store.put_audit(source=source, **audit)
+        put_auto_links = getattr(self._store, "put_auto_links", None)
+        if callable(put_auto_links):
+            put_auto_links(source, links)
+        else:
+            for link in links:
+                self._store.put_link(source=source, manual=False, **link)
 
     def link_player(
         self,

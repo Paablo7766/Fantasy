@@ -102,13 +102,16 @@ _CACHE: dict[str, Any] = {"firma": None, "tabla": {}}
 def tabla_en_cache() -> dict[str, dict[str, dict[str, float]]]:
     """Tabla de la temporada, releída solo si cambian las actas o el calendario."""
     from toolbox.cache import cache_root
+    from toolbox import player_history
     from toolbox.player_history import actas_en_cache
     from toolbox.understat import normalize_club, parse_openfootball_matchdays
 
     ruta = cache_root() / "laliga_2026_27.txt"
     try:
         actas = actas_en_cache()
-        firma = (len(actas), sum(len(e.get("weeks") or {}) for e in actas.values()), ruta.stat().st_mtime_ns)
+        # La firma de las actas ya la lleva su caché: sumar las jornadas de los
+        # ~600 jugadores en cada llamada (una por jugador) era trabajo tirado.
+        firma = (id(actas), player_history._CACHE_ACTAS["firma"], ruta.stat().st_mtime_ns)
     except (OSError, Exception):  # noqa: BLE001 — sin calendario o actas, sin ajuste
         return {}
     if _CACHE["firma"] == firma:

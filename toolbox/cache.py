@@ -114,6 +114,10 @@ class _Query:
         self._filters.append(("gte", column, value))
         return self
 
+    def in_(self, column: str, values: Any) -> _Query:
+        self._filters.append(("in", column, list(values)))
+        return self
+
     def order(self, column: str, desc: bool = False) -> _Query:
         self._orders.append((column, bool(desc)))
         return self
@@ -233,6 +237,8 @@ def _matches(row: Mapping[str, Any], filters: list[tuple[str, str, Any]]) -> boo
         actual = row.get(column)
         if operation == "eq" and actual != expected:
             return False
+        if operation == "in" and actual not in expected:
+            return False
         if operation == "lte":
             if actual is None or expected is None:
                 return False
@@ -292,6 +298,19 @@ _SCRAPER_BODIES = "scraper_bodies"
 # lectura que falla no vuelve a parsear el fichero histórico.
 _LEGACY_MIGRATED: set[str] = set()
 _LEGACY_GUARD = threading.Lock()
+# Sube con cada escritura o borrado de un cuerpo en este proceso. Quien cachea
+# algo derivado de la carpeta (las actas) lo compara en vez de hacer ``stat``
+# de todos los ficheros en cada llamada: eso, por jugador, se comía minutos.
+_BODIES_GENERATION = [0]
+
+
+def scraper_bodies_generation() -> int:
+    """Contador de cambios en ``scraper_bodies`` hechos por este proceso."""
+    return _BODIES_GENERATION[0]
+
+
+def _bump_bodies_generation() -> None:
+    _BODIES_GENERATION[0] += 1
 
 
 def _scraper_body_path(root: Path, key: str) -> Path:
@@ -365,6 +384,7 @@ def _migrate_legacy_scraper_cache(root: Path) -> dict[str, dict[str, Any]]:
             dest = _scraper_body_path(root, key)
             if not dest.exists():
                 _write_entry(dest, entry)
+                _bump_bodies_generation()
             index[key] = entry
         _write_rows(path, [])
         _LEGACY_MIGRATED.add(token)
@@ -386,6 +406,7 @@ def _read_local_body(root: Path, url: str, *, kind: str) -> str | None:
                 path.unlink(missing_ok=True)
             except OSError:
                 pass
+            _bump_bodies_generation()
     legacy = _migrate_legacy_scraper_cache(root)
     body = _entry_body(legacy.get(key), kind=kind, now=now)
     if body is not None:
@@ -418,6 +439,7 @@ def _write_local_body(root: Path, url: str, *, kind: str, body: str, ttl_seconds
     lock = _file_lock(path)
     with lock:
         _write_entry(path, entry)
+    _bump_bodies_generation()
 
 
 def _delete_local_body(root: Path, url: str) -> None:
@@ -428,6 +450,7 @@ def _delete_local_body(root: Path, url: str) -> None:
             path.unlink(missing_ok=True)
         except OSError:
             pass
+    _bump_bodies_generation()
 
 
 def _purge_local_bodies(root: Path) -> int:
@@ -452,6 +475,8 @@ def _purge_local_bodies(root: Path) -> int:
                 except OSError:
                     continue
                 removed += 1
+    if removed:
+        _bump_bodies_generation()
     return removed
 
 
@@ -717,18 +742,81 @@ class EntityStore:
         return _link_dict(payload)
 
     def clear_auto(self, source: str) -> None:
+        # Un solo borrado por fuente. Antes era uno por fila: cada uno releía y
+        # reescribía ``player_links.json`` entero (o era una petición a Supabase),
+        # cientos por Actualizar.
         with self._lock:
-            autos = [
+            self.client.table(TABLE_PLAYER_LINKS).delete().eq("source", source).eq("manual", False).execute()
+            # Filas viejas sin ``manual`` (nulo) también son automáticas.
+            leftovers = [
                 row
                 for row in _rows(
                     self.client.table(TABLE_PLAYER_LINKS).select("*").eq("source", source).execute()
                 )
                 if not bool(row.get("manual"))
             ]
-            for row in autos:
+            for row in leftovers:
                 self.client.table(TABLE_PLAYER_LINKS).delete().eq("player_id", row["player_id"]).eq(
                     "source", source
                 ).execute()
+
+    def put_auto_links(self, source: str, links: list[dict[str, Any]]) -> None:
+        """Guarda de una vez los vínculos automáticos de una fuente.
+
+        Equivale a ``put_link(manual=False)`` por cada uno (no pisa un manual y
+        borra su auditoría), pero con una escritura por tabla en vez de cuatro
+        lecturas/escrituras del fichero entero por jugador.
+        """
+        if not links:
+            return
+        now = time.time()
+        with self._lock:
+            manual = {
+                str(row.get("player_id"))
+                for row in _rows(
+                    self.client.table(TABLE_PLAYER_LINKS).select("*").eq("source", source).eq("manual", True).execute()
+                )
+            }
+            payloads = [
+                {
+                    "player_id": link["player_id"],
+                    "source": source,
+                    "external_id": link.get("external_id"),
+                    "external_name": link["external_name"],
+                    "club": link.get("club"),
+                    "position": link.get("position"),
+                    "confidence": link["confidence"],
+                    "manual": False,
+                    "updated_at": now,
+                }
+                for link in links
+                if str(link["player_id"]) not in manual
+            ]
+            if not payloads:
+                return
+            self.client.table(TABLE_PLAYER_LINKS).upsert(payloads, on_conflict="player_id,source").execute()
+            ids = [payload["player_id"] for payload in payloads]
+            self.client.table(TABLE_MATCH_AUDITS).delete().eq("source", source).in_("player_id", ids).execute()
+
+    def put_audits(self, source: str, audits: list[dict[str, Any]]) -> None:
+        """Varias ``put_audit`` de una fuente en una sola escritura."""
+        if not audits:
+            return
+        now = time.time()
+        payloads = [
+            {
+                "player_id": audit["player_id"],
+                "source": source,
+                "external_name": audit.get("external_name"),
+                "candidate_name": audit.get("candidate_name"),
+                "confidence": audit["confidence"],
+                "reason": audit["reason"],
+                "created_at": now,
+            }
+            for audit in audits
+        ]
+        with self._lock:
+            self.client.table(TABLE_MATCH_AUDITS).upsert(payloads, on_conflict="player_id,source").execute()
 
     def clear_audits(self, source: str) -> None:
         with self._lock:

@@ -422,9 +422,18 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       // Se compara «needs» con «needs»: los bloques se capturan en instantes algo
       // distintos y comparar con el más viejo releía todo en cada apertura.
       const localAt = photoMs(snap.state.needs as PhotoMeta | null) ?? oldestPhotoMs(snap.state);
+      // Una copia local a medias (una lectura cortada a mitad de descarga, o
+      // el navegador sin cuota para guardar todo) dejaba esos bloques en
+      // «Cargando» para siempre: nadie los pedía si el servidor no tenía una
+      // foto más nueva. Los que faltan se leen de la foto guardada (sin red).
+      const missing = BLOCKS.filter((name) => name !== "needs" && !isUsableBlock(snap.state[name]));
       void fetchBlock("needs").then((fresh) => {
         const serverAt = photoMs(fresh as PhotoMeta | null);
-        if (serverAt !== null && (localAt === null || serverAt > localAt + 1000)) void load();
+        if (serverAt !== null && (localAt === null || serverAt > localAt + 1000)) {
+          void load();
+          return;
+        }
+        for (const name of missing) void fetchBlock(name);
       });
       return;
     }
