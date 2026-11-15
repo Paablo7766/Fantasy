@@ -8,7 +8,7 @@ from __future__ import annotations
 import random
 import threading
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -26,29 +26,45 @@ def utc(text: str) -> datetime:
 class FranjaTests(unittest.TestCase):
     def test_invierno_y_verano(self) -> None:
         # 12:47 UTC es 13:47 en Madrid en noviembre; en julio es 14:47.
-        self.assertTrue(foto_cierre.en_ventana(utc("2026-11-16T12:47:00")))
-        self.assertFalse(foto_cierre.en_ventana(utc("2027-07-16T12:47:00")))
-        self.assertTrue(foto_cierre.en_ventana(utc("2027-07-16T11:47:00")))
-        self.assertFalse(foto_cierre.en_ventana(utc("2026-11-16T11:47:00")))
+        self.assertEqual(foto_cierre.fase_de(utc("2026-11-16T12:47:00")), foto_cierre.TEMPRANA)
+        self.assertIsNone(foto_cierre.fase_de(utc("2027-07-16T12:47:00")))
+        self.assertEqual(foto_cierre.fase_de(utc("2027-07-16T11:47:00")), foto_cierre.TEMPRANA)
+        self.assertIsNone(foto_cierre.fase_de(utc("2026-11-16T11:47:00")))
+        # 13:00 UTC es 14:00 en Madrid en noviembre: toca la última.
+        self.assertEqual(foto_cierre.fase_de(utc("2026-11-16T13:00:00")), foto_cierre.ULTIMA)
+        self.assertEqual(foto_cierre.fase_de(utc("2027-07-16T12:00:00")), foto_cierre.ULTIMA)
+        self.assertIsNone(foto_cierre.fase_de(utc("2026-11-16T13:05:00")))
 
-    def test_la_espera_nunca_pasa_de_las_14_03(self) -> None:
+    def test_la_temprana_nunca_pasa_de_las_14_01(self) -> None:
         rng = random.Random(1)
+        tope = datetime(2026, 11, 16, 14, 1, tzinfo=foto_cierre.MADRID).timestamp()
         for minuto in range(30, 60):
             now = utc(f"2026-11-16T12:{minuto:02d}:00")
             for _ in range(50):
-                espera = foto_cierre.espera_al_azar(now, rng)
-                hora = (foto_cierre.ahora_madrid(now).timestamp() + espera)
-                tope = datetime(2026, 11, 16, 14, 3, tzinfo=foto_cierre.MADRID).timestamp()
+                espera = foto_cierre.espera_al_azar(now, rng, foto_cierre.TEMPRANA)
                 self.assertGreaterEqual(espera, 0.0)
                 self.assertLessEqual(espera, foto_cierre.ESPERA_MAX_MIN * 60.0)
-                self.assertLessEqual(hora, tope + 1e-6)
+                self.assertLessEqual(foto_cierre.ahora_madrid(now).timestamp() + espera, tope + 1e-6)
 
-    def test_una_foto_por_dia(self) -> None:
+    def test_la_ultima_cae_entre_14_06_15_y_14_07_10(self) -> None:
+        rng = random.Random(2)
+        desde = datetime(2026, 11, 16, 14, 6, 15, tzinfo=foto_cierre.MADRID).timestamp()
+        hasta = datetime(2026, 11, 16, 14, 7, 10, tzinfo=foto_cierre.MADRID).timestamp()
+        for segundo in range(0, 300, 7):
+            now = utc("2026-11-16T13:00:00") + timedelta(seconds=segundo)
+            for _ in range(30):
+                hora = now.timestamp() + foto_cierre.espera_al_azar(now, rng, foto_cierre.ULTIMA)
+                self.assertGreaterEqual(hora, desde - 1e-6)
+                self.assertLessEqual(hora, hasta + 1e-6)
+
+    def test_una_foto_de_cada_fase_por_dia(self) -> None:
         foto_cierre._reset_para_pruebas()
         now = utc("2026-11-16T12:47:00")
-        self.assertTrue(foto_cierre.reservar_dia(now))
-        self.assertFalse(foto_cierre.reservar_dia(now))
-        self.assertTrue(foto_cierre.reservar_dia(utc("2026-11-17T12:47:00")))
+        self.assertTrue(foto_cierre.reservar_dia(foto_cierre.TEMPRANA, now))
+        self.assertFalse(foto_cierre.reservar_dia(foto_cierre.TEMPRANA, now))
+        self.assertTrue(foto_cierre.reservar_dia(foto_cierre.ULTIMA, now))
+        self.assertFalse(foto_cierre.reservar_dia(foto_cierre.ULTIMA, now))
+        self.assertTrue(foto_cierre.reservar_dia(foto_cierre.TEMPRANA, utc("2026-11-17T12:47:00")))
         foto_cierre._reset_para_pruebas()
 
 
@@ -121,7 +137,7 @@ class CapturaTests(unittest.TestCase):
         foto_cierre.programar(lanzar, now=utc("2026-11-16T12:47:00"), dormir=lambda s: None, al_fallar=al_fallar)
         self.assertTrue(listo.wait(2.0))
         self.assertIsInstance(fallos[0], SystemExit)
-        self.assertFalse(foto_cierre.estado()["resultado"]["ok"])
+        self.assertFalse(foto_cierre.estado()[foto_cierre.TEMPRANA]["resultado"]["ok"])
         foto_cierre._reset_para_pruebas()
 
 
@@ -190,26 +206,33 @@ class EndpointTests(unittest.TestCase):
         programar.assert_not_called()
 
     def test_fuera_de_franja_no_programa(self) -> None:
-        with patch("toolbox.foto_cierre.en_ventana", return_value=False), patch(
+        with patch("toolbox.foto_cierre.fase_de", return_value=None), patch(
             "toolbox.foto_cierre.programar"
         ) as programar:
             r = self.client.post("/api/remote/foto-cierre", headers={"X-Remote-Token": TOKEN})
         self.assertEqual(r.json()["estado"], "fuera_de_franja")
         programar.assert_not_called()
 
-    def test_dentro_programa_una_vez(self) -> None:
-        with patch("toolbox.foto_cierre.en_ventana", return_value=True), patch(
+    def test_cada_fase_se_programa_una_vez(self) -> None:
+        fase = {"valor": foto_cierre.TEMPRANA}
+        with patch("toolbox.foto_cierre.fase_de", side_effect=lambda: fase["valor"]), patch(
             "toolbox.foto_cierre.programar", return_value=120.0
         ) as programar, patch.object(server, "kill_switch_state", return_value={"tripped": False}):
             r1 = self.client.post("/api/remote/foto-cierre", headers={"X-Remote-Token": TOKEN})
             r2 = self.client.post("/api/remote/foto-cierre", headers={"X-Remote-Token": TOKEN})
+            fase["valor"] = foto_cierre.ULTIMA
+            r3 = self.client.post("/api/remote/foto-cierre", headers={"X-Remote-Token": TOKEN})
         self.assertEqual(r1.status_code, 202)
         self.assertEqual(r1.json()["estado"], "programada")
+        self.assertEqual(r1.json()["fase"], foto_cierre.TEMPRANA)
         self.assertEqual(r2.json()["estado"], "ya_programada")
-        self.assertEqual(programar.call_count, 1)
+        self.assertEqual(r3.json()["fase"], foto_cierre.ULTIMA)
+        self.assertEqual(r3.json()["estado"], "programada")
+        self.assertEqual(programar.call_count, 2)
+        self.assertEqual(programar.call_args.kwargs["fase"], foto_cierre.ULTIMA)
 
     def test_con_kill_switch_no_programa(self) -> None:
-        with patch("toolbox.foto_cierre.en_ventana", return_value=True), patch(
+        with patch("toolbox.foto_cierre.fase_de", return_value=foto_cierre.ULTIMA), patch(
             "toolbox.foto_cierre.programar"
         ) as programar, patch.object(server, "kill_switch_state", return_value={"tripped": True}):
             r = self.client.post("/api/remote/foto-cierre", headers={"X-Remote-Token": TOKEN})

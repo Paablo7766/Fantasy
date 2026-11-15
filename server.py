@@ -4415,10 +4415,11 @@ def api_remote_foto_cierre(
 ) -> Any:
     """Foto del mercado antes del cierre de las 14:08: tu puja, pujas y valores.
 
-    La llama el cron de Supabase (``scripts/foto_cierre_cron.sql``) a las 13:47
-    de Madrid. Responde en el acto y la foto sale tras una espera al azar de
-    hasta 13 min (nunca después de las 14:03). Una petición a LaLiga, una vez al
-    día; fuera de la franja 13:30–14:03 no hace nada.
+    La llama el cron de Supabase (``scripts/foto_cierre_cron.sql``) dos veces:
+    a las 13:47 de Madrid programa la foto temprana (al azar hasta las 14:01) y
+    a las 14:00 la última (al azar entre 14:06:15 y 14:07:10), que recoge las
+    pujas de los últimos minutos. Responde en el acto; cada foto es una
+    petición a LaLiga, una vez al día. Fuera de esas franjas no hace nada.
     """
     from toolbox import foto_cierre
 
@@ -4429,12 +4430,19 @@ def api_remote_foto_cierre(
     base = {"ok": True, "schema_version": SCHEMA_VERSION, "command": "foto-cierre"}
     if kill_switch_state().get("tripped"):
         return {**base, "ok": False, "estado": "kill_switch", "detalle": foto_cierre.estado()}
-    if not foto_cierre.en_ventana():
+    fase = foto_cierre.fase_de()
+    if fase is None:
         return {**base, "estado": "fuera_de_franja", "detalle": foto_cierre.estado()}
-    if not foto_cierre.reservar_dia():
-        return {**base, "estado": "ya_programada", "detalle": foto_cierre.estado()}
-    espera = foto_cierre.programar(_foto_cierre_lanzar, al_fallar=_foto_cierre_fallo)
-    return {**base, "estado": "programada", "espera_segundos": round(espera), "detalle": foto_cierre.estado()}
+    if not foto_cierre.reservar_dia(fase):
+        return {**base, "estado": "ya_programada", "fase": fase, "detalle": foto_cierre.estado()}
+    espera = foto_cierre.programar(_foto_cierre_lanzar, fase=fase, al_fallar=_foto_cierre_fallo)
+    return {
+        **base,
+        "estado": "programada",
+        "fase": fase,
+        "espera_segundos": round(espera),
+        "detalle": foto_cierre.estado(),
+    }
 
 
 @app.get("/api/remote/foto-cierre")
