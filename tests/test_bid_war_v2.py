@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from toolbox.bid_war import calcular_puja_optima, probability_of_winning_bid, solve_optimal_bid_v2
+from toolbox.bid_war import _techo_rival, calcular_puja_optima, probability_of_winning_bid, solve_optimal_bid_v2
 from toolbox.league_history import RivalProfile, fit_rival_profiles_eb
 
 
@@ -198,6 +198,37 @@ class OptimalBidTests(unittest.TestCase):
         )
         self.assertLessEqual(result.optimal_bid_eur, 1_100_000)
         self.assertEqual(result.win_probability, 1.0)
+
+    def _rival_con_credito(self, legal: float | None) -> RivalProfile:
+        return RivalProfile(
+            team_id="r1",
+            manager_name="Ana",
+            alpha_aggressiveness=-1.5,
+            sigma_dispersion=0.35,
+            cash_eur=1_400_000,
+            cash_uncertainty_eur=150_000,
+            thin_positions=["MC"],
+            xi_gaps=["MC"],
+            lacks_replacements=True,
+            already_bidding=True,
+            legal_bid_limit_eur=legal,
+        )
+
+    def test_rival_credit_keeps_bidding_above_its_cash(self) -> None:
+        # Con 1,4 M de caja y 2 M de tope legal, pujar 1,4035 M no lo deja fuera.
+        sin = probability_of_winning_bid(1_403_500, 1_000_000, 1_000_000, "MC", 7.0, [self._rival_con_credito(None)])
+        con = probability_of_winning_bid(
+            1_403_500, 1_000_000, 1_000_000, "MC", 7.0, [self._rival_con_credito(2_000_000)]
+        )
+        self.assertLess(con, sin)
+
+    def test_rival_ceiling_is_the_legal_limit(self) -> None:
+        # El knockout se apunta a este techo: caja + crédito, no la caja sola.
+        self.assertEqual(_techo_rival(self._rival_con_credito(2_000_000)), 2_000_000)
+        self.assertEqual(_techo_rival(self._rival_con_credito(None)), 1_400_000)
+        # En rojo el crédito solo vale en el hueco con 0 sanos (lo decide probability_of_winning_bid).
+        en_rojo = replace(self._rival_con_credito(2_000_000), cash_eur=-300_000, en_rojo=True)
+        self.assertEqual(_techo_rival(en_rojo), -300_000)
 
 
 class SmartBidTests(unittest.TestCase):

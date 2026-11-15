@@ -503,7 +503,7 @@ def probability_of_winning_bid(
         )
         if rv.en_rojo and not rv.already_bidding and credito is None:
             continue
-        caja = max(rv.cash_eur, credito or 0.0)
+        caja = max(_techo_rival(rv), credito or 0.0)
         if caja + 2.0 * rv.cash_uncertainty_eur < min_legal_bid and not rv.already_bidding:
             continue
 
@@ -541,6 +541,18 @@ def probability_of_winning_bid(
         p_win_all *= p_beat_rival
 
     return float(np.clip(p_win_all, 0.0, 1.0))
+
+
+def _techo_rival(rv: RivalProfile) -> float:
+    """Lo máximo que un rival puede pujar: caja + crédito del 20 %.
+
+    Las pujas pueden endeudar hasta el tope legal, así que la caja sola no es
+    un muro. En rojo el tope legal solo vale en el hueco con 0 sanos, y eso lo
+    decide quien llama.
+    """
+    if rv.en_rojo or rv.legal_bid_limit_eur is None:
+        return rv.cash_eur
+    return max(rv.cash_eur, rv.legal_bid_limit_eur)
 
 
 def _apply_psychological_anti_cluster_nudge(raw_bid: float, max_budget: float) -> int:
@@ -630,7 +642,8 @@ def solve_optimal_bid_v2(
     base_eu = best_eu
     for rv in rivals:
         if position in rv.xi_gaps or position in rv.thin_positions or rv.already_bidding:
-            ko_bid = rv.cash_eur + 3_500.0
+            # Para dejarlo fuera hay que superar su tope legal, no solo su caja.
+            ko_bid = _techo_rival(rv) + 3_500.0
             if min_legal_bid <= ko_bid <= upper_bound:
                 eu_ko = -neg_expected_utility(ko_bid)
                 if eu_ko >= base_eu * 0.97 and eu_ko > best_eu:
