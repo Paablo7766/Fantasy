@@ -10,3 +10,4 @@ export type * from "./plan";
 export type * from "./radar";
 export type * from "./live";
 export type * from "./guardarrail";
+export type * from "./planificador";

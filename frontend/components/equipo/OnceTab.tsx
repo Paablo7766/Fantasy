@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { jornadaEv, playerName, points, projectedLineupPoints, titularFull, titularShare, titularWord } from "@/lib/core/format";
 import { REGLAMENTO } from "@/lib/core/reglamento";
@@ -405,6 +407,7 @@ export function OnceTab({
 }) {
   const [view, setView] = useState<View>("rec");
   const [selected, setSelected] = useState<string | null>(null);
+  const league = useSearchParams().get("league");
 
   const model = useMemo(() => {
     if (!optimize || optimize.ok === false) return null;
@@ -525,6 +528,25 @@ export function OnceTab({
         </section>
 
         <StatusBand tone={band.tone} items={band.items} />
+
+        <Link
+          href={league ? `/equipo/planificador?league=${encodeURIComponent(league)}` : "/equipo/planificador"}
+          className="home-glass group flex items-center gap-3.5 px-4 py-3.5 transition-colors duration-300 ease-out hover:bg-[#1c1c1e]"
+        >
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-ember-strong/15 text-ember-strong" aria-hidden="true">
+            <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <rect x="3" y="4" width="14" height="13" rx="2.5" />
+              <path d="M3 8h14M7 2.5v3M13 2.5v3M7 11.5h2M11 11.5h2M7 14h2" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-semibold text-white">Planificador de jornada</span>
+            <span className="block truncate text-[12.5px] text-white/50">Los que más van a sumar en toda tu liga, próximas 4 jornadas</span>
+          </span>
+          <svg viewBox="0 0 16 16" className="h-4 w-4 shrink-0 text-white/40 transition-transform duration-300 ease-out group-hover:translate-x-0.5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path d="m6 3 5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </Link>
 
         {model.saved.length && !model.same ? (
           <div className="desk-switch !grid-cols-2" role="tablist" aria-label="Qué once ver">

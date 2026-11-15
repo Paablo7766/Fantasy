@@ -4009,6 +4009,32 @@ def api_previa(league: str | None = Query(default=None)) -> Any:
     return report
 
 
+@app.get("/api/planificador")
+@_read_only
+def api_planificador(league: str | None = Query(default=None)) -> Any:
+    """Planificador de jornada: xP de las 4 próximas jornadas, dueño y cláusula.
+
+    Solo lee la foto (sin red). Se calcula una vez por foto.
+    """
+    board = _board("planificador", league, tier="full")
+    if isinstance(board, JSONResponse):
+        return board
+    from toolbox.planificador import build_planificador
+
+    def _build() -> dict[str, Any]:
+        built = build_planificador(board)
+        built["schema_version"] = SCHEMA_VERSION
+        built["command"] = "planificador"
+        return built
+
+    try:
+        payload = _photo_memo("planificador", league, board, _build)
+    except Exception as exc:
+        return error_response("planificador", exc)
+    payload.update(_photo_fields(board))
+    return payload
+
+
 @app.get("/api/plan")
 @_read_only
 def api_plan(
