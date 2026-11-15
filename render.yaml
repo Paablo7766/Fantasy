@@ -9,6 +9,10 @@ services:
     # Chromium no cabe en el plan de 512 MB. 1 CPU / 2 GB.
     plan: 1c-2g
     healthCheckPath: /
+    # Al redesplegar, el proceso viejo recibe SIGTERM y espera a que termine la
+    # descarga en curso (y su push) antes de salir. Sin esto Render lo mata a
+    # los 30 s. Máximo de Render: 300 s; el servidor espera hasta 280 s.
+    maxShutdownDelaySeconds: 300
     autoDeployTrigger: commit
     envVars:
       - key: LALIGA_ENV
