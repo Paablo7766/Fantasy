@@ -168,6 +168,67 @@ function segundosDesde(iso: string | null | undefined): number | null {
   return Math.max(0, (Date.now() - instante) / 1000);
 }
 
+type TipoMarca = "ideal" | "asegurar" | "maxima";
+
+/** Glifo de cada cifra: el mismo en la regla y en la lista, para casarlas de un vistazo. */
+function Marca({ tipo, tono }: { tipo: TipoMarca; tono?: string }) {
+  if (tipo === "ideal") return <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: tono || "#fff" }} aria-hidden="true" />;
+  if (tipo === "asegurar") return <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/60" aria-hidden="true" />;
+  return <span className="h-3.5 w-[3px] shrink-0 rounded-full bg-white" aria-hidden="true" />;
+}
+
+/**
+ * Regla sin ejes: coloca la puja, la de asegurar y la máxima en su sitio
+ * relativo. El tramo entre la puja y la máxima es tu margen para subir; si la
+ * puja pasa de la máxima, ese tramo se pinta en rojo.
+ */
+function Regla({ ideal, asegurar, maxima, caro }: { ideal: number | null; asegurar: number | null; maxima: number | null; caro: boolean }) {
+  const puntos = [ideal, asegurar, maxima].filter((valor): valor is number => typeof valor === "number");
+  if (puntos.length < 2) return null;
+  const menor = Math.min(...puntos);
+  const mayor = Math.max(...puntos);
+  const tramo = mayor - menor;
+  if (tramo <= 0) return null;
+  const inicio = menor - tramo * 0.4;
+  const fin = mayor + tramo * 0.1;
+  const pos = (valor: number) => `${(((valor - inicio) / (fin - inicio)) * 100).toFixed(2)}%`;
+  const centrada = "absolute top-1/2 -translate-x-1/2 -translate-y-1/2";
+  return (
+    <div className="relative mx-2 mt-5 h-4" aria-hidden="true">
+      <span className="absolute left-0 right-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-white/[0.08]" />
+      {ideal !== null && maxima !== null ? (
+        <span
+          className="absolute top-1/2 h-[3px] -translate-y-1/2 rounded-full"
+          style={{
+            left: pos(Math.min(ideal, maxima)),
+            width: `${(Math.abs(maxima - ideal) / (fin - inicio)) * 100}%`,
+            background: caro ? TONE.red : "rgba(255,255,255,0.22)",
+            opacity: caro ? 0.6 : 1,
+          }}
+        />
+      ) : null}
+      {asegurar !== null ? <span className={`${centrada} h-2.5 w-2.5 rounded-full border border-white/60 bg-[#101417]`} style={{ left: pos(asegurar) }} /> : null}
+      {maxima !== null ? <span className={`${centrada} h-4 w-[3px] rounded-full bg-white`} style={{ left: pos(maxima) }} /> : null}
+      {ideal !== null ? <span className={`${centrada} h-3 w-3 rounded-full bg-white`} style={{ left: pos(ideal), opacity: caro ? 0.55 : 1 }} /> : null}
+    </div>
+  );
+}
+
+function FilaPuja({ marca, titulo, pie, cifra, apagada }: { marca: TipoMarca; titulo: string; pie: string; cifra: string; apagada?: boolean }) {
+  return (
+    <div className="flex items-center gap-3 py-3">
+      <span className="grid w-3 shrink-0 place-items-center">
+        <Marca tipo={marca} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13.5px] text-white/85">{titulo}</p>
+        <p className="mt-0.5 truncate text-[11.5px] text-white/40">{pie}</p>
+      </div>
+      <p className={`shrink-0 text-[1.1rem] font-semibold leading-none tracking-[-0.02em] tabular-nums ${apagada ? "text-white/40" : "text-white"}`}>{cifra}</p>
+    </div>
+  );
+}
+
 function EscudoRival({ nombre, src }: { nombre: string; src?: string | null }) {
   if (src) {
     return (
@@ -180,8 +241,8 @@ function EscudoRival({ nombre, src }: { nombre: string; src?: string | null }) {
 }
 
 /**
- * Las tres pujas en una fila (ideal, asegurar, máxima) y una frase que dice
- * hasta dónde llegar. El cálculo y el precio del punto —un ajuste global, el
+ * Tu puja en grande, una regla con las tres cifras (puja, asegurar, máxima) y
+ * una frase que dice hasta dónde llegar. El cálculo y el precio del punto —un ajuste global, el
  * mismo para todos los jugadores— quedan plegados.
  */
 function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt, pujaPlan }: { tramo: PujaTramo; valor: number | null; puesto?: string | null; euros: number; onEuros: (next: number) => void; sinPuntos?: boolean; fetchedAt?: string | null; pujaPlan?: number | null }) {
@@ -235,28 +296,34 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
         : asegurar !== null
           ? `${empieza}; si hace falta, sube hasta ${money(asegurar)} para asegurarlo. Nunca pases de ${money(maxima)}.`
           : `${empieza} y no pases de ${money(maxima)}.`;
-  const columnas: { titulo: string; cifra: string; pie: string; apagada?: boolean; alerta?: boolean }[] = [
-    {
-      titulo: delPlan ? "Tu puja" : "Ideal",
-      cifra: ideal === null ? "—" : money(ideal),
-      pie: caro ? "más de lo que vale" : delPlan ? "la de tu plan" : "lo normal en tu liga",
-      apagada: caro,
-      alerta: caro,
-    },
-    { titulo: "Para asegurar", cifra: asegurar === null ? "—" : money(asegurar), pie: asegurar === null ? "sin muestra fiable" : "gana 9 de 10", apagada: asegurar === null || noCompensa || caro },
-    { titulo: "Máxima", cifra: fresco ? money(maxima) : "—", pie: fresco ? "lo que te vale a ti" : "sin calcular", apagada: !fresco },
-  ];
+  const defecto = typeof tramo.euros_por_punto === "number" && tramo.euros_por_punto > 0 ? tramo.euros_por_punto : EUROS_DEFECTO;
+  const cambiado = Math.abs(euros - defecto) >= 1;
+  const mover = (delta: number) => onEuros(Math.round(Math.max(0, Number((millones + delta).toFixed(2))) * horizonte * 1_000_000));
+  const botonPaso =
+    "grid h-10 w-10 place-items-center rounded-full bg-white/[0.08] text-[18px] leading-none text-white/80 outline-none transition-colors active:bg-white/[0.16] disabled:opacity-30 focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.4)]";
   return (
     <div className="mt-5">
-      <dl className="grid grid-cols-3 divide-x divide-white/[0.07] rounded-2xl bg-white/[0.04]">
-        {columnas.map((col) => (
-          <div key={col.titulo} className="min-w-0 px-3 py-3.5 text-center">
-            <dt className="truncate text-[11.5px] text-white/45">{col.titulo}</dt>
-            <dd className={`mt-1.5 truncate text-[1.1rem] font-semibold leading-none tracking-[-0.02em] tabular-nums ${col.apagada ? "text-white/40" : "text-white"}`}>{col.cifra}</dd>
-            <dd className="mt-1.5 text-[11px] leading-tight text-white/35" style={col.alerta ? { color: TONE.red } : undefined}>{col.pie}</dd>
-          </div>
-        ))}
-      </dl>
+      <div className="rounded-2xl bg-white/[0.04] px-4 pb-1 pt-4">
+        <p className="flex items-center gap-2 text-[11.5px] text-white/45">
+          <Marca tipo="ideal" tono={caro ? "rgba(255,255,255,0.55)" : undefined} />
+          {delPlan ? "Tu puja" : "Puja ideal"}
+        </p>
+        <p className={`mt-2 text-[2.4rem] font-semibold leading-none tracking-[-0.035em] tabular-nums ${caro ? "text-white/45" : "text-white"}`}>{ideal === null ? "—" : money(ideal)}</p>
+        <p className="mt-2 text-[12px] leading-tight text-white/40" style={caro ? { color: TONE.red } : undefined}>
+          {caro ? "más de lo que te vale" : delPlan ? "la de tu plan de hoy" : "lo normal en tu liga"}
+        </p>
+        <Regla ideal={ideal} asegurar={asegurar} maxima={fresco ? maxima : null} caro={caro} />
+        <div className="mt-3 divide-y divide-white/[0.07] border-t border-white/[0.07]">
+          <FilaPuja
+            marca="asegurar"
+            titulo="Para asegurar"
+            pie={asegurar === null ? "sin muestra fiable" : "gana 9 de cada 10 subastas"}
+            cifra={asegurar === null ? "—" : money(asegurar)}
+            apagada={asegurar === null || noCompensa || caro}
+          />
+          <FilaPuja marca="maxima" titulo="Máxima" pie={fresco ? "lo que te vale a ti" : "sin calcular"} cifra={fresco ? money(maxima) : "—"} apagada={!fresco} />
+        </div>
+      </div>
       <p className="mt-3 text-[13.5px] leading-snug text-white/70">{veredicto}</p>
 
       <details className="group mt-3">
@@ -281,30 +348,36 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
             <span className="text-white/75">Máxima (lo que te vale a ti):</span> {fresco ? `${detalleMaxima}.` : avisoMaxima}
           </li>
         </ul>
-        <label className="mt-3 flex items-center justify-between gap-4 rounded-xl bg-white/[0.04] px-3 py-2.5">
-          <span className="min-w-0">
-            <span className="block text-[12.5px] text-white/75">Lo que vale un punto por jornada, en millones</span>
-            <span className="mt-0.5 block text-[11.5px] leading-snug text-white/40">
-              {punto && punto.sobreprecio_eur > 0
-                ? `Tu liga: ${money(punto.premio_eur / horizonte)} de premio más ${money(punto.sobreprecio_eur / horizonte)} de sobreprecio habitual.`
-                : "El premio que devuelve cada punto."}{" "}
-              Igual para todos los jugadores; puedes cambiarlo.
-            </span>
-          </span>
-          <input
-            type="number"
-            min={0}
-            step={0.05}
-            inputMode="decimal"
-            aria-label="Millones que vale un punto de una jornada"
-            value={millones}
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              if (Number.isFinite(next) && next >= 0) onEuros(Math.round(next * horizonte * 1_000_000));
-            }}
-            className="w-20 shrink-0 rounded-md bg-white/[0.08] px-2 py-1.5 text-right text-[16px] tabular-nums sm:text-[14px] text-white outline-none focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
-          />
-        </label>
+        <div className="mt-3 rounded-xl bg-white/[0.04] p-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="min-w-0 text-[13px] text-white/80">Valor de un punto</p>
+            <div className="flex shrink-0 items-center gap-1">
+              <button type="button" aria-label="Bajar el valor del punto" disabled={millones <= 0} onClick={() => mover(-0.05)} className={botonPaso}>
+                −
+              </button>
+              <span className="min-w-[5rem] text-center text-[1rem] font-semibold tabular-nums text-white">
+                {millones.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} M€
+              </span>
+              <button type="button" aria-label="Subir el valor del punto" onClick={() => mover(0.05)} className={botonPaso}>
+                +
+              </button>
+            </div>
+          </div>
+          <p className="mt-2 text-[11.5px] leading-snug text-white/40">
+            Lo que pagarías por 1 punto de mejora en una jornada: si lo subes, tu máxima sube. Vale igual para todos los jugadores.
+            {punto && punto.sobreprecio_eur > 0
+              ? ` En tu liga: ${money(punto.premio_eur / horizonte)} de premio más ${money(punto.sobreprecio_eur / horizonte)} de sobreprecio habitual.`
+              : ""}
+            {cambiado ? (
+              <>
+                {" "}
+                <button type="button" onClick={() => onEuros(defecto)} className="text-white/70 underline underline-offset-2 outline-none hover:text-white">
+                  Restablecer
+                </button>
+              </>
+            ) : null}
+          </p>
+        </div>
       </details>
 
       {tramo.banda === "1.5-4" && rivales.length ? (
