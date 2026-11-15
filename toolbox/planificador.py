@@ -92,11 +92,17 @@ def _clausula(row: dict[str, Any], now: datetime) -> dict[str, Any] | None:
         estado = "abierta"
     else:
         estado = "sin_dato"
+    # Misma regla que el asesor de cláusulas: si destruye patrimonio, no compensa.
+    from toolbox.engine.signing_plan import evaluar_patrimonio_clausula
+
+    patrimonio = evaluar_patrimonio_clausula({"euros": euros, "valor": valor})
     return {
         "eur": euros,
         "multiplo": round(euros / valor, 2) if valor else None,
         "estado": estado,
         "abre_at": abre.isoformat() if estado == "bloqueada" and abre else None,
+        "cara": bool(patrimonio["descartar"]),
+        "prima_eur": int(patrimonio["prima_quemada_neta"]) if valor else None,
     }
 
 

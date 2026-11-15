@@ -59,6 +59,17 @@ def test_duenos_clausulas_y_estado():
     assert por_id["1"]["clausula"] is None
 
 
+def test_clausula_cara_con_la_regla_del_asesor():
+    out = build_planificador(_board(), now=NOW)
+    por_id = {f["player_id"]: f for f in out["jugadores"]}
+    # 2× el valor pasa del tope de 1,25×: quema patrimonio, no compensa.
+    assert por_id["2"]["clausula"]["cara"] is True
+    assert por_id["2"]["clausula"]["prima_eur"] == 10_000_000
+    # Cláusula igual al valor: precio justo.
+    assert por_id["3"]["clausula"]["cara"] is False
+    assert por_id["3"]["clausula"]["prima_eur"] == 0
+
+
 def test_blindado():
     board = _board()
     board["squads"]["squads"][1]["players"][0]["is_shielded"] = True

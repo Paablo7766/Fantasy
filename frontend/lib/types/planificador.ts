@@ -22,6 +22,10 @@ export type PlanificadorClausula = {
   multiplo: number | null;
   estado: "abierta" | "bloqueada" | "blindado" | "sin_dato";
   abre_at: string | null;
+  /** Por encima de lo que compensa pagar: misma regla que el asesor de cláusulas. */
+  cara?: boolean;
+  /** Lo que pagas por encima del valor de mercado. */
+  prima_eur?: number | null;
 };
 
 export type PlanificadorJugador = {

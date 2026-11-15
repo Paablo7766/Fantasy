@@ -21,7 +21,7 @@ function PlanificadorContent() {
           Mi equipo
         </Link>
         <h1 className="text-[1.6rem] font-semibold leading-tight tracking-tight text-white">Planificador</h1>
-        <p className="text-[13.5px] leading-snug text-white/50">Qué fichar o clausular para sumar más.</p>
+        <p className="text-[13.5px] leading-snug text-white/50">Quién suma más en la liga y si su precio compensa.</p>
       </div>
       <DataAge show={["plantillas", "titularidad"]} />
       <Planificador />
