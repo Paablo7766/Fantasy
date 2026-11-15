@@ -201,6 +201,7 @@ function Libre({ libre }: { libre: PlanificadorLibre }) {
       </span>
       <span className="mt-0.5 text-[11.5px] text-white/40">
         {libre.posicion}
+        {libre.valor ? <span className="tabular-nums text-white/60"> · {money(libre.valor)}</span> : null}
         {libre.estado ? <span style={{ color: libre.estado === "baja" ? TONE.red : TONE.amber }}> · {libre.estado === "baja" ? "Baja" : "Duda"}</span> : null}
       </span>
       <span className="mt-2.5 grid w-full grid-cols-2 gap-1 border-t border-white/[0.06] pt-2.5">
@@ -282,7 +283,8 @@ export function Planificador() {
       pool = [...pool, siguiente.jugador];
       techo = siguiente.once;
     }
-    return { base, mercado: mercado.slice(0, 3), clausulas: clausulas.slice(0, 3), techo, pasos: usados.size };
+    const fuera = base ? mios.filter((j) => !base.ids.has(j.player_id)).sort((a, b) => (valor(b, h) ?? 0) - (valor(a, h) ?? 0)) : [];
+    return { base, mercado: mercado.slice(0, 3), clausulas: clausulas.slice(0, 3), techo, pasos: usados.size, fuera };
   }, [jugadores, h]);
 
   const ranking = useMemo(
@@ -369,11 +371,41 @@ export function Planificador() {
               "Nada en el mercado ni en cláusulas abiertas mejora tu once ahora mismo."
             )}
           </p>
+          <p className="mt-1.5 text-[12px] text-white/45">Mejoras estimadas: el xP tiende a quedarse alto con los mejores jugadores.</p>
         </div>
       </section>
 
       {bloque("Fichar del mercado", plan.mercado, `Nadie en el mercado mejora tu once para ${etiquetaH}.`)}
       {bloque("Clausular", plan.clausulas, `Ninguna cláusula abierta mejora tu once para ${etiquetaH}.`)}
+
+      {plan.fuera.length ? (
+        <section className="flex flex-col gap-2.5" aria-label="Fuera de tu once">
+          <div className="px-1">
+            <h2 className="text-[1.05rem] font-semibold tracking-tight text-white">Fuera de tu once · {etiquetaH}</h2>
+            <p className="mt-0.5 text-[12.5px] text-white/45">Tuyos que no entran en tu mejor once: no te suman esos puntos.</p>
+          </div>
+          <ul className="home-glass">
+            {plan.fuera.map((jugador) => (
+              <FilaJugador
+                key={jugador.player_id}
+                jugador={jugador}
+                h={h}
+                abierto={abierto === `fuera-${jugador.player_id}`}
+                onToggle={() => toggle(`fuera-${jugador.player_id}`)}
+                jornadas={jornadas}
+                sufijo={sufijo}
+                linea={jugador.valor ? `Valor ${money(jugador.valor)}` : "Tuyo"}
+                derecha={
+                  <>
+                    <span className="block font-mono text-[1.05rem] font-semibold leading-none tabular-nums text-white/70">{points(valor(jugador, h))}</span>
+                    <span className="mt-1 block text-[11px] text-white/40">xP</span>
+                  </>
+                }
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {libres.length ? (
         <section className="flex flex-col gap-2.5" aria-label="Libres a vigilar">
