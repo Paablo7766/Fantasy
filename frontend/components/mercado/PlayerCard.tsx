@@ -168,63 +168,77 @@ function segundosDesde(iso: string | null | undefined): number | null {
   return Math.max(0, (Date.now() - instante) / 1000);
 }
 
-type TipoMarca = "ideal" | "asegurar" | "maxima";
-
-/** Glifo de cada cifra: el mismo en la regla y en la lista, para casarlas de un vistazo. */
-function Marca({ tipo, tono }: { tipo: TipoMarca; tono?: string }) {
-  if (tipo === "ideal") return <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: tono || "#fff" }} aria-hidden="true" />;
-  if (tipo === "asegurar") return <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/60" aria-hidden="true" />;
-  return <span className="h-3.5 w-[3px] shrink-0 rounded-full bg-white" aria-hidden="true" />;
+/** Cifra o frase clave: negrita blanca dentro de un texto gris. */
+function Neg({ children }: { children: ReactNode }) {
+  return <strong className="font-semibold text-white">{children}</strong>;
 }
 
 /**
- * Regla sin ejes: coloca la puja, la de asegurar y la máxima en su sitio
- * relativo. El tramo entre la puja y la máxima es tu margen para subir; si la
- * puja pasa de la máxima, ese tramo se pinta en rojo.
+ * Barra de la puja: la parte llena es lo que pujas y el hueco, lo que te sobra
+ * hasta tu máxima. Si la puja pasa de la máxima, el exceso sale en rojo. Encima,
+ * una frase en negrita con el margen; debajo, la leyenda de lo que es cada cosa.
  */
-function Regla({ ideal, asegurar, maxima, caro }: { ideal: number | null; asegurar: number | null; maxima: number | null; caro: boolean }) {
-  const puntos = [ideal, asegurar, maxima].filter((valor): valor is number => typeof valor === "number");
-  if (puntos.length < 2) return null;
-  const menor = Math.min(...puntos);
-  const mayor = Math.max(...puntos);
-  const tramo = mayor - menor;
-  if (tramo <= 0) return null;
-  const inicio = menor - tramo * 0.4;
-  const fin = mayor + tramo * 0.1;
-  const pos = (valor: number) => `${(((valor - inicio) / (fin - inicio)) * 100).toFixed(2)}%`;
-  const centrada = "absolute top-1/2 -translate-x-1/2 -translate-y-1/2";
+function Medidor({ ideal, maxima, asegurar, caro }: { ideal: number | null; maxima: number | null; asegurar: number | null; caro: boolean }) {
+  if (ideal === null || maxima === null || maxima <= 0 || ideal <= 0) return null;
+  const tope = Math.max(ideal, maxima);
+  const pct = (valor: number) => `${Math.min(100, Math.max(0, (valor / tope) * 100)).toFixed(2)}%`;
+  const margen = maxima - ideal;
+  const verAsegurar = asegurar !== null && asegurar <= tope;
+  const frase = caro ? (
+    <strong className="font-semibold" style={{ color: TONE.red }}>
+      Te pasas {money(-margen)} de lo que te vale
+    </strong>
+  ) : margen <= 0 ? (
+    <Neg>Pujas justo tu máxima</Neg>
+  ) : (
+    <>
+      <Neg>Te sobran {money(margen)}</Neg> hasta tu máxima
+    </>
+  );
   return (
-    <div className="relative mx-2 mt-5 h-4" aria-hidden="true">
-      <span className="absolute left-0 right-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-white/[0.08]" />
-      {ideal !== null && maxima !== null ? (
-        <span
-          className="absolute top-1/2 h-[3px] -translate-y-1/2 rounded-full"
-          style={{
-            left: pos(Math.min(ideal, maxima)),
-            width: `${(Math.abs(maxima - ideal) / (fin - inicio)) * 100}%`,
-            background: caro ? TONE.red : "rgba(255,255,255,0.22)",
-            opacity: caro ? 0.6 : 1,
-          }}
-        />
-      ) : null}
-      {asegurar !== null ? <span className={`${centrada} h-2.5 w-2.5 rounded-full border border-white/60 bg-[#101417]`} style={{ left: pos(asegurar) }} /> : null}
-      {maxima !== null ? <span className={`${centrada} h-4 w-[3px] rounded-full bg-white`} style={{ left: pos(maxima) }} /> : null}
-      {ideal !== null ? <span className={`${centrada} h-3 w-3 rounded-full bg-white`} style={{ left: pos(ideal), opacity: caro ? 0.55 : 1 }} /> : null}
+    <div className="mt-5">
+      <p className="text-[14px] leading-snug text-white/60">{frase}</p>
+      <div className="relative mt-3">
+        <div className="relative h-3.5 overflow-hidden rounded-full bg-white/[0.09]">
+          <span className="absolute inset-y-0 left-0 rounded-full bg-white" style={{ width: pct(Math.min(ideal, maxima)) }} />
+          {caro ? <span className="absolute inset-y-0" style={{ left: pct(maxima), width: `${(((ideal - maxima) / tope) * 100).toFixed(2)}%`, background: TONE.red }} /> : null}
+        </div>
+        {verAsegurar ? (
+          <span
+            className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[#101417]"
+            style={{ left: pct(asegurar as number) }}
+            aria-hidden="true"
+          />
+        ) : null}
+      </div>
+      <p className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-white/45">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-white" aria-hidden="true" />
+          Tu puja
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm" style={{ background: caro ? TONE.red : "rgba(255,255,255,0.14)" }} aria-hidden="true" />
+          {caro ? "Te pasas" : "Margen hasta tu máxima"}
+        </span>
+        {verAsegurar ? (
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full border-2 border-white" aria-hidden="true" />
+            Para asegurar
+          </span>
+        ) : null}
+      </p>
     </div>
   );
 }
 
-function FilaPuja({ marca, titulo, pie, cifra, apagada }: { marca: TipoMarca; titulo: string; pie: string; cifra: string; apagada?: boolean }) {
+function FilaPuja({ titulo, pie, cifra, apagada }: { titulo: string; pie: string; cifra: string; apagada?: boolean }) {
   return (
-    <div className="flex items-center gap-3 py-3">
-      <span className="grid w-3 shrink-0 place-items-center">
-        <Marca tipo={marca} />
-      </span>
+    <div className="flex items-center gap-3 py-3.5">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13.5px] text-white/85">{titulo}</p>
-        <p className="mt-0.5 truncate text-[11.5px] text-white/40">{pie}</p>
+        <p className="truncate text-[14.5px] font-semibold text-white">{titulo}</p>
+        <p className="mt-0.5 truncate text-[12px] text-white/45">{pie}</p>
       </div>
-      <p className={`shrink-0 text-[1.1rem] font-semibold leading-none tracking-[-0.02em] tabular-nums ${apagada ? "text-white/40" : "text-white"}`}>{cifra}</p>
+      <p className={`shrink-0 text-[1.25rem] font-bold leading-none tracking-[-0.02em] tabular-nums ${apagada ? "text-white/35" : "text-white"}`}>{cifra}</p>
     </div>
   );
 }
@@ -282,20 +296,36 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
   // La ideal es lo que suele costar; la máxima, lo que te vale a ti. Si lo
   // primero pasa de lo segundo, el jugador está caro para tu equipo.
   const caro = fresco && ideal !== null && ideal > maxima;
-  const empieza = ideal !== null ? `Empieza por ${money(ideal)}` : "Empieza por la ideal";
-  const veredicto = !fresco
-    ? horas !== null && horas >= 24
-      ? `Sin puja máxima: la previsión de puntos es de hace ${horas} h. Actualiza para saber hasta dónde te compensa.`
-      : "Sin puja máxima: no hay previsión de puntos para este jugador."
-    : caro
-      ? maxima > 0
-        ? `No compensa: lo normal es pagar ${money(ideal)} y a ti solo te vale hasta ${money(maxima)}. Mejor déjalo pasar.`
-        : `No compensa: lo normal es pagar ${money(ideal)} y no te aporta puntos en tu once.`
-      : noCompensa
-        ? `${empieza}. Asegurarlo (${money(asegurar)}) ya pasa de tu máxima (${money(maxima)}), así que no subas más.`
-        : asegurar !== null
-          ? `${empieza}; si hace falta, sube hasta ${money(asegurar)} para asegurarlo. Nunca pases de ${money(maxima)}.`
-          : `${empieza} y no pases de ${money(maxima)}.`;
+  const puja = ideal !== null ? <Neg>{money(ideal)}</Neg> : "la ideal";
+  const veredicto: ReactNode = !fresco ? (
+    horas !== null && horas >= 24 ? (
+      `Sin puja máxima: la previsión de puntos es de hace ${horas} h. Actualiza para saber hasta dónde te compensa.`
+    ) : (
+      "Sin puja máxima: no hay previsión de puntos para este jugador."
+    )
+  ) : caro ? (
+    maxima > 0 ? (
+      <>
+        <Neg>No compensa.</Neg> Lo normal es pagar <Neg>{money(ideal)}</Neg> y a ti solo te vale hasta <Neg>{money(maxima)}</Neg>. Mejor déjalo pasar.
+      </>
+    ) : (
+      <>
+        <Neg>No compensa.</Neg> Lo normal es pagar <Neg>{money(ideal)}</Neg> y no te aporta puntos en tu once.
+      </>
+    )
+  ) : noCompensa ? (
+    <>
+      Puja {puja}. Asegurarlo (<Neg>{money(asegurar)}</Neg>) ya pasa de tu máxima (<Neg>{money(maxima)}</Neg>): no subas más.
+    </>
+  ) : asegurar !== null ? (
+    <>
+      Puja {puja}; si hace falta, sube hasta <Neg>{money(asegurar)}</Neg> para asegurarlo. <Neg>Nunca pases de {money(maxima)}.</Neg>
+    </>
+  ) : (
+    <>
+      Puja {puja} y <Neg>no pases de {money(maxima)}</Neg>.
+    </>
+  );
   const defecto = typeof tramo.euros_por_punto === "number" && tramo.euros_por_punto > 0 ? tramo.euros_por_punto : EUROS_DEFECTO;
   const cambiado = Math.abs(euros - defecto) >= 1;
   const mover = (delta: number) => onEuros(Math.round(Math.max(0, Number((millones + delta).toFixed(2))) * horizonte * 1_000_000));
@@ -304,27 +334,23 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
   return (
     <div className="mt-5">
       <div className="rounded-2xl bg-white/[0.04] px-4 pb-1 pt-4">
-        <p className="flex items-center gap-2 text-[11.5px] text-white/45">
-          <Marca tipo="ideal" tono={caro ? "rgba(255,255,255,0.55)" : undefined} />
-          {delPlan ? "Tu puja" : "Puja ideal"}
-        </p>
-        <p className={`mt-2 text-[2.4rem] font-semibold leading-none tracking-[-0.035em] tabular-nums ${caro ? "text-white/45" : "text-white"}`}>{ideal === null ? "—" : money(ideal)}</p>
+        <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-white/45">{delPlan ? "Tu puja" : "Puja ideal"}</p>
+        <p className={`mt-2 text-[2.6rem] font-bold leading-none tracking-[-0.035em] tabular-nums ${caro ? "text-white/45" : "text-white"}`}>{ideal === null ? "—" : money(ideal)}</p>
         <p className="mt-2 text-[12px] leading-tight text-white/40" style={caro ? { color: TONE.red } : undefined}>
           {caro ? "más de lo que te vale" : delPlan ? "la de tu plan de hoy" : "lo normal en tu liga"}
         </p>
-        <Regla ideal={ideal} asegurar={asegurar} maxima={fresco ? maxima : null} caro={caro} />
-        <div className="mt-3 divide-y divide-white/[0.07] border-t border-white/[0.07]">
+        <Medidor ideal={ideal} maxima={fresco ? maxima : null} asegurar={asegurar} caro={caro} />
+        <div className="mt-4 divide-y divide-white/[0.07] border-t border-white/[0.07]">
           <FilaPuja
-            marca="asegurar"
             titulo="Para asegurar"
-            pie={asegurar === null ? "sin muestra fiable" : "gana 9 de cada 10 subastas"}
+            pie={asegurar === null ? "sin muestra fiable" : noCompensa ? "pasa de tu máxima" : "gana 9 de cada 10 subastas"}
             cifra={asegurar === null ? "—" : money(asegurar)}
             apagada={asegurar === null || noCompensa || caro}
           />
-          <FilaPuja marca="maxima" titulo="Máxima" pie={fresco ? "lo que te vale a ti" : "sin calcular"} cifra={fresco ? money(maxima) : "—"} apagada={!fresco} />
+          <FilaPuja titulo="Tu máxima" pie={fresco ? "lo máximo que te compensa" : "sin calcular"} cifra={fresco ? money(maxima) : "—"} apagada={!fresco} />
         </div>
       </div>
-      <p className="mt-3 text-[13.5px] leading-snug text-white/70">{veredicto}</p>
+      <p className="mt-4 text-[14.5px] leading-snug text-white/65">{veredicto}</p>
 
       <details className="group mt-3">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[12.5px] font-medium text-white/45 hover:text-white/70 [&::-webkit-details-marker]:hidden">
