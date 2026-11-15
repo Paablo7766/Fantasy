@@ -196,7 +196,7 @@ function EscudoRival({ nombre, src }: { nombre: string; src?: string | null }) {
  * una frase que dice hasta dónde llegar. El cálculo y el precio del punto —un ajuste global, el
  * mismo para todos los jugadores— quedan plegados.
  */
-function TablaPuja({ tramo, puesto, euros, onEuros, sinPuntos, fetchedAt, pujaPlan }: { tramo: PujaTramo; puesto?: string | null; euros: number; onEuros: (next: number) => void; sinPuntos?: boolean; fetchedAt?: string | null; pujaPlan?: number | null }) {
+function TablaPuja({ tramo, puesto, euros, sinPuntos, fetchedAt, pujaPlan }: { tramo: PujaTramo; puesto?: string | null; euros: number; sinPuntos?: boolean; fetchedAt?: string | null; pujaPlan?: number | null }) {
   const xp = typeof tramo.xp_delta === "number" ? tramo.xp_delta : 0;
   const reventa = typeof tramo.reventa_eur === "number" ? tramo.reventa_eur : 0;
   const bruto = Math.round(xp * euros + reventa);
@@ -212,10 +212,7 @@ function TablaPuja({ tramo, puesto, euros, onEuros, sinPuntos, fetchedAt, pujaPl
   const horas = segundos === null ? null : Math.floor(segundos / 3600);
   const fresco = presente && segundos !== null && segundos <= CADUCIDAD_XP_S;
   const noCompensa = fresco && asegurar !== null && asegurar > maxima;
-  const horizonte = typeof tramo.horizonte_jornadas === "number" && tramo.horizonte_jornadas > 0 ? tramo.horizonte_jornadas : 4;
-  const millones = Number((euros / horizonte / 1_000_000).toFixed(2));
   const rivales = Array.isArray(tramo.rivales) ? tramo.rivales : [];
-  const punto = tramo.precio_punto ?? null;
   // Una frase que ordena las tres cifras: hasta dónde tiene sentido llegar.
   // La ideal es lo que suele costar; la máxima, lo que te vale a ti. Si lo
   // primero pasa de lo segundo, el jugador está caro para tu equipo.
@@ -250,11 +247,6 @@ function TablaPuja({ tramo, puesto, euros, onEuros, sinPuntos, fetchedAt, pujaPl
       Puja {puja} y <Neg>no pases de {money(maxima)}</Neg>.
     </>
   );
-  const defecto = typeof tramo.euros_por_punto === "number" && tramo.euros_por_punto > 0 ? tramo.euros_por_punto : EUROS_DEFECTO;
-  const cambiado = Math.abs(euros - defecto) >= 1;
-  const mover = (delta: number) => onEuros(Math.round(Math.max(0, Number((millones + delta).toFixed(2))) * horizonte * 1_000_000));
-  const botonPaso =
-    "grid h-10 w-10 place-items-center rounded-full bg-white/[0.08] text-[18px] leading-none text-white/80 outline-none transition-colors active:bg-white/[0.16] disabled:opacity-30 focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.4)]";
   return (
     <div className="mt-5">
       <div className="rounded-2xl bg-white/[0.04] px-4 pb-1 pt-4">
@@ -274,39 +266,6 @@ function TablaPuja({ tramo, puesto, euros, onEuros, sinPuntos, fetchedAt, pujaPl
         </div>
       </div>
       <p className="mt-4 text-[14.5px] leading-snug text-white/65">{veredicto}</p>
-
-      <div>
-        <div className="mt-4 rounded-xl bg-white/[0.04] p-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="min-w-0 text-[13px] text-white/80">Valor de un punto</p>
-            <div className="flex shrink-0 items-center gap-1">
-              <button type="button" aria-label="Bajar el valor del punto" disabled={millones <= 0} onClick={() => mover(-0.05)} className={botonPaso}>
-                −
-              </button>
-              <span className="min-w-[5rem] text-center text-[1rem] font-semibold tabular-nums text-white">
-                {millones.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} M€
-              </span>
-              <button type="button" aria-label="Subir el valor del punto" onClick={() => mover(0.05)} className={botonPaso}>
-                +
-              </button>
-            </div>
-          </div>
-          <p className="mt-2 text-[11.5px] leading-snug text-white/40">
-            Lo que pagarías por 1 punto de mejora en una jornada: si lo subes, tu máxima sube. Vale igual para todos los jugadores.
-            {punto && punto.sobreprecio_eur > 0
-              ? ` En tu liga: ${money(punto.premio_eur / horizonte)} de premio más ${money(punto.sobreprecio_eur / horizonte)} de sobreprecio habitual.`
-              : ""}
-            {cambiado ? (
-              <>
-                {" "}
-                <button type="button" onClick={() => onEuros(defecto)} className="text-white/70 underline underline-offset-2 outline-none hover:text-white">
-                  Restablecer
-                </button>
-              </>
-            ) : null}
-          </p>
-        </div>
-      </div>
 
       {tramo.banda === "1.5-4" && rivales.length ? (
         <div className="mt-4 border-t border-white/[0.07] pt-4">
@@ -380,7 +339,7 @@ export function PlayerCard({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [comparing, setComparing] = useState<{ id: string; position?: string | null } | null>(null);
-  const [euros, setEuros] = useEuros(typeof player?.puja_tramo?.euros_por_punto === "number" ? player.puja_tramo.euros_por_punto : null);
+  const [euros] = useEuros(typeof player?.puja_tramo?.euros_por_punto === "number" ? player.puja_tramo.euros_por_punto : null);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -495,7 +454,7 @@ export function PlayerCard({
           <p className="mt-1.5 text-[14px] leading-relaxed text-white/60">{reason}</p>
 
           {tramo ? (
-            <TablaPuja tramo={tramo} puesto={player.position} euros={euros} onEuros={setEuros} sinPuntos={xp === null} fetchedAt={fetchedAt} pujaPlan={planBid} />
+            <TablaPuja tramo={tramo} puesto={player.position} euros={euros} sinPuntos={xp === null} fetchedAt={fetchedAt} pujaPlan={planBid} />
           ) : shownBid !== null ? (
             <div className="mt-6">
               <p className="text-[11.5px] text-white/40">{bidLabel}</p>
