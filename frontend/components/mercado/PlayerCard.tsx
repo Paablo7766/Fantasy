@@ -154,11 +154,6 @@ function useEuros(fallback: number | null | undefined) {
   return [euros, update] as const;
 }
 
-function factor(value: number | null | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
-  return value.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 const CADUCIDAD_XP_S = 24 * 3600;
 
 function segundosDesde(iso: string | null | undefined): number | null {
@@ -171,64 +166,6 @@ function segundosDesde(iso: string | null | undefined): number | null {
 /** Cifra o frase clave: negrita blanca dentro de un texto gris. */
 function Neg({ children }: { children: ReactNode }) {
   return <strong className="font-semibold text-white">{children}</strong>;
-}
-
-/**
- * Barra de la puja: la parte llena es lo que pujas y el hueco, lo que te sobra
- * hasta tu máxima. Si la puja pasa de la máxima, el exceso sale en rojo. Encima,
- * una frase en negrita con el margen; debajo, la leyenda de lo que es cada cosa.
- */
-function Medidor({ ideal, maxima, asegurar, caro }: { ideal: number | null; maxima: number | null; asegurar: number | null; caro: boolean }) {
-  if (ideal === null || maxima === null || maxima <= 0 || ideal <= 0) return null;
-  const tope = Math.max(ideal, maxima);
-  const pct = (valor: number) => `${Math.min(100, Math.max(0, (valor / tope) * 100)).toFixed(2)}%`;
-  const margen = maxima - ideal;
-  const verAsegurar = asegurar !== null && asegurar <= tope;
-  const frase = caro ? (
-    <strong className="font-semibold" style={{ color: TONE.red }}>
-      Te pasas {money(-margen)} de lo que te vale
-    </strong>
-  ) : margen <= 0 ? (
-    <Neg>Pujas justo tu máxima</Neg>
-  ) : (
-    <>
-      <Neg>Te sobran {money(margen)}</Neg> hasta tu máxima
-    </>
-  );
-  return (
-    <div className="mt-5">
-      <p className="text-[14px] leading-snug text-white/60">{frase}</p>
-      <div className="relative mt-3">
-        <div className="relative h-3.5 overflow-hidden rounded-full bg-white/[0.09]">
-          <span className="absolute inset-y-0 left-0 rounded-full bg-white" style={{ width: pct(Math.min(ideal, maxima)) }} />
-          {caro ? <span className="absolute inset-y-0" style={{ left: pct(maxima), width: `${(((ideal - maxima) / tope) * 100).toFixed(2)}%`, background: TONE.red }} /> : null}
-        </div>
-        {verAsegurar ? (
-          <span
-            className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[#101417]"
-            style={{ left: pct(asegurar as number) }}
-            aria-hidden="true"
-          />
-        ) : null}
-      </div>
-      <p className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-white/45">
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-white" aria-hidden="true" />
-          Tu puja
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm" style={{ background: caro ? TONE.red : "rgba(255,255,255,0.14)" }} aria-hidden="true" />
-          {caro ? "Te pasas" : "Margen hasta tu máxima"}
-        </span>
-        {verAsegurar ? (
-          <span className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full border-2 border-white" aria-hidden="true" />
-            Para asegurar
-          </span>
-        ) : null}
-      </p>
-    </div>
-  );
 }
 
 function FilaPuja({ titulo, pie, cifra, apagada }: { titulo: string; pie: string; cifra: string; apagada?: boolean }) {
@@ -259,14 +196,12 @@ function EscudoRival({ nombre, src }: { nombre: string; src?: string | null }) {
  * una frase que dice hasta dónde llegar. El cálculo y el precio del punto —un ajuste global, el
  * mismo para todos los jugadores— quedan plegados.
  */
-function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt, pujaPlan }: { tramo: PujaTramo; valor: number | null; puesto?: string | null; euros: number; onEuros: (next: number) => void; sinPuntos?: boolean; fetchedAt?: string | null; pujaPlan?: number | null }) {
+function TablaPuja({ tramo, puesto, euros, onEuros, sinPuntos, fetchedAt, pujaPlan }: { tramo: PujaTramo; puesto?: string | null; euros: number; onEuros: (next: number) => void; sinPuntos?: boolean; fetchedAt?: string | null; pujaPlan?: number | null }) {
   const xp = typeof tramo.xp_delta === "number" ? tramo.xp_delta : 0;
   const reventa = typeof tramo.reventa_eur === "number" ? tramo.reventa_eur : 0;
   const bruto = Math.round(xp * euros + reventa);
   const tope = typeof tramo.tope_eur === "number" ? Math.max(0, tramo.tope_eur) : null;
   const maxima = tope === null ? bruto : Math.min(bruto, tope);
-  const recortada = tope !== null && bruto > tope;
-  const n = typeof tramo.n === "number" ? tramo.n : 0;
   const referencia = typeof tramo.ideal_eur === "number" ? tramo.ideal_eur : null;
   // Si el jugador está en tu plan, la primera cifra es la del plan (la misma de Inicio).
   const delPlan = typeof pujaPlan === "number" && pujaPlan > 0;
@@ -277,18 +212,7 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
   const horas = segundos === null ? null : Math.floor(segundos / 3600);
   const fresco = presente && segundos !== null && segundos <= CADUCIDAD_XP_S;
   const noCompensa = fresco && asegurar !== null && asegurar > maxima;
-  const avisoMaxima = horas !== null && horas >= 24 ? `máxima sin calcular: xP de hace ${horas} h` : "máxima sin calcular: sin xP";
   const horizonte = typeof tramo.horizonte_jornadas === "number" && tramo.horizonte_jornadas > 0 ? tramo.horizonte_jornadas : 4;
-  const barato = valor !== null && valor < 1_500_000;
-  const detalleIdeal = n > 0 ? `valor × ${factor(tramo.mediana)} · mediana de ${n} compras` : "sin compras en este tramo";
-  const detalleMaxima = [
-    xp > 0 ? `${dec(xp)} pts de mejora × ${money(euros)} (${horizonte} jornadas)` : "0 € por puntos: no entra en tu once",
-    tramo.subida_incluida ? `más su reventa a 7 días, ${money(reventa)}` : `más su reventa al valor de hoy, ${money(reventa)}`,
-    barato ? "por debajo de 1,5 M no se suma la subida: bajan" : null,
-    recortada ? (tramo.tope_motivo === "guardarrail" ? "recortada al margen del guardarraíl" : "recortada a tu caja más el crédito del 20 %") : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
   const millones = Number((euros / horizonte / 1_000_000).toFixed(2));
   const rivales = Array.isArray(tramo.rivales) ? tramo.rivales : [];
   const punto = tramo.precio_punto ?? null;
@@ -339,7 +263,6 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
         <p className="mt-2 text-[12px] leading-tight text-white/40" style={caro ? { color: TONE.red } : undefined}>
           {caro ? "más de lo que te vale" : delPlan ? "la de tu plan de hoy" : "lo normal en tu liga"}
         </p>
-        <Medidor ideal={ideal} maxima={fresco ? maxima : null} asegurar={asegurar} caro={caro} />
         <div className="mt-4 divide-y divide-white/[0.07] border-t border-white/[0.07]">
           <FilaPuja
             titulo="Para asegurar"
@@ -352,29 +275,8 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
       </div>
       <p className="mt-4 text-[14.5px] leading-snug text-white/65">{veredicto}</p>
 
-      <details className="group mt-3">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[12.5px] font-medium text-white/45 hover:text-white/70 [&::-webkit-details-marker]:hidden">
-          Cómo se calculan
-          <svg viewBox="0 0 16 16" className="h-3 w-3 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </summary>
-        <ul className="mt-2.5 flex flex-col gap-2 text-[12.5px] leading-snug text-white/50">
-          <li>
-            <span className="text-white/75">{delPlan ? "Tu puja:" : "Ideal:"}</span>{" "}
-            {delPlan
-              ? `la que usa tu plan de Inicio: parte del precio habitual en tu liga${referencia !== null ? ` (${money(referencia)}, ${detalleIdeal})` : ""} y lo ajusta con la subida de hoy, el precio de salida y lo pujado que esté.`
-              : `${detalleIdeal} de jugadores de ${tramo.etiqueta || "su precio"} en tu liga.`}
-          </li>
-          <li>
-            <span className="text-white/75">Para asegurar:</span>{" "}
-            {asegurar === null ? `con ${n} ${n === 1 ? "compra" : "compras"} en el tramo no hay cifra fiable.` : `valor × ${factor(tramo.p90)}, lo que pagó el 10 % que más pujó.`}
-          </li>
-          <li>
-            <span className="text-white/75">Máxima (lo que te vale a ti):</span> {fresco ? `${detalleMaxima}.` : avisoMaxima}
-          </li>
-        </ul>
-        <div className="mt-3 rounded-xl bg-white/[0.04] p-3">
+      <div>
+        <div className="mt-4 rounded-xl bg-white/[0.04] p-3">
           <div className="flex items-center justify-between gap-3">
             <p className="min-w-0 text-[13px] text-white/80">Valor de un punto</p>
             <div className="flex shrink-0 items-center gap-1">
@@ -404,7 +306,7 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
             ) : null}
           </p>
         </div>
-      </details>
+      </div>
 
       {tramo.banda === "1.5-4" && rivales.length ? (
         <div className="mt-4 border-t border-white/[0.07] pt-4">
@@ -593,7 +495,7 @@ export function PlayerCard({
           <p className="mt-1.5 text-[14px] leading-relaxed text-white/60">{reason}</p>
 
           {tramo ? (
-            <TablaPuja tramo={tramo} valor={value} puesto={player.position} euros={euros} onEuros={setEuros} sinPuntos={xp === null} fetchedAt={fetchedAt} pujaPlan={planBid} />
+            <TablaPuja tramo={tramo} puesto={player.position} euros={euros} onEuros={setEuros} sinPuntos={xp === null} fetchedAt={fetchedAt} pujaPlan={planBid} />
           ) : shownBid !== null ? (
             <div className="mt-6">
               <p className="text-[11.5px] text-white/40">{bidLabel}</p>
