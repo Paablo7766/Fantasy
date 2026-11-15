@@ -6,7 +6,7 @@ una muestra grande y que dos o tres compras extremas no muevan ese percentil.
 La máxima es lo que el jugador vale para esta plantilla: lo que recuperas al
 revenderlo más lo que valen los puntos que suma a tu once mientras lo tienes.
 
-Un punto de mejora no vale los 16,4 M del ratio de mercado: ese ratio es lo
+Un punto de mejora no vale el ratio de mercado entero: ese ratio es lo
 que cuesta *comprar* un jugador por cada punto que da, y ese dinero vuelve al
 venderlo (ya está en la reventa). Lo que un punto vale de verdad es lo que se
 pierde por conseguirlo: el premio que devuelve (100.000 € por punto y jornada)
@@ -33,7 +33,7 @@ from toolbox.analyzer import POSITIONS
 from toolbox.bidding import URGENCIA_HUECO, urgencia_posicional
 from toolbox.cache import cache_root
 from toolbox.engine.live_matchday import EUROS_POR_PUNTO as PREMIO_POR_PUNTO
-from toolbox.engine.market_predictor import EUROS_POR_PUNTO as RATIO_REFERENCIA, HORIZONTE_JORNADAS
+from toolbox.engine.market_predictor import HORIZONTE_JORNADAS
 from toolbox.engine.trading_desk import DEUDA_PCT_EQUIPO
 from toolbox.league_history import LEAGUE_INITIAL_BUDGET, madrid_day
 
@@ -140,7 +140,7 @@ def precio_punto(filas: list[dict[str, Any]], ratio_mercado: Any = None) -> dict
       de todas las compras menos 1) por los euros de mercado que cuesta un
       punto. Es dinero que no vuelve al revender: el precio real del punto.
 
-    Sin muestra suficiente solo cuenta el premio.
+    Sin muestra suficiente o sin ratio medido solo cuenta el premio.
     """
     premio = PREMIO_POR_PUNTO * HORIZONTE_JORNADAS
     ratios = [
@@ -148,17 +148,33 @@ def precio_punto(filas: list[dict[str, Any]], ratio_mercado: Any = None) -> dict
         for fila in filas
         if isinstance(fila, dict) and isinstance(fila.get("ratio"), (int, float)) and not isinstance(fila.get("ratio"), bool) and fila["ratio"] > 0
     ]
-    ratio = float(ratio_mercado) if isinstance(ratio_mercado, (int, float)) and not isinstance(ratio_mercado, bool) and ratio_mercado > 0 else float(RATIO_REFERENCIA)
+    # Sin ratio medido no hay sobreprecio: la referencia fija de 16,4 M no está
+    # en la escala del xP actual (hoy se miden ~3,9 M) y lo multiplicaría por 2,7.
+    medido = isinstance(ratio_mercado, (int, float)) and not isinstance(ratio_mercado, bool) and ratio_mercado > 0
+    ratio = float(ratio_mercado) if medido else None
     mediana = percentil(ratios, 50) if len(ratios) >= N_MINIMO_SOBREPRECIO else None
-    sobreprecio = 0 if mediana is None else int(round(max(0.0, mediana - 1.0) * ratio))
+    sobreprecio = 0 if mediana is None or ratio is None else int(round(max(0.0, mediana - 1.0) * ratio))
     return {
         "euros_por_punto": int(premio + sobreprecio),
         "premio_eur": int(premio),
         "sobreprecio_eur": sobreprecio,
         "sobrepuja_mediana": None if mediana is None else round(mediana, 4),
-        "ratio_mercado": int(round(ratio)),
+        "ratio_mercado": None if ratio is None else int(round(ratio)),
         "n": len(ratios),
     }
+
+
+def ratio_medido(report: dict[str, Any] | None) -> float | None:
+    """El ratio € por punto solo si salió de los titulares, no de la referencia fija."""
+    if not isinstance(report, dict):
+        return None
+    detalle = report.get("ratio_detalle")
+    if not isinstance(detalle, dict) or detalle.get("usa_referencia") is not False:
+        return None
+    ratio = report.get("ratio_mercado")
+    if isinstance(ratio, bool) or not isinstance(ratio, (int, float)) or ratio <= 0:
+        return None
+    return float(ratio)
 
 
 def reventa_eur(valor: int, valor_en_7d: Any) -> tuple[int, bool]:
@@ -608,7 +624,7 @@ def estampar(payload: dict[str, Any], board: dict[str, Any] | None, report: dict
     stats = tabla(filas)
     tope, motivo = tope_eur(report)
     marca = _marca_xp(board, payload)
-    punto = precio_punto(filas, report.get("ratio_mercado") if isinstance(report, dict) else None)
+    punto = precio_punto(filas, ratio_medido(report))
     payload["puja_tramos"] = {
         "euros_por_punto": punto["euros_por_punto"],
         "precio_punto": punto,

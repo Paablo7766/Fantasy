@@ -18,6 +18,7 @@ from toolbox.engine.puja_tramos import (
     frescura_xp,
     mejora_xp,
     precio_punto,
+    ratio_medido,
     reventa_eur,
     rivales_con_hueco,
     tabla,
@@ -57,6 +58,21 @@ class PrecioPunto(unittest.TestCase):
     def test_una_liga_que_compra_por_debajo_del_valor_no_resta(self) -> None:
         punto = precio_punto([{"ratio": 0.95}] * 20, 16_000_000)
         self.assertEqual(punto["euros_por_punto"], 400_000)
+
+    def test_sin_ratio_medido_no_se_inventa_el_sobreprecio(self) -> None:
+        # Antes caía a la referencia de 16,4 M y el punto valía 2,7 veces más.
+        punto = precio_punto([{"ratio": 1.11}] * 20)
+        self.assertEqual(punto["euros_por_punto"], 400_000)
+        self.assertEqual(punto["sobreprecio_eur"], 0)
+        self.assertIsNone(punto["ratio_mercado"])
+
+    def test_el_ratio_de_referencia_no_cuenta_como_medido(self) -> None:
+        referencia = {"ratio_mercado": 16_400_000.0, "ratio_detalle": {"usa_referencia": True}}
+        medido = {"ratio_mercado": 3_865_973.92, "ratio_detalle": {"usa_referencia": False}}
+        self.assertIsNone(ratio_medido(referencia))
+        self.assertIsNone(ratio_medido({"ratio_mercado": 3_900_000.0}))
+        self.assertIsNone(ratio_medido(None))
+        self.assertEqual(ratio_medido(medido), 3_865_973.92)
 
     def test_la_maxima_no_cuenta_dos_veces_el_valor(self) -> None:
         # Un jugador de 3 M que mejora el once 1,4 puntos no puede valer 26 M.
