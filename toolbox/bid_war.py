@@ -6,6 +6,7 @@ no hay techo ``own_*`` ni ``af_*``. La puja de ``flip`` sigue siendo líder+1.
 
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import dataclass, replace
 from typing import Any
@@ -555,12 +556,24 @@ def _techo_rival(rv: RivalProfile) -> float:
     return max(rv.cash_eur, rv.legal_bid_limit_eur)
 
 
+def _desplazamiento(raw_bid: float, low: int, high: int) -> int:
+    """Euros extra en [low, high], estables para la misma puja y sin patrón visible.
+
+    Un sufijo fijo (antes siempre +2.411 o +1.109) deja huella en el historial
+    de pujas ganadas: el rival lo aprende y te gana por 1 €. El hash de la puja
+    bruta no lo puede reproducir nadie que no conozca el cálculo, y la cifra no
+    salta en cada recarga de la app.
+    """
+    digest = hashlib.blake2b(f"{int(round(raw_bid))}".encode(), digest_size=8).digest()
+    return low + int.from_bytes(digest, "big") % (high - low + 1)
+
+
 def _apply_psychological_anti_cluster_nudge(raw_bid: float, max_budget: float) -> int:
     rounded_50k = math.ceil(raw_bid / 50_000.0) * 50_000.0
     if abs(rounded_50k - raw_bid) <= 12_000.0:
-        cand = rounded_50k + 2_411.0
+        cand = rounded_50k + _desplazamiento(raw_bid, 2_800, 16_500)
     else:
-        cand = raw_bid + 1_109.0
+        cand = raw_bid + _desplazamiento(raw_bid, 1_000, 9_999)
     return int(min(max_budget, max(raw_bid, cand)))
 
 

@@ -5,7 +5,12 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from toolbox.bid_war import _techo_rival, calcular_puja_optima, probability_of_winning_bid, solve_optimal_bid_v2
+from toolbox.bid_war import (
+    _apply_psychological_anti_cluster_nudge,
+    _techo_rival,
+    calcular_puja_optima,
+)
+from toolbox.bid_war import probability_of_winning_bid, solve_optimal_bid_v2
 from toolbox.league_history import RivalProfile, fit_rival_profiles_eb
 
 
@@ -229,6 +234,22 @@ class OptimalBidTests(unittest.TestCase):
         # En rojo el crédito solo vale en el hueco con 0 sanos (lo decide probability_of_winning_bid).
         en_rojo = replace(self._rival_con_credito(2_000_000), cash_eur=-300_000, en_rojo=True)
         self.assertEqual(_techo_rival(en_rojo), -300_000)
+
+    def test_bid_suffix_has_no_fixed_fingerprint(self) -> None:
+        raws = [1_000_000 + 37_123 * i for i in range(60)]
+        nudged = [_apply_psychological_anti_cluster_nudge(raw, 50_000_000) for raw in raws]
+        # Nunca baja de la puja bruta y no se mueve entre recargas.
+        self.assertTrue(all(bid >= raw for bid, raw in zip(nudged, raws)))
+        self.assertEqual(nudged, [_apply_psychological_anti_cluster_nudge(raw, 50_000_000) for raw in raws])
+        # Sin terminación fija: las tres últimas cifras varían.
+        self.assertGreater(len({bid % 1_000 for bid in nudged}), 30)
+        self.assertNotIn(2_411, {bid % 50_000 for bid in nudged})
+        # Junto a un múltiplo de 50k sale por encima con margen, no pegado a la cifra redonda.
+        cerca = _apply_psychological_anti_cluster_nudge(1_995_000, 50_000_000)
+        self.assertGreaterEqual(cerca, 2_002_800)
+        self.assertLessEqual(cerca, 2_016_500)
+        # El tope de caja manda.
+        self.assertEqual(_apply_psychological_anti_cluster_nudge(1_995_000, 2_000_000), 2_000_000)
 
 
 class SmartBidTests(unittest.TestCase):
