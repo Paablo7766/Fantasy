@@ -2,6 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     { "name": "backend", "runtimeExecutable": ".venv/Scripts/python.exe", "runtimeArgs": ["-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"], "port": 8000 },
-    { "name": "frontend", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "frontend", "run", "dev"], "port": 3000 }
+    { "name": "frontend", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "frontend", "run", "dev"], "port": 3000 },
+    { "name": "aether", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "C:/Users/PABLO SANZ/Downloads/Master Cunef/aether-audit-corpus", "run", "dev"], "port": 5183 }
   ]
 }
