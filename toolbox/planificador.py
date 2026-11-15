@@ -121,7 +121,62 @@ def _jornada_siguiente(squads: list[dict[str, Any]]) -> int | None:
     return statistics.mode(v + 1 for v in por_club.values())
 
 
-def build_planificador(board: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+LIBRES_MAX = 40
+
+
+def _libres(
+    catalogo: list[dict[str, Any]] | None,
+    con_xp: set[str],
+    rivales_por_club: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Jugadores de LaLiga que no son de nadie en la liga ni están en el mercado.
+
+    No tienen xP: el motor necesita sus actas (minutos) y solo se descargan para
+    plantillas y mercado. Sin ellas el xP sale casi igual para todos los de un
+    mismo club, así que aquí van con su media y su forma reciente, aparte.
+    """
+    from toolbox.matching import normalize_club
+
+    filas: list[dict[str, Any]] = []
+    for row in catalogo or []:
+        if not isinstance(row, dict) or row.get("player_id") is None:
+            continue
+        pid = str(row["player_id"])
+        if pid in con_xp:
+            continue
+        media = _num(row.get("average_points"))
+        serie = [x for x in (_num(v) for v in row.get("week_points") or []) if x is not None]
+        if media is None or len(serie) < 3:
+            continue
+        status = str(row.get("player_status") or "").lower()
+        estado = "baja" if status in {"injured", "suspended"} else "duda" if status == "doubtful" else None
+        ultimos = serie[-3:]
+        partido = rivales_por_club.get(normalize_club(str(row.get("club") or "")))
+        filas.append(
+            {
+                "player_id": pid,
+                "nombre": row.get("nickname") or row.get("name"),
+                "posicion": _POS.get(str(row.get("position") or "").upper(), "MC"),
+                "club": row.get("club"),
+                "image_url": row.get("image_url"),
+                "media": round(media, 2),
+                "forma": round(sum(ultimos) / len(ultimos), 2),
+                "ultimos": ultimos,
+                "valor": _int(row.get("market_value")),
+                "estado": estado,
+                "proximo": partido,
+            }
+        )
+    filas.sort(key=lambda fila: (fila["estado"] == "baja", -fila["media"]))
+    return filas[:LIBRES_MAX]
+
+
+def build_planificador(
+    board: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    catalogo: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     moment = now or datetime.now(timezone.utc)
     trends = board.get("trends") if isinstance(board.get("trends"), dict) else {}
     squads_doc = board.get("squads") if isinstance(board.get("squads"), dict) else {}
@@ -214,7 +269,15 @@ def build_planificador(board: dict[str, Any], *, now: datetime | None = None) ->
         )
 
     filas.sort(key=lambda fila: -(fila["xp"][0] or 0.0))
+    from toolbox.matching import normalize_club
+
+    rivales_por_club: dict[str, dict[str, Any]] = {}
+    for fila in filas:
+        clave = normalize_club(str(fila["club"] or ""))
+        if clave and clave not in rivales_por_club and fila["partidos"][0]:
+            rivales_por_club[clave] = fila["partidos"][0]
     return {
+        "libres": _libres(catalogo, {fila["player_id"] for fila in filas}, rivales_por_club),
         "ok": True,
         "jornada": jornada,
         "jornadas": [jornada + i if jornada is not None else None for i in range(HORIZONTE)],

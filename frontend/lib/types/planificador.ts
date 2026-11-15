@@ -45,6 +45,22 @@ export type PlanificadorJugador = {
   clausula: PlanificadorClausula | null;
 };
 
+/** De LaLiga, sin dueño en la liga ni en el mercado. Sin xP (faltan sus actas). */
+export type PlanificadorLibre = {
+  player_id: string;
+  nombre: string | null;
+  posicion: PlanificadorPosicion;
+  club: string | null;
+  image_url: string | null;
+  media: number;
+  /** Media de las tres últimas jornadas. */
+  forma: number;
+  ultimos: number[];
+  valor: number | null;
+  estado: "baja" | "duda" | null;
+  proximo: PlanificadorPartido | null;
+};
+
 export type PlanificadorPayload = ApiError &
   PhotoMeta & {
     ok?: boolean;
@@ -54,5 +70,6 @@ export type PlanificadorPayload = ApiError &
     dashboard_at?: string | null;
     managers?: Array<{ team_id: string | null; nombre: string; es_mio: boolean }>;
     jugadores?: PlanificadorJugador[];
+    libres?: PlanificadorLibre[];
     nota?: string;
   };

@@ -4022,7 +4022,12 @@ def api_planificador(league: str | None = Query(default=None)) -> Any:
     from toolbox.planificador import build_planificador
 
     def _build() -> dict[str, Any]:
-        built = build_planificador(board)
+        try:
+            catalogo = _catalog_players()
+        except Exception:  # noqa: BLE001 — sin catálogo no hay libres, el resto sale igual
+            logger.debug("Sin catálogo para los libres del planificador", exc_info=True)
+            catalogo = []
+        built = build_planificador(board, catalogo=catalogo)
         built["schema_version"] = SCHEMA_VERSION
         built["command"] = "planificador"
         return built

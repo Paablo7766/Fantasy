@@ -65,3 +65,19 @@ def test_blindado():
     out = build_planificador(board, now=NOW)
     fila = next(f for f in out["jugadores"] if f["player_id"] == "2")
     assert fila["clausula"]["estado"] == "blindado"
+
+
+def test_libres_fuera_de_la_liga():
+    catalogo = [
+        {"player_id": "1", "nickname": "Mío", "position": "MC", "club": "Betis", "average_points": 9, "week_points": [9, 9, 9]},
+        {"player_id": "9", "nickname": "Libre bueno", "position": "DEL", "club": "Betis", "average_points": 10, "week_points": [8, 12, 4, 14], "player_status": "ok"},
+        {"player_id": "8", "nickname": "Libre lesionado", "position": "DEF", "club": "Elche", "average_points": 12, "week_points": [10, 12, 14], "player_status": "injured"},
+        {"player_id": "7", "nickname": "Pocas jornadas", "position": "MC", "club": "Elche", "average_points": 20, "week_points": [20]},
+    ]
+    out = build_planificador(_board(), now=NOW, catalogo=catalogo)
+    libres = out["libres"]
+    assert [fila["player_id"] for fila in libres] == ["9", "8"]  # los de la liga y los de <3 jornadas fuera; las bajas al final
+    bueno = libres[0]
+    assert bueno["forma"] == 10.0 and bueno["ultimos"] == [12.0, 4.0, 14.0]
+    assert bueno["proximo"]["rival"] == "Club 0"  # rival del club sacado de quien sí tiene calendario
+    assert libres[1]["estado"] == "baja"
