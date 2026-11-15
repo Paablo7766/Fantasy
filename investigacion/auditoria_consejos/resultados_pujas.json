@@ -1,0 +1,51 @@
+{
+  "fuente": "market_decision_snapshots, decision PUJAR. No es la puja del plan.",
+  "pujas_con_cifra": 39,
+  "con_precio_de_cierre": 3,
+  "sin_compra_en_un_dia": 35,
+  "fotos_de_la_misma_subasta": 1,
+  "cifra_cubre_o_iguala_el_cierre": 2,
+  "proporcion": 0.667,
+  "wilson_95": [
+    0.208,
+    0.939
+  ],
+  "gap_mediano_eur": 0,
+  "se_quedan_cortas": 1,
+  "corto_mediano_eur": -1025507,
+  "filas": [
+    {
+      "day": "2026-10-24",
+      "player_id": "270",
+      "suggested_bid": 600350,
+      "win_probability": 0.0,
+      "outcome": "lost",
+      "paid_eur": 599596,
+      "cierre_eur": 599596,
+      "cubre": true,
+      "gap_eur": 754
+    },
+    {
+      "day": "2026-11-04",
+      "player_id": "2949",
+      "suggested_bid": 2124493,
+      "win_probability": 0.4806,
+      "outcome": "lost",
+      "paid_eur": 3150000,
+      "cierre_eur": 3150000,
+      "cubre": false,
+      "gap_eur": -1025507
+    },
+    {
+      "day": "2026-11-05",
+      "player_id": "3231",
+      "suggested_bid": 12736988,
+      "win_probability": 0.6109,
+      "outcome": "lost",
+      "paid_eur": 12736988,
+      "cierre_eur": 12736988,
+      "cubre": true,
+      "gap_eur": 0
+    }
+  ]
+}
