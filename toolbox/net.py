@@ -1538,6 +1538,55 @@ class LaligaClient:
             document["count"] = len(jugables)
         return document
 
+    def market_snapshot(self, league: str | None) -> dict[str, Any]:
+        """Mercado recién bajado con **una sola** petición a LaLiga.
+
+        ``market_document(fresh=True)`` vuelve a pedir la lista de ligas y puede
+        pedir el catálogo de jugadores para las fotos. Aquí la liga y las fotos
+        salen de la caché; solo el mercado sale a la red. Es lo que usa la foto
+        de antes del cierre (``toolbox.foto_cierre``): tu puja, el recuento de
+        pujas y el valor de cada anuncio solo existen mientras está abierto.
+        """
+        ref = self._league_from_any_copy(league)
+        if ref is None:
+            # Sin ninguna copia de la lista de ligas: la de siempre (puede salir a la red).
+            ref, _leagues_url = self.resolve_league(league, fresh=False)
+        source, payload = self._first_matching(
+            market_urls(ref["league_id"]),
+            ttl=MARKET_TTL_SECONDS,
+            fresh=True,
+            accept=_is_market,
+        )
+        document = build_market_document(
+            league_id=ref["league_id"],
+            league_name=ref.get("name"),
+            source_url=source,
+            payload=payload,
+            fetched_at=_now(),
+        )
+        document["own_team_id"] = ref.get("own_team_id")
+        # Sin fotos de jugador: el catálogo es la petición más cara y el diario no las usa.
+        return document
+
+    def _league_from_any_copy(self, league: str | None) -> dict[str, Any] | None:
+        """La liga desde la copia guardada de la lista, aunque esté caducada.
+
+        La liga y tu equipo no cambian de un día para otro: no merece una
+        petición. ``None`` si no hay copia o la liga pedida no está en ella.
+        """
+        requested = (league or league_id_from_env() or "").strip()
+        found = self._first_stale(
+            league_list_urls(),
+            accept=lambda body: len(leagues_from_payload(body)) > 0,
+            offline=True,
+        )
+        if found is None:
+            return None
+        leagues = leagues_from_payload(found[1])
+        if requested:
+            return next((row for row in leagues if row.get("league_id") == requested), None)
+        return leagues[0] if len(leagues) == 1 else None
+
     def players_document(self, *, fresh: bool = False) -> list[Any]:
         """Catálogo público de jugadores de la competición (incluye ``image``).
 

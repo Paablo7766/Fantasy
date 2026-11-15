@@ -4396,6 +4396,61 @@ def api_remote_status(
     }
 
 
+def _foto_cierre_lanzar() -> dict[str, Any]:
+    from toolbox import foto_cierre
+
+    with production_window():
+        with LaligaClient() as client:
+            return foto_cierre.capturar(client, _league(None))
+
+
+def _foto_cierre_fallo(exc: BaseException) -> None:
+    if isinstance(exc, SystemExit):
+        _kill_process_from_worker()
+
+
+@app.post("/api/remote/foto-cierre", status_code=202)
+def api_remote_foto_cierre(
+    x_remote_token: str | None = Header(default=None, alias=REMOTE_TOKEN_HEADER),
+) -> Any:
+    """Foto del mercado antes del cierre de las 14:08: tu puja, pujas y valores.
+
+    La llama el cron de Supabase (``scripts/foto_cierre_cron.sql``) a las 13:47
+    de Madrid. Responde en el acto y la foto sale tras una espera al azar de
+    hasta 13 min (nunca después de las 14:03). Una petición a LaLiga, una vez al
+    día; fuera de la franja 13:30–14:03 no hace nada.
+    """
+    from toolbox import foto_cierre
+
+    if not _remote_token():
+        return _remote_error(503, "remote_disabled", "REMOTE_REFRESH_TOKEN no está configurado.")
+    if not _remote_authorized(x_remote_token):
+        return _remote_error(401, "unauthorized", "Token remoto inválido.")
+    base = {"ok": True, "schema_version": SCHEMA_VERSION, "command": "foto-cierre"}
+    if kill_switch_state().get("tripped"):
+        return {**base, "ok": False, "estado": "kill_switch", "detalle": foto_cierre.estado()}
+    if not foto_cierre.en_ventana():
+        return {**base, "estado": "fuera_de_franja", "detalle": foto_cierre.estado()}
+    if not foto_cierre.reservar_dia():
+        return {**base, "estado": "ya_programada", "detalle": foto_cierre.estado()}
+    espera = foto_cierre.programar(_foto_cierre_lanzar, al_fallar=_foto_cierre_fallo)
+    return {**base, "estado": "programada", "espera_segundos": round(espera), "detalle": foto_cierre.estado()}
+
+
+@app.get("/api/remote/foto-cierre")
+def api_remote_foto_cierre_estado(
+    x_remote_token: str | None = Header(default=None, alias=REMOTE_TOKEN_HEADER),
+) -> Any:
+    """Cuándo se programó y qué guardó la última foto antes del cierre."""
+    from toolbox import foto_cierre
+
+    if not _remote_token():
+        return _remote_error(503, "remote_disabled", "REMOTE_REFRESH_TOKEN no está configurado.")
+    if not _remote_authorized(x_remote_token):
+        return _remote_error(401, "unauthorized", "Token remoto inválido.")
+    return {"ok": True, "schema_version": SCHEMA_VERSION, "command": "foto-cierre", "detalle": foto_cierre.estado()}
+
+
 # ---------------------------------------------------------------------------
 # Modo actualización: el ÚNICO endpoint que descarga
 # ---------------------------------------------------------------------------
