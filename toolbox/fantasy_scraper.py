@@ -432,7 +432,30 @@ def _af_note(raw: dict) -> str | None:
     return text or None
 
 
-def _af_players(block: dict, *, club: str | None) -> list[LineupPlayer]:
+#: Titulares que trae la página cuando AF ya publica el once oficial (11 + 11, con margen).
+OFFICIAL_XI_STARTERS = (18, 22)
+
+
+def _af_official_xi(block: dict) -> bool:
+    """AF publica el once oficial ~1 h antes del saque: ``chance`` 0 para todos y ``esTitular`` en los 22.
+
+    Leído tal cual, un titular confirmado entraba con p = 0 y estado «duda»
+    (investigacion/titularidad: Δ Brier −0,25 y Δ MAE del xP −0,91 en 44 filas).
+    """
+    raws = [
+        raw
+        for side in ("home", "away")
+        if isinstance(block.get(side), dict) and isinstance(block[side].get("players"), list)
+        for raw in block[side]["players"]
+        if isinstance(raw, dict)
+    ]
+    if not raws or any(_probability(raw.get("chance")) for raw in raws):
+        return False
+    starters = sum(1 for raw in raws if raw.get("esTitular") is True)
+    return OFFICIAL_XI_STARTERS[0] <= starters <= OFFICIAL_XI_STARTERS[1]
+
+
+def _af_players(block: dict, *, club: str | None, official: bool = False) -> list[LineupPlayer]:
     rows = block.get("players") if isinstance(block.get("players"), list) else []
     parsed: list[LineupPlayer] = []
     for raw in rows:
@@ -443,6 +466,9 @@ def _af_players(block: dict, *, club: str | None) -> list[LineupPlayer]:
             continue
         probability = _probability(raw.get("chance"))
         role = "titular" if raw.get("esTitular") is True else "suplente"
+        if official:
+            # Once oficial: el que sale de inicio es titular seguro; el resto, no.
+            probability = 1.0 if role == "titular" else 0.0
         position_id = raw.get("positionId")
         position = _AF_POSITION.get(position_id) if isinstance(position_id, int) else None
         player_id = raw.get("playerId")
@@ -454,7 +480,12 @@ def _af_players(block: dict, *, club: str | None) -> list[LineupPlayer]:
                 position=canonical_position(position),
                 external_id=str(player_id) if player_id is not None else None,
                 start_probability=probability,
-                status=classify_lineup(role=role, probability=probability, note=_af_note(raw)),
+                # Un parte de duda viejo no rebaja a quien ya figura en el once oficial.
+                status=classify_lineup(
+                    role=role,
+                    probability=probability,
+                    note=None if official and role == "titular" else _af_note(raw),
+                ),
             )
         )
     return parsed
@@ -465,6 +496,7 @@ def parse_af_match(page: str) -> list[LineupPlayer]:
     if not block:
         return []
     teams = _af_team_names(page)
+    official = _af_official_xi(block)
     parsed: list[LineupPlayer] = []
     for side in ("home", "away"):
         squad = block.get(side)
@@ -472,7 +504,7 @@ def parse_af_match(page: str) -> list[LineupPlayer]:
             continue
         team_id = squad.get("teamId")
         club = teams.get(str(team_id)) if team_id is not None else None
-        parsed.extend(_af_players(squad, club=club))
+        parsed.extend(_af_players(squad, club=club, official=official))
     return parsed
 
 

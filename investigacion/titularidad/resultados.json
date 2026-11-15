@@ -1,0 +1,3514 @@
+{
+  "generado": "2026-11-15 13:39",
+  "como_se_estima": {
+    "pesos_logistica": {
+      "bias": -0.747,
+      "season": 0.375,
+      "minutes": 2.311
+    },
+    "recorte": [
+      0.05,
+      0.95
+    ],
+    "portero": [
+      0.03,
+      0.95
+    ],
+    "corte_duda": 0.7,
+    "af_sin_opinion": 0.5,
+    "ff_definida_baja": 0.25,
+    "ff_definida_alta": 0.75,
+    "consenso_bajo": 0.2,
+    "factor_banquillo": {
+      "PT": 0.05,
+      "DF": 0.55,
+      "MC": 0.55,
+      "DL": 0.55
+    }
+  },
+  "inventario": {
+    "actas_jugadores": 186,
+    "actas_por_jornada": {
+      "5": 9,
+      "6": 10,
+      "7": 134,
+      "8": 158,
+      "9": 165,
+      "10": 166,
+      "11": 165,
+      "12": 161
+    },
+    "actas_sin_previa": {
+      "5": 9,
+      "6": 1,
+      "7": 124,
+      "8": 36,
+      "9": 5,
+      "10": 1,
+      "11": 2,
+      "12": 2
+    },
+    "paginas_ff": 30,
+    "paginas_af": 31,
+    "paginas_sin_partido_reconocido": 0,
+    "jornadas_con_paginas": [
+      10,
+      11,
+      12
+    ],
+    "jornadas_con_paginas_fuera_de_la_medicion": [
+      6
+    ],
+    "paginas": [
+      {
+        "fuente": "af",
+        "partido": "barcelona-alaves",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 57,
+        "cruzados_con_actas": 5,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "rayo-celta",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 54,
+        "cruzados_con_actas": 10,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "racing-espanyol",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-24 16:25",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 46,
+        "cruzados_con_actas": 12,
+        "once_oficial_af": true
+      },
+      {
+        "fuente": "af",
+        "partido": "athletic-real sociedad",
+        "jornada": 11,
+        "guardado_madrid": "2026-11-01 17:55",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 56,
+        "cruzados_con_actas": 19,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "malaga-racing",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:18",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 53,
+        "cruzados_con_actas": 7,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "getafe-sevilla",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 26,
+        "cruzados_con_actas": 10,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "alaves-malaga",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-22 22:46",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 57,
+        "cruzados_con_actas": 5,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "alaves-malaga",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-22 22:46",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 50,
+        "cruzados_con_actas": 6,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "athletic-getafe",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-24 20:08",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 53,
+        "cruzados_con_actas": 20,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "celta-levante",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:01",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 56,
+        "cruzados_con_actas": 14,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "malaga-racing",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:01",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 58,
+        "cruzados_con_actas": 11,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "racing-real madrid",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 59,
+        "cruzados_con_actas": 15,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "villarreal-getafe",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:18",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 47,
+        "cruzados_con_actas": 15,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "barcelona-real madrid",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-25 20:30",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 46,
+        "cruzados_con_actas": 7,
+        "once_oficial_af": true
+      },
+      {
+        "fuente": "ff",
+        "partido": "elche-valencia",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 56,
+        "cruzados_con_actas": 14,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "elche-betis",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:18",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 55,
+        "cruzados_con_actas": 14,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "levante-atletico madrid",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 48,
+        "cruzados_con_actas": 13,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "real sociedad-levante",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-25 20:30",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 46,
+        "cruzados_con_actas": 17,
+        "once_oficial_af": true
+      },
+      {
+        "fuente": "ff",
+        "partido": "betis-malaga",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 55,
+        "cruzados_con_actas": 10,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "real sociedad-levante",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-22 22:46",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 50,
+        "cruzados_con_actas": 19,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "levante-athletic",
+        "jornada": 6,
+        "guardado_madrid": "2026-10-21 20:38",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 46,
+        "cruzados_con_actas": 15,
+        "once_oficial_af": true
+      },
+      {
+        "fuente": "af",
+        "partido": "betis-malaga",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 58,
+        "cruzados_con_actas": 11,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "sevilla-alaves",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:01",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 54,
+        "cruzados_con_actas": 11,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "valencia-real madrid",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:18",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 55,
+        "cruzados_con_actas": 14,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "villarreal-espanyol",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 48,
+        "cruzados_con_actas": 14,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "barcelona-alaves",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 47,
+        "cruzados_con_actas": 5,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "espanyol-deportivo",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:18",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 54,
+        "cruzados_con_actas": 13,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "levante-atletico madrid",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:12",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 52,
+        "cruzados_con_actas": 13,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "racing-real madrid",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 51,
+        "cruzados_con_actas": 10,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "athletic-real sociedad",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 52,
+        "cruzados_con_actas": 22,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "espanyol-deportivo",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:01",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 60,
+        "cruzados_con_actas": 14,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "elche-valencia",
+        "jornada": 11,
+        "guardado_madrid": "2026-11-01 17:55",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 46,
+        "cruzados_con_actas": 10,
+        "once_oficial_af": true
+      },
+      {
+        "fuente": "ff",
+        "partido": "athletic-getafe",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-22 22:46",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 50,
+        "cruzados_con_actas": 19,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "osasuna-athletic",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:01",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 54,
+        "cruzados_con_actas": 19,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "deportivo-osasuna",
+        "jornada": 11,
+        "guardado_madrid": "2026-11-01 17:55",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 56,
+        "cruzados_con_actas": 15,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "sevilla-osasuna",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-26 20:12",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 46,
+        "cruzados_con_actas": 18,
+        "once_oficial_af": true
+      },
+      {
+        "fuente": "af",
+        "partido": "celta-betis",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-25 16:34",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 45,
+        "cruzados_con_actas": 11,
+        "once_oficial_af": true
+      },
+      {
+        "fuente": "ff",
+        "partido": "sevilla-osasuna",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-22 22:46",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 49,
+        "cruzados_con_actas": 16,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "rayo-celta",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 61,
+        "cruzados_con_actas": 17,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "atletico madrid-barcelona",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:18",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 48,
+        "cruzados_con_actas": 7,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "racing-espanyol",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-22 22:46",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 50,
+        "cruzados_con_actas": 13,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "valencia-villarreal",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-24 20:08",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 46,
+        "cruzados_con_actas": 11,
+        "once_oficial_af": true
+      },
+      {
+        "fuente": "ff",
+        "partido": "deportivo-osasuna",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 28,
+        "cruzados_con_actas": 5,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "villarreal-espanyol",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:12",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 54,
+        "cruzados_con_actas": 14,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "rayo-elche",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-22 22:46",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 55,
+        "cruzados_con_actas": 12,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "atletico madrid-deportivo",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-24 20:08",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 46,
+        "cruzados_con_actas": 9,
+        "once_oficial_af": true
+      },
+      {
+        "fuente": "ff",
+        "partido": "osasuna-athletic",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:18",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 50,
+        "cruzados_con_actas": 19,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "atletico madrid-barcelona",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:01",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 57,
+        "cruzados_con_actas": 9,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "celta-betis",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-22 22:46",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 54,
+        "cruzados_con_actas": 12,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "villarreal-getafe",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:01",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 51,
+        "cruzados_con_actas": 16,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "elche-betis",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:01",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 56,
+        "cruzados_con_actas": 13,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "getafe-sevilla",
+        "jornada": 11,
+        "guardado_madrid": "2026-10-26 20:13",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 24,
+        "cruzados_con_actas": 9,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "sevilla-alaves",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:18",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 48,
+        "cruzados_con_actas": 11,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "real sociedad-rayo",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:01",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 61,
+        "cruzados_con_actas": 19,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "valencia-real madrid",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:01",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 63,
+        "cruzados_con_actas": 14,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "barcelona-real madrid",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-22 22:46",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 51,
+        "cruzados_con_actas": 6,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "celta-levante",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:18",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 52,
+        "cruzados_con_actas": 11,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "valencia-villarreal",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-22 22:46",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 52,
+        "cruzados_con_actas": 15,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "af",
+        "partido": "rayo-elche",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-24 15:00",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 46,
+        "cruzados_con_actas": 13,
+        "once_oficial_af": true
+      },
+      {
+        "fuente": "ff",
+        "partido": "real sociedad-rayo",
+        "jornada": 12,
+        "guardado_madrid": "2026-11-04 20:18",
+        "hora_de": "pagina_stored_at",
+        "jugadores_en_pagina": 53,
+        "cruzados_con_actas": 18,
+        "once_oficial_af": false
+      },
+      {
+        "fuente": "ff",
+        "partido": "atletico madrid-deportivo",
+        "jornada": 10,
+        "guardado_madrid": "2026-10-22 22:46",
+        "hora_de": "pagina_mtime",
+        "jugadores_en_pagina": 51,
+        "cruzados_con_actas": 11,
+        "once_oficial_af": false
+      }
+    ],
+    "capturas_registro": {
+      "ff": 779,
+      "af": 778,
+      "final": 779
+    },
+    "otras_tablas": "pre_lock_snapshots: solo J13 (sin jugar); previa_snapshots y top4_forecasts: 3 y 1 filas; responses: sin onces.",
+    "control_saques": {
+      "partidos_con_hora_por_jornada": {
+        "1": 10,
+        "2": 10,
+        "3": 10,
+        "4": 10,
+        "5": 10,
+        "6": 10,
+        "7": 10,
+        "8": 10,
+        "9": 10,
+        "10": 10,
+        "11": 9,
+        "12": 10,
+        "13": 10
+      },
+      "jornadas_sin_10_partidos": [
+        11
+      ],
+      "origen_de_la_hora": {
+        "football-data": 108,
+        "calendario": 1,
+        "cuotas": 20
+      },
+      "choques_mayores_de_2h": [],
+      "clubes_con_dos_partidos_en_una_jornada_descartados": [],
+      "filas_football_data_sin_jornada": 0,
+      "nota": "football-data trae hora de Londres y el calendario la de Madrid; las dos se pasan a Europe/Madrid antes de restar."
+    },
+    "casos_sin_hora_de_saque": 18,
+    "casos_sin_calendario_de_club": 18,
+    "inicio_actas": 7,
+    "historico": {
+      "filas": 22341,
+      "jugadores": 375,
+      "sin_fecha_de_partido": 0,
+      "estado_relleno": {
+        "None": 14555,
+        "Convocado, no jugó": 4083,
+        "Lesionado": 2471,
+        "No convocado": 1518,
+        "Sancionado": 339
+      },
+      "nota_descanso": "En 24/25 y 25/26 el descanso sale de las fechas de LaLiga en football-data: no ve Europa ni Copa."
+    },
+    "estado_en_actas_26_27": 0
+  },
+  "medicion_1": {
+    "huecos_sensibilidad": {
+      "n_huecos": 39,
+      "huecos_con_p_0_50_o_mas": 19,
+      "precision_contando_huecos": 0.7856,
+      "precision_contando_huecos_ic": [
+        0.7509,
+        0.8166
+      ],
+      "nota": "Jornadas sin acta entre dos actas del mismo jugador (no convocado, lesión, sanción). La cohorte del plan no las ve. Su p es la logística con regla de portero; no se busca su once."
+    },
+    "mae_base": {
+      "n": 769,
+      "mae": 2.6511,
+      "por_jornada": {
+        "8": {
+          "n": 122,
+          "mae": 2.6621
+        },
+        "9": {
+          "n": 160,
+          "mae": 2.5875
+        },
+        "10": {
+          "n": 165,
+          "mae": 2.7806
+        },
+        "11": {
+          "n": 163,
+          "mae": 2.7501
+        },
+        "12": {
+          "n": 159,
+          "mae": 2.4706
+        }
+      },
+      "referencia_anterior": 2.7,
+      "j8_entra": true
+    },
+    "reconstruccion_vs_base": {
+      "n": 619,
+      "max_abs": 0.0009,
+      "media_abs": 0.0003
+    },
+    "lo_que_entro": {
+      "acierto": {
+        "n": 769,
+        "tasa_titular": 0.6866,
+        "corte_0.50": {
+          "previstos_titular": 578,
+          "precision": 0.8114,
+          "precision_ic": [
+            0.7775,
+            0.8412
+          ],
+          "sensibilidad": 0.8883,
+          "sensibilidad_ic": [
+            0.8585,
+            0.9124
+          ],
+          "exactitud": 0.7815
+        },
+        "corte_0.70": {
+          "previstos_titular": 455,
+          "precision": 0.8571,
+          "precision_ic": [
+            0.822,
+            0.8863
+          ],
+          "sensibilidad": 0.7386,
+          "sensibilidad_ic": [
+            0.6995,
+            0.7743
+          ],
+          "exactitud": 0.736
+        },
+        "corte_0.20": {
+          "previstos_titular": 719,
+          "precision": 0.733,
+          "precision_ic": [
+            0.6994,
+            0.764
+          ],
+          "sensibilidad": 0.9981,
+          "sensibilidad_ic": [
+            0.9894,
+            0.9997
+          ],
+          "exactitud": 0.749
+        }
+      },
+      "brier": {
+        "media": 0.1534,
+        "n": 769,
+        "ic_jugador": [
+          0.1366,
+          0.1706
+        ],
+        "ic_partido": [
+          0.1335,
+          0.1754
+        ],
+        "cruza_cero": false,
+        "discrepan": false
+      },
+      "calibracion": {
+        "tramos": [
+          {
+            "tramo": "[0,0, 0,2)",
+            "n": 50,
+            "p_media": 0.0414,
+            "frecuencia": 0.02,
+            "ic": [
+              0.0035,
+              0.105
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,2, 0,4)",
+            "n": 95,
+            "p_media": 0.3155,
+            "frecuencia": 0.3158,
+            "ic": [
+              0.231,
+              0.4149
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,4, 0,6)",
+            "n": 137,
+            "p_media": 0.4892,
+            "frecuencia": 0.6277,
+            "ic": [
+              0.5443,
+              0.7042
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,6, 0,8)",
+            "n": 173,
+            "p_media": 0.7038,
+            "frecuencia": 0.7514,
+            "ic": [
+              0.6821,
+              0.8099
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,8, 1,0]",
+            "n": 314,
+            "p_media": 0.8706,
+            "frecuencia": 0.8949,
+            "ic": [
+              0.8561,
+              0.9242
+            ],
+            "se_lee": true
+          }
+        ],
+        "recortes": [
+          {
+            "valor": 0.03,
+            "n": 29,
+            "frecuencia": 0.0,
+            "ic": [
+              0.0,
+              0.117
+            ],
+            "se_lee": false
+          },
+          {
+            "valor": 0.05,
+            "n": 0,
+            "frecuencia": null,
+            "ic": null,
+            "se_lee": false
+          },
+          {
+            "valor": 0.95,
+            "n": 36,
+            "frecuencia": 0.9444,
+            "ic": [
+              0.8186,
+              0.9846
+            ],
+            "se_lee": true
+          }
+        ]
+      }
+    },
+    "origen_de_p": {
+      "logistica": 361,
+      "once": 408
+    },
+    "logistica_sola": {
+      "acierto": {
+        "n": 769,
+        "tasa_titular": 0.6866,
+        "corte_0.50": {
+          "previstos_titular": 600,
+          "precision": 0.7883,
+          "precision_ic": [
+            0.7539,
+            0.8191
+          ],
+          "sensibilidad": 0.8958,
+          "sensibilidad_ic": [
+            0.8669,
+            0.9191
+          ],
+          "exactitud": 0.7633
+        },
+        "corte_0.70": {
+          "previstos_titular": 470,
+          "precision": 0.8426,
+          "precision_ic": [
+            0.8069,
+            0.8727
+          ],
+          "sensibilidad": 0.75,
+          "sensibilidad_ic": [
+            0.7113,
+            0.785
+          ],
+          "exactitud": 0.7321
+        },
+        "corte_0.20": {
+          "previstos_titular": 737,
+          "precision": 0.7164,
+          "precision_ic": [
+            0.6828,
+            0.7478
+          ],
+          "sensibilidad": 1.0,
+          "sensibilidad_ic": [
+            0.9928,
+            1.0
+          ],
+          "exactitud": 0.7282
+        }
+      },
+      "brier": {
+        "media": 0.164,
+        "n": 769,
+        "ic_jugador": [
+          0.145,
+          0.1822
+        ],
+        "ic_partido": [
+          0.1464,
+          0.1849
+        ],
+        "cruza_cero": false,
+        "discrepan": false
+      },
+      "calibracion": {
+        "tramos": [
+          {
+            "tramo": "[0,0, 0,2)",
+            "n": 32,
+            "p_media": 0.03,
+            "frecuencia": 0.0,
+            "ic": [
+              0.0,
+              0.1072
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,2, 0,4)",
+            "n": 78,
+            "p_media": 0.3383,
+            "frecuencia": 0.359,
+            "ic": [
+              0.2615,
+              0.4697
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,4, 0,6)",
+            "n": 124,
+            "p_media": 0.5089,
+            "frecuencia": 0.5,
+            "ic": [
+              0.4133,
+              0.5867
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,6, 0,8)",
+            "n": 213,
+            "p_media": 0.7209,
+            "frecuencia": 0.7559,
+            "ic": [
+              0.694,
+              0.8087
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,8, 1,0]",
+            "n": 322,
+            "p_media": 0.8656,
+            "frecuencia": 0.8602,
+            "ic": [
+              0.8181,
+              0.8939
+            ],
+            "se_lee": true
+          }
+        ],
+        "recortes": [
+          {
+            "valor": 0.03,
+            "n": 32,
+            "frecuencia": 0.0,
+            "ic": [
+              0.0,
+              0.1072
+            ],
+            "se_lee": true
+          },
+          {
+            "valor": 0.05,
+            "n": 0,
+            "frecuencia": null,
+            "ic": null,
+            "se_lee": false
+          },
+          {
+            "valor": 0.95,
+            "n": 36,
+            "frecuencia": 0.9444,
+            "ic": [
+              0.8186,
+              0.9846
+            ],
+            "se_lee": true
+          }
+        ]
+      }
+    },
+    "once_solo": {
+      "acierto": {
+        "n": 408,
+        "tasa_titular": 0.7083,
+        "corte_0.50": {
+          "previstos_titular": 316,
+          "precision": 0.8481,
+          "precision_ic": [
+            0.8044,
+            0.8835
+          ],
+          "sensibilidad": 0.9273,
+          "sensibilidad_ic": [
+            0.8915,
+            0.952
+          ],
+          "exactitud": 0.8309
+        },
+        "corte_0.70": {
+          "previstos_titular": 245,
+          "precision": 0.898,
+          "precision_ic": [
+            0.8537,
+            0.9299
+          ],
+          "sensibilidad": 0.7612,
+          "sensibilidad_ic": [
+            0.7089,
+            0.8068
+          ],
+          "exactitud": 0.7696
+        },
+        "corte_0.20": {
+          "previstos_titular": 378,
+          "precision": 0.7619,
+          "precision_ic": [
+            0.7165,
+            0.8021
+          ],
+          "sensibilidad": 0.9965,
+          "sensibilidad_ic": [
+            0.9807,
+            0.9994
+          ],
+          "exactitud": 0.777
+        }
+      },
+      "brier": {
+        "media": 0.1315,
+        "n": 408,
+        "ic_jugador": [
+          0.1143,
+          0.1485
+        ],
+        "ic_partido": [
+          0.1118,
+          0.1526
+        ],
+        "cruza_cero": false,
+        "discrepan": false
+      },
+      "calibracion": {
+        "tramos": [
+          {
+            "tramo": "[0,0, 0,2)",
+            "n": 30,
+            "p_media": 0.049,
+            "frecuencia": 0.0333,
+            "ic": [
+              0.0059,
+              0.1667
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,2, 0,4)",
+            "n": 42,
+            "p_media": 0.294,
+            "frecuencia": 0.2143,
+            "ic": [
+              0.1171,
+              0.3594
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,4, 0,6)",
+            "n": 87,
+            "p_media": 0.4822,
+            "frecuencia": 0.6437,
+            "ic": [
+              0.5389,
+              0.7363
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,6, 0,8)",
+            "n": 97,
+            "p_media": 0.6959,
+            "frecuencia": 0.7938,
+            "ic": [
+              0.7029,
+              0.8624
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,8, 1,0]",
+            "n": 152,
+            "p_media": 0.874,
+            "frecuencia": 0.9605,
+            "ic": [
+              0.9166,
+              0.9818
+            ],
+            "se_lee": true
+          }
+        ],
+        "recortes": [
+          {
+            "valor": 0.03,
+            "n": 9,
+            "frecuencia": 0.0,
+            "ic": [
+              0.0,
+              0.2992
+            ],
+            "se_lee": false
+          },
+          {
+            "valor": 0.05,
+            "n": 0,
+            "frecuencia": null,
+            "ic": null,
+            "se_lee": false
+          },
+          {
+            "valor": 0.95,
+            "n": 19,
+            "frecuencia": 1.0,
+            "ic": [
+              0.8318,
+              1.0
+            ],
+            "se_lee": false
+          }
+        ]
+      }
+    },
+    "logistica_en_filas_con_once": {
+      "acierto": {
+        "n": 408,
+        "tasa_titular": 0.7083,
+        "corte_0.50": {
+          "previstos_titular": 338,
+          "precision": 0.8047,
+          "precision_ic": [
+            0.7591,
+            0.8435
+          ],
+          "sensibilidad": 0.9412,
+          "sensibilidad_ic": [
+            0.9078,
+            0.963
+          ],
+          "exactitud": 0.7966
+        },
+        "corte_0.70": {
+          "previstos_titular": 260,
+          "precision": 0.8692,
+          "precision_ic": [
+            0.8228,
+            0.9049
+          ],
+          "sensibilidad": 0.782,
+          "sensibilidad_ic": [
+            0.7309,
+            0.8257
+          ],
+          "exactitud": 0.7623
+        },
+        "corte_0.20": {
+          "previstos_titular": 396,
+          "precision": 0.7298,
+          "precision_ic": [
+            0.684,
+            0.7712
+          ],
+          "sensibilidad": 1.0,
+          "sensibilidad_ic": [
+            0.9869,
+            1.0
+          ],
+          "exactitud": 0.7377
+        }
+      },
+      "brier": {
+        "media": 0.1514,
+        "n": 408,
+        "ic_jugador": [
+          0.1308,
+          0.1727
+        ],
+        "ic_partido": [
+          0.1332,
+          0.1682
+        ],
+        "cruza_cero": false,
+        "discrepan": false
+      },
+      "calibracion": {
+        "tramos": [
+          {
+            "tramo": "[0,0, 0,2)",
+            "n": 12,
+            "p_media": 0.03,
+            "frecuencia": 0.0,
+            "ic": [
+              0.0,
+              0.2425
+            ],
+            "se_lee": false
+          },
+          {
+            "tramo": "[0,2, 0,4)",
+            "n": 25,
+            "p_media": 0.3503,
+            "frecuencia": 0.28,
+            "ic": [
+              0.1428,
+              0.4758
+            ],
+            "se_lee": false
+          },
+          {
+            "tramo": "[0,4, 0,6)",
+            "n": 74,
+            "p_media": 0.5139,
+            "frecuencia": 0.4324,
+            "ic": [
+              0.3257,
+              0.5459
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,6, 0,8)",
+            "n": 137,
+            "p_media": 0.7248,
+            "frecuencia": 0.7883,
+            "ic": [
+              0.7125,
+              0.8484
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,8, 1,0]",
+            "n": 160,
+            "p_media": 0.8638,
+            "frecuencia": 0.8875,
+            "ic": [
+              0.8292,
+              0.9276
+            ],
+            "se_lee": true
+          }
+        ],
+        "recortes": [
+          {
+            "valor": 0.03,
+            "n": 12,
+            "frecuencia": 0.0,
+            "ic": [
+              0.0,
+              0.2425
+            ],
+            "se_lee": false
+          },
+          {
+            "valor": 0.05,
+            "n": 0,
+            "frecuencia": null,
+            "ic": null,
+            "se_lee": false
+          },
+          {
+            "valor": 0.95,
+            "n": 19,
+            "frecuencia": 1.0,
+            "ic": [
+              0.8318,
+              1.0
+            ],
+            "se_lee": false
+          }
+        ]
+      }
+    },
+    "sin_paginas_oficiales_af": {
+      "n": 725,
+      "brier_lo_que_entro": 0.161,
+      "brier_logistica": 0.1644,
+      "delta": {
+        "media": -0.0034,
+        "n": 725,
+        "ic_jugador": [
+          -0.0111,
+          0.0047
+        ],
+        "ic_partido": [
+          -0.0114,
+          0.0047
+        ],
+        "cruza_cero": true,
+        "discrepan": false
+      }
+    },
+    "sin_J9_J11": {
+      "jornadas": [
+        8,
+        12
+      ],
+      "lo_que_entro": {
+        "acierto": {
+          "n": 281,
+          "tasa_titular": 0.6655,
+          "corte_0.50": {
+            "previstos_titular": 205,
+            "precision": 0.8,
+            "precision_ic": [
+              0.74,
+              0.849
+            ],
+            "sensibilidad": 0.877,
+            "sensibilidad_ic": [
+              0.8222,
+              0.9166
+            ],
+            "exactitud": 0.7722
+          },
+          "corte_0.70": {
+            "previstos_titular": 167,
+            "precision": 0.8323,
+            "precision_ic": [
+              0.7683,
+              0.8814
+            ],
+            "sensibilidad": 0.7433,
+            "sensibilidad_ic": [
+              0.6763,
+              0.8006
+            ],
+            "exactitud": 0.7295
+          },
+          "corte_0.20": {
+            "previstos_titular": 265,
+            "precision": 0.7057,
+            "precision_ic": [
+              0.6482,
+              0.7573
+            ],
+            "sensibilidad": 1.0,
+            "sensibilidad_ic": [
+              0.9799,
+              1.0
+            ],
+            "exactitud": 0.7224
+          }
+        },
+        "brier": {
+          "media": 0.161,
+          "n": 281,
+          "ic_jugador": [
+            0.1385,
+            0.1849
+          ],
+          "ic_partido": [
+            0.1247,
+            0.2128
+          ],
+          "cruza_cero": false,
+          "discrepan": false
+        },
+        "calibracion": {
+          "tramos": [
+            {
+              "tramo": "[0,0, 0,2)",
+              "n": 16,
+              "p_media": 0.035,
+              "frecuencia": 0.0,
+              "ic": [
+                0.0,
+                0.1936
+              ],
+              "se_lee": false
+            },
+            {
+              "tramo": "[0,2, 0,4)",
+              "n": 36,
+              "p_media": 0.3119,
+              "frecuencia": 0.2222,
+              "ic": [
+                0.1172,
+                0.3809
+              ],
+              "se_lee": true
+            },
+            {
+              "tramo": "[0,4, 0,6)",
+              "n": 56,
+              "p_media": 0.4747,
+              "frecuencia": 0.6429,
+              "ic": [
+                0.5119,
+                0.7554
+              ],
+              "se_lee": true
+            },
+            {
+              "tramo": "[0,6, 0,8)",
+              "n": 57,
+              "p_media": 0.7125,
+              "frecuencia": 0.7193,
+              "ic": [
+                0.5917,
+                0.8192
+              ],
+              "se_lee": true
+            },
+            {
+              "tramo": "[0,8, 1,0]",
+              "n": 116,
+              "p_media": 0.8571,
+              "frecuencia": 0.8793,
+              "ic": [
+                0.8076,
+                0.9267
+              ],
+              "se_lee": true
+            }
+          ],
+          "recortes": [
+            {
+              "valor": 0.03,
+              "n": 12,
+              "frecuencia": 0.0,
+              "ic": [
+                0.0,
+                0.2425
+              ],
+              "se_lee": false
+            },
+            {
+              "valor": 0.05,
+              "n": 0,
+              "frecuencia": null,
+              "ic": null,
+              "se_lee": false
+            },
+            {
+              "valor": 0.95,
+              "n": 14,
+              "frecuencia": 0.8571,
+              "ic": [
+                0.6006,
+                0.9599
+              ],
+              "se_lee": false
+            }
+          ]
+        }
+      },
+      "logistica_sola": {
+        "acierto": {
+          "n": 281,
+          "tasa_titular": 0.6655,
+          "corte_0.50": {
+            "previstos_titular": 215,
+            "precision": 0.7767,
+            "precision_ic": [
+              0.7165,
+              0.8273
+            ],
+            "sensibilidad": 0.893,
+            "sensibilidad_ic": [
+              0.8406,
+              0.9297
+            ],
+            "exactitud": 0.758
+          },
+          "corte_0.70": {
+            "previstos_titular": 182,
+            "precision": 0.8077,
+            "precision_ic": [
+              0.7443,
+              0.8584
+            ],
+            "sensibilidad": 0.7861,
+            "sensibilidad_ic": [
+              0.7219,
+              0.8388
+            ],
+            "exactitud": 0.7331
+          },
+          "corte_0.20": {
+            "previstos_titular": 269,
+            "precision": 0.6952,
+            "precision_ic": [
+              0.6377,
+              0.7471
+            ],
+            "sensibilidad": 1.0,
+            "sensibilidad_ic": [
+              0.9799,
+              1.0
+            ],
+            "exactitud": 0.7082
+          }
+        },
+        "brier": {
+          "media": 0.1701,
+          "n": 281,
+          "ic_jugador": [
+            0.144,
+            0.1973
+          ],
+          "ic_partido": [
+            0.1339,
+            0.2198
+          ],
+          "cruza_cero": false,
+          "discrepan": false
+        },
+        "calibracion": {
+          "tramos": [
+            {
+              "tramo": "[0,0, 0,2)",
+              "n": 12,
+              "p_media": 0.03,
+              "frecuencia": 0.0,
+              "ic": [
+                0.0,
+                0.2425
+              ],
+              "se_lee": false
+            },
+            {
+              "tramo": "[0,2, 0,4)",
+              "n": 28,
+              "p_media": 0.3324,
+              "frecuencia": 0.25,
+              "ic": [
+                0.1268,
+                0.4336
+              ],
+              "se_lee": false
+            },
+            {
+              "tramo": "[0,4, 0,6)",
+              "n": 45,
+              "p_media": 0.4957,
+              "frecuencia": 0.5556,
+              "ic": [
+                0.4118,
+                0.6906
+              ],
+              "se_lee": true
+            },
+            {
+              "tramo": "[0,6, 0,8)",
+              "n": 62,
+              "p_media": 0.7349,
+              "frecuencia": 0.6452,
+              "ic": [
+                0.5208,
+                0.7526
+              ],
+              "se_lee": true
+            },
+            {
+              "tramo": "[0,8, 1,0]",
+              "n": 134,
+              "p_media": 0.8659,
+              "frecuencia": 0.8582,
+              "ic": [
+                0.7891,
+                0.9073
+              ],
+              "se_lee": true
+            }
+          ],
+          "recortes": [
+            {
+              "valor": 0.03,
+              "n": 12,
+              "frecuencia": 0.0,
+              "ic": [
+                0.0,
+                0.2425
+              ],
+              "se_lee": false
+            },
+            {
+              "valor": 0.05,
+              "n": 0,
+              "frecuencia": null,
+              "ic": null,
+              "se_lee": false
+            },
+            {
+              "valor": 0.95,
+              "n": 14,
+              "frecuencia": 0.8571,
+              "ic": [
+                0.6006,
+                0.9599
+              ],
+              "se_lee": false
+            }
+          ]
+        }
+      }
+    },
+    "tramo_alto_0_80": {
+      "n": 314,
+      "frecuencia_titular": 0.8949,
+      "ic": [
+        0.8561,
+        0.9242
+      ],
+      "jugo_1_44": 22,
+      "jugo_0": 11
+    },
+    "por_jornada": {
+      "8": {
+        "n": 122,
+        "tasa_titular": 0.623,
+        "previstos_titular": 83,
+        "precision": 0.7349,
+        "precision_ic": [
+          0.6311,
+          0.818
+        ],
+        "brier": 0.1935,
+        "se_comenta": true
+      },
+      "9": {
+        "n": 160,
+        "tasa_titular": 0.6937,
+        "previstos_titular": 120,
+        "precision": 0.7667,
+        "precision_ic": [
+          0.6834,
+          0.8333
+        ],
+        "brier": 0.1871,
+        "se_comenta": true
+      },
+      "10": {
+        "n": 165,
+        "tasa_titular": 0.7091,
+        "previstos_titular": 125,
+        "precision": 0.848,
+        "precision_ic": [
+          0.7748,
+          0.9005
+        ],
+        "brier": 0.1353,
+        "se_comenta": true
+      },
+      "11": {
+        "n": 163,
+        "tasa_titular": 0.6933,
+        "previstos_titular": 128,
+        "precision": 0.8359,
+        "precision_ic": [
+          0.7622,
+          0.8901
+        ],
+        "brier": 0.1254,
+        "se_comenta": true
+      },
+      "12": {
+        "n": 159,
+        "tasa_titular": 0.6981,
+        "previstos_titular": 122,
+        "precision": 0.8443,
+        "precision_ic": [
+          0.7695,
+          0.898
+        ],
+        "brier": 0.136,
+        "se_comenta": true
+      }
+    },
+    "por_puesto": {
+      "DF": {
+        "n": 265,
+        "tasa_titular": 0.7396,
+        "previstos_titular": 210,
+        "precision": 0.8333,
+        "precision_ic": [
+          0.777,
+          0.8777
+        ],
+        "brier": 0.1479,
+        "se_comenta": true
+      },
+      "DL": {
+        "n": 163,
+        "tasa_titular": 0.6074,
+        "previstos_titular": 108,
+        "precision": 0.7685,
+        "precision_ic": [
+          0.6806,
+          0.838
+        ],
+        "brier": 0.1666,
+        "se_comenta": true
+      },
+      "MC": {
+        "n": 271,
+        "tasa_titular": 0.7269,
+        "previstos_titular": 222,
+        "precision": 0.7883,
+        "precision_ic": [
+          0.7299,
+          0.8369
+        ],
+        "brier": 0.1828,
+        "se_comenta": true
+      },
+      "PT": {
+        "n": 70,
+        "tasa_titular": 0.5143,
+        "previstos_titular": 38,
+        "precision": 0.9474,
+        "precision_ic": [
+          0.8271,
+          0.9854
+        ],
+        "brier": 0.0296,
+        "se_comenta": true
+      }
+    },
+    "por_club": {
+      "alaves": {
+        "n": 22,
+        "tasa_titular": 0.5,
+        "previstos_titular": 10,
+        "precision": 0.6,
+        "precision_ic": [
+          0.3127,
+          0.8318
+        ],
+        "brier": 0.2554,
+        "se_comenta": true
+      },
+      "athletic": {
+        "n": 44,
+        "tasa_titular": 0.5682,
+        "previstos_titular": 31,
+        "precision": 0.7419,
+        "precision_ic": [
+          0.5675,
+          0.863
+        ],
+        "brier": 0.1731,
+        "se_comenta": true
+      },
+      "atletico madrid": {
+        "n": 37,
+        "tasa_titular": 0.7297,
+        "previstos_titular": 28,
+        "precision": 0.8929,
+        "precision_ic": [
+          0.728,
+          0.9629
+        ],
+        "brier": 0.1012,
+        "se_comenta": true
+      },
+      "barcelona": {
+        "n": 14,
+        "tasa_titular": 0.2143,
+        "previstos_titular": 2,
+        "precision": 1.0,
+        "precision_ic": [
+          0.3424,
+          1.0
+        ],
+        "brier": 0.1062,
+        "se_comenta": false
+      },
+      "betis": {
+        "n": 45,
+        "tasa_titular": 0.6444,
+        "previstos_titular": 36,
+        "precision": 0.7222,
+        "precision_ic": [
+          0.5601,
+          0.8415
+        ],
+        "brier": 0.2094,
+        "se_comenta": true
+      },
+      "celta": {
+        "n": 39,
+        "tasa_titular": 0.7949,
+        "previstos_titular": 35,
+        "precision": 0.8286,
+        "precision_ic": [
+          0.6732,
+          0.919
+        ],
+        "brier": 0.1722,
+        "se_comenta": true
+      },
+      "deportivo": {
+        "n": 27,
+        "tasa_titular": 0.8889,
+        "previstos_titular": 22,
+        "precision": 0.9545,
+        "precision_ic": [
+          0.782,
+          0.9919
+        ],
+        "brier": 0.131,
+        "se_comenta": true
+      },
+      "elche": {
+        "n": 40,
+        "tasa_titular": 0.625,
+        "previstos_titular": 26,
+        "precision": 0.8846,
+        "precision_ic": [
+          0.7102,
+          0.96
+        ],
+        "brier": 0.126,
+        "se_comenta": true
+      },
+      "espanyol": {
+        "n": 42,
+        "tasa_titular": 0.6429,
+        "previstos_titular": 29,
+        "precision": 0.7586,
+        "precision_ic": [
+          0.5789,
+          0.8778
+        ],
+        "brier": 0.1729,
+        "se_comenta": true
+      },
+      "getafe": {
+        "n": 50,
+        "tasa_titular": 0.74,
+        "previstos_titular": 37,
+        "precision": 0.9459,
+        "precision_ic": [
+          0.823,
+          0.985
+        ],
+        "brier": 0.0853,
+        "se_comenta": true
+      },
+      "levante": {
+        "n": 52,
+        "tasa_titular": 0.6346,
+        "previstos_titular": 35,
+        "precision": 0.8286,
+        "precision_ic": [
+          0.6732,
+          0.919
+        ],
+        "brier": 0.1513,
+        "se_comenta": true
+      },
+      "malaga": {
+        "n": 15,
+        "tasa_titular": 0.8667,
+        "previstos_titular": 15,
+        "precision": 0.8667,
+        "precision_ic": [
+          0.6212,
+          0.9626
+        ],
+        "brier": 0.1625,
+        "se_comenta": false
+      },
+      "osasuna": {
+        "n": 57,
+        "tasa_titular": 0.7018,
+        "previstos_titular": 46,
+        "precision": 0.7391,
+        "precision_ic": [
+          0.5974,
+          0.844
+        ],
+        "brier": 0.1839,
+        "se_comenta": true
+      },
+      "racing": {
+        "n": 32,
+        "tasa_titular": 0.9688,
+        "previstos_titular": 28,
+        "precision": 1.0,
+        "precision_ic": [
+          0.8794,
+          1.0
+        ],
+        "brier": 0.0808,
+        "se_comenta": true
+      },
+      "rayo": {
+        "n": 42,
+        "tasa_titular": 0.619,
+        "previstos_titular": 35,
+        "precision": 0.6857,
+        "precision_ic": [
+          0.5202,
+          0.8145
+        ],
+        "brier": 0.1931,
+        "se_comenta": true
+      },
+      "real madrid": {
+        "n": 22,
+        "tasa_titular": 0.5,
+        "previstos_titular": 10,
+        "precision": 1.0,
+        "precision_ic": [
+          0.7225,
+          1.0
+        ],
+        "brier": 0.0688,
+        "se_comenta": true
+      },
+      "real sociedad": {
+        "n": 62,
+        "tasa_titular": 0.6129,
+        "previstos_titular": 48,
+        "precision": 0.6875,
+        "precision_ic": [
+          0.5467,
+          0.8005
+        ],
+        "brier": 0.1979,
+        "se_comenta": true
+      },
+      "sevilla": {
+        "n": 49,
+        "tasa_titular": 0.7959,
+        "previstos_titular": 44,
+        "precision": 0.8409,
+        "precision_ic": [
+          0.7063,
+          0.9207
+        ],
+        "brier": 0.0886,
+        "se_comenta": true
+      },
+      "valencia": {
+        "n": 42,
+        "tasa_titular": 0.7857,
+        "previstos_titular": 33,
+        "precision": 0.9091,
+        "precision_ic": [
+          0.7643,
+          0.9686
+        ],
+        "brier": 0.1193,
+        "se_comenta": true
+      },
+      "villarreal": {
+        "n": 36,
+        "tasa_titular": 0.6944,
+        "previstos_titular": 28,
+        "precision": 0.6786,
+        "precision_ic": [
+          0.4934,
+          0.8207
+        ],
+        "brier": 0.2394,
+        "se_comenta": true
+      }
+    },
+    "nota_club": "Descriptivo, por el club del partido. Un club con n < 20 no se comenta. No entra en ninguna recomendación.",
+    "nota_antelacion_logistica": "La logística solo usa minutos de jornadas ya jugadas: no cambia entre el cierre de la jornada anterior y el saque. Partirla por 48 h / 24 h / pocas horas no aplica.",
+    "antelacion_onces": {
+      "ff": {
+        ">48 h": {
+          "n": 275,
+          "partidos": 24,
+          "brier": 0.147,
+          "acierto_0_50": {
+            "previstos_titular": 213,
+            "precision": 0.8263,
+            "precision_ic": [
+              0.7698,
+              0.8713
+            ],
+            "sensibilidad": 0.9072,
+            "sensibilidad_ic": [
+              0.8581,
+              0.9405
+            ],
+            "exactitud": 0.8
+          }
+        },
+        "24–48 h": {
+          "n": 53,
+          "partidos": 5,
+          "brier": 0.1286,
+          "acierto_0_50": {
+            "previstos_titular": 38,
+            "precision": 0.8947,
+            "precision_ic": [
+              0.7587,
+              0.9583
+            ],
+            "sensibilidad": 0.9189,
+            "sensibilidad_ic": [
+              0.787,
+              0.972
+            ],
+            "exactitud": 0.8679
+          }
+        },
+        "6–24 h": {
+          "n": 67,
+          "partidos": 5,
+          "brier": 0.1526,
+          "acierto_0_50": {
+            "previstos_titular": 54,
+            "precision": 0.7963,
+            "precision_ic": [
+              0.671,
+              0.8823
+            ],
+            "sensibilidad": 0.9556,
+            "sensibilidad_ic": [
+              0.8517,
+              0.9877
+            ],
+            "exactitud": 0.806
+          }
+        },
+        "<6 h": {
+          "n": 14,
+          "partidos": 1,
+          "brier": 0.0944,
+          "acierto_0_50": {
+            "previstos_titular": 10,
+            "precision": 1.0,
+            "precision_ic": [
+              0.7225,
+              1.0
+            ],
+            "sensibilidad": 1.0,
+            "sensibilidad_ic": [
+              0.7225,
+              1.0
+            ],
+            "exactitud": 1.0
+          }
+        }
+      },
+      "af": {
+        ">48 h": {
+          "n": 189,
+          "partidos": 17,
+          "brier": 0.1349,
+          "acierto_0_50": {
+            "previstos_titular": 156,
+            "precision": 0.8718,
+            "precision_ic": [
+              0.8103,
+              0.9155
+            ],
+            "sensibilidad": 0.9444,
+            "sensibilidad_ic": [
+              0.8942,
+              0.9716
+            ],
+            "exactitud": 0.8519
+          }
+        },
+        "24–48 h": {
+          "n": 7,
+          "partidos": 1,
+          "brier": 0.0787,
+          "acierto_0_50": {
+            "previstos_titular": 4,
+            "precision": 0.75,
+            "precision_ic": [
+              0.3006,
+              0.9544
+            ],
+            "sensibilidad": 1.0,
+            "sensibilidad_ic": [
+              0.4385,
+              1.0
+            ],
+            "exactitud": 0.8571
+          }
+        },
+        "6–24 h": {
+          "n": 84,
+          "partidos": 6,
+          "brier": 0.1525,
+          "acierto_0_50": {
+            "previstos_titular": 72,
+            "precision": 0.7639,
+            "precision_ic": [
+              0.654,
+              0.847
+            ],
+            "sensibilidad": 0.9649,
+            "sensibilidad_ic": [
+              0.8808,
+              0.9903
+            ],
+            "exactitud": 0.7738
+          }
+        },
+        "<6 h": {
+          "n": 75,
+          "partidos": 6,
+          "brier": 0.0424,
+          "acierto_0_50": {
+            "previstos_titular": 53,
+            "precision": 0.9245,
+            "precision_ic": [
+              0.8214,
+              0.9703
+            ],
+            "sensibilidad": 1.0,
+            "sensibilidad_ic": [
+              0.9273,
+              1.0
+            ],
+            "exactitud": 0.9467
+          }
+        }
+      },
+      "mezcla": {
+        ">48 h": {
+          "n": 332,
+          "partidos": 24,
+          "brier": 0.1427,
+          "acierto_0_50": {
+            "previstos_titular": 259,
+            "precision": 0.8263,
+            "precision_ic": [
+              0.7754,
+              0.8675
+            ],
+            "sensibilidad": 0.9106,
+            "sensibilidad_ic": [
+              0.8673,
+              0.9408
+            ],
+            "exactitud": 0.8012
+          }
+        },
+        "24–48 h": {
+          "n": 53,
+          "partidos": 5,
+          "brier": 0.1286,
+          "acierto_0_50": {
+            "previstos_titular": 38,
+            "precision": 0.8947,
+            "precision_ic": [
+              0.7587,
+              0.9583
+            ],
+            "sensibilidad": 0.9189,
+            "sensibilidad_ic": [
+              0.787,
+              0.972
+            ],
+            "exactitud": 0.8679
+          }
+        },
+        "6–24 h": {
+          "n": 86,
+          "partidos": 6,
+          "brier": 0.1513,
+          "acierto_0_50": {
+            "previstos_titular": 71,
+            "precision": 0.7887,
+            "precision_ic": [
+              0.6802,
+              0.8676
+            ],
+            "sensibilidad": 0.9492,
+            "sensibilidad_ic": [
+              0.8608,
+              0.9826
+            ],
+            "exactitud": 0.7907
+          }
+        },
+        "<6 h": {
+          "n": 75,
+          "partidos": 6,
+          "brier": 0.0424,
+          "acierto_0_50": {
+            "previstos_titular": 53,
+            "precision": 0.9245,
+            "precision_ic": [
+              0.8214,
+              0.9703
+            ],
+            "sensibilidad": 1.0,
+            "sensibilidad_ic": [
+              0.9273,
+              1.0
+            ],
+            "exactitud": 0.9467
+          }
+        }
+      }
+    },
+    "fuga_post_saque": {
+      "aviso": "FUGA: capturas guardadas después del saque de ese partido. No se usan para elegir fuente.",
+      "jornadas": [
+        10,
+        12
+      ],
+      "partidos": 15,
+      "origen": {
+        "registro": 146,
+        "pagina_af_oficial": 64,
+        "pagina": 1
+      },
+      "p_media_de_quien_fue_titular": 0.8202,
+      "acierto": {
+        "n": 211,
+        "tasa_titular": 0.7156,
+        "corte_0.50": {
+          "previstos_titular": 161,
+          "precision": 0.8944,
+          "precision_ic": [
+            0.8374,
+            0.933
+          ],
+          "sensibilidad": 0.9536,
+          "sensibilidad_ic": [
+            0.9074,
+            0.9774
+          ],
+          "exactitud": 0.8863
+        },
+        "corte_0.70": {
+          "previstos_titular": 134,
+          "precision": 0.9478,
+          "precision_ic": [
+            0.8961,
+            0.9745
+          ],
+          "sensibilidad": 0.8411,
+          "sensibilidad_ic": [
+            0.7744,
+            0.8908
+          ],
+          "exactitud": 0.8531
+        },
+        "corte_0.20": {
+          "previstos_titular": 187,
+          "precision": 0.7968,
+          "precision_ic": [
+            0.7334,
+            0.8482
+          ],
+          "sensibilidad": 0.9868,
+          "sensibilidad_ic": [
+            0.953,
+            0.9964
+          ],
+          "exactitud": 0.8104
+        }
+      },
+      "brier": {
+        "media": 0.0909,
+        "n": 211,
+        "ic_jugador": [
+          0.0728,
+          0.1119
+        ],
+        "ic_partido": [
+          0.0577,
+          0.1213
+        ],
+        "cruza_cero": false,
+        "discrepan": false
+      },
+      "calibracion": {
+        "tramos": [
+          {
+            "tramo": "[0,0, 0,2)",
+            "n": 24,
+            "p_media": 0.0165,
+            "frecuencia": 0.0833,
+            "ic": [
+              0.0232,
+              0.2585
+            ],
+            "se_lee": false
+          },
+          {
+            "tramo": "[0,2, 0,4)",
+            "n": 16,
+            "p_media": 0.2849,
+            "frecuencia": 0.0,
+            "ic": [
+              0.0,
+              0.1936
+            ],
+            "se_lee": false
+          },
+          {
+            "tramo": "[0,4, 0,6)",
+            "n": 33,
+            "p_media": 0.4727,
+            "frecuencia": 0.5455,
+            "ic": [
+              0.3799,
+              0.7016
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,6, 0,8)",
+            "n": 30,
+            "p_media": 0.6867,
+            "frecuencia": 0.8333,
+            "ic": [
+              0.6644,
+              0.9266
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,8, 1,0]",
+            "n": 108,
+            "p_media": 0.9236,
+            "frecuencia": 0.9815,
+            "ic": [
+              0.935,
+              0.9949
+            ],
+            "se_lee": true
+          }
+        ],
+        "recortes": [
+          {
+            "valor": 0.03,
+            "n": 4,
+            "frecuencia": 0.0,
+            "ic": [
+              0.0,
+              0.4899
+            ],
+            "se_lee": false
+          },
+          {
+            "valor": 0.05,
+            "n": 0,
+            "frecuencia": null,
+            "ic": null,
+            "se_lee": false
+          },
+          {
+            "valor": 0.95,
+            "n": 11,
+            "frecuencia": 1.0,
+            "ic": [
+              0.7412,
+              1.0
+            ],
+            "se_lee": false
+          }
+        ]
+      }
+    },
+    "xp_guardado_vs_recalculado": {
+      "n": 130,
+      "jornadas": [
+        12
+      ],
+      "origen": {
+        "matchday_snapshot_log": 115,
+        "player_signal_log": 15
+      },
+      "media_abs": 0.7451,
+      "media_dif_guardado_menos_recalculado": -0.2675,
+      "correlacion": 0.8699,
+      "pct_dif_mayor_0_5": 0.5538
+    }
+  },
+  "medicion_2": {
+    "n_con_xp2": 619,
+    "n_sin_xp2_fuera_del_techo": 150,
+    "estructural": {
+      "media": 1.3016,
+      "n": 619,
+      "ic_jugador": [
+        1.1904,
+        1.4195
+      ],
+      "ic_partido": [
+        1.1499,
+        1.4618
+      ],
+      "cruza_cero": false,
+      "discrepan": false
+    },
+    "mae_xp_p": 2.6716,
+    "mae_xp_logistica_mismas_filas": 2.7319,
+    "delta_mae_lo_que_entro_menos_logistica": {
+      "media": -0.0603,
+      "n": 619,
+      "ic_jugador": [
+        -0.1062,
+        -0.0142
+      ],
+      "ic_partido": [
+        -0.1106,
+        -0.0128
+      ],
+      "cruza_cero": false,
+      "discrepan": false
+    },
+    "mae_xp_oraculo": 2.3212,
+    "realizada": {
+      "media": 0.3504,
+      "n": 619,
+      "ic_jugador": [
+        0.2385,
+        0.472
+      ],
+      "ic_partido": [
+        0.2652,
+        0.4401
+      ],
+      "cruza_cero": false,
+      "discrepan": false
+    },
+    "por_acierto_del_corte": {
+      "acierta": {
+        "n": 499,
+        "mae_xp": 2.6053,
+        "estructural_media": 0.9227,
+        "estructural_suma": 460.45
+      },
+      "falla": {
+        "n": 120,
+        "mae_xp": 2.9473,
+        "estructural_media": 2.8768,
+        "estructural_suma": 345.22
+      }
+    },
+    "fallos_en_tres": {
+      "previsto_titular_y_jugo_0": {
+        "n": 34,
+        "puntos_estructurales": 95.42,
+        "cuota_del_total": 0.1184,
+        "media": 2.8066
+      },
+      "previsto_titular_y_jugo_1_44": {
+        "n": 69,
+        "puntos_estructurales": 218.39,
+        "cuota_del_total": 0.2711,
+        "media": 3.1651
+      },
+      "previsto_suplente_y_jugo_45_o_mas": {
+        "n": 17,
+        "puntos_estructurales": 31.4,
+        "cuota_del_total": 0.039,
+        "media": 1.847
+      }
+    },
+    "recuperable_con_once_perfecto": {
+      "puntos": 126.82,
+      "cuota": 0.1574,
+      "por_fila_del_total": 0.2049,
+      "nota": "Solo el fallo «titular y 0'» y el «suplente y ≥ 45'» los recupera un once perfecto; la banda 1–44' es error de minutos."
+    },
+    "puntos_estructurales_total": 805.67,
+    "nota": "Las dos llamadas usan el mismo xP condicional (actas anteriores, λ de cierre, precio, ajuste rival y de club) y solo cambia p. El oráculo con y = 0 usa el término de banquillo; producción con p ≤ 0,01 publica 0."
+  },
+  "medicion_3": {
+    "n_filas": 526,
+    "n_fallos": 51,
+    "puntos_estructurales_de_fallos": 126.82,
+    "banda_1_44_excluida": 93,
+    "tabla": [
+      {
+        "causa": "roja_o_doble_amarilla_anterior",
+        "texto": "roja o doble amarilla en el acta anterior",
+        "fallos": 0,
+        "puntos_estructurales": 0,
+        "cuota": 0.0,
+        "medible": true,
+        "filas_con_causa": 0,
+        "tasa_fallo_con": null,
+        "tasa_fallo_con_ic": null,
+        "tasa_fallo_sin": 0.097,
+        "tasa_fallo_sin_ic": [
+          0.0745,
+          0.1252
+        ],
+        "se_separa_del_ruido": null
+      },
+      {
+        "causa": "quinta_amarilla",
+        "texto": "5.ª/10.ª/15.ª amarilla cerrada en la jornada anterior",
+        "fallos": 0,
+        "puntos_estructurales": 0,
+        "cuota": 0.0,
+        "medible": false,
+        "filas_con_causa": 0,
+        "tasa_fallo_con": null,
+        "tasa_fallo_con_ic": null,
+        "tasa_fallo_sin": null,
+        "tasa_fallo_sin_ic": null,
+        "se_separa_del_ruido": null
+      },
+      {
+        "causa": "portero_no_jugo_anterior",
+        "texto": "portero que no jugó la anterior",
+        "fallos": 0,
+        "puntos_estructurales": 0,
+        "cuota": 0.0,
+        "medible": true,
+        "filas_con_causa": 0,
+        "tasa_fallo_con": null,
+        "tasa_fallo_con_ic": null,
+        "tasa_fallo_sin": 0.097,
+        "tasa_fallo_sin_ic": [
+          0.0745,
+          0.1252
+        ],
+        "se_separa_del_ruido": null
+      },
+      {
+        "causa": "recien_llegado",
+        "texto": "recién llegado (menos de 3 partidos previos)",
+        "fallos": 4,
+        "puntos_estructurales": 12.32,
+        "cuota": 0.0971,
+        "medible": true,
+        "filas_con_causa": 36,
+        "tasa_fallo_con": 0.1111,
+        "tasa_fallo_con_ic": [
+          0.0441,
+          0.2532
+        ],
+        "tasa_fallo_sin": 0.0929,
+        "tasa_fallo_sin_ic": [
+          0.0658,
+          0.1295
+        ],
+        "se_separa_del_ruido": false,
+        "jornadas_necesarias": 101
+      },
+      {
+        "causa": "vuelta_tras_0",
+        "texto": "vuelta tras un 0' siendo titular en al menos la mitad de lo anterior",
+        "fallos": 4,
+        "puntos_estructurales": 4.46,
+        "cuota": 0.0352,
+        "medible": true,
+        "filas_con_causa": 25,
+        "tasa_fallo_con": 0.16,
+        "tasa_fallo_con_ic": [
+          0.064,
+          0.3465
+        ],
+        "tasa_fallo_sin": 0.0938,
+        "tasa_fallo_sin_ic": [
+          0.0713,
+          0.1225
+        ],
+        "se_separa_del_ruido": false,
+        "jornadas_necesarias": 79
+      },
+      {
+        "causa": "europa_o_copa_4_dias",
+        "texto": "Europa o Copa en los 4 días previos",
+        "fallos": 14,
+        "puntos_estructurales": 40.69,
+        "cuota": 0.3208,
+        "medible": true,
+        "filas_con_causa": 171,
+        "tasa_fallo_con": 0.1053,
+        "tasa_fallo_con_ic": [
+          0.0676,
+          0.1602
+        ],
+        "tasa_fallo_sin": 0.0936,
+        "tasa_fallo_sin_ic": [
+          0.0671,
+          0.1291
+        ],
+        "se_separa_del_ruido": false,
+        "jornadas_necesarias": 101
+      },
+      {
+        "causa": "descanso_3_o_menos",
+        "texto": "descanso de 3 días o menos",
+        "fallos": 5,
+        "puntos_estructurales": 13.17,
+        "cuota": 0.1039,
+        "medible": true,
+        "filas_con_causa": 163,
+        "tasa_fallo_con": 0.1166,
+        "tasa_fallo_con_ic": [
+          0.0759,
+          0.1749
+        ],
+        "tasa_fallo_sin": 0.0886,
+        "tasa_fallo_sin_ic": [
+          0.0631,
+          0.123
+        ],
+        "se_separa_del_ruido": false,
+        "jornadas_necesarias": 57
+      },
+      {
+        "causa": "descanso_10_o_mas",
+        "texto": "descanso de 10 días o más (vuelta de parón)",
+        "fallos": 7,
+        "puntos_estructurales": 23.3,
+        "cuota": 0.1837,
+        "medible": true,
+        "filas_con_causa": 60,
+        "tasa_fallo_con": 0.1167,
+        "tasa_fallo_con_ic": [
+          0.0577,
+          0.2218
+        ],
+        "tasa_fallo_sin": 0.0949,
+        "tasa_fallo_sin_ic": [
+          0.0712,
+          0.1254
+        ],
+        "se_separa_del_ruido": false,
+        "jornadas_necesarias": 101
+      },
+      {
+        "causa": "sin_causa_conocida",
+        "texto": "sin causa conocida",
+        "fallos": 17,
+        "puntos_estructurales": 32.88,
+        "cuota": 0.2593,
+        "medible": true,
+        "filas_con_causa": 526,
+        "tasa_fallo_con": 0.097,
+        "tasa_fallo_con_ic": [
+          0.0745,
+          0.1252
+        ],
+        "tasa_fallo_sin": null,
+        "tasa_fallo_sin_ic": null,
+        "se_separa_del_ruido": null
+      }
+    ],
+    "top3": [
+      "europa_o_copa_4_dias",
+      "descanso_10_o_mas",
+      "descanso_3_o_menos"
+    ],
+    "notas": {
+      "quinta_amarilla": "No medible: las actas guardadas empiezan en la J7 y no se puede contar la amarilla acumulada desde la J1.",
+      "recien_llegado": "En 26/27 las actas de la mayoría empiezan en la J7: antes de la J10 todo jugador tiene menos de 3 partidos previos. Solo se mide desde la J10.",
+      "vuelta_de_lesion": "Las actas de 26/27 no traen «estado»: la vuelta de lesión no está en los datos (0 filas).",
+      "cambio_de_entrenador": "Cambio de entrenador: no hay dato.",
+      "club": "El club es el del partido (actas), no el actual."
+    }
+  },
+  "medicion_4": {
+    "historico": {
+      "poblacion": "24/25 y 25/26, minutos de la ficha; otra población que la de actas",
+      "n": 22341,
+      "jugadores": 375,
+      "acierto": {
+        "n": 22341,
+        "tasa_titular": 0.4847,
+        "corte_0.50": {
+          "previstos_titular": 13819,
+          "precision": 0.6964,
+          "precision_ic": [
+            0.6887,
+            0.704
+          ],
+          "sensibilidad": 0.8887,
+          "sensibilidad_ic": [
+            0.8827,
+            0.8945
+          ],
+          "exactitud": 0.7583
+        },
+        "corte_0.70": {
+          "previstos_titular": 9509,
+          "precision": 0.7897,
+          "precision_ic": [
+            0.7814,
+            0.7977
+          ],
+          "sensibilidad": 0.6934,
+          "sensibilidad_ic": [
+            0.6847,
+            0.702
+          ],
+          "exactitud": 0.7619
+        },
+        "corte_0.20": {
+          "previstos_titular": 21055,
+          "precision": 0.5099,
+          "precision_ic": [
+            0.5031,
+            0.5166
+          ],
+          "sensibilidad": 0.9913,
+          "sensibilidad_ic": [
+            0.9894,
+            0.9929
+          ],
+          "exactitud": 0.5339
+        }
+      },
+      "brier": {
+        "media": 0.1762,
+        "n": 22341,
+        "ic_jugador": [
+          0.1701,
+          0.182
+        ],
+        "ic_partido": [
+          0.1731,
+          0.1792
+        ],
+        "cruza_cero": false,
+        "discrepan": false
+      },
+      "calibracion": {
+        "tramos": [
+          {
+            "tramo": "[0,0, 0,2)",
+            "n": 1286,
+            "p_media": 0.03,
+            "frecuencia": 0.0731,
+            "ic": [
+              0.0601,
+              0.0886
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,2, 0,4)",
+            "n": 5439,
+            "p_media": 0.3417,
+            "frecuencia": 0.1006,
+            "ic": [
+              0.0929,
+              0.1088
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,4, 0,6)",
+            "n": 4018,
+            "p_media": 0.5053,
+            "frecuencia": 0.379,
+            "ic": [
+              0.3642,
+              0.3942
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,6, 0,8)",
+            "n": 5583,
+            "p_media": 0.7124,
+            "frecuencia": 0.6437,
+            "ic": [
+              0.6311,
+              0.6562
+            ],
+            "se_lee": true
+          },
+          {
+            "tramo": "[0,8, 1,0]",
+            "n": 6015,
+            "p_media": 0.8676,
+            "frecuencia": 0.8431,
+            "ic": [
+              0.8336,
+              0.852
+            ],
+            "se_lee": true
+          }
+        ],
+        "recortes": [
+          {
+            "valor": 0.03,
+            "n": 1286,
+            "frecuencia": 0.0731,
+            "ic": [
+              0.0601,
+              0.0886
+            ],
+            "se_lee": true
+          },
+          {
+            "valor": 0.05,
+            "n": 0,
+            "frecuencia": null,
+            "ic": null,
+            "se_lee": false
+          },
+          {
+            "valor": 0.95,
+            "n": 1060,
+            "frecuencia": 0.9057,
+            "ic": [
+              0.8866,
+              0.9218
+            ],
+            "se_lee": true
+          }
+        ]
+      }
+    },
+    "ingenua_historico": {
+      "brier_referencia": 0.1762,
+      "brier_ingenua_0_1": 0.24,
+      "brier_ingenua_recortada": 0.2185,
+      "delta_0_1_menos_ref": {
+        "media": 0.0637,
+        "n": 22341,
+        "ic_jugador": [
+          0.0564,
+          0.0721
+        ],
+        "ic_partido": [
+          0.0576,
+          0.0698
+        ],
+        "cruza_cero": false,
+        "discrepan": false
+      },
+      "delta_recortada_menos_ref": {
+        "media": 0.0422,
+        "n": 22341,
+        "ic_jugador": [
+          0.0357,
+          0.0494
+        ],
+        "ic_partido": [
+          0.0368,
+          0.0475
+        ],
+        "cruza_cero": false,
+        "discrepan": false
+      }
+    },
+    "ingenua_26_27": {
+      "brier_referencia": 0.1534,
+      "brier_ingenua_0_1": 0.2679,
+      "brier_ingenua_recortada": 0.2436,
+      "delta_0_1_menos_ref": {
+        "media": 0.1145,
+        "n": 769,
+        "ic_jugador": [
+          0.0888,
+          0.1406
+        ],
+        "ic_partido": [
+          0.088,
+          0.1432
+        ],
+        "cruza_cero": false,
+        "discrepan": false
+      },
+      "delta_recortada_menos_ref": {
+        "media": 0.0902,
+        "n": 769,
+        "ic_jugador": [
+          0.0677,
+          0.1128
+        ],
+        "ic_partido": [
+          0.0672,
+          0.1154
+        ],
+        "cruza_cero": false,
+        "discrepan": false
+      }
+    },
+    "regla_portero": {
+      "historico_porteros": {
+        "media": -0.0343,
+        "n": 2352,
+        "ic_jugador": [
+          -0.0506,
+          -0.0183
+        ],
+        "ic_partido": [
+          -0.0431,
+          -0.0253
+        ],
+        "cruza_cero": false,
+        "discrepan": false
+      },
+      "26_27_fuera_J9_J11_porteros": {
+        "media": -0.0407,
+        "n": 15,
+        "ic_jugador": [
+          -0.0802,
+          0.0045
+        ],
+        "ic_partido": [
+          -0.0802,
+          0.0071
+        ],
+        "cruza_cero": true,
+        "discrepan": false
+      },
+      "nota": "Δ Brier con regla menos sin regla; negativo = la regla ayuda. Ya está en la referencia: no es señal nueva."
+    },
+    "senales": {
+      "descanso_3_o_menos": {
+        "n_activa_historico": 1953,
+        "n_evaluado_historico": 21839,
+        "brier_historico": {
+          "media": -0.001,
+          "n": 21839,
+          "ic_jugador": [
+            -0.0014,
+            -0.0007
+          ],
+          "ic_partido": [
+            -0.0013,
+            -0.0007
+          ],
+          "cruza_cero": false,
+          "discrepan": false
+        },
+        "coeficiente_congelado": -0.5542,
+        "n_activa_26_27": 231,
+        "brier_26_27": {
+          "media": 0.0059,
+          "n": 769,
+          "ic_jugador": [
+            0.0016,
+            0.01
+          ],
+          "ic_partido": [
+            0.0031,
+            0.009
+          ],
+          "cruza_cero": false,
+          "discrepan": false
+        },
+        "mae_xp_26_27": {
+          "media": -0.0061,
+          "n": 603,
+          "ic_jugador": [
+            -0.0265,
+            0.0136
+          ],
+          "ic_partido": [
+            -0.0236,
+            0.0112
+          ],
+          "cruza_cero": true,
+          "discrepan": false
+        },
+        "nota": "Histórico: descanso entre partidos de LaLiga. 26/27: calendario con Europa y Copa.",
+        "mejora": false,
+        "gana_brier": true,
+        "baja_mae": false,
+        "jornadas_para_brier": null,
+        "jornadas_para_mae": 53
+      },
+      "recien_llegado": {
+        "n_activa_historico": 1250,
+        "n_evaluado_historico": 22093,
+        "brier_historico": {
+          "media": -0.0004,
+          "n": 22093,
+          "ic_jugador": [
+            -0.0007,
+            -0.0001
+          ],
+          "ic_partido": [
+            -0.0006,
+            -0.0002
+          ],
+          "cruza_cero": false,
+          "discrepan": false
+        },
+        "coeficiente_congelado": -0.5047,
+        "n_activa_26_27": 67,
+        "brier_26_27": {
+          "media": 0.0019,
+          "n": 769,
+          "ic_jugador": [
+            0.0001,
+            0.0039
+          ],
+          "ic_partido": [
+            0.0002,
+            0.0041
+          ],
+          "cruza_cero": false,
+          "discrepan": false
+        },
+        "mae_xp_26_27": {
+          "media": 0.0008,
+          "n": 421,
+          "ic_jugador": [
+            -0.0119,
+            0.0137
+          ],
+          "ic_partido": [
+            -0.0146,
+            0.0163
+          ],
+          "cruza_cero": true,
+          "discrepan": false
+        },
+        "nota": "Histórico: menos de 3 filas previas en la temporada, que incluye el arranque de liga (J2–J3) además de fichajes. 26/27: solo desde la J10, porque las actas de la mayoría empiezan en la J7.",
+        "mejora": false,
+        "gana_brier": true,
+        "baja_mae": false,
+        "jornadas_para_brier": null,
+        "jornadas_para_mae": null
+      },
+      "sancion_conocida": {
+        "n_activa_26_27": 0,
+        "titulares_entre_ellos": 0,
+        "brier_26_27": null,
+        "mae_xp_26_27": null,
+        "nota": "Solo roja o doble amarilla del acta anterior; la 5.ª/10.ª/15.ª amarilla no es medible (tarjetas desde la J7). Sin muestra histórica. El sancionado no tiene acta la jornada siguiente, así que la cohorte casi nunca lo ve: ver «huecos».",
+        "mejora": false,
+        "gana_brier": false,
+        "baja_mae": false,
+        "jornadas_para_brier": null,
+        "jornadas_para_mae": null
+      },
+      "europa_o_copa_4_dias": {
+        "n_activa_26_27": 237,
+        "jornadas_evaluadas": [
+          10,
+          11,
+          12
+        ],
+        "n_evaluado": 469,
+        "brier_26_27": {
+          "media": -0.0009,
+          "n": 469,
+          "ic_jugador": [
+            -0.0028,
+            0.0009
+          ],
+          "ic_partido": [
+            -0.0023,
+            0.0006
+          ],
+          "cruza_cero": true,
+          "discrepan": false
+        },
+        "mae_xp_26_27": {
+          "media": 0.0059,
+          "n": 405,
+          "ic_jugador": [
+            -0.0056,
+            0.017
+          ],
+          "ic_partido": [
+            -0.0024,
+            0.015
+          ],
+          "cruza_cero": true,
+          "discrepan": false
+        },
+        "coeficiente_ultimo": 0.3341,
+        "nota": "Solo hay calendario de 26/27: se ajusta con jornadas anteriores de 26/27 y la muestra es corta.",
+        "mejora": false,
+        "gana_brier": false,
+        "baja_mae": false,
+        "jornadas_para_brier": 13,
+        "jornadas_para_mae": null
+      }
+    },
+    "citadas_11_nov": {
+      "disponible": true,
+      "fuente": ".cache/reajuste_titularidad.txt",
+      "que": "racha, minutos recientes, k=5, J−1, hueco (+ rotación y reemplazo probados aparte): modelo walk-forward contra producción",
+      "historico_24_25_25_26": {
+        "delta": -0.0206,
+        "ic_jugador": [
+          -0.0238,
+          -0.0174
+        ],
+        "ic_partido": [
+          -0.0224,
+          -0.0188
+        ]
+      },
+      "26_27_congelado": {
+        "delta": 0.0212,
+        "ic_jugador": [
+          0.0121,
+          0.03
+        ],
+        "ic_partido": [
+          0.0106,
+          0.0322
+        ]
+      },
+      "veredicto": "ganó en 24/25+25/26 y perdió en 26/27; no se reajusta aquí",
+      "otras_descartadas": "eventos/xG, Gradient FC, minutos dado titular y la ablación del 10 de noviembre: descartadas antes, no se repiten"
+    }
+  },
+  "medicion_5": {
+    "n_filas_con_ff_y_af": 237,
+    "partidos": 24,
+    "jornadas": [
+      10,
+      11,
+      12
+    ],
+    "n_filas_con_ff": 350,
+    "n_filas_con_af": 295,
+    "tabla": {
+      "ff_sola": {
+        "brier": 0.1286,
+        "acierto_0_50": {
+          "previstos_titular": 185,
+          "precision": 0.8432,
+          "precision_ic": [
+            0.7839,
+            0.8886
+          ],
+          "sensibilidad": 0.9341,
+          "sensibilidad_ic": [
+            0.8859,
+            0.9628
+          ],
+          "exactitud": 0.8312
+        },
+        "delta_brier_vs_logistica": {
+          "media": -0.021,
+          "n": 237,
+          "ic_jugador": [
+            -0.0417,
+            -0.0014
+          ],
+          "ic_partido": [
+            -0.0412,
+            -0.0023
+          ],
+          "cruza_cero": false,
+          "discrepan": false
+        }
+      },
+      "af_sola": {
+        "brier": 0.1214,
+        "acierto_0_50": {
+          "previstos_titular": 191,
+          "precision": 0.8429,
+          "precision_ic": [
+            0.7846,
+            0.8877
+          ],
+          "sensibilidad": 0.9641,
+          "sensibilidad_ic": [
+            0.9238,
+            0.9834
+          ],
+          "exactitud": 0.8481
+        },
+        "delta_brier_vs_logistica": {
+          "media": -0.0281,
+          "n": 237,
+          "ic_jugador": [
+            -0.05,
+            -0.0093
+          ],
+          "ic_partido": [
+            -0.0605,
+            -0.0013
+          ],
+          "cruza_cero": false,
+          "discrepan": false
+        }
+      },
+      "media": {
+        "brier": 0.12,
+        "acierto_0_50": {
+          "previstos_titular": 182,
+          "precision": 0.8626,
+          "precision_ic": [
+            0.8051,
+            0.9052
+          ],
+          "sensibilidad": 0.9401,
+          "sensibilidad_ic": [
+            0.8933,
+            0.9672
+          ],
+          "exactitud": 0.8523
+        },
+        "delta_brier_vs_logistica": {
+          "media": -0.0295,
+          "n": 237,
+          "ic_jugador": [
+            -0.0506,
+            -0.0098
+          ],
+          "ic_partido": [
+            -0.0573,
+            -0.0062
+          ],
+          "cruza_cero": false,
+          "discrepan": false
+        }
+      },
+      "pico_si_titular_produccion": {
+        "brier": 0.1173,
+        "acierto_0_50": {
+          "previstos_titular": 184,
+          "precision": 0.8533,
+          "precision_ic": [
+            0.7949,
+            0.8972
+          ],
+          "sensibilidad": 0.9401,
+          "sensibilidad_ic": [
+            0.8933,
+            0.9672
+          ],
+          "exactitud": 0.8439
+        },
+        "delta_brier_vs_logistica": {
+          "media": -0.0323,
+          "n": 237,
+          "ic_jugador": [
+            -0.0526,
+            -0.0134
+          ],
+          "ic_partido": [
+            -0.0567,
+            -0.0107
+          ],
+          "cruza_cero": false,
+          "discrepan": false
+        }
+      },
+      "logistica": {
+        "brier": 0.1496,
+        "acierto_0_50": {
+          "previstos_titular": 197,
+          "precision": 0.8071,
+          "precision_ic": [
+            0.7463,
+            0.8561
+          ],
+          "sensibilidad": 0.9521,
+          "sensibilidad_ic": [
+            0.9083,
+            0.9755
+          ],
+          "exactitud": 0.8059
+        },
+        "delta_brier_vs_logistica": null
+      },
+      "combinacion_preescrita": {
+        "brier": 0.1438,
+        "acierto_0_50": {
+          "previstos_titular": 197,
+          "precision": 0.8071,
+          "precision_ic": [
+            0.7463,
+            0.8561
+          ],
+          "sensibilidad": 0.9521,
+          "sensibilidad_ic": [
+            0.9083,
+            0.9755
+          ],
+          "exactitud": 0.8059
+        },
+        "delta_brier_vs_logistica": {
+          "media": -0.0058,
+          "n": 237,
+          "ic_jugador": [
+            -0.0141,
+            0.0015
+          ],
+          "ic_partido": [
+            -0.0144,
+            0.0011
+          ],
+          "cruza_cero": true,
+          "discrepan": false
+        }
+      }
+    },
+    "diagnostico_af_lectura_antigua": {
+      "filas_con_pagina_oficial": 30,
+      "brier": 0.2016,
+      "acierto_0_50": {
+        "previstos_titular": 172,
+        "precision": 0.8256,
+        "precision_ic": [
+          0.7619,
+          0.875
+        ],
+        "sensibilidad": 0.8503,
+        "sensibilidad_ic": [
+          0.7883,
+          0.8965
+        ],
+        "exactitud": 0.7679
+      },
+      "delta_brier_vs_logistica": {
+        "media": 0.052,
+        "n": 237,
+        "ic_jugador": [
+          0.0136,
+          0.0894
+        ],
+        "ic_partido": [
+          -0.0062,
+          0.1345
+        ],
+        "cruza_cero": true,
+        "discrepan": true
+      },
+      "nota": "No entra en la elección: es AF con el fallo de lectura de antes del arreglo."
+    },
+    "combinacion_usa_once_en": 138,
+    "muestra_suficiente": true,
+    "jornadas_para_200_filas": 3,
+    "ganador": "pico_si_titular_produccion",
+    "nota": "Todas pasan por la regla del portero, como en producción. Solo capturas anteriores al saque."
+  },
+  "once_oficial_af": {
+    "paginas_explicacion": "AF, ~1 h antes del saque, publica el once oficial: chance = 0 para todos y esTitular verdadero en los 22. Antes del arreglo el parser lo leía como p = 0 y estado «duda»; ahora lee esTitular como 1/0 (`_af_official_xi`).",
+    "n": 44,
+    "partidos": 4,
+    "jornadas": [
+      10,
+      11
+    ],
+    "titulares_oficiales": 28,
+    "produccion": {
+      "brier": 0.2727,
+      "acierto_0_50": {
+        "previstos_titular": 19,
+        "precision": 0.8947,
+        "precision_ic": [
+          0.6861,
+          0.9706
+        ],
+        "sensibilidad": 0.6071,
+        "sensibilidad_ic": [
+          0.4241,
+          0.7643
+        ],
+        "exactitud": 0.7045
+      },
+      "p_media_titulares_oficiales": 0.5054
+    },
+    "leido_como_once": {
+      "brier": 0.0272,
+      "acierto_0_50": {
+        "previstos_titular": 30,
+        "precision": 0.9333,
+        "precision_ic": [
+          0.7868,
+          0.9815
+        ],
+        "sensibilidad": 1.0,
+        "sensibilidad_ic": [
+          0.8794,
+          1.0
+        ],
+        "exactitud": 0.9545
+      }
+    },
+    "delta_brier": {
+      "media": -0.2455,
+      "n": 44,
+      "ic_jugador": [
+        -0.3678,
+        -0.1357
+      ],
+      "ic_partido": [
+        -0.3154,
+        -0.11
+      ],
+      "cruza_cero": false,
+      "discrepan": false
+    },
+    "delta_mae_xp": {
+      "media": -0.9074,
+      "n": 36,
+      "ic_jugador": [
+        -1.7044,
+        -0.1163
+      ],
+      "ic_partido": [
+        -1.5728,
+        -0.4213
+      ],
+      "cruza_cero": false,
+      "discrepan": false
+    },
+    "n_xp2": 36,
+    "nota": "Producción descarta solo los partidos ya empezados; entre la publicación del once oficial y el saque lee estas páginas. La alineación se bloquea en el primer partido de la jornada, así que pesa sobre todo en ese partido y en el mercado de esas horas."
+  },
+  "recomendacion": [
+    "Arreglado: la lectura del once oficial de AF (chance = 0 con esTitular) pasa a leer esTitular como 1/0. Δ Brier -0,2455 en 44 filas, Δ MAE del xP -0,907. Es un fallo de lectura, no una señal nueva.",
+    "Ninguna señal nueva pasa los dos filtros (Brier en la muestra grande y MAE del xP en 26/27). No se implementa ninguna.",
+    "Techo disponible: un once perfecto ahorraría 0,205 puntos estructurales por jugador y partido (de 1,302 totales). Es el margen máximo de cualquier mejora de titularidad.",
+    "Fuente: la mezcla de producción (pico si titular) es la que mejor puntúa y se separa de la logística. No cambiarla.",
+    "Guardar el once antes de cada saque (FF y AF por partido, con hora) es lo que hace medible todo lo anterior: hoy solo hay 3 jornadas reconstruibles desde la caché (J10, J11, J12).",
+    "No tocar: pesos de la logística, regla del portero, ajustes por club y las señales del 11 de noviembre."
+  ]
+}

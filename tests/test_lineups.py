@@ -77,7 +77,49 @@ AF_MATCH = r"""
 """
 
 
+def _af_official_page() -> str:
+    """Once oficial de AF: chance 0 para todos, esTitular en los 11 de cada lado y un suplente."""
+
+    def side(team_id: int, base: int) -> str:
+        players = [
+            f'{{\\"playerId\\":{base + i},\\"chance\\":0,\\"esTitular\\":true,\\"name\\":\\"Titular {base + i}\\",\\"positionId\\":2,'
+            + (
+                '\\"playerExtras\\":{\\"status\\":\\"doubt\\",\\"report\\":\\"Duda por molestias\\"}}'
+                if i == 0
+                else '\\"playerExtras\\":null}'
+            )
+            for i in range(11)
+        ]
+        players.append(
+            f'{{\\"playerId\\":{base + 50},\\"chance\\":0,\\"esTitular\\":false,\\"name\\":\\"Suplente {base}\\",\\"positionId\\":2,\\"playerExtras\\":null}}'
+        )
+        return f'{{\\"teamId\\":{team_id},\\"players\\":[{",".join(players)}]}}'
+
+    return (
+        "<script>\\\"homeTeamId\\\":544,\\\"awayTeamId\\\":539,\\\"homeTeamName\\\":\\\"Deportivo\\\",\\\"awayTeamName\\\":\\\"Atlético\\\","
+        f"\\\"lineupBlock\\\":{{\\\"home\\\":{side(544, 100)},\\\"away\\\":{side(539, 200)}}}</script>"
+    )
+
+
 class LineupParserTest(unittest.TestCase):
+    def test_af_official_xi_reads_starters_as_certain(self) -> None:
+        rows = {row.external_id: row for row in parse_af_match(_af_official_page())}
+        self.assertEqual(len(rows), 24)
+        # Titular del once oficial: p = 1 y titular, aunque arrastre un parte de duda.
+        self.assertEqual(rows["100"].start_probability, 1.0)
+        self.assertEqual(rows["100"].status, "titular")
+        self.assertEqual(rows["205"].start_probability, 1.0)
+        self.assertEqual(rows["205"].club, "Atlético")
+        # Suplente del once oficial: p = 0.
+        self.assertEqual(rows["150"].start_probability, 0.0)
+        self.assertNotIn(rows["150"].status, {"titular", "duda"})
+
+    def test_af_probable_xi_with_some_zero_chances_is_not_official(self) -> None:
+        # La previa normal trae chance > 0 en los probables: no se toca.
+        rows = {row.external_id: row for row in parse_af_match(AF_MATCH)}
+        self.assertEqual(rows["31"].start_probability, 0.8)
+        self.assertEqual(rows["7"].start_probability, 0.4)
+
     def test_normalizes_names(self) -> None:
         self.assertEqual(normalize_name("Éder Militão"), "eder militao")
         self.assertEqual(MATCH_THRESHOLD, 0.85)
