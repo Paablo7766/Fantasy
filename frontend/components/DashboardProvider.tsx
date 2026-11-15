@@ -153,6 +153,13 @@ async function waitForRefresh(
   return null;
 }
 
+/** ¿Terminó hace menos de 30 min? Un fallo de ayer no se anuncia al abrir hoy. */
+function finishedRecently(finishedAt: string | null | undefined): boolean {
+  if (!finishedAt) return false;
+  const ms = Date.parse(finishedAt);
+  return Number.isFinite(ms) && Date.now() - ms < 30 * 60 * 1000;
+}
+
 /** Render/Vercel pueden tardar en arrancar: el POST falla antes de que ``running`` sea true. */
 async function waitForRefreshStart(
   beat: () => Promise<RefreshStatusPayload | null>,
@@ -553,6 +560,12 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       setRefreshStatus(status);
       if (status?.running !== true) {
+        // Al volver a la app tras salir a mitad de descarga, la página puede
+        // haberse recargado entera: sin esto, una pasada fallida o cortada por
+        // un reinicio del servidor se quedaba en silencio con la foto vieja.
+        if (!refreshLeadRef.current && status?.result_ok === false && finishedRecently(status.finished_at)) {
+          setRefreshError(errorText(status, "La última actualización falló; se mantiene la foto anterior."));
+        }
         if (following) {
           following = false;
           // Si el usuario pulsó Actualizar, no apagar la barra aquí: el POST

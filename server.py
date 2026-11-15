@@ -197,6 +197,7 @@ def _refresh_status_start(tier: str, league: str | None) -> dict[str, Any]:
     with _refresh_status_lock:
         _refresh_status.clear()
         _refresh_status.update(status)
+    _refresh_mark_save(status)
     return status
 
 
@@ -229,7 +230,9 @@ def _refresh_status_finish(*, ok: bool, error: Any = None) -> None:
             _refresh_status["elapsed_seconds"] = round(
                 max(0.0, time.time() - float(_refresh_status["started_unix"])), 1
             )
+        finished = dict(_refresh_status)
     if was_running:
+        _refresh_mark_save(finished)
         # Avisa al móvil aunque la app esté cerrada (Web Push); inerte sin claves.
         # Antes se calientan las lecturas pesadas: al tocar el aviso, la app
         # encuentra la foto nueva lista y no espera a que el servidor la calcule.
@@ -260,6 +263,155 @@ def _prewarm_then_notify() -> None:
         _prewarm_readers()
     finally:
         web_push.notify_refresh_done(ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Descargas cortadas por un reinicio
+# ---------------------------------------------------------------------------
+# El latido vive en RAM. Cada push a main redespliega Render (y un pico de
+# memoria también lo reinicia): si pillaba una descarga a medias, el hilo moría
+# sin avisar, el proceso nuevo decía «nada en marcha» y el móvil recargaba la
+# foto vieja sin error ni push. Ahora el inicio y el final de cada pasada dejan
+# una marca en Supabase; el proceso nuevo la lee al arrancar y, si quedó a medias,
+# lo dice en el latido y manda el aviso. No reintenta solo: repetir la descarga
+# sin que el usuario lo pida son peticiones de más a LaLiga.
+_BOOT_ID = f"{os.getpid()}-{time.time():.3f}"
+_BOOT_UNIX = time.time()
+REFRESH_MARK_KIND = "refresh-run"
+REFRESH_MARK_LEAGUE = "_global"
+# El proceso viejo sigue vivo mientras arranca el nuevo y puede acabar su
+# pasada en ese rato: se espera a que Render lo apague antes de dar el veredicto.
+REFRESH_INTERRUPTED_VERDICT_SECONDS = 90.0
+# Una marca colgada de hace horas no merece un aviso al móvil.
+REFRESH_INTERRUPTED_MAX_AGE_SECONDS = 3 * 3600.0
+REFRESH_INTERRUPTED_MESSAGE = (
+    "La actualización se cortó porque el servidor se reinició. Vuelve a darle a Actualizar."
+)
+# Un solo hilo: la marca de inicio siempre se escribe antes que la de final.
+_refresh_mark_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refresh-mark")
+_MARK_FIELDS = (
+    "running", "tier", "league", "started_at", "started_unix", "finished_at",
+    "elapsed_seconds", "result_ok", "error",
+)
+
+
+def _refresh_mark_save(status: dict[str, Any]) -> None:
+    """Copia el estado de la pasada a Supabase, sin frenar la descarga. Nunca lanza."""
+    if not snapshot_remote.enabled():
+        return
+    mark = {key: status.get(key) for key in _MARK_FIELDS}
+    mark["boot_id"] = _BOOT_ID
+    envelope = {"saved_unix": time.time(), "value": mark}
+    try:
+        _refresh_mark_pool.submit(snapshot_remote.save, REFRESH_MARK_KIND, REFRESH_MARK_LEAGUE, envelope)
+    except RuntimeError:  # el intérprete se está cerrando
+        pass
+
+
+def _refresh_mark_load() -> dict[str, Any] | None:
+    envelope = snapshot_remote.load(REFRESH_MARK_KIND, REFRESH_MARK_LEAGUE)
+    mark = envelope.get("value") if isinstance(envelope, dict) else None
+    return mark if isinstance(mark, dict) else None
+
+
+def _foreign_running_mark(mark: dict[str, Any] | None) -> bool:
+    """¿La marca es de una pasada de otro proceso que no llegó a cerrarse?"""
+    return isinstance(mark, dict) and mark.get("running") is True and mark.get("boot_id") != _BOOT_ID
+
+
+def _mark_unix(mark: dict[str, Any], key: str) -> float | None:
+    raw = mark.get(key)
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return float(raw)
+    if isinstance(raw, str):
+        try:
+            return datetime.fromisoformat(raw).timestamp()
+        except ValueError:
+            return None
+    return None
+
+
+def check_interrupted_refresh(*, wait_seconds: float = REFRESH_INTERRUPTED_VERDICT_SECONDS) -> str | None:
+    """Al arrancar: ¿quedó a medias la descarga del proceso anterior?
+
+    Devuelve ``"interrupted"``, ``"finished_elsewhere"`` o ``None`` (nada que hacer).
+    Mientras se espera al veredicto, el latido dice que se está comprobando, así
+    el panel que seguía la descarga no la da por buena con la foto vieja.
+    """
+    mark = _refresh_mark_load()
+    if not _foreign_running_mark(mark):
+        return None
+    assert mark is not None
+    started_unix = _mark_unix(mark, "started_unix") or _mark_unix(mark, "started_at")
+    with _refresh_status_lock:
+        if _refresh_status.get("running"):
+            return None
+        _refresh_status.clear()
+        _refresh_status.update(
+            {
+                "running": True,
+                "tier": mark.get("tier") or "full",
+                "league": mark.get("league"),
+                "phase": "reinicio",
+                "phase_label": "El servidor se reinició: comprobando la descarga",
+                "started_at": mark.get("started_at"),
+                "finished_at": None,
+                "elapsed_seconds": 0.0,
+                "result_ok": None,
+                "error": None,
+                "core_saved_at": None,
+                "recovering": True,
+            }
+        )
+    if wait_seconds > 0:
+        time.sleep(wait_seconds)
+    snapshot_remote._last_miss.pop(  # noqa: SLF001 — la segunda lectura no puede salir del «no hay»
+        snapshot_remote.snapshot_key(REFRESH_MARK_KIND, REFRESH_MARK_LEAGUE), None
+    )
+    latest = _refresh_mark_load() or mark
+    now = time.time()
+    with _refresh_status_lock:
+        if not _refresh_status.get("recovering"):
+            # Arrancó otra pasada en este proceso mientras se esperaba: manda ella.
+            return None
+        if _foreign_running_mark(latest):
+            verdict = "interrupted"
+            state = {
+                "running": False,
+                "result_ok": False,
+                "error": {"code": "interrupted", "message": REFRESH_INTERRUPTED_MESSAGE},
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "elapsed_seconds": round(max(0.0, now - started_unix), 1) if started_unix else 0.0,
+            }
+        else:
+            # El proceso viejo terminó su pasada antes de apagarse.
+            verdict = "finished_elsewhere"
+            state = {
+                "running": False,
+                "result_ok": latest.get("result_ok"),
+                "error": latest.get("error"),
+                "finished_at": latest.get("finished_at"),
+                "elapsed_seconds": latest.get("elapsed_seconds") or 0.0,
+            }
+        _refresh_status.update(state)
+        _refresh_status["phase"] = None
+        _refresh_status["phase_label"] = None
+        _refresh_status.pop("recovering", None)
+        closed = dict(_refresh_status)
+    if verdict == "interrupted":
+        logger.warning("La descarga empezada a las %s se cortó con el reinicio.", mark.get("started_at"))
+        _refresh_mark_save(closed)
+        if started_unix is None or now - started_unix <= REFRESH_INTERRUPTED_MAX_AGE_SECONDS:
+            web_push.notify_refresh_done(ok=False, detail=REFRESH_INTERRUPTED_MESSAGE)
+        return verdict
+    finished_unix = _mark_unix(latest, "finished_at")
+    if latest.get("result_ok") is True and finished_unix is not None and finished_unix > _BOOT_UNIX:
+        # Este proceso pudo copiar a su disco la foto anterior mientras el viejo
+        # acababa: se tira para que la próxima lectura traiga la nueva de Supabase.
+        clear_snapshot_cache()
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            _prewarm_readers()
+    return verdict
 
 
 def _refresh_elapsed(status: dict[str, Any]) -> float:
@@ -2941,6 +3093,21 @@ def _foto_previa_refresco() -> None:
             return
         _refresh_status_start("full", _league(None))
     _run_plan_refresh_job(_league(None))
+
+
+@app.on_event("startup")
+def _revisar_descarga_cortada() -> None:
+    """Si el reinicio pilló una descarga a medias, se dice en el latido y llega el aviso."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+
+    def _run() -> None:
+        try:
+            check_interrupted_refresh()
+        except Exception:  # noqa: BLE001 — revisar es opcional; nunca tumba el arranque
+            logger.exception("No se pudo revisar si quedó una descarga cortada")
+
+    threading.Thread(target=_run, name="refresh-interrupted-check", daemon=True).start()
 
 
 @app.on_event("startup")
