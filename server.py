@@ -3069,7 +3069,11 @@ def _photo_memo(
                         ).start()
             if stamp is not None and isinstance(cached, dict) and cached.get("ok") is not False:
                 with _PHOTO_MEMO_LOCK:
-                    if len(_PHOTO_MEMO) >= 64:
+                    # Una foto nueva deja inservibles las de la misma vista y liga:
+                    # se sueltan ya en vez de acumular dicts enormes hasta el tope.
+                    for old in [k for k in _PHOTO_MEMO if k[:2] == key[:2] and k != key]:
+                        _PHOTO_MEMO.pop(old, None)
+                    if len(_PHOTO_MEMO) >= 24:
                         _PHOTO_MEMO.clear()
                     _PHOTO_MEMO[key] = cached
         with _PHOTO_MEMO_LOCK:

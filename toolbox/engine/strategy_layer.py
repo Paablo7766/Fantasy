@@ -916,6 +916,8 @@ def _sigma_propia(league_id: str | None, ids: list[str]) -> tuple[dict[str, Any]
         if marca is not None
     ]
     ultima = max(marcas) if marcas else None
+    if len(_HISTORIA_VALOR_CACHE) >= 256:
+        _HISTORIA_VALOR_CACHE.clear()
     _HISTORIA_VALOR_CACHE[clave] = (ahora, sigma, ultima)
     return sigma, ultima
 
