@@ -26,6 +26,7 @@ from toolbox.engine.auction_intel import (
     curva_para_jugador,
     factor_calibracion_xp,
     prima_frenada,
+    prob_ganar_prima,
     puja_por_valor,
     techo_sobrepuja_eur,
 )
@@ -1257,6 +1258,7 @@ def build_strategy(board: dict[str, Any], *, now: datetime | None = None) -> dic
         "calendarios": {pid: row["calendario"] for pid, row in records.items() if row.get("calendario")},
         "war": war,
         "pujas": pujas,
+        "muestras_primas": muestras_primas,
         "consejos": consejos,
         "forzadas": forzadas,
         "ventas_forzadas": ventas,
@@ -1898,6 +1900,37 @@ def _veto_de_once_incompleto(row: dict[str, Any]) -> bool:
     return motivos == {"xi_invalido"}
 
 
+def _p_ganar_cifra(puja: Any, cifra: int, muestras: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """P(ganar) pujando ``cifra``, con la misma curva de la liga que usa el plan.
+
+    Mercado enseñaba la probabilidad de ``bid_war`` para otra puja (su óptimo
+    v2), no para la cifra que se escribe.
+    """
+    if not isinstance(puja, dict):
+        return None
+    valor = puja.get("valor_mercado")
+    if not isinstance(valor, int) or isinstance(valor, bool) or valor <= 0:
+        return None
+    curva = _curva_de(puja, muestras)
+    prima = cifra / valor - 1.0
+    return {
+        "p": round(prob_ganar_prima(prima, curva[0] if curva else None), 4),
+        "prima": round(prima, 4),
+        "segmento": (curva[1].get("segmento") if curva else None),
+        "muestra": (curva[1].get("muestra") if curva else None),
+    }
+
+
+def _sellar_p_ganar(row: dict[str, Any], report: dict[str, Any], player_id: str, cifra: int) -> None:
+    dato = _p_ganar_cifra((report.get("pujas") or {}).get(player_id), cifra, report.get("muestras_primas"))
+    if dato is None:
+        return
+    row["p_ganar_puja"] = dato["p"]
+    row["p_ganar_puja_prima"] = dato["prima"]
+    row["p_ganar_puja_segmento"] = dato["segmento"]
+    row["p_ganar_puja_muestra"] = dato["muestra"]
+
+
 def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
     """Mercado habla con la voz del plan: misma cifra y, si es objetivo, mismo veredicto."""
     player_id = _pid(row.get("player_id"))
@@ -1927,6 +1960,7 @@ def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
             # Objetivo del plan pagado con crédito: no es un veto, es cómo se financia.
             _sin_veto_de_caja("usa_credito")
         row["puja_unica_eur"] = cifra
+        _sellar_p_ganar(row, report, player_id, cifra)
         row["en_plan"] = True
         ventas = objetivo.get("ventas") or objetivo.get("ventas_hoy") or []
         texto = "Objetivo del plan de hoy"
@@ -1967,8 +2001,13 @@ def _unificar_fila_mercado(row: dict[str, Any], report: dict[str, Any]) -> None:
         return
     cifra = puja_unica((report.get("pujas") or {}).get(player_id), row)
     if cifra is None:
+        if isinstance((report.get("pujas") or {}).get(player_id), dict):
+            # Precio de salida o líder por encima del techo: no hay cifra. Explícito,
+            # para que Mercado no caiga en la puja de bid_war (por debajo del precio).
+            row["puja_unica_eur"] = None
         return
     row["puja_unica_eur"] = cifra
+    _sellar_p_ganar(row, report, player_id, cifra)
     if _veto_de_caja(row):
         # La puja smart era tu caja (246.947 €): una cifra que nunca gana. Va la cifra real.
         row["smart_bid_eur"] = cifra

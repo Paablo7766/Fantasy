@@ -466,7 +466,8 @@ function facts(player: MarketDecision): BidFact[] {
       note: "Techo dinámico: +15 % más la previsión a 7 días y la dificultad, con cap del +30 %",
     });
   }
-  if (typeof player.smart_bid_success_pct === "number") {
+  // «Éxito smart» es la probabilidad del modelo de bid_war: con cifra única manda «Prob. de ganar».
+  if (typeof player.puja_unica_eur !== "number" && typeof player.smart_bid_success_pct === "number") {
     rows.push({
       label: "Éxito smart",
       value: `${player.smart_bid_success_pct}%`,
@@ -475,7 +476,20 @@ function facts(player: MarketDecision): BidFact[] {
         : "Ningún rival cubre el valor y necesita la posición",
     });
   }
-  if (typeof player.optimal_bid_eur === "number") {
+  // Con cifra única, la probabilidad es la de esa cifra (curva de la liga, la del plan).
+  // El óptimo v2 de bid_war y sus derivados hablan de otra puja: no se enseñan.
+  const unica = typeof player.puja_unica_eur === "number";
+  if (unica && typeof player.p_ganar_puja === "number") {
+    const muestra = typeof player.p_ganar_puja_muestra === "number" ? `, ${player.p_ganar_puja_muestra} compras` : "";
+    rows.push({
+      label: "Prob. de ganar",
+      value: `${Math.round(player.p_ganar_puja * 100)}%`,
+      note: `Pujando ${eur(player.puja_unica_eur!)}: curva de pujas ganadoras de la liga${
+        player.p_ganar_puja_segmento ? ` (${player.p_ganar_puja_segmento}${muestra})` : ""
+      }`,
+    });
+  }
+  if (!unica && typeof player.optimal_bid_eur === "number") {
     rows.push({
       label: "Puja óptima v2",
       value: eur(player.optimal_bid_eur),
@@ -487,28 +501,28 @@ function facts(player: MarketDecision): BidFact[] {
             : "Maximiza (valor − puja) × P(ganar)",
     });
   }
-  if (typeof player.win_probability === "number") {
+  if (!unica && typeof player.win_probability === "number") {
     const pctWin =
       player.win_probability <= 1
         ? `${Math.round(player.win_probability * 100)}%`
         : `${Math.round(player.win_probability)}%`;
     rows.push({ label: "Prob. victoria", value: pctWin, note: "Modelo de rivales y techos de caja" });
   }
-  if (typeof player.intrinsic_valuation_eur === "number") {
+  if (!unica && typeof player.intrinsic_valuation_eur === "number") {
     rows.push({
       label: "Valor intrínseco",
       value: eur(player.intrinsic_valuation_eur),
       note: "V_val según flip o premium estructural",
     });
   }
-  if (typeof player.expected_surplus_eur === "number") {
+  if (!unica && typeof player.expected_surplus_eur === "number") {
     rows.push({
       label: "Superávit esperado",
       value: eur(player.expected_surplus_eur),
       note: "(V_val − puja) × P(ganar)",
     });
   }
-  if ((player.rival_knockout_targets?.length ?? 0) > 0) {
+  if (!unica && (player.rival_knockout_targets?.length ?? 0) > 0) {
     rows.push({
       label: "Knock-out",
       value: player.rival_knockout_targets!.join(", "),

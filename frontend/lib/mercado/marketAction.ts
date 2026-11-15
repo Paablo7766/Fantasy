@@ -43,6 +43,8 @@ export function executableBid(player: Partial<MarketDecision> | null | undefined
   if (isVetoed(player)) return null;
   // La misma cifra que paga el plan de Inicio (backend: ``puja_unica_eur``).
   if (typeof player?.puja_unica_eur === "number") return player.puja_unica_eur;
+  // `null` explícito: el precio pasa del techo y no se puja. No se cae a la puja de otro motor.
+  if (player && "puja_unica_eur" in player && player.puja_unica_eur === null) return null;
   if (typeof player?.smart_bid_eur === "number") return player.smart_bid_eur;
   if (typeof player?.optimal_bid_eur === "number") return player.optimal_bid_eur;
   if (typeof player?.suggested_bid === "number") return player.suggested_bid;

@@ -81,5 +81,35 @@ class VeredictoUnico(unittest.TestCase):
         self.assertEqual(nota["veredicto_mercado"], "DESCARTAR")
 
 
+class ProbabilidadDeLaCifra(unittest.TestCase):
+    """La probabilidad de Mercado es la de la cifra que se escribe, con la curva del plan."""
+
+    def _report(self, maxima):
+        puja = {"valor_mercado": 1_000_000, "puja_recomendada": 1_100_000, "puja_maxima": maxima}
+        return {"compras_plan": {}, "pujas": {"x": puja}, "muestras_primas": None}
+
+    def test_la_cifra_unica_lleva_su_probabilidad(self):
+        from toolbox.engine.auction_intel import prob_ganar_prima
+        from toolbox.engine.strategy_layer import _curva_de
+
+        row = {"player_id": "x", "action": "PUJAR", "sale_price": 1_000_000, "smart_bid_eur": 1_050_000,
+               "win_probability": 0.9}
+        report = self._report(1_300_000)
+        _unificar_fila_mercado(row, report)
+        self.assertEqual(row["puja_unica_eur"], 1_100_000)
+        curva = _curva_de(report["pujas"]["x"], None)[0]
+        self.assertAlmostEqual(row["p_ganar_puja"], round(prob_ganar_prima(0.10, curva), 4))
+        self.assertAlmostEqual(row["p_ganar_puja_prima"], 0.10)
+        # La de bid_war se conserva como dato, pero no es la que se enseña.
+        self.assertEqual(row["win_probability"], 0.9)
+
+    def test_sobre_el_techo_no_hay_cifra_explicita(self):
+        row = {"player_id": "x", "action": "PUJAR", "sale_price": 1_500_000, "smart_bid_eur": 1_300_000}
+        _unificar_fila_mercado(row, self._report(1_300_000))
+        self.assertIn("puja_unica_eur", row)
+        self.assertIsNone(row["puja_unica_eur"])
+        self.assertNotIn("p_ganar_puja", row)
+
+
 if __name__ == "__main__":
     unittest.main()
