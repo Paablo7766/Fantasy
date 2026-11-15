@@ -2278,6 +2278,7 @@ def rival_intel_from_board(    squads: dict[str, Any] | None,
     *,
     now: datetime | None = None,
     observed_on: str | date | None = None,
+    clause_raises: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Auditoría de caja rival desde la foto ya cargada, sin red.
 
@@ -2295,7 +2296,7 @@ def rival_intel_from_board(    squads: dict[str, Any] | None,
         }
     activity = events_from_ledgers(ledgers)
     document = get_financial_intel(
-        squads, activity, now=now, observed_on=observed_on
+        squads, activity, now=now, observed_on=observed_on, hidden_costs=clause_raises
     )
     document["activity"]["source"] = activity.get("source")
     document["activity"]["from_ledgers"] = True
@@ -3794,11 +3795,13 @@ def api_rival_intel(
     squads = board.get("squads") if isinstance(board.get("squads"), dict) else {}
     needs = board.get("needs") if isinstance(board.get("needs"), dict) else {}
     ledgers = needs.get("ledgers") if isinstance(needs.get("ledgers"), list) else []
+    # Sin la clave (foto anterior al cambio) la auditoría sigue con su registro propio.
+    raises = needs.get("clause_raises") if isinstance(needs.get("clause_raises"), list) else None
     payload = _photo_memo(
         "rival-intel",
         league,
         board,
-        lambda: rival_intel_from_board(squads, ledgers, observed_on=_photo_day(board)),
+        lambda: rival_intel_from_board(squads, ledgers, observed_on=_photo_day(board), clause_raises=raises),
     )
     payload.update(_photo_fields(board))
     return payload

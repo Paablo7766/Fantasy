@@ -11,10 +11,12 @@ viene, no se inventa.
 
 from __future__ import annotations
 
+import logging
 import unicodedata
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
+from zoneinfo import ZoneInfo
 
 from toolbox.analyzer import (
     FORMATIONS,
@@ -443,7 +445,35 @@ def needs_from_documents(
     events = activity.get("events") if isinstance(activity, dict) and isinstance(activity.get("events"), list) else []
     roster = squads.get("squads") if isinstance(squads.get("squads"), list) else []
     snapshots = _snapshot_index(cache)
+    # Caja rival única: subidas de cláusula desde las fotos diarias (sin copias,
+    # encadenadas, automáticas gratis, 1:2). Sustituye al registro
+    # hidden_expenses_log, que cobraba al 20 %, sumaba las automáticas y en
+    # Render se borraba en cada despliegue.
+    from toolbox.caja_rival import costes_ocultos
+
+    from toolbox.rival_intel import CLAUSE_SNAPSHOTS_FILENAME, LedgerAuditor
+
+    clause_path = cache.root / CLAUSE_SNAPSHOTS_FILENAME if cache is not None else None
+    if fresh and clause_path is not None:
+        # La foto de cláusulas del día se guarda en cada descarga real, no solo
+        # al abrir Liga: sin foto diaria, una subida se fecha tarde o se pierde.
+        try:
+            moment = now or datetime.now(timezone.utc)
+            LedgerAuditor(snapshot_path=clause_path).save_clause_snapshot(
+                squads,
+                day=moment.astimezone(ZoneInfo("Europe/Madrid")).date(),
+                now=moment,
+                keep_existing=True,
+            )
+        except Exception:  # noqa: BLE001 - sin foto queda la caja de ayer
+            logging.getLogger(__name__).exception("foto de cláusulas")
+    hidden_costs = costes_ocultos(
+        [event for event in events if isinstance(event, dict)], snapshots, path=clause_path
+    )
     fingerprint = {
+        "hidden_costs": sorted(
+            (row["team_id"], row["player_id"], row["day"], row["cost_eur"]) for row in hidden_costs
+        ),
         "events": events,
         "cash": [
             {"team_id": squad.get("team_id"), "cash": squad.get("cash"), "manager_id": squad.get("manager_id")}
@@ -454,13 +484,13 @@ def needs_from_documents(
     }
 
     def build_books() -> dict[str, Any]:
-        from toolbox.league_history import books_from_activity, hidden_costs_from_log
+        from toolbox.league_history import books_from_activity
 
         ledgers, history = books_from_activity(
             [squad for squad in roster if isinstance(squad, dict)],
             [event for event in events if isinstance(event, dict)],
             snapshots,
-            hidden_costs=hidden_costs_from_log(),
+            hidden_costs=hidden_costs,
         )
         return {"ledgers": ledgers, "history": history}
 
@@ -511,15 +541,17 @@ def needs_from_documents(
             "event_count": len(events),
         },
         "ledger_note": (
-            "Caja reconstruida = presupuesto inicial + primas - compras - cláusulas + ventas. "
-            "Tu caja parte del residual de tu saldo real; cada rival parte de los 100 M de la liga. "
-            "En un rival esa cifra es un techo: subir la cláusula no sale en el historial."
+            "Caja reconstruida = presupuesto inicial + primas - compras - cláusulas + ventas "
+            "- subidas de cláusula pagadas (fotos diarias, regla 1:2; las automáticas no cuestan). "
+            "Tu caja parte del residual de tu saldo real; cada rival parte de los 100 M de la liga."
             if history.get("initial_source") == "caja_propia"
             else "Caja reconstruida = presupuesto inicial + primas - compras - cláusulas + ventas. "
             "Sin presupuesto inicial en el historial, reconstructed_cash_eur es null."
         ),
         "history": history,
         "ledgers": ledgers,
+        # Subidas de cláusula ya restadas en los libros: la auditoría de Rivales usa las mismas.
+        "clause_raises": hidden_costs,
         "rival_count": len(rivals),
         "rivals": rivals,
         "clause_alerts": scheduled,

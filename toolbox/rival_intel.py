@@ -1382,6 +1382,21 @@ def _clauses_from_squads(roster: list[dict[str, Any]]) -> dict[str, dict[str, in
     return mapped
 
 
+def _values_from_squads(roster: list[dict[str, Any]]) -> dict[str, int]:
+    """``{player_id: valor de mercado}`` de todas las plantillas de la foto."""
+    values: dict[str, int] = {}
+    for squad in roster:
+        for player in squad.get("players") or []:
+            if not isinstance(player, Mapping):
+                continue
+            view = _player_view(player)
+            player_id = view["player_id"]
+            value = view.get("market_value")
+            if isinstance(player_id, str) and player_id and isinstance(value, int) and value > 0:
+                values[player_id] = value
+    return values
+
+
 def _clauses_from_players(players: Any) -> dict[str, int]:
     values: dict[str, int] = {}
     for player in players if isinstance(players, list) else []:
@@ -1895,30 +1910,64 @@ class LedgerAuditor:
         mapped = _clause_map(squads)
         if not mapped:
             return {"ok": False, "error": "sin_plantillas"}
-        data, _error = _read_json(self.snapshot_path)
+        data = self._clause_history()
         days: dict[str, Any] = {}
-        if isinstance(data, Mapping) and isinstance(data.get("days"), Mapping):
+        if isinstance(data.get("days"), Mapping):
             days = {str(key): value for key, value in data["days"].items() if isinstance(value, Mapping)}
+        values: dict[str, Any] = {}
+        if isinstance(data.get("values"), Mapping):
+            values = {str(key): value for key, value in data["values"].items() if isinstance(value, Mapping)}
         if keep_existing and stamp.isoformat() in days:
             return {"ok": True, "day": stamp.isoformat(), "teams": len(mapped), "skipped": True}
         days[stamp.isoformat()] = mapped
+        # Valor de mercado de cada jugador en la misma foto: distingue la subida
+        # automática (cláusula = valor, gratis) de la pagada sin depender de otra tabla.
+        day_values = _values_from_squads(_roster(squads))
+        if day_values:
+            values[stamp.isoformat()] = day_values
         keep = sorted(days)[-CLAUSE_SNAPSHOT_KEEP_DAYS:]
-        payload = {"version": 1, "updated_at": _iso(current), "days": {key: days[key] for key in keep}}
+        payload = {
+            "version": 2,
+            "updated_at": _iso(current),
+            "days": {key: days[key] for key in keep},
+            "values": {key: values[key] for key in keep if key in values},
+        }
         try:
             _write_json(self.snapshot_path, payload)
         except OSError as exc:
             return {"ok": False, "error": str(exc)}
+        from toolbox.caja_rival import publicar_remoto
+
+        publicar_remoto(payload)
         return {"ok": True, "day": stamp.isoformat(), "teams": len(mapped), "skipped": False}
+
+    def _clause_history(self) -> dict[str, Any]:
+        """Historial de cláusulas local fusionado con la copia de Supabase.
+
+        En Render ``.cache`` se borra en cada despliegue: sin la copia remota,
+        cada push dejaba la caja rival sin las subidas de cláusula anteriores.
+        """
+        from toolbox.caja_rival import fusionar_historial, leer_remoto
+
+        local, _error = _read_json(self.snapshot_path)
+        remote = leer_remoto() if self.persist else None
+        days = fusionar_historial(local, remote)
+        values: dict[str, Any] = {}
+        for source in (local, remote):
+            if isinstance(source, Mapping) and isinstance(source.get("values"), Mapping):
+                for key, value in source["values"].items():
+                    if isinstance(value, Mapping):
+                        values.setdefault(str(key), dict(value))
+        return {"days": days, "values": values}
 
     def load_clause_snapshot(self, *, before: str | date) -> tuple[str | None, dict[str, Any] | None]:
         """Plantilla guardada más reciente anterior a ``before`` (aunque no sea ayer)."""
         stamp = _as_date(before)
         if stamp is None:
             return None, None
-        data, _error = _read_json(self.snapshot_path)
-        if not isinstance(data, Mapping) or not isinstance(data.get("days"), Mapping):
+        days = self._clause_history()["days"]
+        if not days:
             return None, None
-        days = data["days"]
         candidates = [str(key) for key in days if _as_date(key) is not None and str(key) < stamp.isoformat()]
         if not candidates:
             return None, None
@@ -1938,8 +1987,13 @@ class LedgerAuditor:
         now: datetime | None = None,
         observed_on: str | date | None = None,
         persist: bool | None = None,
+        hidden_costs: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Reconstruye la caja de cada equipo y devuelve el documento completo.
+
+        ``hidden_costs`` son las subidas de cláusula de la caja rival única
+        (``toolbox.caja_rival``, las mismas que restan los libros de ``needs``).
+        Si llegan, sustituyen al registro diario y a la estimación retroactiva.
 
         ``observed_on`` es la fecha a la que corresponden las cláusulas de la
         foto. Los anuncios se devengan hasta ``now`` (el juego paga cada día
@@ -2105,6 +2159,7 @@ class LedgerAuditor:
                     log=indexed_log,
                     present=present.get(team_id, set()),
                     anchor_day=None,
+                    override=hidden_costs,
                 )
                 period_flows = team_flows
                 period_days = _days_elapsed(team_start, today, include_start=self.include_start_day)
@@ -2133,6 +2188,7 @@ class LedgerAuditor:
                     log=indexed_log,
                     present=present.get(team_id, set()),
                     anchor_day=anchor_day,
+                    override=hidden_costs,
                 )
                 floor_ad, lowest = _balance_floor(
                     _team_events(bound, team_id),
@@ -2407,6 +2463,7 @@ class LedgerAuditor:
         log: Mapping[tuple[str, str, str], dict[str, Any]],
         present: set[str],
         anchor_day: str | None,
+        override: list[dict[str, Any]] | None = None,
     ) -> tuple[int, list[dict[str, Any]]]:
         """Gasto oculto imputable al periodo, sin doble conteo.
 
@@ -2419,6 +2476,18 @@ class LedgerAuditor:
         Con ancla solo cuenta el diario fechado después del asiento: el
         retroactivo no se puede fechar y el asiento ya lo resume.
         """
+        if override is not None:
+            rows = [
+                dict(row)
+                for row in override
+                if isinstance(row, Mapping)
+                and row.get("team_id") == team_id
+                and isinstance(row.get("cost_eur"), int)
+                and row["cost_eur"] > 0
+                and (anchor_day is None or str(row.get("day") or "") > anchor_day)
+            ]
+            return _dedupe_expenses(rows)
+
         if anchor_day is not None:
             rows = [
                 dict(entry)
@@ -2592,6 +2661,7 @@ def get_financial_intel(
     now: datetime | None = None,
     observed_on: str | date | None = None,
     persist: bool | None = None,
+    hidden_costs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Orquesta la auditoría y devuelve un diccionario por equipo.
 
@@ -2608,6 +2678,7 @@ def get_financial_intel(
         now=now,
         observed_on=observed_on,
         persist=persist,
+        hidden_costs=hidden_costs,
     )
 
 
