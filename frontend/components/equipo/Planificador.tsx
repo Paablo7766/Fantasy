@@ -6,64 +6,18 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useDashboard } from "@/components/DashboardProvider";
 import { Crest } from "@/components/ui/Crest";
 import { ErrorCard } from "@/components/ui/Feedback";
-import { Empty, Face, Skeleton, TONE, lastName, money, ringColor } from "@/components/ui/kit";
+import { Empty, Face, HeroStat, Skeleton, TONE, compact, lastName, money, ringColor } from "@/components/ui/kit";
 import { endpoint } from "@/lib/core/api";
 import { points, titularFull } from "@/lib/core/format";
 import { cachedJson, peekJson } from "@/lib/core/jsonCache";
-import type { PlanificadorJugador, PlanificadorLibre, PlanificadorPartido, PlanificadorPayload, PlanificadorPosicion } from "@/lib/types";
+import { POSICIONES, construirPlan, valor, type Horizonte, type Movimiento } from "@/lib/equipo/planificador";
+import type { PlanificadorJugador, PlanificadorLibre, PlanificadorPayload, PlanificadorPosicion } from "@/lib/types";
 
-/** 0–3 = una jornada; «total» = las cuatro sumadas. */
-type Horizonte = 0 | 1 | 2 | 3 | "total";
-
-const POSICIONES: PlanificadorPosicion[] = ["POR", "DEF", "MC", "DEL"];
 const NOMBRE_PUESTO: Record<PlanificadorPosicion, string> = { POR: "Porteros", DEF: "Defensas", MC: "Medios", DEL: "Delanteros" };
-const FORMACIONES: Array<[number, number, number]> = [
-  [3, 4, 3],
-  [3, 5, 2],
-  [4, 3, 3],
-  [4, 4, 2],
-  [4, 5, 1],
-  [5, 3, 2],
-  [5, 4, 1],
-];
-const MOVIMIENTOS = 3;
-const MEJORA_MINIMA = 0.3;
+const RANKING_CORTO = 8;
+const RANKING_LARGO = 25;
 
-function valor(jugador: PlanificadorJugador, h: Horizonte): number | null {
-  return h === "total" ? jugador.xp_total : (jugador.xp[h] ?? null);
-}
-
-type Once = { total: number; ids: Set<string> } | null;
-
-/** Mejor once legal (1 POR y una formación del juego) con lo que haya en ``pool``. */
-function mejorOnce(pool: PlanificadorJugador[], h: Horizonte): Once {
-  const porPuesto: Record<PlanificadorPosicion, PlanificadorJugador[]> = { POR: [], DEF: [], MC: [], DEL: [] };
-  for (const jugador of pool) if (valor(jugador, h) !== null) porPuesto[jugador.posicion].push(jugador);
-  for (const puesto of POSICIONES) porPuesto[puesto].sort((a, b) => (valor(b, h) ?? 0) - (valor(a, h) ?? 0));
-  let mejor: Once = null;
-  for (const [def, mc, del] of FORMACIONES) {
-    const cupo: Record<PlanificadorPosicion, number> = { POR: 1, DEF: def, MC: mc, DEL: del };
-    if (POSICIONES.some((puesto) => porPuesto[puesto].length < cupo[puesto])) continue;
-    const elegidos = POSICIONES.flatMap((puesto) => porPuesto[puesto].slice(0, cupo[puesto]));
-    const total = elegidos.reduce((suma, jugador) => suma + (valor(jugador, h) ?? 0), 0);
-    if (!mejor || total > mejor.total) mejor = { total, ids: new Set(elegidos.map((j) => j.player_id)) };
-  }
-  return mejor;
-}
-
-type Movimiento = { jugador: PlanificadorJugador; mejora: number; sale: PlanificadorJugador | null };
-
-/** Cuánto sube tu mejor once si entra ``candidato``, y a quién deja fuera. */
-function movimiento(mios: PlanificadorJugador[], base: Once, candidato: PlanificadorJugador, h: Horizonte): Movimiento | null {
-  if (!base || valor(candidato, h) === null) return null;
-  const nuevo = mejorOnce([...mios, candidato], h);
-  if (!nuevo || !nuevo.ids.has(candidato.player_id)) return null;
-  const mejora = nuevo.total - base.total;
-  const sale = mios.find((j) => base.ids.has(j.player_id) && !nuevo.ids.has(j.player_id)) ?? null;
-  return { jugador: candidato, mejora, sale };
-}
-
-const madrid = new Intl.DateTimeFormat("es-ES", { timeZone: "Europe/Madrid", weekday: "short", day: "numeric", month: "short" });
+const madrid = new Intl.DateTimeFormat("es-ES", { timeZone: "Europe/Madrid", weekday: "short", day: "numeric" });
 const madridHora = new Intl.DateTimeFormat("es-ES", { timeZone: "Europe/Madrid", weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 function fecha(iso: string | null | undefined, conHora = false): string | null {
@@ -73,38 +27,71 @@ function fecha(iso: string | null | undefined, conHora = false): string | null {
   return (conHora ? madridHora : madrid).format(date).replace(/\./g, "");
 }
 
-function Rival({ partido }: { partido: PlanificadorPartido | null | undefined }) {
-  if (!partido?.rival) return null;
+/** Tiempo hasta un cierre, corto: «5 h», «2 d». */
+function faltan(iso: string | null): string {
+  if (!iso) return "—";
+  const ms = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(ms)) return "—";
+  if (ms <= 0) return "Ya";
+  const horas = ms / 3_600_000;
+  if (horas < 1) return `${Math.max(1, Math.round(ms / 60_000))} min`;
+  if (horas < 48) return `${Math.round(horas)} h`;
+  return `${Math.round(horas / 24)} d`;
+}
+
+function urgente(iso: string | null): boolean {
+  if (!iso) return false;
+  const ms = new Date(iso).getTime() - Date.now();
+  return ms > 0 && ms < 12 * 3_600_000;
+}
+
+function EstadoMedico({ estado }: { estado: "baja" | "duda" | null }) {
+  if (!estado) return null;
   return (
-    <span className="inline-flex min-w-0 items-center gap-1">
-      <span className="shrink-0 text-white/35">{partido.casa === false ? "en" : "vs"}</span>
-      <Crest club={partido.rival} size={14} />
-      <span className="truncate">{partido.rival}</span>
+    <span className="shrink-0 text-[11.5px] font-medium" style={{ color: estado === "baja" ? TONE.red : TONE.amber }}>
+      {estado === "baja" ? "Baja" : "Duda"}
     </span>
   );
 }
 
-/** Cómo conseguirlo, en una línea. */
+/** Cómo conseguirlo, en una línea corta. */
 function comoConseguirlo(jugador: PlanificadorJugador): string {
   if (jugador.dueno.tipo === "mio") return "Tuyo";
   if (jugador.mercado) {
     const cierra = fecha(jugador.mercado.cierra_at, true);
-    return `Mercado · ${money(jugador.mercado.precio)}${cierra ? ` · cierra ${cierra}` : ""}`;
+    return `Mercado · ${money(jugador.mercado.precio)}${cierra ? ` · ${cierra}` : ""}`;
   }
   const c = jugador.clausula;
-  if (c?.estado === "abierta") return `Cláusula ${money(c.eur)} · ${jugador.dueno.nombre}`;
-  if (c?.estado === "bloqueada") return `${jugador.dueno.nombre} · cláusula se abre ${fecha(c.abre_at, true) ?? "más adelante"}`;
+  if (c?.estado === "abierta") return `Cláusula · ${money(c.eur)} · ${jugador.dueno.nombre}`;
+  if (c?.estado === "bloqueada") return `${jugador.dueno.nombre} · abre ${fecha(c.abre_at, true) ?? "más adelante"}`;
   if (c?.estado === "blindado") return `${jugador.dueno.nombre} · blindado`;
   return jugador.dueno.nombre;
 }
 
-function Detalle({ jugador, jornadas, sufijo }: { jugador: PlanificadorJugador; jornadas: Array<number | null>; sufijo: string }) {
-  const accion = jugador.mercado ? { href: `/mercado${sufijo}`, label: "Ir a Mercado" } : jugador.clausula?.estado === "abierta" || jugador.clausula?.estado === "bloqueada" ? { href: `/clausulas${sufijo}`, label: "Ir a Cláusulas" } : null;
+/** Versión corta para la fila; el detalle lleva la completa. */
+function disponible(jugador: PlanificadorJugador): string {
+  if (jugador.dueno.tipo === "mio") return jugador.valor ? `Tuyo · ${money(jugador.valor)}` : "Tuyo";
+  if (jugador.mercado) return `Mercado · ${money(jugador.mercado.precio)}`;
+  const c = jugador.clausula;
+  if (c?.estado === "abierta") return `Cláusula · ${money(c.eur)}`;
+  if (c?.estado === "bloqueada") return `Cláusula abre ${fecha(c.abre_at) ?? "más adelante"}`;
+  if (c?.estado === "blindado") return "Blindado";
+  return jugador.dueno.nombre;
+}
+
+/** Las cuatro jornadas del jugador, con la elegida resaltada. */
+function Detalle({ jugador, h, jornadas, sufijo }: { jugador: PlanificadorJugador; h: Horizonte; jornadas: Array<number | null>; sufijo: string }) {
+  const accion = jugador.mercado
+    ? { href: `/mercado${sufijo}`, label: "Pujar en Mercado" }
+    : jugador.clausula?.estado === "abierta" || jugador.clausula?.estado === "bloqueada"
+      ? { href: `/clausulas${sufijo}`, label: "Ver en Cláusulas" }
+      : null;
   return (
-    <div className="row-in px-4 pb-4">
+    <div className="row-in px-3.5 pb-3.5">
+      <p className="mb-2.5 truncate text-[12.5px] text-white/60">{comoConseguirlo(jugador)}</p>
       <ul className="grid grid-cols-4 gap-1.5">
         {jugador.partidos.map((partido, index) => (
-          <li key={index} className="flex min-w-0 flex-col items-center rounded-2xl bg-black/30 px-1 py-2.5 text-center">
+          <li key={index} className={h === index ? "plan-day plan-day--on" : "plan-day"}>
             <span className="text-[10.5px] text-white/40">J{jornadas[index] ?? index + 1}</span>
             <span className="mt-1.5 h-[18px]">{partido?.rival ? <Crest club={partido.rival} size={18} /> : null}</span>
             <span className="mt-1 text-[10.5px] text-white/40">{partido ? (partido.casa === false ? "fuera" : "casa") : "—"}</span>
@@ -126,83 +113,91 @@ function Detalle({ jugador, jornadas, sufijo }: { jugador: PlanificadorJugador; 
   );
 }
 
-function FilaJugador({
-  jugador,
-  h,
-  abierto,
-  onToggle,
-  jornadas,
-  sufijo,
-  derecha,
-  linea,
-}: {
+type FilaProps = {
   jugador: PlanificadorJugador;
   h: Horizonte;
   abierto: boolean;
   onToggle: () => void;
   jornadas: Array<number | null>;
   sufijo: string;
-  derecha: ReactNode;
   linea: string;
-}) {
+  derecha: ReactNode;
+  lead?: ReactNode;
+  /** Enseña el rival de la jornada (solo con una jornada elegida). */
+  rival?: boolean;
+};
+
+function Fila({ jugador, h, abierto, onToggle, jornadas, sufijo, linea, derecha, lead, rival = false }: FilaProps) {
   const nombre = jugador.nombre || "Jugador";
-  const partido = h === "total" ? jugador.partidos[0] : jugador.partidos[h];
+  const partido = rival && h !== "total" ? jugador.partidos[h] : null;
   return (
     <li>
-      <button type="button" aria-expanded={abierto} className="flex w-full items-center gap-3 px-3 py-3 text-left" onClick={onToggle}>
+      <button type="button" aria-expanded={abierto} className="plan-row" onClick={onToggle}>
+        {lead}
         <Face name={nombre} src={jugador.image_url} size={40} ring={ringColor(jugador.p_titular)} />
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-1.5">
             <Crest club={jugador.club} size={15} />
             <span className="truncate text-[15px] font-medium leading-tight text-white">{lastName(nombre)}</span>
-            {jugador.estado ? (
-              <span className="shrink-0 text-[11.5px] font-medium" style={{ color: jugador.estado === "baja" ? TONE.red : TONE.amber }}>
-                {jugador.estado === "baja" ? "Baja" : "Duda"}
+            <EstadoMedico estado={jugador.estado} />
+          </span>
+          <span className="mt-1 flex min-w-0 items-center gap-1 text-[12px] text-white/45">
+            {partido?.rival ? (
+              <span className="inline-flex shrink-0 items-center gap-1" title={`${partido.casa === false ? "en" : "vs"} ${partido.rival}`}>
+                <span className="text-white/35">{partido.casa === false ? "en" : "vs"}</span>
+                <Crest club={partido.rival} size={13} />
+                <span className="text-white/25">·</span>
               </span>
             ) : null}
+            <span className="truncate">{linea}</span>
           </span>
-          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px] text-white/45">
-            <span className="shrink-0">{jugador.posicion}</span>
-            {partido?.rival && h !== "total" ? (
-              <>
-                <span className="text-white/20">·</span>
-                <Rival partido={partido} />
-              </>
-            ) : null}
-          </span>
-          <span className="mt-0.5 block truncate text-[12px] text-white/55">{linea}</span>
         </span>
         <span className="shrink-0 text-right">{derecha}</span>
       </button>
-      {abierto ? <Detalle jugador={jugador} jornadas={jornadas} sufijo={sufijo} /> : null}
+      {abierto ? <Detalle jugador={jugador} h={h} jornadas={jornadas} sufijo={sufijo} /> : null}
     </li>
   );
 }
 
-function Mejora({ m }: { m: Movimiento }) {
+function Cifra({ value, label, tone }: { value: string; label: string; tone?: string }) {
   return (
     <>
-      <span className="block font-mono text-[1.05rem] font-semibold leading-none tabular-nums" style={{ color: TONE.green }}>
-        +{points(m.mejora)}
+      <span className="block font-mono text-[1.05rem] font-semibold leading-none tabular-nums" style={{ color: tone ?? "#fff" }}>
+        {value}
       </span>
-      <span className="mt-1 block max-w-[5.5rem] truncate text-[11px] text-white/40">{m.sale ? `por ${lastName(m.sale.nombre || "")}` : "al once"}</span>
+      <span className="mt-1 block max-w-[5.5rem] truncate text-[11px] text-white/40">{label}</span>
     </>
+  );
+}
+
+function Mejora({ m }: { m: Movimiento }) {
+  return <Cifra value={`+${points(m.mejora)}`} tone={TONE.green} label={m.sale ? `por ${lastName(m.sale.nombre || "")}` : "al once"} />;
+}
+
+function Seccion({ titulo, nota, children }: { titulo: string; nota?: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2.5" aria-label={titulo}>
+      <div className="px-1">
+        <h2 className="text-[1.05rem] font-semibold tracking-tight text-white">{titulo}</h2>
+        {nota ? <p className="mt-0.5 text-[12.5px] leading-snug text-white/45">{nota}</p> : null}
+      </div>
+      {children}
+    </section>
   );
 }
 
 function Libre({ libre }: { libre: PlanificadorLibre }) {
   const nombre = libre.nombre || "Jugador";
   return (
-    <li className="flex w-[8.5rem] shrink-0 flex-col items-center rounded-[1.25rem] bg-[#1c1c1e] px-3 py-3.5 text-center">
-      <Face name={nombre} src={libre.image_url} size={48} />
+    <li className="home-glass flex w-[8.25rem] shrink-0 flex-col items-center px-3 py-3.5 text-center">
+      <Face name={nombre} src={libre.image_url} size={44} />
       <span className="mt-2 flex w-full min-w-0 items-center justify-center gap-1">
         <Crest club={libre.club} size={13} />
         <span className="truncate text-[13.5px] font-medium text-white">{lastName(nombre)}</span>
       </span>
       <span className="mt-0.5 text-[11.5px] text-white/40">
         {libre.posicion}
-        {libre.valor ? <span className="tabular-nums text-white/60"> · {money(libre.valor)}</span> : null}
-        {libre.estado ? <span style={{ color: libre.estado === "baja" ? TONE.red : TONE.amber }}> · {libre.estado === "baja" ? "Baja" : "Duda"}</span> : null}
+        {libre.valor ? <span className="tabular-nums text-white/55"> · {money(libre.valor)}</span> : null}
       </span>
       <span className="mt-2.5 grid w-full grid-cols-2 gap-1 border-t border-white/[0.06] pt-2.5">
         <span>
@@ -214,7 +209,31 @@ function Libre({ libre }: { libre: PlanificadorLibre }) {
           <span className="block text-[10.5px] text-white/40">últ. 3</span>
         </span>
       </span>
+      {libre.estado ? (
+        <span className="mt-2">
+          <EstadoMedico estado={libre.estado} />
+        </span>
+      ) : null}
     </li>
+  );
+}
+
+function Switch<T extends string | number>({ opciones, actual, onChange, label }: { opciones: Array<[T, string]>; actual: T; onChange: (v: T) => void; label: string }) {
+  return (
+    <div className="desk-switch" style={{ gridTemplateColumns: `repeat(${opciones.length}, minmax(0, 1fr))` }} role="tablist" aria-label={label}>
+      {opciones.map(([id, texto]) => (
+        <button
+          key={String(id)}
+          type="button"
+          role="tab"
+          aria-selected={actual === id}
+          className={actual === id ? "desk-switch__btn desk-switch__btn--on" : "desk-switch__btn"}
+          onClick={() => onChange(id)}
+        >
+          {texto}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -256,37 +275,7 @@ export function Planificador() {
   }, [url, stamp]);
 
   const jugadores = useMemo(() => payload?.jugadores ?? [], [payload]);
-
-  const plan = useMemo(() => {
-    const mios = jugadores.filter((j) => j.dueno.tipo === "mio");
-    const base = mejorOnce(mios, h);
-    const evaluar = (lista: PlanificadorJugador[]) =>
-      lista
-        .map((j) => movimiento(mios, base, j, h))
-        .filter((m): m is Movimiento => m !== null && m.mejora >= MEJORA_MINIMA)
-        .sort((a, b) => b.mejora - a.mejora);
-    const mercado = evaluar(jugadores.filter((j) => j.dueno.tipo !== "mio" && j.mercado !== null));
-    const clausulas = evaluar(jugadores.filter((j) => j.dueno.tipo === "rival" && !j.mercado && j.clausula?.estado === "abierta"));
-    // Techo con los mejores movimientos encadenados (sin mirar caja).
-    let pool = [...mios];
-    let techo = base;
-    const usados = new Set<string>();
-    for (let paso = 0; paso < MOVIMIENTOS && techo; paso += 1) {
-      const actual = techo;
-      const siguiente = [...mercado, ...clausulas]
-        .filter((m) => !usados.has(m.jugador.player_id))
-        .map((m) => ({ jugador: m.jugador, once: mejorOnce([...pool, m.jugador], h) }))
-        .filter((x) => x.once && x.once.total - actual.total >= MEJORA_MINIMA)
-        .sort((a, b) => (b.once?.total ?? 0) - (a.once?.total ?? 0))[0];
-      if (!siguiente?.once) break;
-      usados.add(siguiente.jugador.player_id);
-      pool = [...pool, siguiente.jugador];
-      techo = siguiente.once;
-    }
-    const fuera = base ? mios.filter((j) => !base.ids.has(j.player_id)).sort((a, b) => (valor(b, h) ?? 0) - (valor(a, h) ?? 0)) : [];
-    return { base, mercado: mercado.slice(0, 3), clausulas: clausulas.slice(0, 3), techo, pasos: usados.size, fuera };
-  }, [jugadores, h]);
-
+  const plan = useMemo(() => construirPlan(jugadores, h), [jugadores, h]);
   const ranking = useMemo(
     () => jugadores.filter((j) => j.posicion === puesto && valor(j, h) !== null).sort((a, b) => (valor(b, h) ?? 0) - (valor(a, h) ?? 0)),
     [jugadores, puesto, h],
@@ -305,174 +294,133 @@ export function Planificador() {
   const libres = (payload.libres ?? []).filter((l) => l.estado !== "baja").slice(0, 12);
   const toggle = (id: string) => setAbierto((actual) => (actual === id ? null : id));
   const mejora = plan.base && plan.techo ? plan.techo.total - plan.base.total : 0;
-
-  const bloque = (titulo: string, lista: Movimiento[], vacio: string) => (
-    <section className="flex flex-col gap-2.5" aria-label={titulo}>
-      <h2 className="px-1 text-[1.05rem] font-semibold tracking-tight text-white">{titulo}</h2>
-      {lista.length ? (
-        <ul className="home-glass">
-          {lista.map((m) => (
-            <FilaJugador
-              key={m.jugador.player_id}
-              jugador={m.jugador}
-              h={h}
-              abierto={abierto === `${titulo}-${m.jugador.player_id}`}
-              onToggle={() => toggle(`${titulo}-${m.jugador.player_id}`)}
-              jornadas={jornadas}
-              sufijo={sufijo}
-              linea={comoConseguirlo(m.jugador)}
-              derecha={<Mejora m={m} />}
-            />
-          ))}
-        </ul>
-      ) : (
-        <p className="rounded-[1.5rem] bg-[#141414] px-4 py-4 text-[13.5px] text-white/50">{vacio}</p>
-      )}
-    </section>
+  const hayPlan = plan.pasos.length > 0;
+  const fila = (clave: string, jugador: PlanificadorJugador, linea: string, derecha: ReactNode, lead?: ReactNode, rival = false) => (
+    <Fila
+      key={`${clave}-${jugador.player_id}`}
+      jugador={jugador}
+      h={h}
+      abierto={abierto === `${clave}-${jugador.player_id}`}
+      onToggle={() => toggle(`${clave}-${jugador.player_id}`)}
+      jornadas={jornadas}
+      sufijo={sufijo}
+      linea={linea}
+      derecha={derecha}
+      lead={lead}
+      rival={rival}
+    />
   );
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <div className="desk-switch !grid-cols-5" role="tablist" aria-label="Jornada">
-        {([0, 1, 2, 3, "total"] as Horizonte[]).map((opcion) => (
-          <button
-            key={String(opcion)}
-            type="button"
-            role="tab"
-            aria-selected={h === opcion}
-            className={h === opcion ? "desk-switch__btn desk-switch__btn--on" : "desk-switch__btn"}
-            onClick={() => {
-              setH(opcion);
-              setAbierto(null);
-            }}
-          >
-            {opcion === "total" ? "4 J" : `J${jornadas[opcion] ?? opcion + 1}`}
-          </button>
-        ))}
-      </div>
+      <Switch<string>
+        label="Jornada"
+        actual={String(h)}
+        opciones={[...[0, 1, 2, 3].map((i): [string, string] => [String(i), `J${jornadas[i] ?? i + 1}`]), ["total", "Total"]]}
+        onChange={(v) => {
+          setH(v === "total" ? "total" : (Number(v) as Horizonte));
+          setAbierto(null);
+        }}
+      />
 
       <section className="home-feature" aria-label="Tu once">
         <div className="relative">
-          <p className="text-[13px] font-medium text-white/60">Tu mejor once · {etiquetaH}</p>
-          <p className="mt-2 flex items-baseline gap-1.5 tabular-nums">
-            <span className="text-[3rem] font-semibold leading-none tracking-[-0.045em] text-white">{plan.base ? points(plan.base.total) : "—"}</span>
-            <span className="text-base font-medium text-white/55">xP</span>
-          </p>
-          <p className="mt-3 text-[14px] leading-snug text-white/70">
-            {plan.pasos > 0 && mejora >= MEJORA_MINIMA ? (
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-[13px] font-medium text-white/60">Tu mejor once · {etiquetaH}</p>
+            {(plan.techo ?? plan.base)?.formacion ? (
+              <span className="shrink-0 rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[12.5px] font-semibold tabular-nums text-white/85">
+                {(plan.techo ?? plan.base)?.formacion}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-2 flex flex-wrap items-baseline gap-x-2.5 tabular-nums">
+            {hayPlan ? (
               <>
-                Con {plan.pasos === 1 ? "1 movimiento" : `${plan.pasos} movimientos`} llegas a{" "}
-                <span className="font-semibold text-white tabular-nums">{points(plan.techo?.total)}</span>{" "}
-                <span className="font-semibold tabular-nums" style={{ color: TONE.green }}>
-                  (+{points(mejora)})
-                </span>
+                <span className="text-[1.6rem] font-semibold leading-none tracking-[-0.03em] text-white/45">{points(plan.base?.total)}</span>
+                <svg viewBox="0 0 20 12" className="h-3 w-5 self-center text-white/35" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="M1 6h17M13 1l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span className="text-[3rem] font-semibold leading-none tracking-[-0.045em] text-white">{points(plan.techo?.total)}</span>
               </>
             ) : (
-              "Nada en el mercado ni en cláusulas abiertas mejora tu once ahora mismo."
+              <span className="text-[3rem] font-semibold leading-none tracking-[-0.045em] text-white">{plan.base ? points(plan.base.total) : "—"}</span>
             )}
+            <span className="text-base font-medium text-white/55">xP</span>
           </p>
-          <p className="mt-1.5 text-[12px] text-white/45">Mejoras estimadas: el xP tiende a quedarse alto con los mejores jugadores.</p>
+          <p className="mt-2 text-[13.5px] text-white/65">
+            {hayPlan
+              ? `Con ${plan.pasos.length === 1 ? "1 movimiento" : `${plan.pasos.length} movimientos`}`
+              : "Nada en el mercado ni en cláusulas abiertas mejora tu once."}
+          </p>
+          {hayPlan ? (
+            <div className="mt-4 grid grid-cols-3 gap-2.5">
+              <HeroStat value={`+${points(mejora)}`} label="Mejora" tone={TONE.green} />
+              <HeroStat value={compact(Math.round(plan.coste / 1_000_000) * 1_000_000)} label="Coste" />
+              <HeroStat value={faltan(plan.primerCierre)} label="Cierra en" tone={urgente(plan.primerCierre) ? TONE.amber : undefined} />
+            </div>
+          ) : null}
+          <p className="mt-3 text-[11.5px] leading-snug text-white/40">Estimado y sin mirar tu caja. El xP tiende a quedarse alto con los mejores jugadores.</p>
         </div>
       </section>
 
-      {bloque("Fichar del mercado", plan.mercado, `Nadie en el mercado mejora tu once para ${etiquetaH}.`)}
-      {bloque("Clausular", plan.clausulas, `Ninguna cláusula abierta mejora tu once para ${etiquetaH}.`)}
-
-      {plan.fuera.length ? (
-        <section className="flex flex-col gap-2.5" aria-label="Fuera de tu once">
-          <div className="px-1">
-            <h2 className="text-[1.05rem] font-semibold tracking-tight text-white">Fuera de tu once · {etiquetaH}</h2>
-            <p className="mt-0.5 text-[12.5px] text-white/45">Tuyos que no entran en tu mejor once: no te suman esos puntos.</p>
-          </div>
+      {hayPlan ? (
+        <Seccion titulo="Tu plan" nota="En orden: cada paso suma sobre el anterior.">
           <ul className="home-glass">
-            {plan.fuera.map((jugador) => (
-              <FilaJugador
-                key={jugador.player_id}
-                jugador={jugador}
-                h={h}
-                abierto={abierto === `fuera-${jugador.player_id}`}
-                onToggle={() => toggle(`fuera-${jugador.player_id}`)}
-                jornadas={jornadas}
-                sufijo={sufijo}
-                linea={jugador.valor ? `Valor ${money(jugador.valor)}` : "Tuyo"}
-                derecha={
-                  <>
-                    <span className="block font-mono text-[1.05rem] font-semibold leading-none tabular-nums text-white/70">{points(valor(jugador, h))}</span>
-                    <span className="mt-1 block text-[11px] text-white/40">xP</span>
-                  </>
-                }
-              />
-            ))}
+            {plan.pasos.map((m, index) => fila("plan", m.jugador, disponible(m.jugador), <Mejora m={m} />, <span className="plan-step">{index + 1}</span>))}
           </ul>
-        </section>
+        </Seccion>
       ) : null}
 
+      {plan.alternativas.length ? (
+        <Seccion titulo="Alternativas" nota="Por si pierdes una puja: mejora de cada una por separado.">
+          <ul className="home-glass">
+            {plan.alternativas.map((m) => fila("alt", m.jugador, disponible(m.jugador), <Mejora m={m} />))}
+          </ul>
+        </Seccion>
+      ) : null}
+
+      {plan.fuera.length ? (
+        <Seccion titulo="Fuera de tu once" nota={`Tuyos que no suman en ${etiquetaH}.`}>
+          <ul className="home-glass">
+            {plan.fuera.map((jugador) =>
+              fila("fuera", jugador, jugador.valor ? `${jugador.posicion} · ${money(jugador.valor)}` : jugador.posicion, <Cifra value={points(valor(jugador, h))} label="xP" tone="rgba(255,255,255,0.7)" />, undefined, true),
+            )}
+          </ul>
+        </Seccion>
+      ) : null}
+
+      <Seccion titulo={`Los mejores · ${etiquetaH}`}>
+        <Switch<PlanificadorPosicion>
+          label="Puesto"
+          actual={puesto}
+          opciones={POSICIONES.map((id): [PlanificadorPosicion, string] => [id, NOMBRE_PUESTO[id]])}
+          onChange={(id) => {
+            setPuesto(id);
+            setVerMas(false);
+            setAbierto(null);
+          }}
+        />
+        <ul className="home-glass">
+          {ranking
+            .slice(0, verMas ? RANKING_LARGO : RANKING_CORTO)
+            .map((jugador, index) => fila("rank", jugador, disponible(jugador), <Cifra value={points(valor(jugador, h))} label="xP" />, <span className="plan-rank">{index + 1}</span>, true))}
+        </ul>
+        {ranking.length > RANKING_CORTO ? (
+          <button type="button" className="eq-chip self-center" onClick={() => setVerMas((v) => !v)}>
+            {verMas ? "Ver menos" : `Ver más ${NOMBRE_PUESTO[puesto].toLowerCase()}`}
+          </button>
+        ) : null}
+      </Seccion>
+
       {libres.length ? (
-        <section className="flex flex-col gap-2.5" aria-label="Libres a vigilar">
-          <div className="px-1">
-            <h2 className="text-[1.05rem] font-semibold tracking-tight text-white">Vigilar cuando salgan al mercado</h2>
-            <p className="mt-0.5 text-[12.5px] text-white/45">No son de nadie en tu liga. Por media de temporada; aún sin xP.</p>
-          </div>
+        <Seccion titulo="Libres a vigilar" nota="Sin dueño en tu liga. Por media de temporada, aún sin xP.">
           <ul className="eq-scroll -mx-1 px-1 pb-1">
             {libres.map((libre) => (
               <Libre key={libre.player_id} libre={libre} />
             ))}
           </ul>
-        </section>
+        </Seccion>
       ) : null}
-
-      <section className="flex flex-col gap-2.5" aria-label="Los mejores por puesto">
-        <div className="flex items-baseline justify-between gap-3 px-1">
-          <h2 className="text-[1.05rem] font-semibold tracking-tight text-white">Los mejores · {etiquetaH}</h2>
-        </div>
-        <div className="desk-switch !grid-cols-4" role="tablist" aria-label="Puesto">
-          {POSICIONES.map((id) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={puesto === id}
-              className={puesto === id ? "desk-switch__btn desk-switch__btn--on" : "desk-switch__btn"}
-              onClick={() => {
-                setPuesto(id);
-                setVerMas(false);
-                setAbierto(null);
-              }}
-            >
-              {NOMBRE_PUESTO[id]}
-            </button>
-          ))}
-        </div>
-        <ul className="home-glass">
-          {ranking.slice(0, verMas ? 25 : 8).map((jugador) => (
-            <FilaJugador
-              key={jugador.player_id}
-              jugador={jugador}
-              h={h}
-              abierto={abierto === `rank-${jugador.player_id}`}
-              onToggle={() => toggle(`rank-${jugador.player_id}`)}
-              jornadas={jornadas}
-              sufijo={sufijo}
-              linea={comoConseguirlo(jugador)}
-              derecha={
-                <>
-                  <span className="block font-mono text-[1.05rem] font-semibold leading-none tabular-nums text-white">{points(valor(jugador, h))}</span>
-                  <span className="mt-1 block text-[11px] text-white/40">xP</span>
-                </>
-              }
-            />
-          ))}
-        </ul>
-        {ranking.length > 8 && !verMas ? (
-          <button type="button" className="eq-chip self-center" onClick={() => setVerMas(true)}>
-            Ver más {NOMBRE_PUESTO[puesto].toLowerCase()}
-          </button>
-        ) : null}
-      </section>
-
-      <p className="px-1 text-[12px] leading-relaxed text-white/40">
-        El número en verde es lo que sube tu mejor once si entra ese jugador, y «por» dice a quién sustituye. Precios y cláusulas sin mirar tu caja: decide la puja en Mercado y el pago en Cláusulas.
-      </p>
     </div>
   );
 }
