@@ -218,21 +218,33 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
   const rivales = Array.isArray(tramo.rivales) ? tramo.rivales : [];
   const punto = tramo.precio_punto ?? null;
   // Una frase que ordena las tres cifras: hasta dónde tiene sentido llegar.
+  // La ideal es lo que suele costar; la máxima, lo que te vale a ti. Si lo
+  // primero pasa de lo segundo, el jugador está caro para tu equipo.
+  const caro = fresco && ideal !== null && ideal > maxima;
+  const empieza = ideal !== null ? `Empieza por ${money(ideal)}` : "Empieza por la ideal";
   const veredicto = !fresco
     ? horas !== null && horas >= 24
       ? `Sin puja máxima: la previsión de puntos es de hace ${horas} h. Actualiza para saber hasta dónde te compensa.`
       : "Sin puja máxima: no hay previsión de puntos para este jugador."
-    : ideal !== null && ideal > maxima
-      ? "No compensa: lo que suele costar ganarlo es más de lo que te aporta."
+    : caro
+      ? maxima > 0
+        ? `No compensa: lo normal es pagar ${money(ideal)} y a ti solo te vale hasta ${money(maxima)}. Mejor déjalo pasar.`
+        : `No compensa: lo normal es pagar ${money(ideal)} y no te aporta puntos en tu once.`
       : noCompensa
-        ? "Empieza por la ideal. Asegurarlo ya cuesta más de lo que te aporta."
+        ? `${empieza}. Asegurarlo (${money(asegurar)}) ya pasa de tu máxima (${money(maxima)}), así que no subas más.`
         : asegurar !== null
-          ? "Tienes margen: puedes subir hasta la de asegurar sin pasar de tu máxima."
-          : "Empieza por la ideal y no pases de tu máxima.";
-  const columnas: { titulo: string; cifra: string; pie: string; apagada?: boolean }[] = [
-    { titulo: delPlan ? "Tu puja" : "Ideal", cifra: ideal === null ? "—" : money(ideal), pie: delPlan ? "la de tu plan" : "suele bastar" },
-    { titulo: "Para asegurar", cifra: asegurar === null ? "—" : money(asegurar), pie: asegurar === null ? "sin muestra fiable" : "gana 9 de 10", apagada: asegurar === null || noCompensa },
-    { titulo: "Máxima", cifra: fresco ? money(maxima) : "—", pie: fresco ? "más no te compensa" : "sin calcular", apagada: !fresco },
+          ? `${empieza}; si hace falta, sube hasta ${money(asegurar)} para asegurarlo. Nunca pases de ${money(maxima)}.`
+          : `${empieza} y no pases de ${money(maxima)}.`;
+  const columnas: { titulo: string; cifra: string; pie: string; apagada?: boolean; alerta?: boolean }[] = [
+    {
+      titulo: delPlan ? "Tu puja" : "Ideal",
+      cifra: ideal === null ? "—" : money(ideal),
+      pie: caro ? "más de lo que vale" : delPlan ? "la de tu plan" : "lo normal en tu liga",
+      apagada: caro,
+      alerta: caro,
+    },
+    { titulo: "Para asegurar", cifra: asegurar === null ? "—" : money(asegurar), pie: asegurar === null ? "sin muestra fiable" : "gana 9 de 10", apagada: asegurar === null || noCompensa || caro },
+    { titulo: "Máxima", cifra: fresco ? money(maxima) : "—", pie: fresco ? "lo que te vale a ti" : "sin calcular", apagada: !fresco },
   ];
   return (
     <div className="mt-5">
@@ -241,7 +253,7 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
           <div key={col.titulo} className="min-w-0 px-3 py-3.5 text-center">
             <dt className="truncate text-[11.5px] text-white/45">{col.titulo}</dt>
             <dd className={`mt-1.5 truncate text-[1.1rem] font-semibold leading-none tracking-[-0.02em] tabular-nums ${col.apagada ? "text-white/40" : "text-white"}`}>{col.cifra}</dd>
-            <dd className="mt-1.5 text-[11px] leading-tight text-white/35">{col.pie}</dd>
+            <dd className="mt-1.5 text-[11px] leading-tight text-white/35" style={col.alerta ? { color: TONE.red } : undefined}>{col.pie}</dd>
           </div>
         ))}
       </dl>
@@ -266,7 +278,7 @@ function TablaPuja({ tramo, valor, puesto, euros, onEuros, sinPuntos, fetchedAt,
             {asegurar === null ? `con ${n} ${n === 1 ? "compra" : "compras"} en el tramo no hay cifra fiable.` : `valor × ${factor(tramo.p90)}, lo que pagó el 10 % que más pujó.`}
           </li>
           <li>
-            <span className="text-white/75">Máxima:</span> {fresco ? `${detalleMaxima}.` : avisoMaxima}
+            <span className="text-white/75">Máxima (lo que te vale a ti):</span> {fresco ? `${detalleMaxima}.` : avisoMaxima}
           </li>
         </ul>
         <label className="mt-3 flex items-center justify-between gap-4 rounded-xl bg-white/[0.04] px-3 py-2.5">
