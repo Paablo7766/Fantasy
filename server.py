@@ -107,6 +107,7 @@ from toolbox.normalize import SCHEMA_VERSION, attach_image_urls, daily_market_is
 from toolbox.scrapers import build_trends, prefetch_futbolfantasy, refresh_squad_titularity_in_index
 from toolbox import snapshot_remote
 from toolbox import web_push
+from toolbox.browser_scrape import memory_status
 
 logger = logging.getLogger("fantasy.dashboard")
 
@@ -313,7 +314,8 @@ REFRESH_RECOVERING_LABEL = "Terminando la descarga en el servidor anterior"
 _refresh_mark_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refresh-mark")
 _MARK_FIELDS = (
     "running", "tier", "league", "phase", "phase_label", "started_at", "started_unix",
-    "finished_at", "elapsed_seconds", "result_ok", "error",
+    "finished_at", "elapsed_seconds", "result_ok", "error", "cut_phase", "cut_memory",
+    "current_source", "cut_source",
 )
 # Encendido al recibir SIGTERM: ya no se calienta nada, solo se termina y se avisa.
 _draining = threading.Event()
@@ -326,6 +328,9 @@ def _refresh_mark_save(status: dict[str, Any]) -> None:
     mark = {key: status.get(key) for key in _MARK_FIELDS}
     mark["boot_id"] = _BOOT_ID
     mark["alive_unix"] = time.time()
+    # Si el proceso muere (p. ej. por el límite de 512 MB de Render), la última
+    # marca dice con cuánta memoria y en qué fase: sin esto solo queda «se cortó».
+    mark["memory"] = memory_status()
     envelope = {"saved_unix": time.time(), "value": mark}
     try:
         _refresh_mark_pool.submit(snapshot_remote.save, REFRESH_MARK_KIND, REFRESH_MARK_LEAGUE, envelope)
@@ -341,6 +346,11 @@ def _refresh_heartbeat_loop(started_unix: float) -> None:
             if not _refresh_status.get("running") or _refresh_status.get("started_unix") != started_unix:
                 return
             status = dict(_refresh_status)
+        try:
+            # La fuente que se estaba pidiendo: si el proceso muere, señala al culpable.
+            status["current_source"] = api_meter.calls_since(started_unix).get("current")
+        except Exception:  # noqa: BLE001 — el latido no puede romper la descarga
+            pass
         _refresh_mark_save(status)
 
 
@@ -452,6 +462,10 @@ def check_interrupted_refresh(
         state = {
             "result_ok": False,
             "error": {"code": "interrupted", "message": REFRESH_INTERRUPTED_MESSAGE},
+            # Lo último que dejó el proceso muerto: fase y memoria antes del corte.
+            "cut_phase": latest.get("phase"),
+            "cut_memory": latest.get("memory"),
+            "cut_source": latest.get("current_source"),
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "elapsed_seconds": round(max(0.0, time.time() - started_unix), 1) if started_unix else 0.0,
         }
@@ -463,7 +477,12 @@ def check_interrupted_refresh(
         _refresh_status.pop("recovering", None)
         closed = dict(_refresh_status)
     if verdict == "interrupted":
-        logger.warning("La descarga empezada a las %s se cortó con el reinicio.", mark.get("started_at"))
+        logger.warning(
+            "La descarga empezada a las %s se cortó con el reinicio (fase %s, memoria %s).",
+            mark.get("started_at"),
+            latest.get("phase"),
+            latest.get("memory"),
+        )
         _refresh_mark_save(closed)
         if started_unix is None or time.time() - started_unix <= REFRESH_INTERRUPTED_MAX_AGE_SECONDS:
             web_push.notify_refresh_done(ok=False, detail=REFRESH_INTERRUPTED_MESSAGE)
@@ -559,6 +578,7 @@ def refresh_status_snapshot() -> dict[str, Any]:
             "in_flight": 0,
             "last_activity_seconds": None,
             "result_ok": None,
+            "memory": memory_status(),
         }
     started = status.get("started_unix")
     live = api_meter.calls_since(float(started)) if isinstance(started, (int, float)) else {
@@ -588,6 +608,7 @@ def refresh_status_snapshot() -> dict[str, Any]:
             "current_label": live["current_label"],
             "in_flight": live["in_flight"],
             "last_activity_seconds": live.get("last_activity_seconds"),
+            "memory": memory_status(),
         }
     )
     status.pop("started_unix", None)

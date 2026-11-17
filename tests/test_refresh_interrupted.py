@@ -109,6 +109,21 @@ class RefreshInterruptedTests(unittest.TestCase):
         self.assertIsNone(server.check_interrupted_refresh(poll_seconds=0))
         self.notify.assert_called_once()
 
+    def test_el_corte_guarda_fase_memoria_y_fuente(self) -> None:
+        memory = {"rss_mb": 480, "container_mb": 505, "limit_mb": 512}
+        _put_mark(
+            alive_unix=time.time() - 120, phase="scrapers", memory=memory, current_source="sofascore"
+        )
+        server.check_interrupted_refresh(poll_seconds=0)
+        status = server.refresh_status_snapshot()
+        self.assertEqual(status["cut_phase"], "scrapers")
+        self.assertEqual(status["cut_memory"], memory)
+        self.assertEqual(status["cut_source"], "sofascore")
+        _flush_marks()
+        mark = server._refresh_mark_load()
+        self.assertEqual(mark["cut_phase"], "scrapers")
+        self.assertEqual(mark["cut_source"], "sofascore")
+
     def test_proceso_viejo_vivo_se_espera_y_su_foto_se_sirve(self) -> None:
         _put_mark(alive_unix=time.time(), phase="mercado", phase_label="Mercado de LALIGA")
         seen: list[dict] = []
