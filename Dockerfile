@@ -6,7 +6,10 @@
 #
 # Imagen base ligera, sin compilador: todas las dependencias traen wheel para
 # CPython 3.11 en linux/amd64.
-FROM python:3.11-slim
+# Debian 12 fijo: con la etiqueta suelta la base cambió por debajo y el «node» de
+# Playwright dejó de arrancar (falta libatomic.so.1); todos los despliegues desde
+# el 15-nov fallaban y Render seguía sirviendo una versión vieja.
+FROM python:3.11-slim-bookworm
 
 # Sin .pyc ni salida bufferizada: los logs del refresco (que dura minutos) se
 # ven en `docker compose logs -f` en cuanto se escriben.
@@ -23,7 +26,7 @@ WORKDIR /app
 # jornada y de cláusulas se calcula en Europe/Madrid. El paquete `tzdata` de
 # pip también sirve, pero la imagen de Debian es la fuente canónica.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependencias en dos capas: cambiar el código no reinstala nada.
