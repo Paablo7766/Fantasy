@@ -1460,9 +1460,10 @@ def _fetch_json(client: ExternalClient, url: str, *, ttl: float, fresh: bool) ->
         from toolbox.browser_scrape import fetch_json_with_browser
 
         if exc.code in {"forbidden", "blocked"}:
-            payload, _raw = fetch_json_with_browser(url)
+            # Primero curl_cffi (unos KB); Chromium (300-500 MB) solo si no basta.
+            payload = _curl_json(url)
             if payload is None:
-                payload = _curl_json(url)
+                payload, _raw = fetch_json_with_browser(url)
             if payload is not None:
                 client.store_json(url, payload, ttl=ttl)
                 return payload, False, None

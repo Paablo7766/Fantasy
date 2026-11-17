@@ -61,7 +61,7 @@ class ExternalClientStaleFallbackTests(unittest.TestCase):
             cache = ResponseCache(Path(directory))
             transport = httpx.MockTransport(lambda _r: httpx.Response(403, text="denied"))
             with ExternalClient(cache=cache, http=httpx.Client(transport=transport)) as client:
-                with patch(
+                with patch("toolbox.scrapers._curl_json", return_value=None), patch(
                     "toolbox.browser_scrape.fetch_json_with_browser",
                     return_value=(payload, "{}"),
                 ):
@@ -70,6 +70,26 @@ class ExternalClientStaleFallbackTests(unittest.TestCase):
         self.assertIsNone(err)
         self.assertFalse(cached)
         self.assertEqual(got, payload)
+
+    def test_fetch_json_tries_curl_before_browser(self) -> None:
+        from unittest.mock import patch
+
+        from toolbox.scrapers import _fetch_json
+
+        url = "https://api.sofascore.com/api/v1/unique-tournament/8/season/77559/top-players/overall"
+        payload = {"topPlayers": {}}
+        with tempfile.TemporaryDirectory() as directory:
+            cache = ResponseCache(Path(directory))
+            transport = httpx.MockTransport(lambda _r: httpx.Response(403, text="denied"))
+            with ExternalClient(cache=cache, http=httpx.Client(transport=transport)) as client:
+                with patch("toolbox.scrapers._curl_json", return_value=payload), patch(
+                    "toolbox.browser_scrape.fetch_json_with_browser"
+                ) as browser:
+                    got, _cached, err = _fetch_json(client, url, ttl=3600.0, fresh=True)
+            cache.close()
+        self.assertIsNone(err)
+        self.assertEqual(got, payload)
+        browser.assert_not_called()
 
 
 if __name__ == "__main__":

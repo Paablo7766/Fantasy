@@ -60,9 +60,63 @@ def memory_headroom_bytes() -> int | None:
     return None
 
 
+def _read_int(path: str) -> int | None:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            raw = handle.read().strip()
+    except OSError:
+        return None
+    return int(raw) if raw.isdigit() else None
+
+
+def _rss_bytes() -> int | None:
+    """RSS de este proceso (Linux). En Windows no hay ``/proc``: ``None``."""
+    try:
+        with open("/proc/self/status", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def memory_status() -> dict[str, int | None]:
+    """Memoria en MB: del proceso y del contenedor (lo que cuenta para el límite de Render)."""
+    mb = 1024 * 1024
+    used = limit = None
+    for limit_path, usage_path in _CGROUP_PAIRS:
+        used = _read_int(usage_path)
+        if used is None:
+            continue
+        limit = _read_int(limit_path)
+        if limit is not None and limit >= 1 << 60:
+            limit = None
+        break
+    rss = _rss_bytes()
+    return {
+        "rss_mb": rss // mb if rss is not None else None,
+        "container_mb": used // mb if used is not None else None,
+        "limit_mb": limit // mb if limit is not None else None,
+    }
+
+
+def _on_render() -> bool:
+    # Render pone ``RENDER=true`` en todos sus servicios.
+    return bool(os.getenv("RENDER", "").strip())
+
+
 def _enough_memory_for_browser() -> bool:
     global _warned_low_memory
     headroom = memory_headroom_bytes()
+    if headroom is None and _on_render():
+        # En Render el servicio real es el plan gratuito de 512 MB. Si el límite
+        # no se puede leer, abrir Chromium es apostar el proceso: un navegador
+        # (300-500 MB) lo mata a mitad de Actualizar y el panel dice «se cortó».
+        if not _warned_low_memory:
+            _warned_low_memory = True
+            logger.warning("Chromium omitido: en Render sin límite de memoria legible no se arriesga.")
+        return False
     if headroom is None or headroom >= _MIN_HEADROOM_BYTES:
         return True
     if not _warned_low_memory:
