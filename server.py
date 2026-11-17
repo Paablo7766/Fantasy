@@ -3163,6 +3163,52 @@ def _read_only(view: Any) -> Any:
     return wrapper
 
 
+# Última respuesta buena de cada pantalla del Laboratorio, por liga.
+_LAB_LAST: dict[tuple[str, str | None], dict[str, Any]] = {}
+_LAB_LAST_LOCK = threading.Lock()
+LAB_REFRESHING_MESSAGE = "Actualizando: el Laboratorio se recalcula cuando termine la descarga."
+
+
+def _paused_during_refresh(name: str) -> Any:
+    """Durante una descarga, la pantalla no recalcula: sirve su última respuesta.
+
+    El 17-nov el servidor de Render (512 MB) se reinició a mitad de Actualizar
+    con 500 MB: la descarga ocupaba lo suyo y, a la vez, Modelo, Previa y
+    Calibración montaban sus cálculos y se peleaban por ``responses.sqlite``.
+    Mientras descarga, cada pantalla devuelve lo último que calculó (marcado
+    ``refreshing``); si nunca calculó nada, un 503 que la app ya sabe enseñar.
+    """
+
+    def decorate(view: Any) -> Any:
+        @functools.wraps(view)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            key = (name, kwargs.get("league"))
+            if _refresh_running_here():
+                with _LAB_LAST_LOCK:
+                    last = _LAB_LAST.get(key)
+                if last is not None:
+                    return {**last, "refreshing": True}
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "ok": False,
+                        "schema_version": SCHEMA_VERSION,
+                        "command": name,
+                        "refreshing": True,
+                        "error": {"code": "refreshing", "message": LAB_REFRESHING_MESSAGE},
+                    },
+                )
+            result = view(*args, **kwargs)
+            if isinstance(result, dict) and result.get("ok") is not False:
+                with _LAB_LAST_LOCK:
+                    _LAB_LAST[key] = result
+            return result
+
+        return wrapper
+
+    return decorate
+
+
 def _cors_origins() -> list[str]:
     origins = [
         "http://localhost:3000",
@@ -3900,6 +3946,7 @@ def _memory_path() -> Path:
 
 @app.get("/api/calibration")
 @_read_only
+@_paused_during_refresh("calibration")
 def api_calibration(
     league: str | None = Query(default=None),
 ) -> Any:
@@ -3938,6 +3985,7 @@ def api_calibration(
 
 @app.get("/api/laboratorio/post-mortem")
 @_read_only
+@_paused_during_refresh("post-mortem")
 def api_post_mortem(league: str | None = Query(default=None)) -> Any:
     """Fuga de alineación e impacto del trading contra la foto del lunes pasado.
 
@@ -3961,6 +4009,7 @@ def api_post_mortem(league: str | None = Query(default=None)) -> Any:
 
 @app.get("/api/laboratorio/modelo")
 @_read_only
+@_paused_during_refresh("modelo")
 def api_model_report(league: str | None = Query(default=None)) -> Any:
     """Fuentes, mercado frente a modelo, goleadores, histórico guardado y modo sombra.
 
@@ -3997,6 +4046,7 @@ def api_model_report(league: str | None = Query(default=None)) -> Any:
 
 @app.get("/api/laboratorio/primas")
 @_read_only
+@_paused_during_refresh("primas")
 def api_primas(league: str | None = Query(default=None)) -> Any:
     """Prima pagada en compras a LaLiga y en clausulazos. Solo caché y snapshots."""
     from toolbox.premium_audit import report_from_cache
@@ -4012,6 +4062,7 @@ def api_primas(league: str | None = Query(default=None)) -> Any:
 
 @app.get("/api/laboratorio/previa")
 @_read_only
+@_paused_during_refresh("previa")
 def api_previa(league: str | None = Query(default=None)) -> Any:
     """Previa de la jornada (en pruebas): en vivo, ediciones congeladas y evaluación.
 
