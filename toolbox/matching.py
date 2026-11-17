@@ -154,11 +154,21 @@ class MatchDecision:
     reason: str | None = None
 
 
+# Las funciones de un solo texto se memorizan: ``link_source`` compara ~600
+# jugadores con ~600 registros por fuente y la caché de pares de
+# ``name_similarity`` (1024) no acierta casi nunca, así que el mismo nombre se
+# normalizaba cientos de veces. Hay unos pocos miles de textos distintos: la
+# caché cuesta poca RAM y el resultado es idéntico (funciones puras sobre str).
+_TEXT_CACHE = 16384
+
+
+@functools.lru_cache(maxsize=_TEXT_CACHE)
 def strip_diacritics(text: str) -> str:
     decomposed = unicodedata.normalize("NFKD", text)
     return "".join(char for char in decomposed if not unicodedata.combining(char))
 
 
+@functools.lru_cache(maxsize=_TEXT_CACHE)
 def normalize_name(text: str | None) -> str:
     if not text:
         return ""
@@ -168,6 +178,7 @@ def normalize_name(text: str | None) -> str:
     return " ".join(tokens)
 
 
+@functools.lru_cache(maxsize=_TEXT_CACHE)
 def normalize_club(text: str | None) -> str:
     if not text:
         return ""
@@ -188,6 +199,7 @@ def normalize_club(text: str | None) -> str:
     return folded
 
 
+@functools.lru_cache(maxsize=_TEXT_CACHE)
 def canonical_position(value: str | None) -> str | None:
     if not value:
         return None
@@ -205,6 +217,7 @@ def canonical_position(value: str | None) -> str | None:
     return None
 
 
+@functools.lru_cache(maxsize=_TEXT_CACHE)
 def phonetic_key(text: str | None) -> str:
     """Clave fonética breve del castellano: h muda, v/b, z/c y geminadas."""
     name = normalize_name(text).replace(" ", "")
