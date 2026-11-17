@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox.cache import cache_root, madrid_day
 
 # Pasado este tiempo el plan anterior ya no es de esta semana de mercado.
@@ -89,7 +90,7 @@ def load_objetivos_previos(
     if not path.is_file():
         return []
     today = day or madrid_day()
-    conn = sqlite3.connect(path)
+    conn = sqlite_db.connect(path)
     try:
         ensure_schema(conn)
         row = conn.execute(
@@ -129,7 +130,7 @@ def save_plan(
     acciones = [accion for accion in plan.get("acciones") or [] if isinstance(accion, dict)]
     sigue = sum(1 for accion in acciones if accion.get("sigue_plan") is True)
     mejora = plan.get("mejora_puntos_jornada")
-    conn = sqlite3.connect(path)
+    conn = sqlite_db.connect(path)
     try:
         ensure_schema(conn)
         conn.execute(

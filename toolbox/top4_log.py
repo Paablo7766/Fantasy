@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox.cache import cache_root
 from toolbox.top4 import TOP_N, build_top4
 
@@ -97,7 +98,7 @@ def freeze_forecast(
         ],
     }
     own = conn is None
-    db = conn or sqlite3.connect(_db_path())
+    db = conn or sqlite_db.connect(_db_path())
     try:
         db.execute(_SCHEMA)
         previous = db.execute(f"select photo_at from {TABLE} where season = ? and jornada = ?", (season, jornada)).fetchone()
@@ -138,7 +139,7 @@ def evaluar(
     calibración por tramos. Con pocas jornadas es solo orientativo.
     """
     own = conn is None
-    db = conn or sqlite3.connect(_db_path())
+    db = conn or sqlite_db.connect(_db_path())
     try:
         db.execute(_SCHEMA)
         rows = db.execute(f"select jornada, kickoff, payload from {TABLE} where season = ? order by jornada", (season,)).fetchall()

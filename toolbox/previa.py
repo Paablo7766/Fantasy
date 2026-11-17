@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from toolbox import sqlite_db
 from toolbox.cache import cache_root
 from toolbox.matching import normalize_club
 
@@ -418,7 +419,7 @@ def previa_report(board: dict[str, Any], *, db_path: Path | None = None, now: da
     """Edición en vivo, ediciones congeladas de la jornada y evaluación de las pasadas."""
     path = db_path or _db_path()
     moment = now or datetime.now(timezone.utc)
-    conn = sqlite3.connect(path)
+    conn = sqlite_db.connect(path)
     try:
         live = build_previa(board, conn=conn, now=moment)
         photo = None

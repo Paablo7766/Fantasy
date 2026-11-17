@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox import snapshot_remote
 from toolbox.cache import cache_root
 
@@ -93,34 +94,50 @@ def _better(remote: dict[str, Any], local: dict[str, Any]) -> bool:
 
 
 def merge_into(conn: sqlite3.Connection, dump: dict[str, Any]) -> int:
-    """Fusiona una copia en ``conn``. Devuelve cuántas filas entraron o cambiaron."""
-    changed = 0
+    """Fusiona una copia en ``conn``. Devuelve cuántas filas entraron o cambiaron.
+
+    Primero se lee cada tabla entera y se decide en memoria qué filas entran;
+    después se escriben todas de golpe. Antes era un SELECT y una comparación
+    en Python por fila **dentro** de la transacción de escritura: con la 0,1
+    CPU de Render la base quedaba bloqueada segundos y la previa, el informe
+    del modelo y la memoria del plan fallaban con «database is locked».
+    """
+    pending: list[tuple[str, list[list[Any]]]] = []
     for table in TABLES:
         block = dump.get(table)
         if not isinstance(block, dict) or not block.get("rows"):
             continue
         conn.execute(str(block["schema"]).replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1))
+        conn.commit()
         local_cols = [row[1] for row in conn.execute(f"pragma table_info({table})").fetchall()]
         remote_cols = list(block["columns"])
         cols = [c for c in remote_cols if c in local_cols]
         pk = _pk(conn, table)
         if not pk or not all(k in cols for k in pk):
             continue
-        where = " and ".join(f"{k} = ?" for k in pk)
-        placeholders = ",".join("?" for _ in cols)
+        pk_index = [cols.index(k) for k in pk]
+        local = {
+            tuple(row[i] for i in pk_index): dict(zip(cols, row))
+            for row in conn.execute(f"select {','.join(cols)} from {table}")
+        }
+        rows: list[list[Any]] = []
         for values in block["rows"]:
             remote = dict(zip(remote_cols, values))
-            current = conn.execute(
-                f"select {','.join(cols)} from {table} where {where}", [remote[k] for k in pk]
-            ).fetchone()
-            if current is not None and (table in KEEP_FIRST or not _better(remote, dict(zip(cols, current)))):
+            key = tuple(remote[k] for k in pk)
+            current = local.get(key)
+            if current is not None and (table in KEEP_FIRST or not _better(remote, current)):
                 continue
-            conn.execute(
-                f"insert or replace into {table} ({','.join(cols)}) values ({placeholders})",
-                [remote[c] for c in cols],
-            )
-            changed += 1
-    conn.commit()
+            local[key] = {c: remote[c] for c in cols}
+            rows.append([remote[c] for c in cols])
+        if rows:
+            placeholders = ",".join("?" for _ in cols)
+            pending.append((f"insert or replace into {table} ({','.join(cols)}) values ({placeholders})", rows))
+    changed = 0
+    if pending:
+        with conn:
+            for sql, rows in pending:
+                conn.executemany(sql, rows)
+                changed += len(rows)
     return changed
 
 
@@ -146,7 +163,7 @@ def pull(db: Path | None = None, *, force: bool = False) -> int:
                 return 0
             path = db or _db_path()
             path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(path)
+            conn = sqlite_db.connect(path)
             try:
                 return merge_into(conn, dump)
             finally:
@@ -165,7 +182,7 @@ def push(db: Path | None = None) -> bool:
         return False
     try:
         with _lock:
-            conn = sqlite3.connect(path)
+            conn = sqlite_db.connect(path)
             try:
                 remote = _remote_dump()
                 if remote:

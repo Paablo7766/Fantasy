@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox.cache import cache_root
 from toolbox.matching import normalize_club
 
@@ -52,7 +53,7 @@ def _db(path: Path | None) -> sqlite3.Connection | None:
     db = path or cache_root() / "responses.sqlite"
     if not db.is_file():
         return None
-    return sqlite3.connect(db)
+    return sqlite_db.connect(db)
 
 
 def _tables(conn: sqlite3.Connection) -> set[str]:

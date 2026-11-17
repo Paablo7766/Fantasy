@@ -28,6 +28,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
+from toolbox import sqlite_db
+
 logger = logging.getLogger("fantasy.foto_previa")
 
 VENTANA_HORAS = 3.0
@@ -96,7 +98,7 @@ def foto_previa(board: dict[str, Any], *, now: datetime | None = None, conn: sql
     if propia:
         ruta = _db_path()
         ruta.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(ruta)
+        conn = sqlite_db.connect(ruta)
     try:
         track._ensure_schema(conn)
         from toolbox.marcador import reparar_historico

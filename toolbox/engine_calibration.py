@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox.cache import cache_root, madrid_day
 from toolbox.empirical_audit import (
     audit_sell_at_crest,
@@ -119,7 +120,7 @@ def persist_market_decisions(
     day = snapshot_day or madrid_day()
     path = db_path or calibration_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite_db.connect(path)
     try:
         _ensure_tracking_schema(conn)
         stamp = time.time()
@@ -259,7 +260,7 @@ def sobrepuja_de_liga(db_path: Path | None = None) -> dict[str, Any] | None:
     if not Path(ruta).is_file():
         return None
     try:
-        conn = sqlite3.connect(f"file:{Path(ruta).as_posix()}?mode=ro", uri=True)
+        conn = sqlite_db.connect(f"file:{Path(ruta).as_posix()}?mode=ro", uri=True)
     except sqlite3.Error:
         return None
     try:
@@ -296,7 +297,7 @@ def muestras_primas_de_liga(db_path: Path | None = None) -> list[dict[str, Any]]
     if not Path(ruta).is_file():
         return None
     try:
-        conn = sqlite3.connect(f"file:{Path(ruta).as_posix()}?mode=ro", uri=True)
+        conn = sqlite_db.connect(f"file:{Path(ruta).as_posix()}?mode=ro", uri=True)
     except sqlite3.Error:
         return None
     try:
@@ -352,7 +353,7 @@ def pendiente_xp_en_vivo(db_path: Path | None = None, *, xp_minimo: float = 2.0)
     if not Path(ruta).is_file():
         return None
     try:
-        conn = sqlite3.connect(f"file:{Path(ruta).as_posix()}?mode=ro", uri=True)
+        conn = sqlite_db.connect(f"file:{Path(ruta).as_posix()}?mode=ro", uri=True)
     except sqlite3.Error:
         return None
     try:
@@ -640,7 +641,7 @@ def build_calibration_report(
 ) -> dict[str, Any]:
     path = db_path or calibration_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite_db.connect(path)
     try:
         _ensure_tracking_schema(conn)
         sync_audit_from_local_store(conn, path.parent)

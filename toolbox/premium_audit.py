@@ -17,6 +17,7 @@ import statistics
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox.engine.auction_intel import PRIMA_PUJA
 from toolbox.engine.sales_audit import SOBREPRECIO_RIVAL_PCT
 from toolbox.league_history import madrid_day
@@ -389,7 +390,7 @@ def _read_sqlite_rows(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
     try:
-        conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        conn = sqlite_db.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
     except sqlite3.Error:
         return []
     try:

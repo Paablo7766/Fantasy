@@ -29,6 +29,7 @@ from typing import Any
 
 import numpy as np
 
+from toolbox import sqlite_db
 from toolbox.analyzer import POSITIONS
 from toolbox.bidding import URGENCIA_HUECO, urgencia_posicional
 from toolbox.cache import cache_root
@@ -440,7 +441,7 @@ def _compras_locales(raiz: Path, propio: str | None) -> list[dict[str, Any]]:
     compras: list[tuple[str, str, int, str]] = []
     if db.is_file():
         try:
-            conn = sqlite3.connect(db)
+            conn = sqlite_db.connect(db)
         except sqlite3.Error:
             conn = None
         if conn is not None:

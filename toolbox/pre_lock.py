@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox.cache import cache_root
 from toolbox.matching import normalize_club
 from toolbox.understat import parse_openfootball_matchdays
@@ -298,7 +299,7 @@ def freeze_pre_lock(
         return {"wrote": False, "reason": "foto vacía", "jornada": jornada}
     stamp = moment.timestamp()
     own = conn is None
-    db = conn or sqlite3.connect(_db_path())
+    db = conn or sqlite_db.connect(_db_path())
     try:
         ensure_schema(db)
         previous = db.execute(
@@ -334,7 +335,7 @@ def freeze_pre_lock(
 
 def leer(jornada: int, *, season: str = SEASON, conn: sqlite3.Connection | None = None) -> dict[str, Any] | None:
     own = conn is None
-    db = conn or sqlite3.connect(_db_path())
+    db = conn or sqlite_db.connect(_db_path())
     try:
         ensure_schema(db)
         row = db.execute(

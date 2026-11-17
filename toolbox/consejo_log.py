@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox.cache import cache_root, madrid_day
 
 logger = logging.getLogger("fantasy.consejo_log")
@@ -435,7 +436,7 @@ def registrar(
     xi_written = False
     path = db_path or _db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite_db.connect(path)
     try:
         wrote_plan = _append(conn, plan_event)
         cierre = _cierre_abierto(conn, moment)

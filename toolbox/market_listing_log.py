@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox.cache import cache_root
 
 TABLE = "market_listing_log"
@@ -103,7 +104,7 @@ def record_market_listings(
         return 0
     target = path or _db_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(target, timeout=10)
+    conn = sqlite_db.connect(target, timeout=10)
     try:
         conn.execute(_SCHEMA)
         have = {str(fila[1]) for fila in conn.execute(f"pragma table_info({TABLE})")}

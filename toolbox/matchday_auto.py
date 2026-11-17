@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox.cache import cache_root, madrid_day
 
 _AUTO_STAMP: dict[str, float] = {}
@@ -75,7 +76,7 @@ def auto_track_from_board(board: dict[str, Any]) -> dict[str, Any]:
     track = _load_track()
     db = _db_path()
     db.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db)
+    conn = sqlite_db.connect(db)
     result: dict[str, Any] = {"ok": True, "skipped": False, "snapshot": None, "evaluated": []}
     try:
         track._ensure_schema(conn)

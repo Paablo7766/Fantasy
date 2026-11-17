@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox.cache import cache_root, madrid_day
 from toolbox.matching import name_similarity, normalize_club
 
@@ -343,7 +344,7 @@ def archive_match_odds(
     if not rows:
         return 0
     own = conn is None
-    db = conn or sqlite3.connect(_db_path())
+    db = conn or sqlite_db.connect(_db_path())
     stamp = time.time()
     stamp_day = day or madrid_day()
     try:

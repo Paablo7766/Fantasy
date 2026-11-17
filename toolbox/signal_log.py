@@ -17,6 +17,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+from toolbox import sqlite_db
 from toolbox.cache import cache_root
 
 TABLE = "player_signal_log"
@@ -213,7 +214,7 @@ def record_signal_log(
         return 0
     target = path or _db_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(target, timeout=10)
+    conn = sqlite_db.connect(target, timeout=10)
     try:
         conn.execute(_SCHEMA)
         _migrar(conn)
