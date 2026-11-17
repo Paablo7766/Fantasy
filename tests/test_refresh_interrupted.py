@@ -78,6 +78,26 @@ class RefreshInterruptedTests(unittest.TestCase):
         self.assertFalse(mark["running"])
         self.assertTrue(mark["result_ok"])
 
+    def test_fin_correcto_suelta_las_vistas_de_la_foto_vieja(self) -> None:
+        with server._PHOTO_MEMO_LOCK:
+            server._PHOTO_MEMO[("top4", None, "foto-vieja")] = {"ok": True}
+        with mock.patch.object(server, "release_memory") as release:
+            server._refresh_status_start("full", None)
+            server._refresh_status_finish(ok=True)
+        _flush_marks()
+        self.assertEqual(server._PHOTO_MEMO, {})
+        self.assertGreaterEqual(release.call_count, 2)
+
+    def test_fin_fallido_conserva_las_vistas(self) -> None:
+        key = ("top4", None, "foto-buena")
+        with server._PHOTO_MEMO_LOCK:
+            server._PHOTO_MEMO[key] = {"ok": True}
+        self.addCleanup(server._PHOTO_MEMO.pop, key, None)
+        server._refresh_status_start("full", None)
+        server._refresh_status_finish(ok=False, error={"code": "x"})
+        _flush_marks()
+        self.assertIn(key, server._PHOTO_MEMO)
+
     def test_el_latido_dice_sigo_vivo_con_la_fase(self) -> None:
         with mock.patch.object(server.snapshot_remote, "enabled", return_value=False):
             started = server._refresh_status_start("full", None)["started_unix"]

@@ -42,3 +42,7 @@ def test_en_render_sin_limite_legible_no_abre_chromium():
 def test_memory_status_devuelve_las_tres_claves():
     status = browser_scrape.memory_status()
     assert set(status) == {"rss_mb", "container_mb", "limit_mb"}
+
+
+def test_release_memory_nunca_lanza():
+    assert browser_scrape.release_memory() in (True, False)

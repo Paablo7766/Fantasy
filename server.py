@@ -107,7 +107,7 @@ from toolbox.normalize import SCHEMA_VERSION, attach_image_urls, daily_market_is
 from toolbox.scrapers import build_trends, prefetch_futbolfantasy, refresh_squad_titularity_in_index
 from toolbox import snapshot_remote
 from toolbox import web_push
-from toolbox.browser_scrape import memory_status
+from toolbox.browser_scrape import memory_status, release_memory
 
 logger = logging.getLogger("fantasy.dashboard")
 
@@ -198,6 +198,8 @@ def _refresh_status_start(tier: str, league: str | None) -> dict[str, Any]:
     with _refresh_status_lock:
         _refresh_status.clear()
         _refresh_status.update(status)
+    # La descarga sumará ~200 MB: se empieza devolviendo lo que glibc retiene.
+    release_memory()
     _refresh_mark_save(status)
     if snapshot_remote.enabled():
         threading.Thread(
@@ -220,6 +222,7 @@ def _refresh_status_core_saved() -> None:
         if not _refresh_status.get("running"):
             return
         _refresh_status["core_saved_at"] = datetime.now(timezone.utc).isoformat()
+    release_memory()
 
 
 def _refresh_status_finish(*, ok: bool, error: Any = None) -> None:
@@ -237,6 +240,12 @@ def _refresh_status_finish(*, ok: bool, error: Any = None) -> None:
             )
         finished = dict(_refresh_status)
     if was_running:
+        if ok:
+            # Las vistas guardadas son de la foto vieja: se sueltan antes de que
+            # el precalentado monte las de la nueva, para que no convivan.
+            with _PHOTO_MEMO_LOCK:
+                _PHOTO_MEMO.clear()
+        release_memory()
         _refresh_mark_save(finished)
         # Avisa al móvil aunque la app esté cerrada (Web Push); inerte sin claves.
         # Antes se calientan las lecturas pesadas: al tocar el aviso, la app
@@ -262,6 +271,7 @@ def _prewarm_readers() -> None:
             reader(None)
         except Exception:  # noqa: BLE001 — calentar es opcional
             logger.debug("Precalentado fallido en %s", getattr(reader, "__name__", "?"), exc_info=True)
+    release_memory()
 
 
 def _prewarm_then_notify() -> None:

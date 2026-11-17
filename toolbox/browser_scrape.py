@@ -101,6 +101,37 @@ def memory_status() -> dict[str, int | None]:
     }
 
 
+_LIBC: Any = None
+
+
+def release_memory() -> bool:
+    """Devuelve al sistema la memoria que glibc tiene libre pero retenida.
+
+    Python suelta objetos, pero glibc se queda con esas páginas «por si acaso»:
+    en Render el proceso arranca en ~180 MB y tras unas lecturas se queda en
+    ~300 MB sin usarlos. ``malloc_trim(0)`` los devuelve. Solo Linux con glibc;
+    en Windows no hace nada. Nunca lanza.
+    """
+    global _LIBC
+    try:
+        if _LIBC is None:
+            import ctypes
+            import ctypes.util
+
+            name = ctypes.util.find_library("c")
+            if not name or "libc" not in name:
+                _LIBC = False
+                return False
+            _LIBC = ctypes.CDLL(name)
+        if _LIBC is False or not hasattr(_LIBC, "malloc_trim"):
+            return False
+        _LIBC.malloc_trim(0)
+        return True
+    except Exception:  # noqa: BLE001 — liberar memoria es un extra
+        _LIBC = False
+        return False
+
+
 def _on_render() -> bool:
     # Render pone ``RENDER=true`` en todos sus servicios.
     return bool(os.getenv("RENDER", "").strip())
