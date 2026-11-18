@@ -57,6 +57,22 @@ export function cachedJson<T>(url: string): Promise<T> {
   return request;
 }
 
+/**
+ * Como `prefetchJson`, pero de una en una: el servidor de Render (0,1 CPU,
+ * 512 MB) no aguanta nueve cálculos pesados a la vez. Si la pantalla visible
+ * ya pidió una URL, la cola espera esa misma petición en vez de repetirla.
+ */
+export async function prefetchJsonInOrder(urls: string[]): Promise<void> {
+  for (const url of urls) {
+    if (store.has(url)) continue;
+    try {
+      await cachedJson(url);
+    } catch {
+      // Una pestaña que falla no frena a las demás.
+    }
+  }
+}
+
 export function prefetchJson(urls: string[]): void {
   for (const url of urls) {
     if (store.has(url) || inflight.has(url)) continue;
