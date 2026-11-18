@@ -25,12 +25,12 @@ export function endpoint(
   return apiUrl(path, query);
 }
 
-export async function getJson<T>(path: string): Promise<T> {
+export async function getJson<T>(path: string, timeoutMs = 25_000): Promise<T> {
   let response: Response;
   try {
     // Con el móvil en segundo plano el sistema congela las peticiones en vuelo:
     // sin techo se quedaban colgadas para siempre al volver a la app.
-    response = await fetch(path, { signal: AbortSignal.timeout(25_000) });
+    response = await fetch(path, { signal: AbortSignal.timeout(timeoutMs) });
   } catch {
     const error = new Error("No se pudo contactar con el servidor FastAPI.");
     (error as Error & { payload: ApiError }).payload = {

@@ -91,6 +91,38 @@ function photoMs(doc: PhotoMeta | null): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+/**
+ * Bloques de la foto (lectura de disco en Render, sin red): tras una descarga
+ * el servidor precalienta con 0,1 CPU y un bloque puede tardar 30-60 s. Con el
+ * techo general de 25 s se cortaban y la app se quedaba **en silencio** con la
+ * copia vieja (Cepeda seguía en el once dos días después de irse).
+ */
+const BLOCK_TIMEOUT_MS = 90_000;
+const BLOCK_ATTEMPTS = 3;
+/** Los bloques de una misma foto se guardan con segundos de diferencia; uno 10 min más viejo es de otra foto. */
+const SAME_PHOTO_SLACK_MS = 10 * 60 * 1000;
+
+/** Bloques que faltan o son de una foto anterior a ``referenceMs``. */
+function staleBlocks(state: DashboardState, referenceMs: number | null): BlockName[] {
+  return BLOCKS.filter((name) => {
+    const doc = state[name];
+    if (!isUsableBlock(doc)) return true;
+    if (referenceMs === null) return false;
+    const ms = photoMs(doc as PhotoMeta | null);
+    return ms === null || ms < referenceMs - SAME_PHOTO_SLACK_MS;
+  });
+}
+
+/** Captura más reciente entre los bloques. */
+function newestPhotoMs(state: DashboardState): number | null {
+  let newest: number | null = null;
+  for (const name of BLOCKS) {
+    const ms = photoMs(state[name] as PhotoMeta | null);
+    if (ms !== null && (newest === null || ms > newest)) newest = ms;
+  }
+  return newest;
+}
+
 /** Captura más antigua entre los bloques de la copia local. */
 function oldestPhotoMs(state: DashboardState): number | null {
   let oldest: number | null = null;
@@ -269,14 +301,23 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       const league = leagueFromLocation();
       try {
         // Sin ``fresh``: un GET jamás descarga, solo devuelve la foto guardada.
-        const value = await getJson<DashboardState[typeof name]>(endpoint(`/api/${name}`, league));
-        setState((prev) => ({ ...prev, [name]: value }));
-        writeDashboardBlock(league, name, value);
-        return value;
-      } catch (reason) {
+        // Varios intentos con espera larga: tras una descarga Render tarda en
+        // responder y rendirse a la primera dejaba la copia vieja en pantalla.
+        let lastError: unknown = null;
+        for (let attempt = 0; attempt < BLOCK_ATTEMPTS; attempt += 1) {
+          if (attempt > 0) await new Promise((resolve) => window.setTimeout(resolve, 2000 * attempt));
+          try {
+            const value = await getJson<DashboardState[typeof name]>(endpoint(`/api/${name}`, league), BLOCK_TIMEOUT_MS);
+            setState((prev) => ({ ...prev, [name]: value }));
+            writeDashboardBlock(league, name, value);
+            return value;
+          } catch (reason) {
+            lastError = reason;
+          }
+        }
         setState((prev) => {
           if (prev[name] && (prev[name] as { ok?: boolean }).ok !== false) return prev;
-          return { ...prev, [name]: failedPayload(reason) as never };
+          return { ...prev, [name]: failedPayload(lastError) as never };
         });
         return null;
       } finally {
@@ -304,7 +345,15 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     // Tenaglia y el resto del día tienen que pintar igual.
     // Los cinco bloques son lecturas independientes de la misma foto (el
     // backend ya mezcla needs dentro de squads): se piden a la vez.
-    await Promise.all(BLOCKS.map((name) => fetchBlock(name)));
+    const results = await Promise.all(BLOCKS.map((name) => fetchBlock(name)));
+    // Repaso: un bloque que no llegó o que es de una foto anterior a los demás
+    // se pide otra vez. Sin esto, un bloque cortado se quedaba viejo para siempre.
+    const fresh = { ...stateRef.current };
+    BLOCKS.forEach((name, index) => {
+      if (results[index]) (fresh as Record<BlockName, unknown>)[name] = results[index];
+    });
+    const behind = staleBlocks(fresh, newestPhotoMs(fresh));
+    if (behind.length) await Promise.all(behind.map((name) => fetchBlock(name)));
     setReadAt(Date.now());
   }, [fetchBlock]);
 
@@ -414,6 +463,9 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     // el servidor hasta que vuelva a pulsar Actualizar.
     const snap = readDashboardSnapshot(league);
     if (snap?.state && hasUsableSnapshot(snap.state)) {
+      // Deliberado: la copia de localStorage solo se puede leer tras montar
+      // (el HTML del servidor va vacío para que la hidratación cuadre).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setState({ ...EMPTY, ...snap.state });
       setPending(pendingFromSnapshot(snap.state));
       setReadAt(typeof snap.savedAt === "number" ? snap.savedAt : Date.now());
@@ -433,14 +485,16 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       // el navegador sin cuota para guardar todo) dejaba esos bloques en
       // «Cargando» para siempre: nadie los pedía si el servidor no tenía una
       // foto más nueva. Los que faltan se leen de la foto guardada (sin red).
-      const missing = BLOCKS.filter((name) => name !== "needs" && !isUsableBlock(snap.state[name]));
+      // Además, un bloque de una foto anterior a la del servidor (p. ej. las
+      // plantillas cortadas al releer tras Actualizar) se vuelve a pedir: antes
+      // solo se comparaba «needs» y un bloque viejo no se curaba nunca.
       void fetchBlock("needs").then((fresh) => {
         const serverAt = photoMs(fresh as PhotoMeta | null);
         if (serverAt !== null && (localAt === null || serverAt > localAt + 1000)) {
           void load();
           return;
         }
-        for (const name of missing) void fetchBlock(name);
+        for (const name of staleBlocks(snap.state, serverAt)) if (name !== "needs") void fetchBlock(name);
       });
       return;
     }
@@ -472,7 +526,13 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         const fresh = await getJson<PhotoMeta>(endpoint("/api/needs", league));
         const serverAt = photoMs(fresh);
         const localAt = photoMs(stateRef.current.needs as PhotoMeta | null) ?? oldestPhotoMs(stateRef.current);
-        if (serverAt !== null && (localAt === null || serverAt > localAt + 1000)) await load();
+        if (serverAt !== null && (localAt === null || serverAt > localAt + 1000)) {
+          await load();
+        } else {
+          // Misma foto en «needs», pero algún bloque se quedó atrás: solo ese.
+          const behind = staleBlocks(stateRef.current, serverAt).filter((name) => name !== "needs");
+          if (behind.length) await Promise.all(behind.map((name) => fetchBlock(name)));
+        }
       } catch {
         // Sin respuesta se queda lo que hay.
       } finally {
@@ -485,7 +545,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", check);
       window.removeEventListener("focus", check);
     };
-  }, [shellReady, load]);
+  }, [shellReady, load, fetchBlock]);
 
   /**
    * Jornada en vivo: solo ese bloque se relee del servidor (lectura de la foto, sin red).
